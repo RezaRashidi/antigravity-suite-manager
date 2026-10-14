@@ -22,6 +22,16 @@ echo -e "${CYAN}================================================================
 echo -e "${CYAN}             Antigravity Suite Manager Installer                      ${NC}"
 echo -e "${CYAN}======================================================================${NC}"
 
+# 0. Check Platform (Ubuntu 24.04 Only)
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    if [ "$ID" != "ubuntu" ]; then
+        echo -e "${YELLOW}[WARNING] This suite is designed exclusively for Ubuntu Linux. Detected: ${NAME:-Unknown}${NC}"
+    elif [ "$VERSION_ID" != "24.04" ]; then
+        echo -e "${YELLOW}[WARNING] This suite is strictly tested on Ubuntu 24.04 LTS. Detected version: ${VERSION_ID}${NC}"
+    fi
+fi
+
 # 1. Verify Prerequisites
 echo -e "${BLUE}[1/5] Checking build and runtime dependencies...${NC}"
 MISSING=()

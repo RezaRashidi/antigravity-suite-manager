@@ -1,13 +1,20 @@
 # Antigravity Suite Manager
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-Linux%20x86__64-orange.svg)](#requirements)
-[![Bash](https://img.shields.io/badge/Language-Bash%20%7C%20Python%20%7C%20C-brightgreen.svg)](#architecture)
-[![Status](https://img.shields.io/badge/Status-Production%20Ready-success.svg)](#)
+[![OS: Ubuntu 24.04 LTS Only](https://img.shields.io/badge/OS-Ubuntu%2024.04%20LTS%20Only-E95420.svg?logo=ubuntu)](#platform-compatibility--requirements)
+[![Tested On](https://img.shields.io/badge/Tested%20On-Ubuntu%2024.04-blue.svg)](#platform-compatibility--requirements)
+[![Dual Accounts](https://img.shields.io/badge/Dual%20Accounts-Shared%20Chats-success.svg)](#shared-chat-history--profile-isolation)
+[![Language](https://img.shields.io/badge/Language-Bash%20%7C%20Python%20%7C%20C-brightgreen.svg)](#architecture--profile-isolation)
 
 A comprehensive Linux automation suite for **Google Antigravity** and **Antigravity IDE**.
 
 Provides seamless multi-instance profile isolation (Account 1 & Account 2), taskbar de-grouping, high-resolution theme customization, dynamic release discovery, persistent archive caching, automated RTL (Right-to-Left) typography support, and manual F5 reload patching.
+
+> [!IMPORTANT]
+> **Platform Restriction**: This suite is built **exclusively for Ubuntu Linux** and has been **strictly tested on Ubuntu 24.04 LTS (Noble Numbat)**. Other distributions are not supported.
+
+> [!NOTE]
+> **Shared Chat History Across Both Accounts**: While Account 1 and Account 2 use completely isolated authentication keyrings and cookies (allowing two distinct Google accounts to run concurrently without kicking each other out), **all chat history, previous conversations, database logs, and workspace sessions are shared between both accounts**. Any conversation created in Account 1 is immediately accessible in Account 2, and vice versa.
 
 ---
 
@@ -15,8 +22,9 @@ Provides seamless multi-instance profile isolation (Account 1 & Account 2), task
 
 - [Overview](#overview)
 - [Key Features](#key-features)
+- [Platform Compatibility & Requirements](#platform-compatibility--requirements)
 - [Architecture & Profile Isolation](#architecture--profile-isolation)
-- [Requirements](#requirements)
+- [Shared Chat History & Profile Isolation](#shared-chat-history--profile-isolation)
 - [Quick Start](#quick-start)
 - [Usage & Commands](#usage--commands)
   - [Status Inspection](#status-inspection)
@@ -39,7 +47,7 @@ Provides seamless multi-instance profile isolation (Account 1 & Account 2), task
 Running Google Antigravity on Linux in production workflows often encounters three major hurdles:
 
 1. **Multi-Account Conflicts**: Running two simultaneous Antigravity instances (e.g. personal vs. work/client) causes single-instance Electron lockups and keyring authentication overwrites.
-2. **Taskbar Grouping Collisions**: Desktop environments (GNOME Shell, Dash to Panel, KDE Plasma) group all instances under a single taskbar icon because they share the underlying binary executable.
+2. **Taskbar Grouping Collisions**: Desktop environments (GNOME Shell, Dash to Panel) group all instances under a single taskbar icon because they share the underlying binary executable.
 3. **Typography & Auto-Reload Issues**: Lack of native RTL support for Persian/Arabic text and background auto-reload events interrupting active chat sessions.
 
 **Antigravity Suite Manager** resolves these issues natively without container overhead.
@@ -48,7 +56,8 @@ Running Google Antigravity on Linux in production workflows often encounters thr
 
 ## Key Features
 
-- **Dual Isolated App Profiles**: Run Account 1 and Account 2 concurrently with distinct keyrings, isolated credentials, yet shared chat history and conversation databases.
+- **Dual Isolated Accounts with Shared Chats**: Run Account 1 and Account 2 concurrently with distinct keyrings, isolated credentials, yet **100% shared chat history and conversation databases**.
+- **Ubuntu 24.04 LTS Native**: Tailored specifically for Ubuntu 24.04 and GNOME Shell environment.
 - **Side-by-Side Antigravity IDE**: Automated installation, configuration, and desktop integration for the VS Code-based Antigravity IDE.
 - **Taskbar De-Grouping**: Enforces unique `WM_CLASS` identifiers (`antigravity-1`, `antigravity-2`, `antigravity-ide`) so docks and taskbars maintain separate entries.
 - **High-Resolution Icon Engine**: High-performance Catmull-Rom bicubic resampler written in C with premultiplied alpha to produce razor-sharp icons (`16x16` up to `1024x1024`).
@@ -95,17 +104,40 @@ graph TD
 
 ---
 
-## Requirements
+## Platform Compatibility & Requirements
 
-- **Operating System**: Linux (Ubuntu 20.04+, Debian 11+, Fedora, Arch Linux)
-- **Architecture**: x86_64
+> [!CAUTION]
+> **Strict Platform Target**: This suite is built **exclusively for Ubuntu Linux** and is **only tested and verified on Ubuntu 24.04 LTS (Noble Numbat)** with X11 / GNOME Shell. Running on other distributions (Debian, Fedora, Arch) or pure Wayland without XWayland is untested and not supported.
+
+- **Supported OS**: **Ubuntu Linux 24.04 LTS** (Noble Numbat)
+- **Desktop Environment**: GNOME Shell / Dash to Panel / Ubuntu Desktop
+- **Display Server**: X11 (Required for live `_NET_WM_ICON` injection and `WM_CLASS` runtime de-grouping)
+- **Architecture**: `x86_64` (amd64)
 - **Dependencies**:
   - `bash` (4.0+)
   - `python3`
-  - `gcc` & `make` (to build the C bicubic scaler)
+  - `gcc` & `make` (to compile the C Catmull-Rom bicubic scaler)
   - `curl` or `wget`
   - `tar` & `gzip`
-  - `x11-utils` / `xprop` (for live taskbar icon injection under X11)
+  - `x11-utils` (`xprop`, `xwininfo`)
+
+---
+
+## Shared Chat History & Profile Isolation
+
+The suite solves the primary dilemma of multi-account AI pairing: **independent authentication without losing conversation context**.
+
+### How It Works:
+1. **Isolated Keyrings (Multi-Account Sign-in)**:
+   - Account 1 runs using standard user keyring storage (`~/.config/Antigravity`).
+   - Account 2 runs inside `~/.antigravity-profile2` with isolated Chromium keyring tokens (`antigravity-keyring-unavailable`).
+   - Result: You can sign into **Google Account A** on App 1 and **Google Account B** on App 2 without session conflicts.
+
+2. **100% Shared Conversations & Database**:
+   - Both profiles share symlinked paths to the underlying SQLite database, chat sessions, project contexts, and history storage:
+     - `~/.antigravity-profile2/.gemini/antigravity` -> `~/.gemini/antigravity`
+     - `~/.antigravity-profile2/.gemini/config` -> `~/.gemini/config`
+   - Result: **All conversations, prompts, past chats, and workspace states created in Account 1 are instantly visible, accessible, and continuable inside Account 2, and vice versa!**
 
 ---
 
