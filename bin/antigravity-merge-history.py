@@ -13,7 +13,44 @@ import re
 import sqlite3
 import shutil
 import datetime
+import base64
 import argparse
+
+def encode_varint(value):
+    out = bytearray()
+    while value > 0x7f:
+        out.append((value & 0x7f) | 0x80)
+        value >>= 7
+    out.append(value)
+    return bytes(out)
+
+def parse_proto_map(data):
+    entries = {}
+    other_fields = []
+    pos = 0
+    total = len(data)
+    while pos < total:
+        tag = data[pos]
+        pos += 1
+        length = 0
+        shift = 0
+        while pos < total:
+            b = data[pos]
+            pos += 1
+            length |= (b & 0x7f) << shift
+            if (b & 0x80) == 0:
+                break
+            shift += 7
+        if pos + length > total:
+            break
+        field_data = data[pos:pos+length]
+        pos += length
+        if tag == 0x0a and len(field_data) > 38 and field_data[0] == 0x0a and field_data[1] == 0x24:
+            uuid = field_data[2:38].decode('ascii', 'ignore')
+            entries[uuid] = field_data
+        else:
+            other_fields.append((tag, field_data))
+    return entries, other_fields
 
 def merge_histories(master_gemini=None, quiet=False):
     real_home = os.environ.get("REAL_HOME", os.path.expanduser("~"))
@@ -108,6 +145,34 @@ def merge_histories(master_gemini=None, quiet=False):
                     except Exception:
                         pass
 
+    # Copy from conversations.bak if present
+    bak_conv = os.path.join(ide_gemini, "conversations.bak")
+    if os.path.isdir(bak_conv):
+        for f in os.listdir(bak_conv):
+            src = os.path.join(bak_conv, f)
+            dst = os.path.join(master_conv_dir, f)
+            if not os.path.exists(dst):
+                try:
+                    shutil.copy2(src, dst)
+                    copied_dbs += 1
+                except Exception:
+                    pass
+
+    bak_brain = os.path.join(ide_gemini, "brain.bak")
+    if os.path.isdir(bak_brain):
+        for b_item in glob.glob(os.path.join(bak_brain, "*")):
+            b_name = os.path.basename(b_item)
+            b_dst = os.path.join(master_brain_dir, b_name)
+            if not os.path.exists(b_dst):
+                try:
+                    if os.path.isdir(b_item):
+                        shutil.copytree(b_item, b_dst)
+                    else:
+                        shutil.copy2(b_item, b_dst)
+                    copied_brains += 1
+                except Exception:
+                    pass
+
     # 3. Backfill conversation_summaries.db
     con = sqlite3.connect(master_sum_db)
     cur = con.cursor()
@@ -191,6 +256,59 @@ def merge_histories(master_gemini=None, quiet=False):
             pass
 
     con.commit()
+
+    # 4. Two-Way Protobuf & VS Code State Sync (App <-> IDE Bridge)
+    proto_synced = 0
+    try:
+        app_proto_path = os.path.join(master_gemini, "agyhub_summaries_proto.pb")
+        vscdb_path = os.path.join(real_home, ".config", "Antigravity IDE", "User", "globalStorage", "state.vscdb")
+
+        app_entries = {}
+        other_fields = []
+        if os.path.exists(app_proto_path):
+            with open(app_proto_path, "rb") as f:
+                app_entries, other_fields = parse_proto_map(f.read())
+
+        ide_entries = {}
+        if os.path.exists(vscdb_path):
+            v_con = sqlite3.connect(vscdb_path)
+            v_cur = v_con.cursor()
+            v_cur.execute("SELECT value FROM ItemTable WHERE key = 'antigravityUnifiedStateSync.trajectorySummaries';")
+            v_row = v_cur.fetchone()
+            if v_row and v_row[0]:
+                raw_ide = base64.b64decode(v_row[0])
+                ide_entries, _ = parse_proto_map(raw_ide)
+
+            merged_entries = dict(ide_entries)
+            merged_entries.update(app_entries)
+            proto_synced = len(merged_entries)
+
+            unified_bin = bytearray()
+            for u_id, f_data in merged_entries.items():
+                unified_bin.append(0x0a)
+                unified_bin.extend(encode_varint(len(f_data)))
+                unified_bin.extend(f_data)
+            for tag, f_data in other_fields:
+                unified_bin.append(tag)
+                unified_bin.extend(encode_varint(len(f_data)))
+                unified_bin.extend(f_data)
+
+            with open(app_proto_path, "wb") as f:
+                f.write(unified_bin)
+
+            unified_b64 = base64.b64encode(unified_bin).decode('ascii')
+            v_cur.execute("UPDATE ItemTable SET value = ? WHERE key = 'antigravityUnifiedStateSync.trajectorySummaries';", (unified_b64,))
+            v_con.commit()
+            v_con.close()
+
+        for sym_name in ["agyhub_summaries_proto.pb", "jetbox_summaries_proto.pb", "jetbox_summaries.pb"]:
+            sym_path = os.path.join(ide_gemini, sym_name)
+            if os.path.exists(sym_path) and not os.path.islink(sym_path):
+                os.remove(sym_path)
+            if not os.path.islink(sym_path) and os.path.exists(app_proto_path):
+                os.symlink(app_proto_path, sym_path)
+    except Exception:
+        pass
 
     total_summaries = cur.execute("SELECT count(*) FROM conversation_summaries;").fetchone()[0]
     app_count = cur.execute("SELECT count(*) FROM conversation_summaries WHERE app_data_dir='antigravity';").fetchone()[0]

@@ -720,6 +720,16 @@ EOF
         [ -f "$SHARED_CONV_DIR/conversation_summaries.db-shm" ] && ln -sfn "$SHARED_CONV_DIR/conversation_summaries.db-shm" "$ide_gemini/conversation_summaries.db-shm"
     fi
 
+    # Symlink protobuf index summaries across App and IDE
+    for sym_proto in "agyhub_summaries_proto.pb" "jetbox_summaries_proto.pb" "jetbox_summaries.pb"; do
+        if [ -f "$SHARED_CONV_DIR/agyhub_summaries_proto.pb" ]; then
+            ln -sfn "$SHARED_CONV_DIR/agyhub_summaries_proto.pb" "$ide_gemini/$sym_proto"
+        fi
+    done
+
+    # Run history merger & index synchronization
+    merge_history
+
     log_success "Antigravity IDE shortcuts & 3-way shared history configured."
 }
 
