@@ -19,6 +19,8 @@ install: build
 	install -m 755 bin/manage-antigravity.sh $(BINDIR)/manage-antigravity.sh
 	install -m 755 bin/antigravity-generate-icons.py $(BINDIR)/antigravity-generate-icons.py
 	install -m 755 bin/antigravity-apply-icon.py $(BINDIR)/antigravity-apply-icon.py
+	install -m 755 bin/antigravity-merge-history.py $(BINDIR)/antigravity-merge-history.py
+	install -m 755 bin/antigravity-detect.py $(BINDIR)/antigravity-detect.py
 	install -m 755 bin/scale_icon $(BINDIR)/scale_icon
 	cp -f assets/antigravity-master-*.png $(ICONDIR)/ 2>/dev/null || true
 	ln -sfn $(BINDIR)/manage-antigravity.sh $(HOME)/manage-antigravity.sh

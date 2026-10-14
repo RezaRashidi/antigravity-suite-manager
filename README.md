@@ -59,6 +59,10 @@ Antigravity Suite Manager is engineered to make Google Antigravity and Antigravi
 - **Native Desktop Integration**: Fully compliant with XDG Desktop standards (`~/.local/share/applications`, `~/.local/bin`, MIME scheme handlers).
 - **Rock-Solid Scheme Routing**: Binds `antigravity://` and `antigravity-ide://` protocols to their respective targets to ensure OAuth and deep links never route to the wrong app.
 
+### 9. 🔍 Deep System Installation Detection & Automated Installer
+- **Intelligent Installation Scanner**: Scans standard directories (`/opt`, `/usr/share`, `/usr/lib`, `~/.local`), PATH executables, `.desktop` launcher entries, and active process trees to discover any Antigravity App or IDE installations with exact version detection.
+- **One-Command Automated Installation**: Run `manage-antigravity.sh install all` or `./install.sh --install-antigravity` to download official upstream binaries directly from Google's release channels, extract, configure permissions, and deploy desktop entries automatically.
+
 ---
 
 ## Table of Contents
@@ -70,6 +74,8 @@ Antigravity Suite Manager is engineered to make Google Antigravity and Antigravi
 - [Shared Chat History & Profile Isolation](#shared-chat-history--profile-isolation)
 - [Quick Start](#quick-start)
 - [Usage & Commands](#usage--commands)
+  - [System Detection & Scanner](#system-detection--scanner)
+  - [Automated Antigravity Installation](#automated-antigravity-installation)
   - [Status Inspection](#status-inspection)
   - [Multi-Instance Creation & Management](#multi-instance-creation--management)
   - [Conversation History Merging & Sync](#conversation-history-merging--sync)
@@ -224,6 +230,55 @@ The installer:
 ```bash
 ~/manage-antigravity.sh [command] [options]
 ```
+
+### System Detection & Scanner
+
+Scan your entire Linux filesystem, PATH binaries, `.desktop` launchers, and running processes to discover all installed Antigravity App, IDE, and Manager instances:
+
+```bash
+~/manage-antigravity.sh detect
+# Aliases: scan, find, find-installations
+```
+
+Example output:
+```text
+========================================================================================
+                    Detected Antigravity Installations on System                       
+========================================================================================
+Type                 Version     Writable    Executable                  Path
+----------------------------------------------------------------------------------------
+Antigravity IDE      v2.5.5      Yes         antigravity-ide             /opt/antigravity
+Antigravity App      v2.23.1     Yes         antigravity                 /opt/antigravity2
+Antigravity Manager  v0.25.1     No (Root)   antigravity-manager         /usr/lib/antigravity-manager
+========================================================================================
+```
+
+---
+
+### Automated Antigravity Installation
+
+If Google Antigravity is not yet installed on your system, or if you wish to do a clean install:
+
+```bash
+# Install both Antigravity App (Accounts 1 & 2) and Antigravity IDE
+~/manage-antigravity.sh install all
+
+# Install only Antigravity App
+~/manage-antigravity.sh install app
+
+# Install only Antigravity IDE
+~/manage-antigravity.sh install ide
+```
+
+This automatically:
+1. Queries upstream Google release endpoints to discover latest release versions.
+2. Downloads official tarballs into `/tmp/antigravity-cache` (reused across runs).
+3. Extracts binaries into target locations (`/opt/antigravity2` and `/opt/antigravity`).
+4. Hardens file permissions (`chown` and `chrome-sandbox` 4755).
+5. Configures desktop shortcuts, multi-account launchers, and MIME handlers.
+6. Applies RTL typography and manual F5 reload patches.
+
+---
 
 ### Status Inspection
 

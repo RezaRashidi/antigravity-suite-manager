@@ -18,8 +18,8 @@ set -eo pipefail
 # Configurable Defaults & Paths
 # ------------------------------------------------------------------------------
 CACHE_DIR="${ANTIGRAVITY_CACHE_DIR:-/tmp/antigravity-cache}"
-APP_INSTALL_DIR="${ANTIGRAVITY_APP_DIR:-/opt/antigravity2}"
-IDE_INSTALL_DIR="${ANTIGRAVITY_IDE_DIR:-/opt/antigravity}"
+APP_INSTALL_DIR="${ANTIGRAVITY_APP_DIR:-}"
+IDE_INSTALL_DIR="${ANTIGRAVITY_IDE_DIR:-}"
 
 if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
     REAL_USER="$SUDO_USER"
@@ -77,6 +77,61 @@ log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_err() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 mkdir -p "$LOCAL_BIN" "$LOCAL_APPS" "$LOCAL_ICONS" "$SHARED_CONV_DIR" "$SHARED_CONFIG_DIR" "$CACHE_DIR"
+
+# ------------------------------------------------------------------------------
+# 0. System Installation Auto-Detection
+# ------------------------------------------------------------------------------
+auto_detect_installations() {
+    local SCRIPT_DIR
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local DETECT_SCRIPT=""
+    if [ -f "${SCRIPT_DIR}/antigravity-detect.py" ]; then
+        DETECT_SCRIPT="${SCRIPT_DIR}/antigravity-detect.py"
+    elif [ -f "${LOCAL_BIN}/antigravity-detect.py" ]; then
+        DETECT_SCRIPT="${LOCAL_BIN}/antigravity-detect.py"
+    fi
+
+    if [ -n "$DETECT_SCRIPT" ]; then
+        local env_vars
+        env_vars=$(python3 "$DETECT_SCRIPT" --env 2>/dev/null || true)
+        if [ -n "$env_vars" ]; then
+            eval "$env_vars"
+        fi
+    fi
+
+    if [ -z "$APP_INSTALL_DIR" ]; then
+        if [ -n "$ANTIGRAVITY_DETECTED_APP" ]; then
+            APP_INSTALL_DIR="$ANTIGRAVITY_DETECTED_APP"
+        else
+            APP_INSTALL_DIR="/opt/antigravity2"
+        fi
+    fi
+
+    if [ -z "$IDE_INSTALL_DIR" ]; then
+        if [ -n "$ANTIGRAVITY_DETECTED_IDE" ]; then
+            IDE_INSTALL_DIR="$ANTIGRAVITY_DETECTED_IDE"
+        else
+            IDE_INSTALL_DIR="/opt/antigravity"
+        fi
+    fi
+}
+
+detect_installations() {
+    local SCRIPT_DIR
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local DETECT_SCRIPT=""
+    if [ -f "${SCRIPT_DIR}/antigravity-detect.py" ]; then
+        DETECT_SCRIPT="${SCRIPT_DIR}/antigravity-detect.py"
+    elif [ -f "${LOCAL_BIN}/antigravity-detect.py" ]; then
+        DETECT_SCRIPT="${LOCAL_BIN}/antigravity-detect.py"
+    fi
+
+    if [ -n "$DETECT_SCRIPT" ]; then
+        python3 "$DETECT_SCRIPT"
+    else
+        log_err "antigravity-detect.py not found in ${SCRIPT_DIR} or ${LOCAL_BIN}."
+    fi
+}
 
 # ------------------------------------------------------------------------------
 # 1. Dynamic Version & Release URL Discovery
@@ -150,6 +205,7 @@ PYEOF
 # 2. Status Inspection Table
 # ------------------------------------------------------------------------------
 check_status() {
+    auto_detect_installations
     if [ -z "$TARGET_APP_VER" ] || [ -z "$TARGET_IDE_VER" ]; then
         resolve_dynamic_urls >/dev/null 2>&1 || true
     fi
@@ -289,6 +345,42 @@ def check_cached(name, ver):
         return f"{G}Cached ({size_mb:.1f} MB){NC}"
     return f"{Y}Not Cached (Download on demand){NC}"
 
+def scan_all_installations():
+    candidates = set()
+    roots = ['/opt', '/usr/share', '/usr/lib', '/usr/local/share',
+             os.path.expanduser('~/.local/share'), os.path.expanduser('~/.local/lib'), os.path.expanduser('~/opt'), os.path.expanduser('~/.antigravity')]
+    for r in roots:
+        if os.path.isdir(r):
+            for pat in ['*antigravity*', '*Antigravity*']:
+                for m in glob.glob(os.path.join(r, pat)):
+                    if os.path.isdir(m):
+                        candidates.add(os.path.realpath(m))
+    for p in os.environ.get('PATH', '').split(':'):
+        for cmd in ['antigravity', 'antigravity-ide', 'antigravity-1', 'antigravity-acc2', 'antigravity-manager']:
+            fp = os.path.join(p, cmd)
+            if os.path.isfile(fp):
+                rp = os.path.realpath(fp)
+                d = os.path.dirname(rp)
+                candidates.add(d)
+                if os.path.basename(d) in ['bin', 'MacOS']:
+                    candidates.add(os.path.dirname(d))
+    results = []
+    seen = set()
+    for c in sorted(candidates):
+        rc = os.path.realpath(c)
+        if rc in seen: continue
+        iv = get_ide_version(rc)
+        if iv:
+            results.append(('Antigravity IDE', iv, rc))
+            seen.add(rc)
+            continue
+        av = get_app_version(rc)
+        if av:
+            name = 'Antigravity Manager' if 'manager' in rc else 'Antigravity App'
+            results.append((name, av, rc))
+            seen.add(rc)
+    return results
+
 app_ver = get_app_version(APP_DIR)
 app_status = f"{G}Up-to-date{NC}" if (app_ver and app_ver == TARG_APP_VER) else (f"{Y}Update Available{NC}" if app_ver else f"{R}Not Installed{NC}")
 
@@ -310,6 +402,17 @@ print(f"{BOLD}{B}Target                 Installed    Latest Available  Status   
 print(f"----------------------------------------------------------------------------------------")
 print(f"Antigravity (Acc 1&2)  {app_ver or 'N/A':<12} {TARG_APP_VER:<17} {app_status:<24} {app_rtl:<20} {app_f5}")
 print(f"Antigravity IDE        {ide_ver or 'N/A':<12} {TARG_IDE_VER:<17} {ide_status:<24} {ide_rtl:<20} N/A")
+print(f"----------------------------------------------------------------------------------------")
+print(f"{BOLD}Detected System Installations:{NC}")
+installs = scan_all_installations()
+if installs:
+    for itype, iver, ipath in installs:
+        tag = ""
+        if APP_DIR and os.path.realpath(ipath) == os.path.realpath(APP_DIR): tag = f" {G}[Primary App]{NC}"
+        elif IDE_DIR and os.path.realpath(ipath) == os.path.realpath(IDE_DIR): tag = f" {G}[Primary IDE]{NC}"
+        print(f"  • {itype:<20} v{iver:<10} in {ipath}{tag}")
+else:
+    print(f"  {Y}None detected outside default locations.{NC}")
 print(f"----------------------------------------------------------------------------------------")
 print(f"{BOLD}Package Cache Status in {CACHE_DIR}:{NC}")
 print(f"  • Antigravity App:        {app_cache}")
@@ -1303,9 +1406,32 @@ update_rtl() {
 }
 
 # ------------------------------------------------------------------------------
-# 13. Smart Full Suite Update
+# 13. Full Suite Installation & Smart Update
 # ------------------------------------------------------------------------------
+install_antigravity_all() {
+    auto_detect_installations
+    resolve_dynamic_urls
+    log_info "Installing full Google Antigravity suite (App + IDE)..."
+
+    install_binary "Antigravity-App" "$APP_URL" "$TARGET_APP_VER" "$APP_INSTALL_DIR"
+    setup_account_1
+    setup_account_2
+
+    install_binary "Antigravity-IDE" "$IDE_URL" "$TARGET_IDE_VER" "$IDE_INSTALL_DIR"
+    setup_ide_shortcuts
+
+    if [ "$SKIP_RTL" != true ]; then
+        patch_rtl_all
+    elif [ "$SKIP_F5" != true ]; then
+        patch_f5_reload
+    fi
+
+    log_success "Google Antigravity suite installed successfully!"
+    check_status
+}
+
 update_all() {
+    auto_detect_installations
     resolve_dynamic_urls
     log_info "Inspecting pre-update status & patches..."
     check_status
@@ -1313,16 +1439,12 @@ update_all() {
     log_info "Starting full suite update..."
     log_info "User configurations, databases, keys, and history will be fully preserved."
 
-    if [ -d "$APP_INSTALL_DIR" ]; then
-        install_binary "Antigravity-App" "$APP_URL" "$TARGET_APP_VER" "$APP_INSTALL_DIR"
-        setup_account_1
-        setup_account_2
-    fi
+    install_binary "Antigravity-App" "$APP_URL" "$TARGET_APP_VER" "$APP_INSTALL_DIR"
+    setup_account_1
+    setup_account_2
 
-    if [ -d "$IDE_INSTALL_DIR" ]; then
-        install_binary "Antigravity-IDE" "$IDE_URL" "$TARGET_IDE_VER" "$IDE_INSTALL_DIR"
-        setup_ide_shortcuts
-    fi
+    install_binary "Antigravity-IDE" "$IDE_URL" "$TARGET_IDE_VER" "$IDE_INSTALL_DIR"
+    setup_ide_shortcuts
 
     # Apply patches if needed
     if [ "$SKIP_RTL" != true ]; then
@@ -1424,6 +1546,8 @@ Usage:
 
 Commands:
   status        Check installed vs target versions, patch statuses, and cache
+  detect        Scan and identify all installed Antigravity instances on system (aliases: scan, find)
+  install       Install Antigravity suite [all|app|ide] (default: all; aliases: install-all, install-app, install-ide)
   all           Install / update both Antigravity Apps (Account 1 & 2), IDE, F5 patch, and RTL
   app           Install / update Antigravity App (Both Accounts, RTL, and F5)
   ide           Install / update Antigravity IDE and RTL patch
@@ -1460,6 +1584,8 @@ Options:
 
 Examples:
   $(basename "$0") status
+  $(basename "$0") detect
+  $(basename "$0") install
   $(basename "$0") update
   $(basename "$0") set-icons --ide-icon white --acc1-icon black --acc2-recolor true
   $(basename "$0") set-icons
@@ -1473,34 +1599,37 @@ interactive_menu() {
     echo -e "${CYAN}=====================================================${NC}"
     echo -e "${CYAN}   Antigravity & Antigravity IDE Suite Manager       ${NC}"
     echo -e "${CYAN}=====================================================${NC}"
-    echo "1) Smart Update All (App 1, App 2, IDE, RTL, F5) [Uses /tmp cache]"
-    echo "2) Install / Update Antigravity App (Both Accounts)"
-    echo "3) Install / Update Antigravity IDE"
-    echo "4) Configure / Repair Account 2 (Isolated Profile & Shared History)"
-    echo "5) Apply / Update RTL Patcher (mmnaderi/antigravity-rtl)"
-    echo "6) Re-apply F5 Manual Sync Backend Reload Patch"
-    echo "7) Check Versions, Cache & Patch Statuses (Status Table)"
-    echo "8) Force Full Re-download & Reinstall Everything (--force)"
-    echo "9) Clean Download Cache (/tmp/antigravity-cache)"
+    echo "1) Install Antigravity Suite (App + IDE + RTL + F5)"
+    echo "2) Smart Update All (App 1, App 2, IDE, RTL, F5) [Uses /tmp cache]"
+    echo "3) Install / Update Antigravity App (Both Accounts)"
+    echo "4) Install / Update Antigravity IDE"
+    echo "5) Detect & Scan Installed Antigravity Instances"
+    echo "6) Check Versions, Cache & Patch Statuses (Status Table)"
+    echo "7) Configure / Repair Account 2 (Isolated Profile & Shared History)"
+    echo "8) Apply / Update RTL Patcher (mmnaderi/antigravity-rtl)"
+    echo "9) Re-apply F5 Manual Sync Backend Reload Patch"
+    echo "10) Configure Icons & Appearance Themes"
     echo "11) Merge & Sync Conversation History (All Profiles & IDEs)"
     echo "12) Create New Instance (App or IDE with Shared/Isolated History)"
     echo "13) List All Instances & History Statuses"
     echo "14) Set / Toggle Instance History Mode (Shared vs Isolated)"
     echo "15) Remove an Instance"
+    echo "16) Force Full Re-download & Reinstall Everything (--force)"
+    echo "17) Clean Download Cache (/tmp/antigravity-cache)"
     echo "0) Exit"
     echo -e "${CYAN}-----------------------------------------------------${NC}"
-    read -rp "Select an option [0-15]: " choice
+    read -rp "Select an option [0-17]: " choice
 
     case "$choice" in
-        1) update_all ;;
-        2) install_antigravity_app ;;
-        3) install_antigravity_ide ;;
-        4) setup_account_2 ;;
-        5) update_rtl ;;
-        6) patch_f5_reload ;;
-        7) resolve_dynamic_urls && check_status ;;
-        8) FORCE_INSTALL=true update_all ;;
-        9) clean_cache ;;
+        1) install_antigravity_all ;;
+        2) update_all ;;
+        3) install_antigravity_app ;;
+        4) install_antigravity_ide ;;
+        5) detect_installations ;;
+        6) resolve_dynamic_urls && check_status ;;
+        7) setup_account_2 ;;
+        8) update_rtl ;;
+        9) patch_f5_reload ;;
         10) configure_icons_interactive ;;
         11) merge_history ;;
         12) create_instance ;;
@@ -1516,6 +1645,8 @@ interactive_menu() {
             read -rp "Enter instance id/name: " rid
             remove_instance "$rtype" "$rid"
             ;;
+        16) FORCE_INSTALL=true install_antigravity_all ;;
+        17) clean_cache ;;
         0) exit 0 ;;
         *)
             log_err "Invalid selection."
@@ -1614,6 +1745,33 @@ while [ $# -gt 0 ]; do
             CMD_ARGS=("$@")
             break
             ;;
+        detect|scan|find|find-installations)
+            COMMAND="detect"
+            shift
+            ;;
+        install)
+            COMMAND="install"
+            shift
+            if [ -n "$1" ] && [[ "$1" != -* ]]; then
+                SUB_COMMAND="$1"
+                shift
+            fi
+            ;;
+        install-all)
+            COMMAND="install"
+            SUB_COMMAND="all"
+            shift
+            ;;
+        install-app)
+            COMMAND="install"
+            SUB_COMMAND="app"
+            shift
+            ;;
+        install-ide)
+            COMMAND="install"
+            SUB_COMMAND="ide"
+            shift
+            ;;
         status|all|app|ide|app1|app2|ide-shortcuts|f5|rtl|update-rtl|update|clean-cache|set-icons|icons|help)
             COMMAND="$1"
             shift
@@ -1634,13 +1792,30 @@ if [ -z "$COMMAND" ]; then
     interactive_menu
 else
     case "$COMMAND" in
+        detect)
+            auto_detect_installations
+            detect_installations
+            ;;
+        install)
+            auto_detect_installations
+            case "${SUB_COMMAND:-all}" in
+                app)
+                    install_antigravity_app
+                    ;;
+                ide)
+                    install_antigravity_ide
+                    ;;
+                all|*)
+                    install_antigravity_all
+                    ;;
+            esac
+            ;;
         status)
             resolve_dynamic_urls
             check_status
             ;;
         all)
-            install_antigravity_app
-            install_antigravity_ide
+            install_antigravity_all
             ;;
         app)
             install_antigravity_app
