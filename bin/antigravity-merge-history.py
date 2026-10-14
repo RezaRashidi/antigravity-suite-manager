@@ -478,6 +478,10 @@ def merge_histories(master_gemini=None, quiet=False):
     if os.path.isdir(ide_gemini_isolated) and not os.path.islink(ide_gemini_isolated):
         pools.append(("ide-isolated", ide_gemini_isolated, "antigravity-ide"))
 
+    ide_gemide_isolated = os.path.join(real_home, ".gemide", "antigravity-ide")
+    if os.path.isdir(ide_gemide_isolated) and not os.path.islink(ide_gemide_isolated):
+        pools.append(("gemide-isolated", ide_gemide_isolated, "antigravity-ide"))
+
     for p_dir in glob.glob(os.path.join(real_home, ".antigravity-profile*")):
         c_dir = os.path.join(p_dir, ".gemini", "antigravity")
         if os.path.isdir(c_dir) and not os.path.islink(c_dir):
@@ -738,6 +742,8 @@ def merge_histories(master_gemini=None, quiet=False):
     target_ide_dirs = [ide_gemini]
     if os.path.isdir(os.path.join(real_home, ".gemini-ide")):
         target_ide_dirs.append(ide_gemini_isolated)
+    if os.path.isdir(os.path.join(real_home, ".gemide")):
+        target_ide_dirs.append(ide_gemide_isolated)
 
     for target_dir in target_ide_dirs:
         os.makedirs(target_dir, exist_ok=True)
@@ -881,6 +887,7 @@ def watch_mode(master_gemini=None):
         os.path.join(real_home, ".config", "Antigravity IDE", "User", "globalStorage", "state.vscdb-wal"),
         os.path.join(real_home, ".config", "Antigravity", "app_storage.json"),
         os.path.join(real_home, ".gemini-ide", "jetski-standalone-oauth-token"),
+        os.path.join(real_home, ".gemide", "jetski-standalone-oauth-token"),
     ]
 
     def get_current_mtimes():
