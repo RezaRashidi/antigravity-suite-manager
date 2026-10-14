@@ -14,6 +14,7 @@ import sqlite3
 import shutil
 import datetime
 import base64
+import time
 import argparse
 
 def encode_varint(value):
@@ -336,10 +337,48 @@ def merge_histories(master_gemini=None, quiet=False):
         "total_summaries": total_summaries,
     }
 
+def watch_mode(master_gemini=None):
+    real_home = os.environ.get("REAL_HOME", os.path.expanduser("~"))
+    if not master_gemini:
+        master_gemini = os.path.join(real_home, ".gemini", "antigravity")
+
+    app_proto = os.path.join(master_gemini, "agyhub_summaries_proto.pb")
+    vscdb = os.path.join(real_home, ".config", "Antigravity IDE", "User", "globalStorage", "state.vscdb")
+    vscdb_wal = vscdb + "-wal"
+    conv_dir = os.path.join(master_gemini, "conversations")
+
+    def get_current_mtimes():
+        m = {}
+        for path in [app_proto, vscdb, vscdb_wal]:
+            if os.path.exists(path):
+                m[path] = os.path.getmtime(path)
+        if os.path.exists(conv_dir):
+            m[conv_dir] = os.path.getmtime(conv_dir)
+        return m
+
+    # Initial sync on daemon start
+    merge_histories(master_gemini=master_gemini, quiet=True)
+    last_mtimes = get_current_mtimes()
+
+    while True:
+        time.sleep(3)
+        try:
+            curr = get_current_mtimes()
+            if curr != last_mtimes:
+                time.sleep(1) # Settle debounce
+                merge_histories(master_gemini=master_gemini, quiet=True)
+                last_mtimes = get_current_mtimes()
+        except Exception:
+            pass
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Antigravity History Merger")
     parser.add_argument("--master", help="Path to master antigravity directory")
     parser.add_argument("--quiet", action="store_true", help="Quiet output")
+    parser.add_argument("--watch", action="store_true", help="Run continuously in background and auto-sync on changes")
     args = parser.parse_args()
 
-    merge_histories(master_gemini=args.master, quiet=args.quiet)
+    if args.watch:
+        watch_mode(master_gemini=args.master)
+    else:
+        merge_histories(master_gemini=args.master, quiet=args.quiet)

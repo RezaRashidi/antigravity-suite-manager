@@ -534,6 +534,7 @@ export ANTIGRAVITY_ICON_PATH="${LOCAL_ICONS}/antigravity-1.png"
 
 cd "\${REAL_HOME}" || cd /tmp
 python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
+python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
 disown
 exec "${APP_INSTALL_DIR}/antigravity" --class="antigravity-1" --name="antigravity-1" "\$@"
 EOF
@@ -623,6 +624,7 @@ cd "\${REAL_HOME}" || cd /tmp
 
 # 3. Start background icon & tray cache updater
 python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
+python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
 disown
 
 # 4. Launch isolated Account 2 instance
@@ -667,6 +669,7 @@ setup_ide_shortcuts() {
     cat <<EOF > "${LOCAL_BIN}/antigravity-ide"
 #!/usr/bin/env bash
 python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
+python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
 disown
 exec "${IDE_INSTALL_DIR}/antigravity-ide" --class="antigravity-ide" --name="antigravity-ide" "\$@"
 EOF
@@ -729,8 +732,37 @@ EOF
 
     # Run history merger & index synchronization
     merge_history
+    enable_sync_service
 
     log_success "Antigravity IDE shortcuts & 3-way shared history configured."
+}
+
+# ------------------------------------------------------------------------------
+# 10. Background History Sync Daemon (systemd user unit)
+# ------------------------------------------------------------------------------
+enable_sync_service() {
+    log_info "Configuring real-time background history sync daemon..."
+    local systemd_dir="${REAL_HOME}/.config/systemd/user"
+    mkdir -p "$systemd_dir"
+
+    cat <<EOF > "${systemd_dir}/antigravity-sync.service"
+[Unit]
+Description=Antigravity Real-Time History & Chat Synchronization Daemon
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 ${LOCAL_BIN}/antigravity-merge-history.py --watch
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+EOF
+
+    systemctl --user daemon-reload 2>/dev/null || true
+    systemctl --user enable --now antigravity-sync.service 2>/dev/null || true
+    log_success "Background history sync daemon enabled & active."
 }
 
 # ------------------------------------------------------------------------------
