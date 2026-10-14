@@ -143,8 +143,53 @@ def parse_cascade_summary(raw):
                 pos += length
                 if fn == 1:
                     res["summary"] = val.decode("utf-8", "ignore")
+                elif fn == 3:
+                    spos = 0
+                    while spos < len(val):
+                        stag, spos = read_varint(val, spos)
+                        sfn = stag >> 3
+                        swt = stag & 7
+                        if swt == 0:
+                            sval, spos = read_varint(val, spos)
+                            if sfn == 1:
+                                res["last_modified_time"] = sval
+                        elif swt == 2:
+                            slen, spos = read_varint(val, spos)
+                            spos += slen
+                        else:
+                            break
                 elif fn == 4:
                     res["trajectory_id"] = val.decode("ascii", "ignore")
+                elif fn == 7:
+                    spos = 0
+                    while spos < len(val):
+                        stag, spos = read_varint(val, spos)
+                        sfn = stag >> 3
+                        swt = stag & 7
+                        if swt == 0:
+                            sval, spos = read_varint(val, spos)
+                            if sfn == 1:
+                                res["created_time"] = sval
+                        elif swt == 2:
+                            slen, spos = read_varint(val, spos)
+                            spos += slen
+                        else:
+                            break
+                elif fn == 10:
+                    spos = 0
+                    while spos < len(val):
+                        stag, spos = read_varint(val, spos)
+                        sfn = stag >> 3
+                        swt = stag & 7
+                        if swt == 0:
+                            sval, spos = read_varint(val, spos)
+                            if sfn == 1:
+                                res["last_user_input_time"] = sval
+                        elif swt == 2:
+                            slen, spos = read_varint(val, spos)
+                            spos += slen
+                        else:
+                            break
                 elif fn == 15:
                     subpos = 0
                     while subpos < len(val):
@@ -252,14 +297,11 @@ def extract_conv_text(db_path, transcript_path):
             c.close()
             for r_idx, payload in rows:
                 if not payload: continue
-                strings = re.findall(rb"[\x20-\x7e\xd8-\xdb\x80-\xbf]{4,}", payload)
-                for s in strings:
+                m = re.search(rb"<USER_REQUEST>(.*?)</USER_REQUEST>", payload, re.DOTALL)
+                if m:
                     try:
-                        t = s.decode("utf-8", "ignore").strip()
-                        if re.search(r"[0-9a-f]{8}-[0-9a-f]{4}", t): continue
-                        if any(k in t for k in ["file://", "http://", "https://", "mcp(", "sessionID", "workspace", "UUID", "cascade"]): continue
-                        clean = " ".join(t.split())
-                        if len(clean) > 3:
+                        clean = " ".join(m.group(1).decode("utf-8", "ignore").split())
+                        if clean:
                             if not first_user_prompt:
                                 first_user_prompt = clean
                             latest_user_prompt = clean
@@ -373,35 +415,6 @@ def merge_histories(master_gemini=None, quiet=False):
                         copied_brains += 1
                     except Exception:
                         pass
-
-    # Copy from conversations.bak / brain.bak if present
-    bak_conv = os.path.join(ide_gemini, "conversations.bak")
-    if os.path.isdir(bak_conv):
-        for f in os.listdir(bak_conv):
-            src = os.path.join(bak_conv, f)
-            dst = os.path.join(master_conv_dir, f)
-            if not os.path.exists(dst):
-                try:
-                    shutil.copy2(src, dst)
-                    copied_dbs += 1
-                except Exception:
-                    pass
-
-    bak_brain = os.path.join(ide_gemini, "brain.bak")
-    if os.path.isdir(bak_brain):
-        for b_item in glob.glob(os.path.join(bak_brain, "*")):
-            b_name = os.path.basename(b_item)
-            b_dst = os.path.join(master_brain_dir, b_name)
-            if not os.path.exists(b_dst):
-                try:
-                    if os.path.isdir(b_item):
-                        shutil.copytree(b_item, b_dst)
-                    else:
-                        shutil.copy2(b_item, b_dst)
-                    copied_brains += 1
-                except Exception:
-                    pass
-
     # 3. Read and Synchronize conversation_summaries.db
     all_summaries = {}  # uuid -> pure_bin
     con = sqlite3.connect(master_sum_db)
@@ -433,6 +446,9 @@ def merge_histories(master_gemini=None, quiet=False):
 
     rows = cur.execute("SELECT conversation_id, title, preview, step_count, last_modified_time, raw_summary FROM conversation_summaries;").fetchall()
     existing_rows = {r[0]: (r[1], r[2], r[3], r[4], r[5]) for r in rows}
+    for r in rows:
+        if r[5]:
+            all_summaries[r[0]] = r[5]
 
     repaired_db_rows = 0
     updated_db_rows = 0
@@ -498,7 +514,12 @@ def merge_histories(master_gemini=None, quiet=False):
                             (final_title, final_prev, final_sc, final_lm, pure_bin, conv_id))
                 updated_db_rows += 1
         else:
+            if actual_steps == 0:
+                continue
             ext_title, ext_prev = extract_conv_text(db_file, transcript_file)
+            if not ext_title or ext_title in ["Conversation", "Untitled Conversation"]:
+                if not os.path.isfile(transcript_file):
+                    continue
             final_title = ext_title or "Conversation"
             final_prev = ext_prev or final_title
             pure_bin = build_cascade_summary(conv_id, final_title, final_prev, actual_steps, file_mtime_iso)
@@ -539,10 +560,26 @@ def merge_histories(master_gemini=None, quiet=False):
                     parsed = parse_cascade_summary(p_bin)
                     ide_title = parsed.get("summary") or parsed.get("title")
                     ide_sc = parsed.get(2, 1)
+                    ide_lm = parsed.get("last_modified_time")
+                    ide_ct = parsed.get("created_time")
+
+                    if ide_sc == 0 or (not ide_title) or ide_title in ["Conversation", "Untitled Conversation"] and ide_sc <= 1:
+                        continue
+
+                    db_p = os.path.join(master_conv_dir, f"{u_id}.db")
+                    if not os.path.exists(db_p):
+                        continue
+
+                    if not ide_lm:
+                        ide_lm = int(os.path.getmtime(db_p))
+
+                    ide_lm_iso = datetime.datetime.fromtimestamp(ide_lm, tz=datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S.000000+00:00") if ide_lm else "2026-01-01 00:00:00.000000+00:00"
+                    ide_ct_iso = datetime.datetime.fromtimestamp(ide_ct, tz=datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S.000000+00:00") if ide_ct else ide_lm_iso
+
                     if u_id not in all_summaries:
                         u_title = ide_title or "IDE Conversation"
                         u_prev = u_title
-                        fixed_bin = build_cascade_summary(u_id, u_title, u_prev, ide_sc)
+                        fixed_bin = build_cascade_summary(u_id, u_title, u_prev, ide_sc, ide_lm_iso, ide_ct_iso)
                         all_summaries[u_id] = fixed_bin
                         vsc_ingested += 1
                         cur.execute('''INSERT OR IGNORE INTO conversation_summaries (
@@ -552,16 +589,17 @@ def merge_histories(master_gemini=None, quiet=False):
                             not_fully_idle, killed, last_user_input_time, last_user_input_step_index,
                             app_data_dir, raw_summary, group_id
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', (
-                            u_id, u_title, u_prev, ide_sc, datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S.000000+00:00"),
+                            u_id, u_title, u_prev, ide_sc, ide_lm_iso,
                             "", "CASCADE_RUN_STATUS_IDLE", "", "outside-of-project", "",
-                            "", 0, "", "", 0, 0, datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S.000000+00:00"), -1,
+                            "", 0, "", "", 0, 0, ide_lm_iso, -1,
                             "antigravity", fixed_bin, ""
                         ))
                     else:
                         curr_parsed = parse_cascade_summary(all_summaries[u_id])
                         curr_t = curr_parsed.get("title") or curr_parsed.get("summary")
+                        curr_lm_sec = curr_parsed.get("last_modified_time")
                         if ide_title and (not curr_t or curr_t in ["Conversation", "IDE Conversation", "Untitled Conversation"]):
-                            fixed_bin = build_cascade_summary(u_id, ide_title, ide_title, max(ide_sc, curr_parsed.get(2, 1)))
+                            fixed_bin = build_cascade_summary(u_id, ide_title, ide_title, max(ide_sc, curr_parsed.get(2, 1)), mtime_iso=curr_lm_sec)
                             all_summaries[u_id] = fixed_bin
                             cur.execute("UPDATE conversation_summaries SET title=?, raw_summary=? WHERE conversation_id=?", (ide_title, fixed_bin, u_id))
             v_con.close()
@@ -569,25 +607,7 @@ def merge_histories(master_gemini=None, quiet=False):
                 con.commit()
         except Exception:
             pass
-
-    # 5. Ingest from any existing on-disk .pb files
-    for pb_candidate in [
-        os.path.join(master_gemini, "agyhub_summaries.pb"),
-        os.path.join(master_gemini, "agyhub_summaries_proto.pb"),
-        os.path.join(ide_gemini, "jetbox_summaries.pb"),
-        os.path.join(ide_gemini, "jetbox_summaries_proto.pb"),
-    ]:
-        if os.path.exists(pb_candidate) and not os.path.islink(pb_candidate):
-            try:
-                with open(pb_candidate, "rb") as f:
-                    pb_entries = extract_entries_from_proto(f.read())
-                    for u_id, p_bin in pb_entries.items():
-                        if u_id not in all_summaries:
-                            all_summaries[u_id] = p_bin
-            except Exception:
-                pass
-
-    # 6. Write Unified SummariesState (Format A) to all LS proto paths
+    # 5. Write Unified SummariesState (Format A) to all LS proto paths
     summaries_state_bin = build_summaries_state(all_summaries)
 
     master_hub_pb = os.path.join(master_gemini, "agyhub_summaries.pb")
