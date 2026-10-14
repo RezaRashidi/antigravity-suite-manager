@@ -260,6 +260,18 @@ def check_account2():
         return f"{G}Configured (Isolated Keyring + Shared History){NC}"
     return f"{Y}Incomplete Setup{NC}"
 
+def check_history_sharing():
+    real_gemini = os.path.join(os.path.dirname(PROFILE2_DIR), '.gemini')
+    ide_conv = os.path.join(real_gemini, 'antigravity-ide', 'conversations')
+    p2_conv = os.path.join(PROFILE2_DIR, '.gemini', 'antigravity')
+    ide_shared = os.path.islink(ide_conv)
+    p2_shared = os.path.islink(p2_conv)
+    if ide_shared and p2_shared:
+        return f"{G}3-Way Unified (App 1, App 2, IDE){NC}"
+    elif p2_shared:
+        return f"{Y}2-Way (App 1 & App 2 only){NC}"
+    return f"{R}Not Shared{NC}"
+
 def check_write(d):
     if not os.path.isdir(d):
         return f"{R}Directory Missing{NC}"
@@ -311,6 +323,7 @@ print(f"  • Antigravity IDE:        {IDE_THEME.capitalize()} Icon Theme")
 print(f"----------------------------------------------------------------------------------------")
 print(f"{BOLD}Environment & Permissions:{NC}")
 print(f"  • Account 2 Status:       {acc2_st}")
+print(f"  • History Sharing:        {check_history_sharing()}")
 print(f"  • App Dir Ownership:      {check_write(APP_DIR)}")
 print(f"  • IDE Dir Ownership:      {check_write(IDE_DIR)}")
 print(f"  • Discovered App URL:     {APP_URL}")
@@ -674,7 +687,38 @@ StartupNotify=true
 EOF
     chmod +x "${LOCAL_APPS}/antigravity-ide.desktop"
     update-desktop-database "${LOCAL_APPS}" 2>/dev/null || true
-    log_success "Antigravity IDE shortcuts configured."
+
+    # 3-Way Conversation History & Brain Artifact Sharing (App 1, App 2, IDE)
+    local ide_gemini="${SHARED_GEMINI_DIR}/antigravity-ide"
+    mkdir -p "$ide_gemini" "$SHARED_CONV_DIR/conversations" "$SHARED_CONV_DIR/brain"
+
+    # Merge existing IDE conversations non-destructively if real directory
+    if [ -d "$ide_gemini/conversations" ] && [ ! -L "$ide_gemini/conversations" ]; then
+        log_info "Merging existing IDE conversations into shared history..."
+        cp -a --update=none "$ide_gemini/conversations/"* "$SHARED_CONV_DIR/conversations/" 2>/dev/null || true
+        mv "$ide_gemini/conversations" "$ide_gemini/conversations.bak"
+    fi
+    ln -sfn "$SHARED_CONV_DIR/conversations" "$ide_gemini/conversations"
+
+    # Merge existing IDE brain artifacts non-destructively if real directory
+    if [ -d "$ide_gemini/brain" ] && [ ! -L "$ide_gemini/brain" ]; then
+        log_info "Merging existing IDE brain artifacts into shared brain..."
+        cp -a --update=none "$ide_gemini/brain/"* "$SHARED_CONV_DIR/brain/" 2>/dev/null || true
+        mv "$ide_gemini/brain" "$ide_gemini/brain.bak"
+    fi
+    ln -sfn "$SHARED_CONV_DIR/brain" "$ide_gemini/brain"
+
+    # Symlink conversation_summaries.db
+    if [ -f "$ide_gemini/conversation_summaries.db" ] && [ ! -L "$ide_gemini/conversation_summaries.db" ]; then
+        mv "$ide_gemini/conversation_summaries.db" "$ide_gemini/conversation_summaries.db.bak"
+    fi
+    if [ -f "$SHARED_CONV_DIR/conversation_summaries.db" ]; then
+        ln -sfn "$SHARED_CONV_DIR/conversation_summaries.db" "$ide_gemini/conversation_summaries.db"
+        [ -f "$SHARED_CONV_DIR/conversation_summaries.db-wal" ] && ln -sfn "$SHARED_CONV_DIR/conversation_summaries.db-wal" "$ide_gemini/conversation_summaries.db-wal"
+        [ -f "$SHARED_CONV_DIR/conversation_summaries.db-shm" ] && ln -sfn "$SHARED_CONV_DIR/conversation_summaries.db-shm" "$ide_gemini/conversation_summaries.db-shm"
+    fi
+
+    log_success "Antigravity IDE shortcuts & 3-way shared history configured."
 }
 
 # ------------------------------------------------------------------------------

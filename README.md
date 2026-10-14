@@ -3,18 +3,18 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![OS: Ubuntu 24.04 LTS Only](https://img.shields.io/badge/OS-Ubuntu%2024.04%20LTS%20Only-E95420.svg?logo=ubuntu)](#platform-compatibility--requirements)
 [![Tested On](https://img.shields.io/badge/Tested%20On-Ubuntu%2024.04-blue.svg)](#platform-compatibility--requirements)
-[![Dual Accounts](https://img.shields.io/badge/Dual%20Accounts-Shared%20Chats-success.svg)](#shared-chat-history--profile-isolation)
+[![3-Way Instances](https://img.shields.io/badge/3--Way%20Instances-Shared%20Chats-success.svg)](#shared-chat-history--profile-isolation)
 [![Language](https://img.shields.io/badge/Language-Bash%20%7C%20Python%20%7C%20C-brightgreen.svg)](#architecture--profile-isolation)
 
 A comprehensive Linux automation suite for **Google Antigravity** and **Antigravity IDE**.
 
-Provides seamless multi-instance profile isolation (Account 1 & Account 2), taskbar de-grouping, high-resolution theme customization, dynamic release discovery, persistent archive caching, automated RTL (Right-to-Left) typography support, and manual F5 reload patching.
+Provides seamless multi-instance profile isolation (Account 1, Account 2, & Antigravity IDE), taskbar de-grouping, high-resolution theme customization, dynamic release discovery, persistent archive caching, automated RTL (Right-to-Left) typography support, and manual F5 reload patching.
 
 > [!IMPORTANT]
 > **Platform Restriction**: This suite is built **exclusively for Ubuntu Linux** and has been **strictly tested on Ubuntu 24.04 LTS (Noble Numbat)**. Other distributions are not supported.
 
 > [!NOTE]
-> **Shared Chat History Across Both Accounts**: While Account 1 and Account 2 use completely isolated authentication keyrings and cookies (allowing two distinct Google accounts to run concurrently without kicking each other out), **all chat history, previous conversations, database logs, and workspace sessions are shared between both accounts**. Any conversation created in Account 1 is immediately accessible in Account 2, and vice versa.
+> **Shared Chat History Across All 3 Instances**: While Account 1 (App), Account 2 (App), and Antigravity IDE use completely isolated authentication keyrings, cookies, and secret stores (allowing three distinct Google accounts to run concurrently without session conflicts), **all chat history, previous conversations, database logs, and workspace sessions are shared 3-way across all instances**. Any conversation created in App 1 or App 2 is immediately accessible in Antigravity IDE, and vice versa.
 
 ---
 
@@ -127,17 +127,33 @@ graph TD
 
 The suite solves the primary dilemma of multi-account AI pairing: **independent authentication without losing conversation context**.
 
-### How It Works:
-1. **Isolated Keyrings (Multi-Account Sign-in)**:
-   - Account 1 runs using standard user keyring storage (`~/.config/Antigravity`).
-   - Account 2 runs inside `~/.antigravity-profile2` with isolated Chromium keyring tokens (`antigravity-keyring-unavailable`).
-   - Result: You can sign into **Google Account A** on App 1 and **Google Account B** on App 2 without session conflicts.
+### Why 3 Accounts Never Conflict:
+1. **App 1 (Default Profile)**:
+   - Electron stores cookies and OAuth refresh tokens in `~/.config/Antigravity`.
+   - Credentials are encrypted via the host system's GNOME Keyring schema (`antigravity`).
+2. **App 2 (Secondary Profile)**:
+   - Runs with an isolated environment `HOME=~/.antigravity-profile2`.
+   - Keyring fallback is triggered by `~/.antigravity-profile2/.gemini/cache/antigravity-keyring-unavailable`.
+   - All session state and tokens are strictly stored inside `~/.antigravity-profile2/.config/Antigravity`.
+3. **Antigravity IDE (VS Code Edition)**:
+   - A distinct VS Code / Code OSS fork with configuration root at `~/.config/Antigravity IDE`.
+   - Credentials and tokens are managed exclusively by VS Code's SecretStorage service (`Antigravity IDE`).
+   - Completely independent from Electron App 1 & App 2 authentication storage.
 
-2. **100% Shared Conversations & Database**:
-   - Both profiles share symlinked paths to the underlying SQLite database, chat sessions, project contexts, and history storage:
-     - `~/.antigravity-profile2/.gemini/antigravity` -> `~/.gemini/antigravity`
-     - `~/.antigravity-profile2/.gemini/config` -> `~/.gemini/config`
-   - Result: **All conversations, prompts, past chats, and workspace states created in Account 1 are instantly visible, accessible, and continuable inside Account 2, and vice versa!**
+### 3-Way Unified History Architecture:
+While authentication tokens and keyring secrets are strictly siloed, all 3 applications share the same underlying conversation databases and brain artifacts:
+- **Conversations Storage**:
+  - App 1: `~/.gemini/antigravity/conversations/`
+  - App 2: `~/.antigravity-profile2/.gemini/antigravity/conversations` (symlinked)
+  - Antigravity IDE: `~/.gemini/antigravity-ide/conversations` (symlinked)
+- **Brain & Artifacts**:
+  - `~/.gemini/antigravity-ide/brain` -> `~/.gemini/antigravity/brain`
+- **Summaries & Search Index**:
+  - `~/.gemini/antigravity-ide/conversation_summaries.db` -> `~/.gemini/antigravity/conversation_summaries.db`
+
+> [!TIP]
+> **Zero Data Overwrite**: When configuring the 3-way symlinks, the manager non-destructively merges any pre-existing conversations and brain directories using non-overwriting copy operations (`cp -a --update=none`) and preserves safety backups (`.bak`).
+> **Concurrent Safe**: All conversation stores operate via SQLite WAL mode (`.db-wal`), enabling App 1, App 2, and IDE to read and append history concurrently without database locks.
 
 ---
 
