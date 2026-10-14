@@ -28,6 +28,9 @@ CONF_DIR = os.path.join(REAL_HOME, ".config", "antigravity")
 PATHS_CONF = os.path.join(CONF_DIR, "paths.conf")
 
 def inspect_app_dir(d):
+    # Strictly exclude unofficial third-party apps like Antigravity Manager
+    if 'manager' in d.lower():
+        return None
     asar = os.path.join(d, 'resources', 'app.asar')
     if not os.path.isfile(asar):
         return None
@@ -47,18 +50,26 @@ def inspect_app_dir(d):
         pass
 
     exe = None
-    for name in ['antigravity', 'antigravity-app', 'antigravity-manager']:
+    for name in ['antigravity', 'antigravity-app']:
         p = os.path.join(d, name)
         if os.path.isfile(p) and os.access(p, os.X_OK):
             exe = p
             break
 
-    label = 'Antigravity Manager' if (exe and 'manager' in exe) or 'manager' in d else 'Antigravity App'
+    if not exe:
+        for f in os.listdir(d):
+            if f.startswith('antigravity') and 'manager' not in f and os.access(os.path.join(d, f), os.X_OK):
+                exe = os.path.join(d, f)
+                break
+
+    if not exe or 'manager' in exe.lower():
+        return None
+
     res_dir = os.path.join(d, 'resources')
     writable = os.access(d, os.W_OK) and (not os.path.isdir(res_dir) or os.access(res_dir, os.W_OK))
 
     return {
-        'type': label,
+        'type': 'Antigravity App',
         'version': ver,
         'path': d,
         'executable': exe,
@@ -157,12 +168,13 @@ def scan_installations():
 
     # Check PATH binaries
     for p in os.environ.get('PATH', '').split(':'):
-        for cmd in ['antigravity', 'antigravity-ide', 'antigravity-1', 'antigravity-acc2', 'antigravity-manager']:
+        for cmd in ['antigravity', 'antigravity-ide', 'antigravity-1', 'antigravity-acc2']:
             fp = os.path.join(p, cmd)
             if os.path.isfile(fp):
                 rp = os.path.realpath(fp)
                 d = os.path.dirname(rp)
-                candidates.add(d)
+                if 'manager' not in d.lower():
+                    candidates.add(d)
                 if os.path.basename(d) in ['bin', 'MacOS']:
                     candidates.add(os.path.dirname(d))
 
@@ -170,6 +182,8 @@ def scan_installations():
     for ddir in [os.path.expanduser('~/.local/share/applications'), '/usr/share/applications']:
         if os.path.isdir(ddir):
             for df in glob.glob(os.path.join(ddir, '*antigravity*.desktop')) + glob.glob(os.path.join(ddir, '*Antigravity*.desktop')):
+                if 'manager' in df.lower():
+                    continue
                 try:
                     with open(df, 'r', encoding='utf-8', errors='ignore') as f:
                         for line in f:
@@ -178,7 +192,8 @@ def scan_installations():
                                 if os.path.isfile(cmd):
                                     rp = os.path.realpath(cmd)
                                     d = os.path.dirname(rp)
-                                    candidates.add(d)
+                                    if 'manager' not in d.lower():
+                                        candidates.add(d)
                                     if os.path.basename(d) == 'bin':
                                         candidates.add(os.path.dirname(d))
                 except Exception:
@@ -186,6 +201,8 @@ def scan_installations():
 
     # Check running processes
     for rp in get_running_paths():
+        if 'manager' in rp.lower():
+            continue
         d = os.path.dirname(rp)
         candidates.add(d)
         if os.path.basename(d) == 'bin':
@@ -196,7 +213,7 @@ def scan_installations():
 
     for c in sorted(candidates):
         real_c = os.path.realpath(c)
-        if real_c in seen_paths:
+        if real_c in seen_paths or 'manager' in real_c.lower():
             continue
         ide = inspect_ide_dir(real_c)
         if ide:
@@ -830,6 +847,403 @@ def configure_single_clone(clone):
                 print(f"{GREEN}[SUCCESS] Clone '{clone['name']}' removed.{NC}")
                 break
 
+def get_unified_instances():
+    curr_app, curr_ide, custom_paths = load_paths_config()
+    engines = scan_installations()
+    clones = scan_clones()
+
+    unified = []
+    engines_by_path = {os.path.realpath(eng['path']): eng for eng in engines}
+
+    for c in clones:
+        launcher_f = c['launcher']
+        linked_bin = get_launcher_binary(launcher_f) if os.path.isfile(launcher_f) else ""
+        eng = None
+        if linked_bin and os.path.isfile(linked_bin):
+            eng_dir = os.path.realpath(os.path.dirname(linked_bin))
+            if os.path.basename(eng_dir) in ['bin', 'MacOS']:
+                eng_dir = os.path.dirname(eng_dir)
+            eng = engines_by_path.get(eng_dir)
+            if not eng:
+                eng = inspect_ide_dir(eng_dir) or inspect_app_dir(eng_dir)
+                if eng:
+                    engines_by_path[eng_dir] = eng
+
+        if not eng:
+            if 'IDE' in c['type']:
+                eng = engines_by_path.get(os.path.realpath(curr_ide))
+                if not eng and os.path.isdir(curr_ide):
+                    eng = inspect_ide_dir(os.path.realpath(curr_ide))
+            else:
+                eng = engines_by_path.get(os.path.realpath(curr_app))
+                if not eng and os.path.isdir(curr_app):
+                    eng = inspect_app_dir(os.path.realpath(curr_app))
+
+        eng_path = eng['path'] if eng else (curr_ide if 'IDE' in c['type'] else curr_app)
+        eng_ver = eng['version'] if eng else "Unknown"
+
+        unified.append({
+            'kind': 'instance',
+            'clone': c,
+            'engine': eng,
+            'name': c['name'],
+            'type': c['type'],
+            'version': eng_ver,
+            'engine_path': eng_path,
+            'history_mode': c['history_mode'],
+            'keyring_mode': c['keyring_mode'],
+            'launcher': c['launcher'],
+            'status': c['status']
+        })
+
+    used_engine_paths = {os.path.realpath(u['engine_path']) for u in unified if u.get('engine_path')}
+    for eng in engines:
+        real_ep = os.path.realpath(eng['path'])
+        if real_ep not in used_engine_paths:
+            unified.append({
+                'kind': 'engine',
+                'clone': None,
+                'engine': eng,
+                'name': f"{eng['type']} (Standalone Engine)",
+                'type': eng['type'],
+                'version': eng['version'],
+                'engine_path': eng['path'],
+                'history_mode': 'N/A',
+                'keyring_mode': 'Normal',
+                'launcher': eng.get('executable', ''),
+                'status': 'Installed'
+            })
+
+    def sort_order(item):
+        cid = item.get('clone', {}).get('id', '') if item.get('clone') else ''
+        if cid == 'ide1': return 0
+        if cid == 'app1': return 1
+        if cid == 'app2': return 2
+        if cid.startswith('app-'): return 3
+        if cid.startswith('ide-'): return 4
+        return 5
+
+    unified.sort(key=sort_order)
+    return unified, curr_app, curr_ide, custom_paths
+
+def configure_unified_instance(u_item, curr_app, curr_ide, custom_paths):
+    local_bin = os.path.join(REAL_HOME, ".local", "bin")
+    local_apps = os.path.join(REAL_HOME, ".local", "share", "applications")
+    manage_sh = os.path.join(local_bin, "manage-antigravity.sh")
+    if not os.path.isfile(manage_sh):
+        manage_sh = os.path.join(os.path.dirname(__file__), "manage-antigravity.sh")
+
+    while True:
+        c = u_item.get('clone')
+        eng = u_item.get('engine')
+        cid = c['id'] if c else ""
+        p_dir = c['profile_dir'] if c else ""
+        is_acc1 = (cid == 'app1')
+        is_acc2 = (cid == 'app2')
+        is_ide1 = (cid == 'ide1')
+
+        if c:
+            if is_acc1:
+                h_mode = "Master Shared Pool (Source of Truth)"
+                is_shared = True
+            elif is_ide1:
+                h_link = os.path.join(p_dir, "conversations")
+                is_shared = os.path.islink(h_link)
+                h_mode = "Shared 3-Way Sync" if is_shared else "Isolated Private"
+            else:
+                h_link = os.path.join(p_dir, ".gemini", "antigravity")
+                is_shared = os.path.islink(h_link)
+                h_mode = "Shared 3-Way Sync" if is_shared else "Isolated Private"
+        else:
+            h_mode = "N/A (Standalone Engine)"
+            is_shared = False
+
+        if c:
+            cache_f = os.path.join(p_dir, ".gemini", "cache", "antigravity-keyring-unavailable")
+            if is_acc1:
+                cache_f = os.path.join(REAL_HOME, ".gemini", "cache", "antigravity-keyring-unavailable")
+            is_normal_keyring = os.path.isfile(cache_f)
+            k_mode = "Normal (File Storage - Recommended)" if is_normal_keyring else "GNOME Keyring (Secret Service)"
+        else:
+            cache_f = os.path.join(REAL_HOME, ".gemini", "cache", "antigravity-keyring-unavailable")
+            is_normal_keyring = os.path.isfile(cache_f)
+            k_mode = "Normal (File Storage)" if is_normal_keyring else "GNOME Keyring"
+
+        running = False
+        if c:
+            if is_acc1:
+                running = subprocess.run(["pgrep", "-f", "user-data-dir=.*Antigravity$"], capture_output=True).returncode == 0
+            elif is_acc2:
+                running = subprocess.run(["pgrep", "-f", "antigravity-profile2.*Antigravity"], capture_output=True).returncode == 0
+            elif is_ide1:
+                running = subprocess.run(["pgrep", "-f", "antigravity-ide"], capture_output=True).returncode == 0
+            else:
+                bname = os.path.basename(p_dir)
+                running = subprocess.run(["pgrep", "-f", f"{bname}"], capture_output=True).returncode == 0
+
+        launcher_f = c['launcher'] if c else ""
+        linked_bin = get_launcher_binary(launcher_f) if (launcher_f and os.path.isfile(launcher_f)) else ""
+        eng_p = u_item.get('engine_path', '')
+        eng_v = u_item.get('version', 'Unknown')
+        is_primary_app = (curr_app and os.path.realpath(eng_p) == os.path.realpath(curr_app))
+        is_primary_ide = (curr_ide and os.path.realpath(eng_p) == os.path.realpath(curr_ide))
+        if is_primary_app:
+            role_label = f"{GREEN}[Primary App Target]{NC}"
+        elif is_primary_ide:
+            role_label = f"{GREEN}[Primary IDE Target]{NC}"
+        else:
+            role_label = f"{YELLOW}[Secondary Target]{NC}"
+
+        print(f"\n{CYAN}----------------------------------------------------------------------------------------{NC}")
+        print(f"{BOLD}{CYAN}  Configuring: {u_item['name']} [{u_item['type']}]{NC}")
+        print(f"{CYAN}----------------------------------------------------------------------------------------{NC}")
+        if c:
+            print(f"  • Profile Directory:   {p_dir}")
+            print(f"  • Launcher Script:     {launcher_f}")
+            print(f"  • Desktop File:        {c.get('desktop', 'None')}")
+            print(f"  • Window Class:        {c.get('wm_class', 'None')}")
+            print(f"  • History Sync Mode:   {GREEN if is_shared else YELLOW}{h_mode}{NC}")
+            print(f"  • Credential Storage:  {GREEN if is_normal_keyring else BLUE}{k_mode}{NC}")
+            print(f"  • Process Status:      {GREEN}Running{NC}" if running else "  • Process Status:      Stopped")
+        print(f"  • Engine Directory:    {eng_p} (v{eng_v}) {role_label}")
+        print(f"  • Executable Binary:   {linked_bin or (eng.get('executable') if eng else 'Default')}")
+        print(f"----------------------------------------------------------------------------------------")
+
+        if c:
+            print(f"{BOLD}Profile & Account Settings:{NC}")
+            print("  [1] Toggle History Sharing Mode (Shared 3-Way Sync vs Isolated Private)")
+            print("  [2] Toggle Credential Storage Mode (Normal File Storage vs GNOME Keyring)")
+            print("  [3] Change Linked Antigravity Binary / Executable")
+            print("  [4] Re-generate Desktop Launcher & Icons")
+            print("  [5] Relocate / Rename Profile Directory")
+            if not is_acc1:
+                print("  [6] Delete / Remove this Clone Profile")
+            print(f"\n{BOLD}Engine & Installation Settings:{NC}")
+            print(f"  [7] Change / Relocate Engine Directory Path ({eng_p})")
+            print(f"  [8] Download & Re-install Latest Binaries into Engine Path")
+            print(f"  [9] Set Engine as Suite Primary Target (Primary App / IDE)")
+            print(f"  [0] Done with this instance (Return to Control Center)")
+        else:
+            print(f"{BOLD}Engine & Installation Settings:{NC}")
+            print("  [1] Change / Relocate Installation Directory Path")
+            print("  [2] Set as Suite Target (Primary App or Primary IDE)")
+            print("  [3] Re-generate Desktop Launcher & Shortcut for this Installation")
+            print("  [4] Toggle Credential Storage Mode (Normal File Storage vs GNOME Keyring)")
+            print("  [5] Download & Re-install Latest Binaries into this Directory")
+            print("  [0] Done with this installation (Return to Control Center)")
+        print(f"{CYAN}----------------------------------------------------------------------------------------{NC}")
+
+        try:
+            choice = input("Select option [Default: 0]: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            break
+
+        if choice in ["0", "", "q", "exit"]:
+            break
+
+        if c:
+            if choice == "1":
+                if is_acc1:
+                    print(f"{YELLOW}[NOTICE] Account 1 is the Master Shared Pool and cannot be isolated.{NC}")
+                    continue
+                shared_pool = os.path.join(REAL_HOME, ".gemini", "antigravity")
+                if is_ide1:
+                    ide_conv = os.path.join(p_dir, "conversations")
+                    if is_shared:
+                        if os.path.islink(ide_conv): os.unlink(ide_conv)
+                        os.makedirs(ide_conv, exist_ok=True)
+                        print(f"{GREEN}[SUCCESS] Antigravity IDE history set to Isolated.{NC}")
+                    else:
+                        if os.path.isdir(ide_conv) and not os.path.islink(ide_conv):
+                            merge_script = os.path.join(local_bin, "antigravity-merge-history.py")
+                            if os.path.isfile(merge_script):
+                                subprocess.run([sys.executable, merge_script, "--source", ide_conv, "--target", os.path.join(shared_pool, "conversations")], check=False)
+                            shutil.rmtree(ide_conv, ignore_errors=True)
+                        os.makedirs(os.path.join(shared_pool, "conversations"), exist_ok=True)
+                        os.symlink(os.path.join(shared_pool, "conversations"), ide_conv)
+                        print(f"{GREEN}[SUCCESS] Antigravity IDE history set to Shared 3-Way Sync.{NC}")
+                else:
+                    target_link = os.path.join(p_dir, ".gemini", "antigravity")
+                    if is_shared:
+                        if os.path.islink(target_link): os.unlink(target_link)
+                        os.makedirs(os.path.join(target_link, "conversations"), exist_ok=True)
+                        os.makedirs(os.path.join(target_link, "brain"), exist_ok=True)
+                        print(f"{GREEN}[SUCCESS] Clone history set to Isolated Private.{NC}")
+                    else:
+                        if os.path.isdir(target_link) and not os.path.islink(target_link):
+                            merge_script = os.path.join(local_bin, "antigravity-merge-history.py")
+                            if os.path.isfile(merge_script):
+                                subprocess.run([sys.executable, merge_script, "--source", os.path.join(target_link, "conversations"), "--target", os.path.join(shared_pool, "conversations")], check=False)
+                            shutil.rmtree(target_link, ignore_errors=True)
+                        os.makedirs(os.path.dirname(target_link), exist_ok=True)
+                        os.symlink(shared_pool, target_link)
+                        print(f"{GREEN}[SUCCESS] Clone history set to Shared 3-Way Sync.{NC}")
+            elif choice == "2":
+                os.makedirs(os.path.dirname(cache_f), exist_ok=True)
+                if is_normal_keyring:
+                    try: os.remove(cache_f)
+                    except Exception: pass
+                    print(f"{GREEN}[SUCCESS] Switched credential mode to GNOME Keyring.{NC}")
+                else:
+                    with open(cache_f, "w") as f:
+                        f.write("# Keyring bypassed\n")
+                    print(f"{GREEN}[SUCCESS] Switched credential mode to Normal File Storage (Keyring bypassed).{NC}")
+            elif choice == "3":
+                if not os.path.isfile(launcher_f):
+                    print(f"{RED}[ERROR] Launcher script {launcher_f} does not exist.{NC}")
+                    continue
+                installs = scan_installations()
+                print("\nSelect engine binary to link to this instance:")
+                valid_bins = []
+                for inst in installs:
+                    exe = inst['executable']
+                    if exe and os.path.isfile(exe):
+                        valid_bins.append((inst['type'], inst['version'], exe))
+                        print(f"  [{len(valid_bins)}] {inst['type']} ({inst['version']}) -> {exe}")
+                print(f"  [C] Enter custom binary executable path")
+                b_ans = input(f"Select choice [1-{len(valid_bins)}, C]: ").strip()
+                new_exe = ""
+                if b_ans.isdigit() and 1 <= int(b_ans) <= len(valid_bins):
+                    new_exe = valid_bins[int(b_ans) - 1][2]
+                elif b_ans.upper() == "C":
+                    custom_exe = input("Enter full path to executable: ").strip()
+                    if os.path.isfile(os.path.expanduser(custom_exe)):
+                        new_exe = os.path.realpath(os.path.expanduser(custom_exe))
+                if new_exe:
+                    if update_launcher_binary(launcher_f, new_exe):
+                        print(f"{GREEN}[SUCCESS] Updated launcher {launcher_f} to execute: {new_exe}{NC}")
+                    else:
+                        print(f"{RED}[ERROR] Failed to update launcher file.{NC}")
+            elif choice == "4":
+                if os.path.isfile(manage_sh):
+                    if is_acc2: subprocess.run(["bash", manage_sh, "app2"], check=False)
+                    elif is_acc1: subprocess.run(["bash", manage_sh, "app1"], check=False)
+                    elif is_ide1: subprocess.run(["bash", manage_sh, "ide-shortcuts"], check=False)
+                    print(f"{GREEN}[SUCCESS] Regenerated desktop launcher and icons.{NC}")
+            elif choice == "5":
+                if is_acc1:
+                    print(f"{YELLOW}[NOTICE] Account 1 profile (~/.gemini) cannot be relocated.{NC}")
+                    continue
+                new_p = input(f"Enter new path for profile directory [current: {p_dir}]: ").strip()
+                if new_p and new_p != p_dir:
+                    new_p = os.path.realpath(os.path.expanduser(new_p))
+                    os.makedirs(os.path.dirname(new_p), exist_ok=True)
+                    shutil.move(p_dir, new_p)
+                    if os.path.isfile(launcher_f):
+                        with open(launcher_f, "r", encoding="utf-8") as f:
+                            l_content = f.read()
+                        l_content = re.sub(r'export PROFILE[2]?="[^"]+"', f'export PROFILE="{new_p}"', l_content)
+                        with open(launcher_f, "w", encoding="utf-8") as f:
+                            f.write(l_content)
+                    c['profile_dir'] = new_p
+                    print(f"{GREEN}[SUCCESS] Profile directory moved to {new_p} and launcher updated.{NC}")
+            elif choice == "6" and not is_acc1:
+                c_confirm = input(f"Are you sure you want to delete clone '{c['name']}'? [y/N]: ").strip().lower()
+                if c_confirm in ["y", "yes"]:
+                    if os.path.isfile(launcher_f):
+                        try: os.remove(launcher_f)
+                        except Exception: pass
+                    if os.path.isfile(c['desktop']):
+                        try: os.remove(c['desktop'])
+                        except Exception: pass
+                    d_prof = input(f"Also delete profile directory '{p_dir}' and its settings? [y/N]: ").strip().lower()
+                    if d_prof in ["y", "yes"]:
+                        shutil.rmtree(p_dir, ignore_errors=True)
+                    subprocess.run(["update-desktop-database", local_apps], check=False, stderr=subprocess.DEVNULL)
+                    print(f"{GREEN}[SUCCESS] Clone '{c['name']}' removed.{NC}")
+                    break
+            elif choice == "7":
+                old_p = eng_p
+                new_p = input(f"\nEnter new installation directory path for this engine [current: {old_p}]: ").strip()
+                if new_p and new_p != old_p:
+                    new_p = os.path.realpath(os.path.expanduser(new_p))
+                    if not os.path.isdir(new_p):
+                        os.makedirs(new_p, exist_ok=True)
+                    old_has = (os.path.isfile(os.path.join(old_p, 'resources', 'app.asar')) or os.path.isfile(os.path.join(old_p, 'resources', 'app', 'product.json')))
+                    new_has = (os.path.isfile(os.path.join(new_p, 'resources', 'app.asar')) or os.path.isfile(os.path.join(new_p, 'resources', 'app', 'product.json')))
+                    if old_has and not new_has:
+                        m_ans = input(f"Copy existing installation files from {old_p} to {new_p}? [Y/n]: ").strip().lower()
+                        if m_ans not in ["n", "no"]:
+                            print(f"Copying files from {old_p} to {new_p}...")
+                            subprocess.run(f"cp -a '{old_p}/.' '{new_p}/'", shell=True, check=False)
+                    if is_primary_app: curr_app = new_p
+                    if is_primary_ide: curr_ide = new_p
+                    if old_p in custom_paths: custom_paths.remove(old_p)
+                    if new_p not in custom_paths and new_p not in [curr_app, curr_ide]: custom_paths.append(new_p)
+                    u_item['engine_path'] = new_p
+                    eng_p = new_p
+                    if launcher_f and os.path.isfile(launcher_f):
+                        old_bin = get_launcher_binary(launcher_f)
+                        if old_bin.startswith(old_p):
+                            new_bin = old_bin.replace(old_p, new_p, 1)
+                            update_launcher_binary(launcher_f, new_bin)
+                    save_paths_config(curr_app, curr_ide, custom_paths)
+                    print(f"{GREEN}[SUCCESS] Engine directory relocated to: {new_p}{NC}")
+            elif choice == "8":
+                c_type = "ide" if "IDE" in u_item['type'] else "app"
+                print(f"\n{CYAN}Downloading & installing fresh {u_item['type']} into {eng_p}...{NC}")
+                flag = "--ide-dir" if c_type == "ide" else "--app-dir"
+                subprocess.run(["bash", manage_sh, "install", c_type, flag, eng_p], check=False)
+            elif choice == "9":
+                print("\nSelect Suite Role:")
+                print(f"  [1] Set as Primary App Target (Used by antigravity-1 & antigravity-acc2)")
+                print(f"  [2] Set as Primary IDE Target (Used by antigravity-ide)")
+                print(f"  [3] Clear Primary Target role (Keep as Secondary / Standalone)")
+                r_ans = input("Choose role [1-3]: ").strip()
+                if r_ans == "1":
+                    curr_app = eng_p
+                    print(f"{GREEN}[SUCCESS] Set {eng_p} as Primary App Target.{NC}")
+                elif r_ans == "2":
+                    curr_ide = eng_p
+                    print(f"{GREEN}[SUCCESS] Set {eng_p} as Primary IDE Target.{NC}")
+                elif r_ans == "3":
+                    if is_primary_app: curr_app = ""
+                    if is_primary_ide: curr_ide = ""
+                    print(f"{GREEN}[SUCCESS] Cleared primary role for {eng_p}.{NC}")
+                save_paths_config(curr_app, curr_ide, custom_paths)
+        else:
+            if choice == "1":
+                old_p = eng_p
+                new_p = input(f"\nEnter new installation directory path [current: {old_p}]: ").strip()
+                if new_p and new_p != old_p:
+                    new_p = os.path.realpath(os.path.expanduser(new_p))
+                    if not os.path.isdir(new_p): os.makedirs(new_p, exist_ok=True)
+                    subprocess.run(f"cp -a '{old_p}/.' '{new_p}/'", shell=True, check=False)
+                    if is_primary_app: curr_app = new_p
+                    if is_primary_ide: curr_ide = new_p
+                    if old_p in custom_paths: custom_paths.remove(old_p)
+                    if new_p not in custom_paths and new_p not in [curr_app, curr_ide]: custom_paths.append(new_p)
+                    u_item['engine_path'] = new_p
+                    eng_p = new_p
+                    save_paths_config(curr_app, curr_ide, custom_paths)
+                    print(f"{GREEN}[SUCCESS] Relocated to: {new_p}{NC}")
+            elif choice == "2":
+                print("\nSelect Suite Role:")
+                print(f"  [1] Set as Primary App Target")
+                print(f"  [2] Set as Primary IDE Target")
+                print(f"  [3] Clear Primary Target role")
+                r_ans = input("Choose role [1-3]: ").strip()
+                if r_ans == "1": curr_app = eng_p; print(f"{GREEN}[SUCCESS] Set as Primary App Target.{NC}")
+                elif r_ans == "2": curr_ide = eng_p; print(f"{GREEN}[SUCCESS] Set as Primary IDE Target.{NC}")
+                elif r_ans == "3":
+                    if is_primary_app: curr_app = ""
+                    if is_primary_ide: curr_ide = ""
+                    print(f"{GREEN}[SUCCESS] Cleared primary role.{NC}")
+                save_paths_config(curr_app, curr_ide, custom_paths)
+            elif choice == "3":
+                def_name = re.sub(r'[^a-z0-9_-]+', '-', u_item['type'].lower())
+                cmd_name = input(f"Enter launcher command name [default: {def_name}]: ").strip() or def_name
+                exe_target = eng.get('executable') if eng else os.path.join(eng_p, 'antigravity-ide' if 'IDE' in u_item['type'] else 'antigravity')
+                create_launcher_and_desktop(cmd_name, u_item['type'], exe_target, eng_p)
+            elif choice == "4":
+                toggle_keyring_for_path(eng_p)
+            elif choice == "5":
+                c_type = "ide" if "IDE" in u_item['type'] else "app"
+                flag = "--ide-dir" if c_type == "ide" else "--app-dir"
+                subprocess.run(["bash", manage_sh, "install", c_type, flag, eng_p], check=False)
+
+    return curr_app, curr_ide
+
 def run_control_center():
     local_bin = os.path.join(REAL_HOME, ".local", "bin")
     manage_sh = os.path.join(local_bin, "manage-antigravity.sh")
@@ -838,42 +1252,27 @@ def run_control_center():
     installer_sh = os.path.join(os.path.dirname(os.path.dirname(__file__)), "install.sh")
 
     while True:
-        curr_app, curr_ide, custom_paths = load_paths_config()
-        engines = scan_installations()
-        clones = scan_clones()
+        unified, curr_app, curr_ide, custom_paths = get_unified_instances()
 
         print(f"\n{CYAN}========================================================================================{NC}")
         print(f"{BOLD}{CYAN}                     Antigravity Suite Manager - Control Center                         {NC}")
         print(f"{CYAN}========================================================================================{NC}")
 
-        print(f"{BOLD}{BLUE}[ INSTALLED ANTIGRAVITY ENGINES / BINARIES ({len(engines)}) ]{NC}")
+        print(f"{BOLD}{BLUE}[ DETECTED ANTIGRAVITY SUITE INSTANCES ({len(unified)}) ]{NC}")
         print(f"----------------------------------------------------------------------------------------")
-        if engines:
-            for idx, item in enumerate(engines, 1):
-                ver = f"v{item['version']}" if item['version'] != "Unknown" else "Unknown"
-                tags = []
-                if curr_app and os.path.realpath(item['path']) == os.path.realpath(curr_app):
-                    tags.append(f"{GREEN}[Primary App Target]{NC}")
-                if curr_ide and os.path.realpath(item['path']) == os.path.realpath(curr_ide):
-                    tags.append(f"{GREEN}[Primary IDE Target]{NC}")
-                tag_str = " ".join(tags)
-                print(f"  [{idx}] {item['type']:<20} {ver:<10} in {item['path']} {tag_str}")
-        else:
-            print(f"  {YELLOW}No installed Antigravity binaries found.{NC}")
-
-        offset = len(engines)
-        print(f"\n{BOLD}{BLUE}[ CONFIGURED CLONES & ACCOUNT PROFILES ({len(clones)}) ]{NC}")
-        print(f"----------------------------------------------------------------------------------------")
-        for idx, item in enumerate(clones, 1):
-            num = offset + idx
+        for idx, item in enumerate(unified, 1):
+            ver_str = f"v{item['version']}" if item['version'] != "Unknown" else "Unknown"
             lnch_name = os.path.basename(item['launcher']) if item['launcher'] else "None"
-            h_tag = f"{GREEN}{item['history_mode']}{NC}" if "Shared" in item['history_mode'] or "Master" in item['history_mode'] else f"{YELLOW}{item['history_mode']}{NC}"
-            k_tag = f"{GREEN}Normal{NC}" if "Normal" in item['keyring_mode'] else f"{BLUE}GNOME{NC}"
-            print(f"  [{num}] {item['name']:<30} {item['type']:<10} History: {h_tag} | Keyring: {k_tag} | {lnch_name}")
+            h_mode = item['history_mode']
+            h_tag = f"{GREEN}{h_mode:<18}{NC}" if "Shared" in h_mode or "Master" in h_mode else (f"{YELLOW}{h_mode:<18}{NC}" if h_mode != "N/A" else f"{BLUE}{h_mode:<18}{NC}")
+            k_mode = item['keyring_mode']
+            k_tag = f"{GREEN}Normal{NC}" if "Normal" in k_mode else f"{BLUE}GNOME {NC}"
+            name_str = item['name']
+            eng_str = item['engine_path']
+            print(f"  [{idx}] {name_str:<35} {ver_str:<9} in {eng_str:<18} History: {h_tag} | Keyring: {k_tag} | {lnch_name}")
 
-        total_items = len(engines) + len(clones)
         print(f"----------------------------------------------------------------------------------------")
-        print(f"{BOLD}Select an installation or clone [1-{total_items}] to EDIT its settings.{NC}")
+        print(f"{BOLD}Select an installation or clone [1-{len(unified)}] to EDIT its settings.{NC}")
         print(f"Or select an action:")
         print(f"  [N] Install New Google Antigravity Binary (Download & Install)")
         print(f"  [C] Create New Clone / Account Profile (Add isolated account)")
@@ -883,7 +1282,7 @@ def run_control_center():
         print(f"{CYAN}========================================================================================{NC}")
 
         try:
-            choice = input(f"Select option [1-{total_items}, N, C, W, S, Q, Default: Q]: ").strip()
+            choice = input(f"Select option [1-{len(unified)}, N, C, W, S, Q, Default: Q]: ").strip()
         except (KeyboardInterrupt, EOFError):
             print("\nExiting Control Center.")
             break
@@ -933,13 +1332,10 @@ def run_control_center():
                     subprocess.run(["bash", manage_sh, "wizard", "--only-step", s_choice], check=False)
         elif choice.isdigit():
             c_int = int(choice)
-            if 1 <= c_int <= len(engines):
-                target = engines[c_int - 1]
-                curr_app, curr_ide = configure_single_installation(target, curr_app, curr_ide, custom_paths)
+            if 1 <= c_int <= len(unified):
+                target_item = unified[c_int - 1]
+                curr_app, curr_ide = configure_unified_instance(target_item, curr_app, curr_ide, custom_paths)
                 save_paths_config(curr_app, curr_ide, custom_paths)
-            elif len(engines) < c_int <= total_items:
-                target_clone = clones[c_int - len(engines) - 1]
-                configure_single_clone(target_clone)
             else:
                 print(f"{RED}[ERROR] Invalid selection number '{choice}'.{NC}")
         else:

@@ -397,19 +397,20 @@ def scan_all_installations():
                     if os.path.isdir(m):
                         candidates.add(os.path.realpath(m))
     for p in os.environ.get('PATH', '').split(':'):
-        for cmd in ['antigravity', 'antigravity-ide', 'antigravity-1', 'antigravity-acc2', 'antigravity-manager']:
+        for cmd in ['antigravity', 'antigravity-ide', 'antigravity-1', 'antigravity-acc2']:
             fp = os.path.join(p, cmd)
             if os.path.isfile(fp):
                 rp = os.path.realpath(fp)
                 d = os.path.dirname(rp)
-                candidates.add(d)
+                if 'manager' not in d.lower():
+                    candidates.add(d)
                 if os.path.basename(d) in ['bin', 'MacOS']:
                     candidates.add(os.path.dirname(d))
     results = []
     seen = set()
     for c in sorted(candidates):
         rc = os.path.realpath(c)
-        if rc in seen: continue
+        if rc in seen or 'manager' in rc.lower(): continue
         iv = get_ide_version(rc)
         if iv:
             results.append(('Antigravity IDE', iv, rc))
@@ -417,8 +418,7 @@ def scan_all_installations():
             continue
         av = get_app_version(rc)
         if av:
-            name = 'Antigravity Manager' if 'manager' in rc else 'Antigravity App'
-            results.append((name, av, rc))
+            results.append(('Antigravity App', av, rc))
             seen.add(rc)
     return results
 
