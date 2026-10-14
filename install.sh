@@ -88,11 +88,13 @@ cp -f "${SCRIPT_DIR}/bin/antigravity-generate-icons.py" "${TARGET_BIN}/"
 cp -f "${SCRIPT_DIR}/bin/antigravity-apply-icon.py" "${TARGET_BIN}/"
 cp -f "${SCRIPT_DIR}/bin/antigravity-merge-history.py" "${TARGET_BIN}/"
 cp -f "${SCRIPT_DIR}/bin/antigravity-detect.py" "${TARGET_BIN}/"
+cp -f "${SCRIPT_DIR}/bin/antigravity-keyring.py" "${TARGET_BIN}/"
 chmod +x "${TARGET_BIN}/manage-antigravity.sh" \
          "${TARGET_BIN}/antigravity-generate-icons.py" \
          "${TARGET_BIN}/antigravity-apply-icon.py" \
          "${TARGET_BIN}/antigravity-merge-history.py" \
-         "${TARGET_BIN}/antigravity-detect.py"
+         "${TARGET_BIN}/antigravity-detect.py" \
+         "${TARGET_BIN}/antigravity-keyring.py"
 
 # Master icons
 if [ -d "${SCRIPT_DIR}/assets" ]; then
@@ -110,6 +112,16 @@ ACC1_ICON_THEME="black"
 ACC2_ICON_THEME="black"
 ACC2_RECOLOR="true"
 IDE_ICON_THEME="white"
+EOF
+fi
+
+if [ ! -f "${TARGET_CONF}/keyring.conf" ]; then
+    cat <<EOF > "${TARGET_CONF}/keyring.conf"
+# Antigravity Keyring Storage Configuration
+# Values: 'normal' (Basic file storage, no GNOME Keyring) or 'gnome' (GNOME Keyring)
+KEYRING_MODE_APP1="normal"
+KEYRING_MODE_APP2="normal"
+KEYRING_MODE_IDE="normal"
 EOF
 fi
 

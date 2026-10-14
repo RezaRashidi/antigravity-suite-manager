@@ -52,6 +52,17 @@ if [ -f "$ICONS_CONF" ]; then
     source "$ICONS_CONF"
 fi
 
+# Keyring Configuration Defaults & Persistence
+KEYRING_CONF="${ICONS_CONF_DIR}/keyring.conf"
+KEYRING_MODE_APP1="normal"
+KEYRING_MODE_APP2="normal"
+KEYRING_MODE_IDE="normal"
+
+if [ -f "$KEYRING_CONF" ]; then
+    # shellcheck source=/dev/null
+    source "$KEYRING_CONF"
+fi
+
 # CLI Behavior Flags
 FORCE_INSTALL=false
 USE_CACHE=true
@@ -210,7 +221,7 @@ check_status() {
         resolve_dynamic_urls >/dev/null 2>&1 || true
     fi
 
-    python3 - "$APP_INSTALL_DIR" "$IDE_INSTALL_DIR" "$PROFILE2_DIR" "$APP_URL" "$IDE_URL" "$TARGET_APP_VER" "$TARGET_IDE_VER" "$CACHE_DIR" "$REAL_USER" "$ACC1_ICON_THEME" "$ACC2_ICON_THEME" "$ACC2_RECOLOR" "$IDE_ICON_THEME" << 'EOF'
+    python3 - "$APP_INSTALL_DIR" "$IDE_INSTALL_DIR" "$PROFILE2_DIR" "$APP_URL" "$IDE_URL" "$TARGET_APP_VER" "$TARGET_IDE_VER" "$CACHE_DIR" "$REAL_USER" "$ACC1_ICON_THEME" "$ACC2_ICON_THEME" "$ACC2_RECOLOR" "$IDE_ICON_THEME" "$REAL_HOME" "$LOCAL_BIN" << 'EOF'
 import struct, json, os, re, sys, glob
 
 APP_DIR = sys.argv[1]
@@ -226,6 +237,8 @@ ACC1_THEME = sys.argv[10]
 ACC2_THEME = sys.argv[11]
 ACC2_RECOLOR = sys.argv[12].lower() in ["true", "1", "yes"]
 IDE_THEME = sys.argv[13]
+REAL_HOME = sys.argv[14] if len(sys.argv) > 14 else os.path.expanduser('~')
+LOCAL_BIN = sys.argv[15] if len(sys.argv) > 15 else os.path.join(REAL_HOME, '.local', 'bin')
 
 G = '\033[1;32m'
 Y = '\033[1;33m'
@@ -307,6 +320,27 @@ def check_ide_rtl(ide_dir):
     except Exception:
         pass
     return f"{Y}Not Applied{NC}"
+
+def check_keyring_storage():
+    app1_cache = os.path.isfile(os.path.join(REAL_HOME, ".gemini", "cache", "antigravity-keyring-unavailable"))
+    app1_l = os.path.join(LOCAL_BIN, "antigravity-1")
+    app1_flag = False
+    if os.path.isfile(app1_l):
+        try:
+            with open(app1_l, "r", errors="ignore") as f:
+                app1_flag = "--password-store=basic" in f.read()
+        except Exception:
+            pass
+    app1_norm = (app1_cache or app1_flag)
+
+    app2_cache = os.path.isfile(os.path.join(PROFILE2_DIR, ".gemini", "cache", "antigravity-keyring-unavailable"))
+    app2_norm = app2_cache
+
+    if app1_norm and app2_norm:
+        return f"{G}Normal File Storage (Decoupled from GNOME Keyring){NC}"
+    elif app1_norm or app2_norm:
+        return f"{Y}Partial (Mixed File / Keyring){NC}"
+    return f"{Y}GNOME Keyring (Secret Service){NC}"
 
 def check_account2():
     keyring = os.path.isfile(os.path.join(PROFILE2_DIR, '.gemini', 'cache', 'antigravity-keyring-unavailable'))
@@ -426,6 +460,7 @@ print(f"  • Antigravity IDE:        {IDE_THEME.capitalize()} Icon Theme")
 print(f"----------------------------------------------------------------------------------------")
 print(f"{BOLD}Environment & Permissions:{NC}")
 print(f"  • Account 2 Status:       {acc2_st}")
+print(f"  • Keyring Storage Mode:   {check_keyring_storage()}")
 print(f"  • History Sharing:        {check_history_sharing()}")
 print(f"  • App Dir Ownership:      {check_write(APP_DIR)}")
 print(f"  • IDE Dir Ownership:      {check_write(IDE_DIR)}")
@@ -626,6 +661,15 @@ setup_account_1() {
     # Generate and deploy icons according to configuration
     apply_icons_config
 
+    local pass_store_flag=""
+    if [ "$KEYRING_MODE_APP1" = "normal" ]; then
+        pass_store_flag="--password-store=basic "
+        mkdir -p "${REAL_HOME}/.gemini/cache"
+        touch "${REAL_HOME}/.gemini/cache/antigravity-keyring-unavailable"
+    else
+        rm -f "${REAL_HOME}/.gemini/cache/antigravity-keyring-unavailable" 2>/dev/null || true
+    fi
+
     cat <<EOF > "${LOCAL_BIN}/antigravity-1"
 #!/usr/bin/env bash
 set -e
@@ -639,7 +683,7 @@ cd "\${REAL_HOME}" || cd /tmp
 python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
 python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
 disown
-exec "${APP_INSTALL_DIR}/antigravity" --class="antigravity-1" --name="antigravity-1" "\$@"
+exec "${APP_INSTALL_DIR}/antigravity" ${pass_store_flag}--class="antigravity-1" --name="antigravity-1" "\$@"
 EOF
     chmod +x "${LOCAL_BIN}/antigravity-1"
     ln -sfn "${LOCAL_BIN}/antigravity-1" "${LOCAL_BIN}/antigravity"
@@ -671,8 +715,14 @@ EOF
 setup_account_2() {
     log_info "Configuring Account 2 (Secondary isolated profile)..."
 
-    mkdir -p "$PROFILE2_DIR/.gemini/cache"
-    touch "$PROFILE2_DIR/.gemini/cache/antigravity-keyring-unavailable"
+    local pass_store_flag=""
+    if [ "$KEYRING_MODE_APP2" = "normal" ]; then
+        pass_store_flag="--password-store=basic "
+        mkdir -p "$PROFILE2_DIR/.gemini/cache"
+        touch "$PROFILE2_DIR/.gemini/cache/antigravity-keyring-unavailable"
+    else
+        rm -f "$PROFILE2_DIR/.gemini/cache/antigravity-keyring-unavailable" 2>/dev/null || true
+    fi
 
     # Symlink shared history and configs
     ln -sfn "$SHARED_CONV_DIR" "$PROFILE2_DIR/.gemini/antigravity"
@@ -731,7 +781,7 @@ python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
 disown
 
 # 4. Launch isolated Account 2 instance
-exec "${APP_INSTALL_DIR}/antigravity" --class="antigravity-2" --name="antigravity-2" "\$@"
+exec "${APP_INSTALL_DIR}/antigravity" ${pass_store_flag}--class="antigravity-2" --name="antigravity-2" "\$@"
 EOF
     chmod +x "${LOCAL_BIN}/antigravity-acc2"
 
@@ -769,12 +819,17 @@ setup_ide_shortcuts() {
     # Generate and deploy icons according to configuration
     apply_icons_config
 
+    local ide_pass_store=""
+    if [ "$KEYRING_MODE_IDE" = "normal" ]; then
+        ide_pass_store="--password-store=basic "
+    fi
+
     cat <<EOF > "${LOCAL_BIN}/antigravity-ide"
 #!/usr/bin/env bash
 python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
 python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
 disown
-exec "${IDE_INSTALL_DIR}/antigravity-ide" --class="antigravity-ide" --name="antigravity-ide" "\$@"
+exec "${IDE_INSTALL_DIR}/antigravity-ide" ${ide_pass_store}--class="antigravity-ide" --name="antigravity-ide" "\$@"
 EOF
     chmod +x "${LOCAL_BIN}/antigravity-ide"
 
@@ -1038,7 +1093,7 @@ cd "\${REAL_HOME}" || cd /tmp
 python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
 disown
 
-exec "${APP_INSTALL_DIR}/antigravity" --class="${wm_class}" --name="${wm_class}" "\$@"
+exec "${APP_INSTALL_DIR}/antigravity" --password-store=basic --class="${wm_class}" --name="${wm_class}" "\$@"
 EOF
         chmod +x "$launcher"
 
@@ -1535,6 +1590,73 @@ configure_icons_interactive() {
 }
 
 # ------------------------------------------------------------------------------
+# 16. Keyring & Credential Storage Management
+# ------------------------------------------------------------------------------
+keyring_command() {
+    local SCRIPT_DIR
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local TOOL=""
+    if [ -f "${SCRIPT_DIR}/antigravity-keyring.py" ]; then
+        TOOL="${SCRIPT_DIR}/antigravity-keyring.py"
+    elif [ -f "${LOCAL_BIN}/antigravity-keyring.py" ]; then
+        TOOL="${LOCAL_BIN}/antigravity-keyring.py"
+    fi
+
+    if [ -z "$TOOL" ]; then
+        log_err "antigravity-keyring.py not found in ${SCRIPT_DIR} or ${LOCAL_BIN}."
+        return 1
+    fi
+
+    python3 "$TOOL" "$@"
+}
+
+keyring_status() {
+    keyring_command status
+}
+
+keyring_purge() {
+    keyring_command purge
+}
+
+set_keyring_mode() {
+    local target="${1:-all}"
+    local mode="${2:-normal}"
+    keyring_command set "$target" "$mode"
+}
+
+configure_keyring_interactive() {
+    echo -e "${CYAN}=====================================================${NC}"
+    echo -e "${CYAN}   Configure Keyring & Credential Storage Mode       ${NC}"
+    echo -e "${CYAN}=====================================================${NC}"
+    echo "1) Switch Account 1 to Normal File Storage (Bypass GNOME Keyring)"
+    echo "2) Switch Account 1 to GNOME Keyring (Secret Service)"
+    echo "3) Switch Account 2 to Normal File Storage (Bypass GNOME Keyring)"
+    echo "4) Switch Account 2 to GNOME Keyring (Secret Service)"
+    echo "5) Switch ALL Instances to Normal File Storage (Bypass Keyring Everywhere)"
+    echo "6) Switch ALL Instances to GNOME Keyring"
+    echo "7) Purge Antigravity Credentials from GNOME Keyring"
+    echo "8) View Detailed Keyring & Credential Status"
+    echo "0) Cancel / Back"
+    echo -e "${CYAN}-----------------------------------------------------${NC}"
+    read -rp "Select an option [0-8]: " kchoice
+
+    case "$kchoice" in
+        1) set_keyring_mode "app1" "normal" ;;
+        2) set_keyring_mode "app1" "gnome" ;;
+        3) set_keyring_mode "app2" "normal" ;;
+        4) set_keyring_mode "app2" "gnome" ;;
+        5) set_keyring_mode "all" "normal" ;;
+        6) set_keyring_mode "all" "gnome" ;;
+        7) keyring_purge ;;
+        8) keyring_status ;;
+        0) return 0 ;;
+        *)
+            log_err "Invalid selection."
+            ;;
+    esac
+}
+
+# ------------------------------------------------------------------------------
 # CLI Help & Usage
 # ------------------------------------------------------------------------------
 show_help() {
@@ -1556,6 +1678,9 @@ Commands:
   ide-shortcuts Configure Antigravity IDE launcher and desktop shortcut
   set-icons     Configure or re-apply icons (Black/White and Acc 2 Recolor)
   merge-history Sync & backfill conversation history across all profiles/IDEs (alias: merge)
+  keyring       Configure & switch credential storage (GNOME Keyring vs Normal File Storage)
+                Subcommands: status | set [app1|app2|ide|all] [normal|gnome] | purge
+                Aliases: set-keyring, switch-keyring, toggle-keyring
   create-instance Create arbitrary App or IDE instances with shared/isolated history (alias: add)
   list-instances  Show all created App and IDE instances and their history status (alias: list)
   set-history     Toggle instance history between 'shared' and 'isolated'
@@ -1584,10 +1709,12 @@ Options:
 
 Examples:
   $(basename "$0") status
+  $(basename "$0") keyring status
+  $(basename "$0") keyring set app1 normal
+  $(basename "$0") keyring purge
   $(basename "$0") detect
   $(basename "$0") install
   $(basename "$0") update
-  $(basename "$0") set-icons --ide-icon white --acc1-icon black --acc2-recolor true
   $(basename "$0") set-icons
 EOF
 }
@@ -1613,12 +1740,13 @@ interactive_menu() {
     echo "12) Create New Instance (App or IDE with Shared/Isolated History)"
     echo "13) List All Instances & History Statuses"
     echo "14) Set / Toggle Instance History Mode (Shared vs Isolated)"
-    echo "15) Remove an Instance"
-    echo "16) Force Full Re-download & Reinstall Everything (--force)"
-    echo "17) Clean Download Cache (/tmp/antigravity-cache)"
+    echo "15) Configure / Switch Keyring Mode (GNOME Keyring vs Normal File Storage)"
+    echo "16) Remove an Instance"
+    echo "17) Force Full Re-download & Reinstall Everything (--force)"
+    echo "18) Clean Download Cache (/tmp/antigravity-cache)"
     echo "0) Exit"
     echo -e "${CYAN}-----------------------------------------------------${NC}"
-    read -rp "Select an option [0-17]: " choice
+    read -rp "Select an option [0-18]: " choice
 
     case "$choice" in
         1) install_antigravity_all ;;
@@ -1640,13 +1768,14 @@ interactive_menu() {
             read -rp "Enter mode [shared/isolated]: " smode
             set_history_mode "$stype" "$sid" "$smode"
             ;;
-        15)
+        15) configure_keyring_interactive ;;
+        16)
             read -rp "Enter instance type [app/ide]: " rtype
             read -rp "Enter instance id/name: " rid
             remove_instance "$rtype" "$rid"
             ;;
-        16) FORCE_INSTALL=true install_antigravity_all ;;
-        17) clean_cache ;;
+        17) FORCE_INSTALL=true install_antigravity_all ;;
+        18) clean_cache ;;
         0) exit 0 ;;
         *)
             log_err "Invalid selection."
@@ -1772,6 +1901,12 @@ while [ $# -gt 0 ]; do
             SUB_COMMAND="ide"
             shift
             ;;
+        set-keyring|keyring|switch-keyring|toggle-keyring)
+            COMMAND="keyring"
+            shift
+            CMD_ARGS=("$@")
+            break
+            ;;
         status|all|app|ide|app1|app2|ide-shortcuts|f5|rtl|update-rtl|update|clean-cache|set-icons|icons|help)
             COMMAND="$1"
             shift
@@ -1809,6 +1944,30 @@ else
                     install_antigravity_all
                     ;;
             esac
+            ;;
+        keyring)
+            if [ ${#CMD_ARGS[@]} -eq 0 ]; then
+                configure_keyring_interactive
+            else
+                case "${CMD_ARGS[0]}" in
+                    status)
+                        keyring_status
+                        ;;
+                    purge|clean)
+                        keyring_purge
+                        ;;
+                    set)
+                        keyring_command "${CMD_ARGS[@]}"
+                        ;;
+                    *)
+                        if [ ${#CMD_ARGS[@]} -ge 2 ]; then
+                            keyring_command set "${CMD_ARGS[0]}" "${CMD_ARGS[1]}"
+                        else
+                            keyring_command "${CMD_ARGS[@]}"
+                        fi
+                        ;;
+                esac
+            fi
             ;;
         status)
             resolve_dynamic_urls

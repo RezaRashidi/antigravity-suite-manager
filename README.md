@@ -63,6 +63,11 @@ Antigravity Suite Manager is engineered to make Google Antigravity and Antigravi
 - **Intelligent Installation Scanner**: Scans standard directories (`/opt`, `/usr/share`, `/usr/lib`, `~/.local`), PATH executables, `.desktop` launcher entries, and active process trees to discover any Antigravity App or IDE installations with exact version detection.
 - **One-Command Automated Installation**: Run `manage-antigravity.sh install all` or `./install.sh --install-antigravity` to download official upstream binaries directly from Google's release channels, extract, configure permissions, and deploy desktop entries automatically.
 
+### 10. 🔐 Dual-Mode Credential Storage (GNOME Keyring vs Normal File Storage)
+- **Freedom from GNOME Keyring**: Easily switch Antigravity and Antigravity IDE between GNOME Keyring (D-Bus Secret Service) and clean, headless-friendly Normal file storage (`--password-store=basic` + `jetski-standalone-oauth-token`).
+- **Zero-Downtime Token Migration**: When switching from GNOME Keyring to Normal mode, active OAuth tokens are automatically extracted from GNOME Keyring into local standalone token files, preventing any re-login prompts.
+- **GNOME Keyring Purging**: Cleanly purge all Antigravity secret items, tokens, and encryption keys from GNOME Keyring with a single command.
+
 ---
 
 ## Table of Contents
@@ -78,6 +83,7 @@ Antigravity Suite Manager is engineered to make Google Antigravity and Antigravi
   - [Automated Antigravity Installation](#automated-antigravity-installation)
   - [Status Inspection](#status-inspection)
   - [Multi-Instance Creation & Management](#multi-instance-creation--management)
+  - [Keyring & Credential Storage Switching](#keyring--credential-storage-switching)
   - [Conversation History Merging & Sync](#conversation-history-merging--sync)
   - [Smart Updates & Caching](#smart-updates--caching)
   - [Customizing Icon Themes & Recolor](#customizing-icon-themes--recolor)
@@ -365,6 +371,58 @@ Safely delete an instance, removing its desktop entries and launchers while arch
 
 ---
 
+### Keyring & Credential Storage Switching
+
+Manage whether Antigravity instances store credentials in **GNOME Keyring (Secret Service)** or in **Normal (local file storage)**.
+
+Normal file storage decouples Antigravity from GNOME Keyring, using:
+- Chromium basic password store: `--password-store=basic`
+- Language Server file store: `~/.gemini/jetski-standalone-oauth-token`
+- Keyring fallback marker: `~/.gemini/cache/antigravity-keyring-unavailable`
+
+#### 1. Interactive Keyring Menu
+```bash
+~/manage-antigravity.sh keyring
+```
+*(Or select **Option 15: Configure Keyring / Credential Storage Mode** in `~/manage-antigravity.sh`)*
+
+#### 2. Keyring & Secret Service Status
+Inspect the active storage mode for all instances and list all items currently residing inside GNOME Keyring:
+```bash
+~/manage-antigravity.sh keyring status
+```
+
+#### 3. Switch Storage Mode (with Zero-Downtime Migration)
+Switch an instance to `normal` or `gnome` storage. When switching to `normal`, existing login tokens are automatically extracted from GNOME Keyring into the local token file so you do not need to re-authenticate:
+```bash
+# Switch Account 1 to Normal file storage:
+~/manage-antigravity.sh keyring set app1 normal
+
+# Switch Account 1 to GNOME Keyring:
+~/manage-antigravity.sh keyring set app1 gnome
+
+# Switch all instances (Account 1, Account 2, IDE) to Normal file storage:
+~/manage-antigravity.sh keyring set all normal
+
+# Switch to Normal file storage and immediately purge from GNOME Keyring:
+~/manage-antigravity.sh keyring set all normal --purge
+```
+
+| Target | Values | Description |
+|---|---|---|
+| `app1` | `normal` \| `gnome` | Account 1 primary profile (`~/.gemini`) |
+| `app2` | `normal` \| `gnome` | Account 2 secondary profile (`~/.antigravity-profile2`) |
+| `ide` | `normal` \| `gnome` | Antigravity IDE launcher |
+| `all` | `normal` \| `gnome` | All detected instances simultaneously |
+
+#### 4. Purge Antigravity from GNOME Keyring
+Permanently remove all Antigravity tokens, session secrets, and encryption keys from GNOME Keyring via D-Bus:
+```bash
+~/manage-antigravity.sh keyring purge
+```
+
+---
+
 ### Conversation History Merging & Sync
 
 Synchronize, merge, and backfill conversation history across all profiles and IDEs into the unified SQLite database and search index:
@@ -439,13 +497,15 @@ Configure icons interactively or via command-line flags:
 | `update-rtl` | Fetch latest RTL patch from GitHub and apply |
 | `f5` | Apply manual F5 reload backend sync patch |
 | `clean-cache` | Clear downloaded archives in `/tmp/antigravity-cache` |
+| `keyring` | Manage credential storage mode (status, set, purge, or interactive) |
 
 ---
 
 ## Configuration
 
-Preferences are stored in `~/.config/antigravity/icons.conf`:
+Preferences are stored in `~/.config/antigravity/`:
 
+### 1. Icon Themes (`~/.config/antigravity/icons.conf`)
 ```bash
 # Antigravity Suite Icon Configuration
 ACC1_ICON_THEME="black"
@@ -453,8 +513,17 @@ ACC2_ICON_THEME="black"
 ACC2_RECOLOR="true"
 IDE_ICON_THEME="white"
 ```
-
 You can edit this file directly or use `manage-antigravity.sh set-icons`.
+
+### 2. Keyring Storage Modes (`~/.config/antigravity/keyring.conf`)
+```bash
+# Antigravity Keyring Storage Configuration
+# Values: 'normal' (Basic file storage, no GNOME Keyring) or 'gnome' (GNOME Keyring)
+KEYRING_MODE_APP1="normal"
+KEYRING_MODE_APP2="normal"
+KEYRING_MODE_IDE="normal"
+```
+You can edit this file directly or use `manage-antigravity.sh keyring set <target> <mode>`.
 
 ---
 
@@ -495,8 +564,11 @@ Disables automated background application restarts during inactivity, allowing t
 antigravity-suite-manager/
 ├── bin/
 │   ├── manage-antigravity.sh        # Core CLI management tool
+│   ├── antigravity-detect.py        # System installation scanner & version detector
 │   ├── antigravity-generate-icons.py # Multi-res icon generator & theme engine
-│   └── antigravity-apply-icon.py    # Runtime X11 window class & icon synchronizer
+│   ├── antigravity-apply-icon.py    # Runtime X11 window class & icon synchronizer
+│   ├── antigravity-merge-history.py # 3-way conversation history & SQLite sync
+│   └── antigravity-keyring.py       # GNOME Keyring & file storage switcher & migrator
 ├── src/
 │   └── scale_icon.c                 # Catmull-Rom bicubic image resampler (C)
 ├── assets/
