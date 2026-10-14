@@ -1819,7 +1819,7 @@ interactive_menu() {
     echo "14) Set / Toggle Instance History Mode (Shared vs Isolated)"
     echo "15) Configure / Switch Keyring Mode (GNOME Keyring vs Normal File Storage)"
     echo "16) Configure / Switch Antigravity Installation Paths & Targets"
-    echo "17) Run Step-by-Step Setup Wizard"
+    echo "17) Antigravity Control Center & Step-by-Step Setup Wizard"
     echo "18) Remove an Instance"
     echo "19) Force Full Re-download & Reinstall Everything (--force)"
     echo "20) Clean Download Cache (/tmp/antigravity-cache)"
@@ -2006,7 +2006,7 @@ while [ $# -gt 0 ]; do
             CMD_ARGS=("$@")
             break
             ;;
-        wizard|setup)
+        wizard|setup|center|control-center)
             COMMAND="wizard"
             shift
             CMD_ARGS=("$@")
@@ -2077,7 +2077,7 @@ else
         paths)
             handle_paths_command
             ;;
-        wizard|setup)
+        wizard|setup|center|control-center)
             handle_wizard_command
             ;;
         status)

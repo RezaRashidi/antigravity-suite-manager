@@ -212,25 +212,28 @@ cd antigravity-suite-manager
 
 ### 2. Install the Suite
 
-Run the interactive step-by-step setup wizard:
+Launch the interactive Control Center dashboard:
 
 ```bash
 ./install.sh
+# Or via management tool:
+~/manage-antigravity.sh center
 ```
 
-#### Step-by-Step Wizard Options:
-```bash
-# Start from a specific step (e.g. Step 2 to configure/change install paths):
-./install.sh --step 2
-# Or: ./install.sh -s 2
+The Control Center automatically discovers all installed Antigravity engines and cloned accounts/profiles, providing instant per-instance edit submenus, as well as one-click options to install new Antigravity binaries or create new account clones.
 
-# Run ONLY a single step and exit (e.g. Step 2 to change paths, Step 5 to re-generate icons):
-./install.sh --only-step 2
-# Or: ./install.sh -o 2
+#### Step Execution Options & Step Aliases:
+```bash
+# Execute ONLY a single step by number or descriptive name:
+./install.sh --only-step paths      # Or: -o 2
+./install.sh --only-step icons      # Or: -o 5
+./install.sh --only-step keyring    # Or: -o 6
+
+# Start execution from a specific step and proceed sequentially:
+./install.sh --step paths           # Or: -s 2
 
 # Guided step-by-step confirmation mode (prompts after each step):
-./install.sh --wizard
-# Or: ./install.sh -w
+./install.sh --wizard               # Or: -w
 
 # Specify custom installation paths directly on the command line:
 ./install.sh --app-dir "/opt/my-antigravity" --ide-dir "/opt/my-ide"
@@ -240,14 +243,14 @@ Run the interactive step-by-step setup wizard:
 ```
 
 #### Wizard Steps Overview:
-1. **Check Dependencies & Prerequisites**: Validates Ubuntu 24.04 and core build tools (`python3`, `gcc`, `tar`, `curl`).
-2. **Configure / Change Installation Paths**: Scans for installed Antigravity instances, lets you select from detected installations or specify custom directories for App and IDE.
-3. **Compile Catmull-Rom Bicubic Resampler**: Builds `scale_icon` from pure C with Catmull-Rom filtering and alpha premultiplication.
-4. **Deploy Management Tools & Master Icons**: Installs suite binaries to `~/.local/bin/` and symlinks `~/manage-antigravity.sh`.
-5. **Configure Visual Icon Themes & Recolor**: Sets up Black/White themes, Account 2 glow recolor, and initializes icon cache.
-6. **Configure Credential Storage Mode**: Sets up Normal local file storage (recommended, bypassing GNOME Keyring) or GNOME Keyring.
-7. **Download & Install Google Antigravity Binaries**: Automatically fetches latest releases and installs them into your configured directories.
-8. **Setup Multi-Account Launchers & Chat Sync**: Deploys `antigravity-1`, `antigravity-acc2`, `antigravity-ide`, verifies 3-way history sync, and outputs the status report.
+1. **Check Dependencies & Prerequisites** (`prereqs`, `dep`): Validates Ubuntu 24.04 and core build tools (`python3`, `gcc`, `tar`, `curl`).
+2. **Configure Installation Paths & Engines** (`paths`, `engines`, `detect`): Scans for installed Antigravity instances, lets you select from detected installations or specify custom directories for App and IDE.
+3. **Compile Catmull-Rom Bicubic Resampler** (`resampler`, `scale`): Builds `scale_icon` from pure C with Catmull-Rom filtering and alpha premultiplication.
+4. **Deploy Management Tools & Master Icons** (`deploy`, `tools`, `bin`): Installs suite binaries to `~/.local/bin/` and symlinks `~/manage-antigravity.sh`.
+5. **Configure Visual Icon Themes & Recolor** (`icons`, `themes`, `recolor`): Sets up Black/White themes, Account 2 glow recolor, and initializes icon cache.
+6. **Configure Credential Storage Mode** (`keyring`, `creds`): Sets up Normal local file storage (recommended, bypassing GNOME Keyring) or GNOME Keyring.
+7. **Download & Install Google Antigravity Binaries** (`install`, `download`, `binary`): Automatically fetches latest releases and installs them into your configured directories.
+8. **Setup Multi-Account Launchers & 3-Way Chat Sync** (`sync`, `launchers`, `chat`): Deploys `antigravity-1`, `antigravity-acc2`, `antigravity-ide`, verifies 3-way history sync, and outputs the status report.
 
 Or build and install using GNU Make:
 

@@ -37,15 +37,43 @@ fi
 APP_INSTALL_DIR="${APP_INSTALL_DIR:-/opt/antigravity2}"
 IDE_INSTALL_DIR="${IDE_INSTALL_DIR:-/opt/antigravity}"
 
+get_step_num() {
+    case "$1" in
+        1|[Pp]rereq*|[Dd]ep*) echo 1 ;;
+        2|[Pp]ath*|[Ee]ngine*|[Dd]etect*) echo 2 ;;
+        3|[Rr]esample*|[Ss]cale*|[Cc]ompile*) echo 3 ;;
+        4|[Dd]eploy*|[Tt]ool*|[Bb]in*) echo 4 ;;
+        5|[Ii]con*|[Tt]heme*|[Rr]ecolor*) echo 5 ;;
+        6|[Kk]eyring*|[Cc]red*) echo 6 ;;
+        7|[Ii]nstall*|[Dd]ownload*|[Bb]inary*) echo 7 ;;
+        8|[Ll]auncher*|[Ss]ync*|[Cc]hat*) echo 8 ;;
+        *) echo "$1" ;;
+    esac
+}
+
+get_step_name() {
+    case "$1" in
+        1) echo "Check Dependencies & Prerequisites" ;;
+        2) echo "Configure Installation Paths & Engines" ;;
+        3) echo "Compile Catmull-Rom Bicubic Resampler (C)" ;;
+        4) echo "Deploy Management Tools & Master Icons" ;;
+        5) echo "Configure Visual Icon Themes & Recolor" ;;
+        6) echo "Configure Credential Keyring Mode (Normal vs GNOME)" ;;
+        7) echo "Download & Install Google Antigravity Binaries" ;;
+        8) echo "Setup Multi-Account Launchers & 3-Way Chat Sync" ;;
+        *) echo "Step $1" ;;
+    esac
+}
+
 # Parse CLI options
 while [ $# -gt 0 ]; do
     case "$1" in
         --step|-s)
-            START_STEP="$2"
+            START_STEP="$(get_step_num "$2")"
             shift 2
             ;;
         --only-step|-o)
-            ONLY_STEP="$2"
+            ONLY_STEP="$(get_step_num "$2")"
             shift 2
             ;;
         --wizard|-w)
@@ -74,24 +102,24 @@ while [ $# -gt 0 ]; do
             echo "Usage: ./install.sh [options]"
             echo ""
             echo "Options:"
-            echo "  -s, --step <N>        Start execution from step N (1-8)"
-            echo "  -o, --only-step <N>   Execute only step N and exit (1-8)"
-            echo "  -w, --wizard          Enable interactive step-by-step wizard (prompts after each step)"
-            echo "  --app-dir <path>      Specify custom Antigravity App install directory"
-            echo "  --ide-dir <path>      Specify custom Antigravity IDE install directory"
-            echo "  -i, --install-antigravity  Force downloading and installing Antigravity binaries"
-            echo "  -y, --yes             Run non-interactively with defaults"
-            echo "  -h, --help            Show this help message"
+            echo "  -s, --step <N|name>       Start execution from step N (1-8 or alias e.g. paths, icons)"
+            echo "  -o, --only-step <N|name>  Execute only step N and exit (1-8 or alias e.g. paths, icons)"
+            echo "  -w, --wizard              Enable interactive step-by-step wizard (prompts after each step)"
+            echo "  --app-dir <path>          Specify custom Antigravity App install directory"
+            echo "  --ide-dir <path>          Specify custom Antigravity IDE install directory"
+            echo "  -i, --install-antigravity Force downloading and installing Antigravity binaries"
+            echo "  -y, --yes                 Run non-interactively with defaults"
+            echo "  -h, --help                Show this help message"
             echo ""
             echo "Steps:"
-            echo "  1) Check System & Dependencies"
-            echo "  2) Configure / Change Installation Paths (App & IDE)"
-            echo "  3) Prepare Directories & Compile Catmull-Rom Bicubic Resampler (C)"
-            echo "  4) Install Management Tools & Master Icon Assets"
-            echo "  5) Configure Visual Icon Themes & Recolor"
-            echo "  6) Configure Credential Keyring Mode (Normal vs GNOME)"
-            echo "  7) Download & Install Google Antigravity Binaries"
-            echo "  8) Setup Multi-Account Launchers & Unified Chat History Sync"
+            echo "  1) Check System & Dependencies (aliases: prereqs, dep)"
+            echo "  2) Configure Installation Paths & Engines (aliases: paths, engines, detect)"
+            echo "  3) Prepare Directories & Compile Catmull-Rom Bicubic Resampler (aliases: resampler, scale)"
+            echo "  4) Install Management Tools & Master Icon Assets (aliases: deploy, tools, bin)"
+            echo "  5) Configure Visual Icon Themes & Recolor (aliases: icons, themes, recolor)"
+            echo "  6) Configure Credential Keyring Mode (aliases: keyring, creds)"
+            echo "  7) Download & Install Google Antigravity Binaries (aliases: install, download, binary)"
+            echo "  8) Setup Multi-Account Launchers & Unified Chat History Sync (aliases: sync, launchers, chat)"
             exit 0
             ;;
         *)
@@ -112,67 +140,31 @@ IDE_INSTALL_DIR="${IDE_INSTALL_DIR}"
 EOF
 fi
 
-# Interactive mode step selection if no flags were given
-if [ "$NON_INTERACTIVE" != true ] && [ -t 0 ] && [ "$START_STEP" -eq 1 ] && [ "$ONLY_STEP" -eq 0 ] && [ "$STEP_BY_STEP" != true ]; then
-    echo -e "${CYAN}======================================================================${NC}"
-    echo -e "${BOLD}${CYAN}            Antigravity Suite Manager - Step-by-Step Setup           ${NC}"
-    echo -e "${CYAN}======================================================================${NC}"
-    echo -e "Current Configured Paths:"
-    echo -e "  • Antigravity App: ${GREEN}${APP_INSTALL_DIR}${NC}"
-    echo -e "  • Antigravity IDE: ${GREEN}${IDE_INSTALL_DIR}${NC}"
-    echo -e "----------------------------------------------------------------------"
-    echo -e "Available Setup Steps:"
-    echo -e "  [1] Check Dependencies & Prerequisites"
-    echo -e "  [2] Configure / Change Installation Paths (App & IDE)"
-    echo -e "  [3] Prepare Directories & Compile Bicubic Resampler (C)"
-    echo -e "  [4] Deploy Management Tools & Master Icon Assets"
-    echo -e "  [5] Configure Visual Icon Themes & Recolor"
-    echo -e "  [6] Configure Credential Keyring Mode (Normal vs GNOME)"
-    echo -e "  [7] Download & Install Google Antigravity Binaries"
-    echo -e "  [8] Setup Multi-Account Launchers & 3-Way Chat Sync"
-    echo -e "----------------------------------------------------------------------"
-    echo -e "Options:"
-    echo -e "  • [A] All Steps (Start from Step 1 sequentially) [Default]"
-    echo -e "  • [W] Guided Step-by-Step Wizard (Prompt & confirm after each step)"
-    echo -e "  • [1-8] Start from step N and proceed (e.g. '2' to configure paths)"
-    echo -e "  • [O <N>] Run ONLY step N (e.g. 'O 2' to only change paths and exit)"
-    echo -e "  • [Q] Quit"
-    echo -e "----------------------------------------------------------------------"
-    read -rp "Select an option [A / W / 1-8 / O <N> / Q, Default: A]: " mode_choice
-    mode_choice="${mode_choice:-A}"
-
-    case "$mode_choice" in
-        [Qq]*)
-            echo "Exiting setup."
-            exit 0
-            ;;
-        [Ww]*)
+# Interactive mode: Launch Control Center Dashboard if no flags were given
+if [ "$NON_INTERACTIVE" != true ] && [ "$START_STEP" -eq 1 ] && [ "$ONLY_STEP" -eq 0 ] && [ "$STEP_BY_STEP" != true ]; then
+    local_detect="${SCRIPT_DIR}/bin/antigravity-detect.py"
+    if [ ! -f "$local_detect" ]; then
+        local_detect="${TARGET_BIN}/antigravity-detect.py"
+    fi
+    if [ -f "$local_detect" ]; then
+        set +e
+        python3 "$local_detect" --control-center
+        code=$?
+        set -e
+        if [ "$code" -eq 10 ]; then
             STEP_BY_STEP=true
             START_STEP=1
-            ;;
-        [Oo]*|[Oo]\ *)
-            num=$(echo "$mode_choice" | awk '{print $2}')
-            if [ -n "$num" ] && [ "$num" -ge 1 ] && [ "$num" -le 8 ] 2>/dev/null; then
-                ONLY_STEP="$num"
-            else
-                read -rp "Enter step number to run [1-8]: " num
-                ONLY_STEP="${num:-1}"
-            fi
-            ;;
-        [1-8])
-            START_STEP="$mode_choice"
-            ;;
-        *)
-            START_STEP=1
-            ;;
-    esac
+        else
+            exit 0
+        fi
+    fi
 fi
 
 # ==============================================================================
 # Step 1: Check Platform & Prerequisites
 # ==============================================================================
 step_1_prerequisites() {
-    echo -e "\n${BLUE}[Step 1/8] Checking build and runtime dependencies...${NC}"
+    echo -e "\n${BLUE}[Step 1/8] $(get_step_name 1)...${NC}"
     if [ -f /etc/os-release ]; then
         . /etc/os-release
         if [ "$ID" != "ubuntu" ]; then
@@ -201,7 +193,7 @@ step_1_prerequisites() {
 # Step 2: Configure / Change Installation Paths & Targets
 # ==============================================================================
 step_2_configure_paths() {
-    echo -e "\n${BLUE}[Step 2/8] Detecting installations & configuring target paths...${NC}"
+    echo -e "\n${BLUE}[Step 2/8] $(get_step_name 2)...${NC}"
     local DETECT_SCRIPT="${SCRIPT_DIR}/bin/antigravity-detect.py"
     if [ ! -f "$DETECT_SCRIPT" ]; then
         DETECT_SCRIPT="${TARGET_BIN}/antigravity-detect.py"
@@ -225,7 +217,7 @@ step_2_configure_paths() {
 # Step 3: Prepare Directories & Compile C Bicubic Resampler
 # ==============================================================================
 step_3_compile_resampler() {
-    echo -e "\n${BLUE}[Step 3/8] Preparing directories & compiling C bicubic image resampler...${NC}"
+    echo -e "\n${BLUE}[Step 3/8] $(get_step_name 3)...${NC}"
     mkdir -p "$TARGET_BIN" "$TARGET_ICONS" "$TARGET_CONF" "/tmp/antigravity-cache"
     if [ -f "${SCRIPT_DIR}/src/scale_icon.c" ]; then
         gcc -O3 -Wall "${SCRIPT_DIR}/src/scale_icon.c" -lm -o "${TARGET_BIN}/scale_icon"
@@ -242,7 +234,7 @@ step_3_compile_resampler() {
 # Step 4: Install Scripts, Master Icons & Symlink
 # ==============================================================================
 step_4_deploy_scripts() {
-    echo -e "\n${BLUE}[Step 4/8] Installing management scripts & master icon assets...${NC}"
+    echo -e "\n${BLUE}[Step 4/8] $(get_step_name 4)...${NC}"
     mkdir -p "$TARGET_BIN" "$TARGET_ICONS" "$TARGET_CONF"
     for s in manage-antigravity.sh antigravity-generate-icons.py antigravity-apply-icon.py antigravity-merge-history.py antigravity-detect.py antigravity-keyring.py; do
         if [ -f "${SCRIPT_DIR}/bin/${s}" ]; then
@@ -263,7 +255,7 @@ step_4_deploy_scripts() {
 # Step 5: Configure Visual Icon Themes & Recolor
 # ==============================================================================
 step_5_configure_icons() {
-    echo -e "\n${BLUE}[Step 5/8] Configuring icon themes & initializing icon cache...${NC}"
+    echo -e "\n${BLUE}[Step 5/8] $(get_step_name 5)...${NC}"
     if [ ! -f "${TARGET_CONF}/icons.conf" ]; then
         cat <<EOF > "${TARGET_CONF}/icons.conf"
 # Antigravity Suite Icon Configuration
@@ -289,7 +281,7 @@ EOF
 # Step 6: Configure Keyring / Credential Storage Mode
 # ==============================================================================
 step_6_configure_keyring() {
-    echo -e "\n${BLUE}[Step 6/8] Configuring credential storage / keyring mode...${NC}"
+    echo -e "\n${BLUE}[Step 6/8] $(get_step_name 6)...${NC}"
     if [ ! -f "${TARGET_CONF}/keyring.conf" ]; then
         cat <<EOF > "${TARGET_CONF}/keyring.conf"
 # Antigravity Keyring Storage Configuration
@@ -324,7 +316,7 @@ EOF
 # Step 7: Download & Install Google Antigravity Binaries
 # ==============================================================================
 step_7_install_antigravity() {
-    echo -e "\n${BLUE}[Step 7/8] Installing / Updating Google Antigravity Binaries...${NC}"
+    echo -e "\n${BLUE}[Step 7/8] $(get_step_name 7)...${NC}"
     if [ -f "$PATHS_CONF" ]; then
         source "$PATHS_CONF"
     fi
@@ -374,7 +366,7 @@ step_7_install_antigravity() {
 # Step 8: Multi-Account Launchers, Unified Chat Sync & Status Check
 # ==============================================================================
 step_8_setup_launchers_and_sync() {
-    echo -e "\n${BLUE}[Step 8/8] Setting up multi-account launchers, desktop entries & unified chat sync...${NC}"
+    echo -e "\n${BLUE}[Step 8/8] $(get_step_name 8)...${NC}"
     if [ -f "$PATHS_CONF" ]; then
         source "$PATHS_CONF"
     fi
@@ -417,9 +409,11 @@ run_step() {
 
 # Single Step Execution
 if [ "$ONLY_STEP" -ge 1 ] && [ "$ONLY_STEP" -le 8 ]; then
-    echo -e "${CYAN}Executing ONLY Step ${ONLY_STEP}...${NC}"
+    echo -e "\n${CYAN}======================================================================${NC}"
+    echo -e "${BOLD}${CYAN}   Executing Step ${ONLY_STEP}: $(get_step_name "$ONLY_STEP")${NC}"
+    echo -e "${CYAN}======================================================================${NC}"
     run_step "$ONLY_STEP"
-    echo -e "${GREEN}[SUCCESS] Step ${ONLY_STEP} execution complete.${NC}"
+    echo -e "${GREEN}[SUCCESS] Step ${ONLY_STEP} ($(get_step_name "$ONLY_STEP")) execution complete.${NC}"
     exit 0
 fi
 
@@ -429,7 +423,9 @@ while [ "$curr" -le 8 ]; do
     run_step "$curr"
     if [ "$STEP_BY_STEP" = true ] && [ "$curr" -lt 8 ] && [ "$NON_INTERACTIVE" != true ] && [ -t 0 ]; then
         echo -e "\n${CYAN}----------------------------------------------------------------------${NC}"
-        read -rp "Step ${curr} completed. [Enter] Next Step $((curr + 1)) | [s]kip next | [j <1-8>] jump | [q]uit: " next_action
+        echo -e "${BOLD}Completed Step ${curr}: $(get_step_name "$curr")${NC}"
+        echo -e "Next up Step $((curr + 1)): $(get_step_name "$((curr + 1))")"
+        read -rp "[Enter] Continue | [s]kip next | [j <1-8>] jump | [q]uit: " next_action
         case "$next_action" in
             [Qq]*)
                 echo "Exiting setup wizard."
