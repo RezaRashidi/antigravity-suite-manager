@@ -21,6 +21,10 @@ RED = '\033[1;31m'
 NC = '\033[0m'
 BOLD = '\033[1m'
 
+REAL_HOME = os.path.expanduser("~")
+CONF_DIR = os.path.join(REAL_HOME, ".config", "antigravity")
+PATHS_CONF = os.path.join(CONF_DIR, "paths.conf")
+
 def inspect_app_dir(d):
     asar = os.path.join(d, 'resources', 'app.asar')
     if not os.path.isfile(asar):
@@ -129,6 +133,26 @@ def scan_installations():
                     if os.path.isdir(m):
                         candidates.add(os.path.realpath(m))
 
+    # Check configured paths in paths.conf
+    if os.path.isfile(PATHS_CONF):
+        try:
+            with open(PATHS_CONF, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if '=' in line and not line.startswith('#'):
+                        k, v = line.split('=', 1)
+                        v = v.strip().strip('"').strip("'")
+                        if v:
+                            if k in ['CUSTOM_PATHS', 'CUSTOM_ANTIGRAVITY_PATHS']:
+                                for cp in v.split(':'):
+                                    if cp.strip() and os.path.isdir(os.path.expanduser(cp.strip())):
+                                        candidates.add(os.path.realpath(os.path.expanduser(cp.strip())))
+                            elif k in ['APP_INSTALL_DIR', 'IDE_INSTALL_DIR']:
+                                if os.path.isdir(os.path.expanduser(v)):
+                                    candidates.add(os.path.realpath(os.path.expanduser(v)))
+        except Exception:
+            pass
+
     # Check PATH binaries
     for p in os.environ.get('PATH', '').split(':'):
         for cmd in ['antigravity', 'antigravity-ide', 'antigravity-1', 'antigravity-acc2', 'antigravity-manager']:
@@ -213,6 +237,7 @@ PATHS_CONF = os.path.join(CONF_DIR, "paths.conf")
 def load_paths_config(detected_app="", detected_ide=""):
     app_dir = detected_app if detected_app else "/opt/antigravity2"
     ide_dir = detected_ide if detected_ide else "/opt/antigravity"
+    custom_paths = []
     if os.path.isfile(PATHS_CONF):
         try:
             with open(PATHS_CONF, "r", encoding="utf-8") as f:
@@ -227,109 +252,237 @@ def load_paths_config(detected_app="", detected_ide=""):
                         app_dir = v
                     elif k == "IDE_INSTALL_DIR" and v:
                         ide_dir = v
+                    elif k in ["CUSTOM_PATHS", "CUSTOM_ANTIGRAVITY_PATHS"] and v:
+                        custom_paths = [p.strip() for p in v.split(":") if p.strip()]
         except Exception:
             pass
-    return app_dir, ide_dir
+    return app_dir, ide_dir, custom_paths
 
-def save_paths_config(app_dir, ide_dir):
+def save_paths_config(app_dir, ide_dir, custom_paths=None):
     os.makedirs(CONF_DIR, exist_ok=True)
+    if custom_paths is None:
+        custom_paths = []
+    filtered = [p for p in custom_paths if p and p != app_dir and p != ide_dir]
+    custom_str = ":".join(filtered)
     with open(PATHS_CONF, "w", encoding="utf-8") as f:
         f.write("# Antigravity Suite Installation Paths Configuration\n")
         f.write(f'APP_INSTALL_DIR="{app_dir}"\n')
         f.write(f'IDE_INSTALL_DIR="{ide_dir}"\n')
+        f.write(f'CUSTOM_ANTIGRAVITY_PATHS="{custom_str}"\n')
+
+def create_launcher_and_desktop(cmd_name, app_type, exe_target, install_dir):
+    local_bin = os.path.join(REAL_HOME, ".local", "bin")
+    local_apps = os.path.join(REAL_HOME, ".local", "share", "applications")
+    os.makedirs(local_bin, exist_ok=True)
+    os.makedirs(local_apps, exist_ok=True)
+
+    launcher_path = os.path.join(local_bin, cmd_name)
+    desktop_path = os.path.join(local_apps, f"{cmd_name}.desktop")
+
+    with open(launcher_path, "w", encoding="utf-8") as f:
+        f.write("#!/usr/bin/env bash\n")
+        f.write(f'exec "{exe_target}" --password-store=basic --class="{cmd_name}" --name="{cmd_name}" "$@"\n')
+    os.chmod(launcher_path, 0o755)
+
+    icon_name = "antigravity-ide" if "IDE" in app_type else "antigravity-app"
+    with open(desktop_path, "w", encoding="utf-8") as f:
+        f.write("[Desktop Entry]\n")
+        f.write(f"Name=Google Antigravity ({cmd_name})\n")
+        f.write(f"Comment=Google Antigravity {app_type}\n")
+        f.write(f"Exec={launcher_path} %U\n")
+        f.write(f"Icon={icon_name}\n")
+        f.write("Type=Application\n")
+        f.write(f"StartupWMClass={cmd_name}\n")
+        f.write("Categories=Development;IDE;\n")
+        f.write("Terminal=false\n")
+    os.chmod(desktop_path, 0o644)
+    subprocess.run(["update-desktop-database", local_apps], check=False, stderr=subprocess.DEVNULL)
+    print(f"{GREEN}[SUCCESS] Created launcher {launcher_path} and desktop entry {desktop_path}{NC}")
+
+def toggle_keyring_for_path(install_dir):
+    cache_f = os.path.join(REAL_HOME, ".gemini", "cache", "antigravity-keyring-unavailable")
+    is_normal = os.path.isfile(cache_f)
+    print(f"\nCurrent Keyring Mode: {'Normal File Storage (Decoupled)' if is_normal else 'GNOME Keyring (Secret Service)'}")
+    print("  [1] Switch to Normal File Storage (Bypasses GNOME Keyring - Recommended)")
+    print("  [2] Switch to GNOME Keyring (Secret Service)")
+    k_choice = input("Select storage mode [1-2]: ").strip()
+    keyring_tool = os.path.join(REAL_HOME, ".local", "bin", "antigravity-keyring.py")
+    if not os.path.isfile(keyring_tool):
+        keyring_tool = os.path.join(os.path.dirname(__file__), "antigravity-keyring.py")
+    if os.path.isfile(keyring_tool):
+        mode = "normal" if k_choice == "1" else "gnome"
+        subprocess.run([sys.executable, keyring_tool, "set", "all", mode], check=False)
+
+def configure_single_installation(item, curr_app, curr_ide, custom_paths):
+    while True:
+        is_primary_app = (curr_app and os.path.realpath(item['path']) == os.path.realpath(curr_app))
+        is_primary_ide = (curr_ide and os.path.realpath(item['path']) == os.path.realpath(curr_ide))
+        if is_primary_app:
+            role_label = f"{GREEN}[Primary App Target (Launched by antigravity-1 & antigravity-acc2)]{NC}"
+        elif is_primary_ide:
+            role_label = f"{GREEN}[Primary IDE Target (Launched by antigravity-ide)]{NC}"
+        else:
+            role_label = f"{YELLOW}[Secondary / Standalone Installation]{NC}"
+
+        print(f"\n{CYAN}----------------------------------------------------------------------------------------{NC}")
+        print(f"{BOLD}{CYAN}  Configuring: {item['type']} ({item['version']}) in {item['path']}{NC}")
+        print(f"{CYAN}----------------------------------------------------------------------------------------{NC}")
+        print(f"  • Type:               {item['type']}")
+        print(f"  • Version:            {item['version']}")
+        print(f"  • Directory Path:     {item['path']}")
+        print(f"  • Executable:         {item['executable'] or 'None'}")
+        print(f"  • Permissions:        {'Writable by current user (Ready)' if item['writable'] else 'Read-Only (Requires sudo/chown)'}")
+        print(f"  • Suite Role:         {role_label}")
+        print(f"----------------------------------------------------------------------------------------")
+        print("Select setting to change for this installation:")
+        print("  [1] Change / Relocate Installation Directory Path")
+        print("  [2] Set as Suite Target (Set as Primary App or Primary IDE)")
+        print("  [3] Re-generate Desktop Launcher & Shortcut for this Installation")
+        print("  [4] Toggle Credential Storage Mode (Normal File Storage vs GNOME Keyring)")
+        print("  [0] Done with this installation (Return to list)")
+        print(f"{CYAN}----------------------------------------------------------------------------------------{NC}")
+        try:
+            sub_c = input(f"Select option [0-4, Default: 0]: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            break
+
+        if sub_c in ["0", "", "q", "exit"]:
+            break
+        elif sub_c == "1":
+            old_p = item['path']
+            new_p = input(f"\nEnter new directory path for this installation [current: {old_p}]: ").strip()
+            if new_p and new_p != old_p:
+                new_p = os.path.realpath(os.path.expanduser(new_p))
+                if not os.path.isdir(new_p):
+                    os.makedirs(new_p, exist_ok=True)
+                old_has_files = (os.path.isfile(os.path.join(old_p, 'resources', 'app.asar')) or os.path.isfile(os.path.join(old_p, 'resources', 'app', 'product.json')))
+                new_has_files = (os.path.isfile(os.path.join(new_p, 'resources', 'app.asar')) or os.path.isfile(os.path.join(new_p, 'resources', 'app', 'product.json')))
+                if old_has_files and not new_has_files:
+                    m_ans = input(f"Would you like to copy existing installation files from {old_p} to {new_p}? [Y/n]: ").strip().lower()
+                    if m_ans not in ["n", "no"]:
+                        print(f"Copying files from {old_p} to {new_p}...")
+                        subprocess.run(f"cp -a '{old_p}/.' '{new_p}/'", shell=True, check=False)
+                item['path'] = new_p
+                exe_name = os.path.basename(item['executable']) if item['executable'] else ('antigravity-ide' if 'IDE' in item['type'] else 'antigravity')
+                item['executable'] = os.path.join(new_p, exe_name)
+                item['writable'] = os.access(new_p, os.W_OK)
+                if is_primary_app:
+                    curr_app = new_p
+                if is_primary_ide:
+                    curr_ide = new_p
+                if old_p in custom_paths:
+                    custom_paths.remove(old_p)
+                if new_p not in custom_paths and new_p not in [curr_app, curr_ide]:
+                    custom_paths.append(new_p)
+                print(f"{GREEN}[SUCCESS] Installation path updated to: {new_p}{NC}")
+        elif sub_c == "2":
+            print("\nSelect Suite Role:")
+            print(f"  [1] Set as Primary App Target (Used by antigravity-1 & antigravity-acc2)")
+            print(f"  [2] Set as Primary IDE Target (Used by antigravity-ide)")
+            print(f"  [3] Clear Primary Target role (Keep as Secondary / Standalone)")
+            r_ans = input("Choose role [1-3]: ").strip()
+            if r_ans == "1":
+                curr_app = item['path']
+                print(f"{GREEN}[SUCCESS] Set {item['path']} as Primary App Target.{NC}")
+            elif r_ans == "2":
+                curr_ide = item['path']
+                print(f"{GREEN}[SUCCESS] Set {item['path']} as Primary IDE Target.{NC}")
+            elif r_ans == "3":
+                if is_primary_app: curr_app = ""
+                if is_primary_ide: curr_ide = ""
+                print(f"{GREEN}[SUCCESS] Cleared primary role for {item['path']}.{NC}")
+        elif sub_c == "3":
+            def_name = re.sub(r'[^a-z0-9_-]+', '-', item['type'].lower())
+            cmd_name = input(f"Enter launcher command name [default: {def_name}]: ").strip()
+            cmd_name = cmd_name if cmd_name else def_name
+            exe_target = item['executable'] if (item['executable'] and os.path.isfile(item['executable'])) else os.path.join(item['path'], 'antigravity-ide' if 'IDE' in item['type'] else 'antigravity')
+            create_launcher_and_desktop(cmd_name, item['type'], exe_target, item['path'])
+        elif sub_c == "4":
+            toggle_keyring_for_path(item['path'])
+
+    return curr_app, curr_ide
 
 def configure_paths_interactive(installs):
-    detected_app = ""
-    detected_ide = ""
-    for i in installs:
-        if ('App' in i['type'] or 'Manager' in i['type']) and not detected_app:
-            detected_app = i['path']
-        elif 'IDE' in i['type'] and not detected_ide:
-            detected_ide = i['path']
-
-    curr_app, curr_ide = load_paths_config(detected_app, detected_ide)
-    app_installs = [i for i in installs if 'App' in i['type'] or 'Manager' in i['type']]
-    ide_installs = [i for i in installs if 'IDE' in i['type']]
+    curr_app, curr_ide, custom_paths = load_paths_config()
 
     while True:
+        installs = scan_installations()
         print(f"\n{CYAN}========================================================================================{NC}")
-        print(f"{BOLD}{CYAN}                    Configure Antigravity Installation Paths                            {NC}")
+        print(f"{BOLD}{CYAN}                    Installed Antigravity Suite Manager                                 {NC}")
         print(f"{CYAN}========================================================================================{NC}")
-        print(f"Current Target Paths:")
-        print(f"  • Antigravity App: {GREEN}{curr_app}{NC}")
-        print(f"  • Antigravity IDE: {GREEN}{curr_ide}{NC}")
+        print(f"{BOLD}Detected Antigravity Installations on System ({len(installs)} found):{NC}")
         print(f"----------------------------------------------------------------------------------------")
-        print(f"{BOLD}Detected System Installations:{NC}")
         if installs:
             for idx, item in enumerate(installs, 1):
                 ver = f"v{item['version']}" if item['version'] != "Unknown" else "Unknown"
-                tag = ""
-                if os.path.realpath(item['path']) == os.path.realpath(curr_app):
-                    tag = f" {GREEN}[Active App Target]{NC}"
-                elif os.path.realpath(item['path']) == os.path.realpath(curr_ide):
-                    tag = f" {GREEN}[Active IDE Target]{NC}"
-                print(f"  [{idx}] {item['type']:<20} {ver:<10} in {item['path']}{tag}")
+                tags = []
+                if curr_app and os.path.realpath(item['path']) == os.path.realpath(curr_app):
+                    tags.append(f"{GREEN}[Primary App Target]{NC}")
+                if curr_ide and os.path.realpath(item['path']) == os.path.realpath(curr_ide):
+                    tags.append(f"{GREEN}[Primary IDE Target]{NC}")
+                tag_str = " ".join(tags)
+                print(f"  [{idx}] {item['type']:<20} {ver:<10} in {item['path']} {tag_str}")
         else:
             print(f"  {YELLOW}None detected outside defaults.{NC}")
         print(f"----------------------------------------------------------------------------------------")
-        print("Options:")
-        print("  [1] Pick Antigravity App from detected installations")
-        print("  [2] Enter custom directory for Antigravity App")
-        print("  [3] Pick Antigravity IDE from detected installations")
-        print("  [4] Enter custom directory for Antigravity IDE")
-        print("  [5] Reset paths to defaults (/opt/antigravity2 & /opt/antigravity)")
-        print("  [0] Save and proceed")
+        print(f"  [C] Add / Register a Custom Antigravity Path")
+        print(f"  [R] Reset Primary Targets to Defaults (/opt/antigravity2 & /opt/antigravity)")
+        print(f"  [0] Done / Save & Continue")
         print(f"{CYAN}----------------------------------------------------------------------------------------{NC}")
+        print(f"{BOLD}Which installed Antigravity do you want to configure or change?{NC}")
         try:
-            choice = input(f"Select option [0-5, Default: 0]: ").strip()
+            choice = input(f"Select installation [1-{len(installs)}, C for custom, 0 to finish]: ").strip()
         except (KeyboardInterrupt, EOFError):
-            print("\nExiting path configuration.")
+            print("\nExiting configuration.")
             break
 
-        if choice in ["0", ""]:
-            save_paths_config(curr_app, curr_ide)
-            print(f"{GREEN}[SUCCESS] Saved installation paths to {PATHS_CONF}{NC}")
+        if choice in ["0", "", "q", "exit"]:
+            save_paths_config(curr_app, curr_ide, custom_paths)
+            print(f"{GREEN}[SUCCESS] Saved configuration to {PATHS_CONF}{NC}")
             break
-        elif choice == "1":
-            if not app_installs:
-                print(f"{YELLOW}No Antigravity App installations detected on system.{NC}")
-                continue
-            print("\nSelect detected App installation:")
-            for i, it in enumerate(app_installs, 1):
-                print(f"  [{i}] {it['path']} ({it['type']} v{it['version']})")
-            p_ans = input(f"Choose [1-{len(app_installs)}]: ").strip()
-            if p_ans.isdigit() and 1 <= int(p_ans) <= len(app_installs):
-                curr_app = app_installs[int(p_ans)-1]['path']
-                print(f"{GREEN}[OK] App path updated to: {curr_app}{NC}")
-        elif choice == "2":
-            new_p = input(f"Enter custom path for Antigravity App [current: {curr_app}]: ").strip()
-            if new_p:
-                new_p = os.path.expanduser(new_p)
-                os.makedirs(new_p, exist_ok=True)
-                curr_app = new_p
-                print(f"{GREEN}[OK] App path set to: {curr_app}{NC}")
-        elif choice == "3":
-            if not ide_installs:
-                print(f"{YELLOW}No Antigravity IDE installations detected on system.{NC}")
-                continue
-            print("\nSelect detected IDE installation:")
-            for i, it in enumerate(ide_installs, 1):
-                print(f"  [{i}] {it['path']} (v{it['version']})")
-            p_ans = input(f"Choose [1-{len(ide_installs)}]: ").strip()
-            if p_ans.isdigit() and 1 <= int(p_ans) <= len(ide_installs):
-                curr_ide = ide_installs[int(p_ans)-1]['path']
-                print(f"{GREEN}[OK] IDE path updated to: {curr_ide}{NC}")
-        elif choice == "4":
-            new_p = input(f"Enter custom path for Antigravity IDE [current: {curr_ide}]: ").strip()
-            if new_p:
-                new_p = os.path.expanduser(new_p)
-                os.makedirs(new_p, exist_ok=True)
-                curr_ide = new_p
-                print(f"{GREEN}[OK] IDE path set to: {curr_ide}{NC}")
-        elif choice == "5":
+        elif choice.upper() == "C":
+            custom_p = input("\nEnter custom path to Antigravity installation (or directory to install into): ").strip()
+            if custom_p:
+                custom_p = os.path.realpath(os.path.expanduser(custom_p))
+                if not os.path.isdir(custom_p):
+                    create_ans = input(f"Directory {custom_p} does not exist. Create it? [Y/n]: ").strip().lower()
+                    if create_ans not in ["n", "no"]:
+                        os.makedirs(custom_p, exist_ok=True)
+                app_cand = inspect_app_dir(custom_p)
+                ide_cand = inspect_ide_dir(custom_p)
+                new_cand = None
+                if app_cand:
+                    new_cand = app_cand
+                elif ide_cand:
+                    new_cand = ide_cand
+                else:
+                    print("Directory does not contain an existing Antigravity binary yet.")
+                    t_ans = input("Is this target for [1] Antigravity App or [2] Antigravity IDE? [Default: 1]: ").strip()
+                    cand_type = "Antigravity IDE" if t_ans == "2" else "Antigravity App"
+                    new_cand = {
+                        'type': cand_type,
+                        'version': 'Not installed yet',
+                        'path': custom_p,
+                        'executable': os.path.join(custom_p, 'antigravity-ide' if t_ans == "2" else 'antigravity'),
+                        'writable': os.access(custom_p, os.W_OK)
+                    }
+                if custom_p not in custom_paths:
+                    custom_paths.append(custom_p)
+                save_paths_config(curr_app, curr_ide, custom_paths)
+                print(f"{GREEN}[OK] Added {custom_p} to registered installations.{NC}")
+                curr_app, curr_ide = configure_single_installation(new_cand, curr_app, curr_ide, custom_paths)
+                save_paths_config(curr_app, curr_ide, custom_paths)
+        elif choice.upper() == "R":
             curr_app = "/opt/antigravity2"
             curr_ide = "/opt/antigravity"
-            print(f"{GREEN}[OK] Reset paths to default: App -> {curr_app}, IDE -> {curr_ide}{NC}")
+            save_paths_config(curr_app, curr_ide, custom_paths)
+            print(f"{GREEN}[OK] Reset primary targets: App -> {curr_app}, IDE -> {curr_ide}{NC}")
+        elif choice.isdigit() and 1 <= int(choice) <= len(installs):
+            target = installs[int(choice) - 1]
+            curr_app, curr_ide = configure_single_installation(target, curr_app, curr_ide, custom_paths)
+            save_paths_config(curr_app, curr_ide, custom_paths)
+        else:
+            print(f"{RED}[ERROR] Invalid selection '{choice}'.{NC}")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Antigravity System Installation Detector & Path Configurator")
@@ -345,14 +498,14 @@ if __name__ == '__main__':
     installs = scan_installations()
 
     if args.set_app_dir or args.set_ide_dir:
-        curr_app, curr_ide = load_paths_config()
+        curr_app, curr_ide, custom_paths = load_paths_config()
         if args.set_app_dir:
-            curr_app = os.path.expanduser(args.set_app_dir)
+            curr_app = os.path.realpath(os.path.expanduser(args.set_app_dir))
             os.makedirs(curr_app, exist_ok=True)
         if args.set_ide_dir:
-            curr_ide = os.path.expanduser(args.set_ide_dir)
+            curr_ide = os.path.realpath(os.path.expanduser(args.set_ide_dir))
             os.makedirs(curr_ide, exist_ok=True)
-        save_paths_config(curr_app, curr_ide)
+        save_paths_config(curr_app, curr_ide, custom_paths)
         print(f"{GREEN}[SUCCESS] Saved installation paths to {PATHS_CONF}:{NC}")
         print(f"  • App: {curr_app}")
         print(f"  • IDE: {curr_ide}")
@@ -365,14 +518,16 @@ if __name__ == '__main__':
                     det_app = i['path']
                 elif 'IDE' in i['type'] and not det_ide:
                     det_ide = i['path']
-            app_p, ide_p = load_paths_config(det_app, det_ide)
-            save_paths_config(app_p, ide_p)
+            app_p, ide_p, custom_paths = load_paths_config(det_app, det_ide)
+            save_paths_config(app_p, ide_p, custom_paths)
     elif args.configure_paths:
         configure_paths_interactive(installs)
     elif args.show_paths:
-        app_p, ide_p = load_paths_config()
+        app_p, ide_p, custom_paths = load_paths_config()
         print(f"Antigravity App: {app_p}")
         print(f"Antigravity IDE: {ide_p}")
+        if custom_paths:
+            print(f"Custom Paths: {', '.join(custom_paths)}")
     elif args.json:
         print(json.dumps(installs, indent=2))
     elif args.env:
@@ -380,8 +535,7 @@ if __name__ == '__main__':
         app_ver = ""
         ide_path = ""
         ide_ver = ""
-        # Check paths.conf first
-        conf_app, conf_ide = load_paths_config()
+        conf_app, conf_ide, custom_paths = load_paths_config()
         for i in installs:
             if not app_path and ('App' in i['type'] or 'Manager' in i['type']):
                 app_path = i['path']
@@ -395,5 +549,7 @@ if __name__ == '__main__':
         print(f'ANTIGRAVITY_DETECTED_APP_VER="{app_ver}"')
         print(f'ANTIGRAVITY_DETECTED_IDE="{final_ide}"')
         print(f'ANTIGRAVITY_DETECTED_IDE_VER="{ide_ver}"')
+        if custom_paths:
+            print(f'ANTIGRAVITY_CUSTOM_PATHS="{":".join(custom_paths)}"')
     else:
         print_table(installs)

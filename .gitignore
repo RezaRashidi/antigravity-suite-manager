@@ -2,6 +2,8 @@
 bin/scale_icon
 *.o
 *.raw
+__pycache__/
+*.pyc
 
 # Logs and runtime caches
 *.log

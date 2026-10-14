@@ -288,31 +288,35 @@ Antigravity Manager  v0.25.1     No (Root)   antigravity-manager         /usr/li
 
 ---
 
-### Installation Paths & Target Switching
+### Installation Paths & Instance Configuration (Selection-First)
 
-Customize where Antigravity App and Antigravity IDE are installed or point to on your system. You can switch primary targets between detected installations or specify custom directories (e.g. `~/.local/share/antigravity` or `/opt/my-antigravity`).
+Manage and customize any detected Antigravity installation on your system. The selection-first configuration flow first discovers all installed Antigravity instances (App, IDE, Manager, or custom paths) and asks which instance you wish to configure.
 
-#### 1. Interactive Path Selector & Switcher
+#### 1. Interactive Installation Selector & Configuration
 ```bash
 ~/manage-antigravity.sh paths
 ```
 *(Or select **Option 16: Configure / Switch Antigravity Installation Paths & Targets** in `~/manage-antigravity.sh`)*
 
-- Lists all detected Antigravity App and IDE installations with versions and paths.
-- Allows selecting an existing detected installation as your primary target.
-- Allows typing a custom directory path (automatically expanded and created if needed).
-- Prompts to update desktop launchers (`antigravity-1`, `antigravity-acc2`, `antigravity-ide`) so shortcuts immediately target the new location.
+Workflow:
+1. **Choose Installation**: Select any detected Antigravity instance (`[1-N]`), register a custom directory (`[C]`), or reset defaults (`[R]`).
+2. **Dedicated Instance Submenu**:
+   - `[1] Change / Relocate Directory Path`: Change installation path with optional automated file migration.
+   - `[2] Set as Suite Target`: Assign as Primary App Target (`antigravity-1`/`antigravity-acc2`) or Primary IDE Target (`antigravity-ide`).
+   - `[3] Re-generate Desktop Launcher & Shortcut`: Generate tailored standalone `.desktop` and CLI launcher.
+   - `[4] Toggle Credential Storage Mode`: Switch between Normal File Storage (bypasses GNOME Keyring) and GNOME Keyring.
 
 #### 2. Command-Line Path Configuration
 ```bash
-# Set custom install directories:
+# Set custom install directories directly:
 ~/manage-antigravity.sh paths --set-app-dir "/opt/my-antigravity2" --set-ide-dir "/opt/my-ide"
 
-# Show currently active configured paths:
+# Show currently active configured paths and registered custom instances:
 ~/manage-antigravity.sh paths --show-paths
 ```
 
 Configuration is persisted across runs in `~/.config/antigravity/paths.conf`.
+
 
 ---
 
