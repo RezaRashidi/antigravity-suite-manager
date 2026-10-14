@@ -80,6 +80,8 @@ Antigravity Suite Manager is engineered to make Google Antigravity and Antigravi
 - [Quick Start](#quick-start)
 - [Usage & Commands](#usage--commands)
   - [System Detection & Scanner](#system-detection--scanner)
+  - [Installation Paths & Target Switching](#installation-paths--target-switching)
+  - [Step-by-Step Setup Wizard](#step-by-step-setup-wizard)
   - [Automated Antigravity Installation](#automated-antigravity-installation)
   - [Status Inspection](#status-inspection)
   - [Multi-Instance Creation & Management](#multi-instance-creation--management)
@@ -210,24 +212,49 @@ cd antigravity-suite-manager
 
 ### 2. Install the Suite
 
-Run the automated installer:
+Run the interactive step-by-step setup wizard:
 
 ```bash
 ./install.sh
 ```
 
-Or build with `make`:
+#### Step-by-Step Wizard Options:
+```bash
+# Start from a specific step (e.g. Step 2 to configure/change install paths):
+./install.sh --step 2
+# Or: ./install.sh -s 2
+
+# Run ONLY a single step and exit (e.g. Step 2 to change paths, Step 5 to re-generate icons):
+./install.sh --only-step 2
+# Or: ./install.sh -o 2
+
+# Guided step-by-step confirmation mode (prompts after each step):
+./install.sh --wizard
+# Or: ./install.sh -w
+
+# Specify custom installation paths directly on the command line:
+./install.sh --app-dir "/opt/my-antigravity" --ide-dir "/opt/my-ide"
+
+# Non-interactive automated install with defaults:
+./install.sh -y
+```
+
+#### Wizard Steps Overview:
+1. **Check Dependencies & Prerequisites**: Validates Ubuntu 24.04 and core build tools (`python3`, `gcc`, `tar`, `curl`).
+2. **Configure / Change Installation Paths**: Scans for installed Antigravity instances, lets you select from detected installations or specify custom directories for App and IDE.
+3. **Compile Catmull-Rom Bicubic Resampler**: Builds `scale_icon` from pure C with Catmull-Rom filtering and alpha premultiplication.
+4. **Deploy Management Tools & Master Icons**: Installs suite binaries to `~/.local/bin/` and symlinks `~/manage-antigravity.sh`.
+5. **Configure Visual Icon Themes & Recolor**: Sets up Black/White themes, Account 2 glow recolor, and initializes icon cache.
+6. **Configure Credential Storage Mode**: Sets up Normal local file storage (recommended, bypassing GNOME Keyring) or GNOME Keyring.
+7. **Download & Install Google Antigravity Binaries**: Automatically fetches latest releases and installs them into your configured directories.
+8. **Setup Multi-Account Launchers & Chat Sync**: Deploys `antigravity-1`, `antigravity-acc2`, `antigravity-ide`, verifies 3-way history sync, and outputs the status report.
+
+Or build and install using GNU Make:
 
 ```bash
 make
 make install
 ```
-
-The installer:
-- Compiles `src/scale_icon.c` into `~/.local/bin/scale_icon`.
-- Installs the management scripts to `~/.local/bin/`.
-- Deploys master icon assets to `~/.local/share/icons/`.
-- Symlinks `~/manage-antigravity.sh` for convenient access.
 
 ---
 
@@ -257,6 +284,51 @@ Antigravity IDE      v2.5.5      Yes         antigravity-ide             /opt/an
 Antigravity App      v2.23.1     Yes         antigravity                 /opt/antigravity2
 Antigravity Manager  v0.25.1     No (Root)   antigravity-manager         /usr/lib/antigravity-manager
 ========================================================================================
+```
+
+---
+
+### Installation Paths & Target Switching
+
+Customize where Antigravity App and Antigravity IDE are installed or point to on your system. You can switch primary targets between detected installations or specify custom directories (e.g. `~/.local/share/antigravity` or `/opt/my-antigravity`).
+
+#### 1. Interactive Path Selector & Switcher
+```bash
+~/manage-antigravity.sh paths
+```
+*(Or select **Option 16: Configure / Switch Antigravity Installation Paths & Targets** in `~/manage-antigravity.sh`)*
+
+- Lists all detected Antigravity App and IDE installations with versions and paths.
+- Allows selecting an existing detected installation as your primary target.
+- Allows typing a custom directory path (automatically expanded and created if needed).
+- Prompts to update desktop launchers (`antigravity-1`, `antigravity-acc2`, `antigravity-ide`) so shortcuts immediately target the new location.
+
+#### 2. Command-Line Path Configuration
+```bash
+# Set custom install directories:
+~/manage-antigravity.sh paths --set-app-dir "/opt/my-antigravity2" --set-ide-dir "/opt/my-ide"
+
+# Show currently active configured paths:
+~/manage-antigravity.sh paths --show-paths
+```
+
+Configuration is persisted across runs in `~/.config/antigravity/paths.conf`.
+
+---
+
+### Step-by-Step Setup Wizard
+
+Launch the full interactive setup wizard at any time to reconfigure, repair, or inspect any step:
+
+```bash
+# Launch interactive step-by-step setup wizard:
+~/manage-antigravity.sh wizard
+
+# Start execution from a specific step (e.g. Step 2 for paths, Step 5 for icons):
+~/manage-antigravity.sh wizard --step 2
+
+# Execute ONLY a single step and exit:
+~/manage-antigravity.sh wizard --only-step 2
 ```
 
 ---
@@ -524,6 +596,14 @@ KEYRING_MODE_APP2="normal"
 KEYRING_MODE_IDE="normal"
 ```
 You can edit this file directly or use `manage-antigravity.sh keyring set <target> <mode>`.
+
+### 3. Installation Paths (`~/.config/antigravity/paths.conf`)
+```bash
+# Antigravity Suite Installation Paths Configuration
+APP_INSTALL_DIR="/opt/antigravity2"
+IDE_INSTALL_DIR="/opt/antigravity"
+```
+You can edit this file directly or use `manage-antigravity.sh paths`.
 
 ---
 

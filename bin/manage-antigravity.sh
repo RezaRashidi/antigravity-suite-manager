@@ -63,6 +63,13 @@ if [ -f "$KEYRING_CONF" ]; then
     source "$KEYRING_CONF"
 fi
 
+# Installation Paths Configuration Defaults & Persistence
+PATHS_CONF="${ICONS_CONF_DIR}/paths.conf"
+if [ -f "$PATHS_CONF" ]; then
+    # shellcheck source=/dev/null
+    source "$PATHS_CONF"
+fi
+
 # CLI Behavior Flags
 FORCE_INSTALL=false
 USE_CACHE=true
@@ -1657,6 +1664,71 @@ configure_keyring_interactive() {
 }
 
 # ------------------------------------------------------------------------------
+# 17. Path Configuration & Relocation
+# ------------------------------------------------------------------------------
+configure_paths() {
+    local SCRIPT_DIR
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local DETECT_SCRIPT=""
+    if [ -f "${SCRIPT_DIR}/antigravity-detect.py" ]; then
+        DETECT_SCRIPT="${SCRIPT_DIR}/antigravity-detect.py"
+    elif [ -f "${LOCAL_BIN}/antigravity-detect.py" ]; then
+        DETECT_SCRIPT="${LOCAL_BIN}/antigravity-detect.py"
+    fi
+
+    if [ -z "$DETECT_SCRIPT" ]; then
+        log_err "antigravity-detect.py not found in ${SCRIPT_DIR} or ${LOCAL_BIN}."
+        return 1
+    fi
+
+    python3 "$DETECT_SCRIPT" --configure-paths
+
+    if [ -f "$PATHS_CONF" ]; then
+        # shellcheck source=/dev/null
+        source "$PATHS_CONF"
+    fi
+
+    if [ -t 0 ]; then
+        read -rp "Would you like to re-generate desktop shortcuts/launchers with updated paths now? [Y/n] " regen_ans
+        regen_ans="${regen_ans:-Y}"
+        if [[ "$regen_ans" =~ ^[Yy]$ ]]; then
+            setup_account_1
+            setup_account_2
+            setup_ide_shortcuts
+            log_success "Updated desktop launchers with new installation paths."
+        fi
+    fi
+}
+
+handle_paths_command() {
+    local SCRIPT_DIR
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local DETECT_SCRIPT=""
+    [ -f "${SCRIPT_DIR}/antigravity-detect.py" ] && DETECT_SCRIPT="${SCRIPT_DIR}/antigravity-detect.py"
+    [ -z "$DETECT_SCRIPT" ] && [ -f "${LOCAL_BIN}/antigravity-detect.py" ] && DETECT_SCRIPT="${LOCAL_BIN}/antigravity-detect.py"
+    if [ ${#CMD_ARGS[@]} -gt 0 ]; then
+        python3 "$DETECT_SCRIPT" "${CMD_ARGS[@]}"
+        [ -f "$PATHS_CONF" ] && source "$PATHS_CONF"
+    else
+        configure_paths
+    fi
+}
+
+handle_wizard_command() {
+    local SCRIPT_DIR
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local INSTALLER=""
+    [ -f "${SCRIPT_DIR}/../install.sh" ] && INSTALLER="${SCRIPT_DIR}/../install.sh"
+    [ -f "${SCRIPT_DIR}/install.sh" ] && INSTALLER="${SCRIPT_DIR}/install.sh"
+    [ -f "${REAL_HOME}/PhpstormProjects/antigravity-suite-manager/install.sh" ] && INSTALLER="${REAL_HOME}/PhpstormProjects/antigravity-suite-manager/install.sh"
+    if [ -n "$INSTALLER" ]; then
+        exec "$INSTALLER" "${CMD_ARGS[@]}"
+    else
+        log_err "install.sh not found."
+    fi
+}
+
+# ------------------------------------------------------------------------------
 # CLI Help & Usage
 # ------------------------------------------------------------------------------
 show_help() {
@@ -1681,6 +1753,9 @@ Commands:
   keyring       Configure & switch credential storage (GNOME Keyring vs Normal File Storage)
                 Subcommands: status | set [app1|app2|ide|all] [normal|gnome] | purge
                 Aliases: set-keyring, switch-keyring, toggle-keyring
+  paths         Configure & switch Antigravity installation paths (interactive or CLI)
+                Aliases: set-paths
+  wizard        Launch the interactive step-by-step setup wizard (alias: setup)
   create-instance Create arbitrary App or IDE instances with shared/isolated history (alias: add)
   list-instances  Show all created App and IDE instances and their history status (alias: list)
   set-history     Toggle instance history between 'shared' and 'isolated'
@@ -1709,6 +1784,8 @@ Options:
 
 Examples:
   $(basename "$0") status
+  $(basename "$0") paths
+  $(basename "$0") wizard
   $(basename "$0") keyring status
   $(basename "$0") keyring set app1 normal
   $(basename "$0") keyring purge
@@ -1741,12 +1818,14 @@ interactive_menu() {
     echo "13) List All Instances & History Statuses"
     echo "14) Set / Toggle Instance History Mode (Shared vs Isolated)"
     echo "15) Configure / Switch Keyring Mode (GNOME Keyring vs Normal File Storage)"
-    echo "16) Remove an Instance"
-    echo "17) Force Full Re-download & Reinstall Everything (--force)"
-    echo "18) Clean Download Cache (/tmp/antigravity-cache)"
+    echo "16) Configure / Switch Antigravity Installation Paths & Targets"
+    echo "17) Run Step-by-Step Setup Wizard"
+    echo "18) Remove an Instance"
+    echo "19) Force Full Re-download & Reinstall Everything (--force)"
+    echo "20) Clean Download Cache (/tmp/antigravity-cache)"
     echo "0) Exit"
     echo -e "${CYAN}-----------------------------------------------------${NC}"
-    read -rp "Select an option [0-18]: " choice
+    read -rp "Select an option [0-20]: " choice
 
     case "$choice" in
         1) install_antigravity_all ;;
@@ -1769,13 +1848,27 @@ interactive_menu() {
             set_history_mode "$stype" "$sid" "$smode"
             ;;
         15) configure_keyring_interactive ;;
-        16)
+        16) configure_paths ;;
+        17)
+            local SCRIPT_DIR
+            SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+            local INSTALLER=""
+            [ -f "${SCRIPT_DIR}/../install.sh" ] && INSTALLER="${SCRIPT_DIR}/../install.sh"
+            [ -f "${SCRIPT_DIR}/install.sh" ] && INSTALLER="${SCRIPT_DIR}/install.sh"
+            [ -f "${REAL_HOME}/PhpstormProjects/antigravity-suite-manager/install.sh" ] && INSTALLER="${REAL_HOME}/PhpstormProjects/antigravity-suite-manager/install.sh"
+            if [ -n "$INSTALLER" ]; then
+                exec "$INSTALLER"
+            else
+                log_err "install.sh not found."
+            fi
+            ;;
+        18)
             read -rp "Enter instance type [app/ide]: " rtype
             read -rp "Enter instance id/name: " rid
             remove_instance "$rtype" "$rid"
             ;;
-        17) FORCE_INSTALL=true install_antigravity_all ;;
-        18) clean_cache ;;
+        19) FORCE_INSTALL=true install_antigravity_all ;;
+        20) clean_cache ;;
         0) exit 0 ;;
         *)
             log_err "Invalid selection."
@@ -1907,6 +2000,18 @@ while [ $# -gt 0 ]; do
             CMD_ARGS=("$@")
             break
             ;;
+        paths|set-paths)
+            COMMAND="paths"
+            shift
+            CMD_ARGS=("$@")
+            break
+            ;;
+        wizard|setup)
+            COMMAND="wizard"
+            shift
+            CMD_ARGS=("$@")
+            break
+            ;;
         status|all|app|ide|app1|app2|ide-shortcuts|f5|rtl|update-rtl|update|clean-cache|set-icons|icons|help)
             COMMAND="$1"
             shift
@@ -1968,6 +2073,12 @@ else
                         ;;
                 esac
             fi
+            ;;
+        paths)
+            handle_paths_command
+            ;;
+        wizard|setup)
+            handle_wizard_command
             ;;
         status)
             resolve_dynamic_urls
