@@ -1,0 +1,275 @@
+---
+name: antigravity-suite-internals
+description: >-
+  Authoritative technical reference and operational guide for Google Antigravity Hub, Antigravity IDE (VS Code edition),
+  and multi-instance suite management. Covers internal runtime architecture, Go language server RPC protocols, DBus/GNOME
+  Keyring decoupling, binary patching, database schemas (state.vscdb, SQLite conversation_summaries, Protobuf indexes),
+  token authentication lifecycles, and Google One AI Pro quota mechanics. Use when diagnosing Antigravity IDE/Hub issues,
+  isolating user profiles, managing credentials, debugging language server RPCs, or configuring multi-account setups.
+---
+
+# Antigravity Suite Architecture, Internals & Isolation Guide
+
+This skill documents the complete technical architecture, reverse-engineered runtime mechanics, storage schemas, and operational procedures for **Google Antigravity Hub** (Desktop App) and **Antigravity IDE** (VS Code edition).
+
+---
+
+## 1. Dual-Product Hierarchy & Binary Layout
+
+Antigravity consists of two separate Electron-based products with distinct runtimes:
+
+```mermaid
+graph TD
+    subgraph Antigravity Hub (Desktop App)
+        HubBin["/opt/antigravity2/antigravity"] --> HubAsar["resources/app.asar"]
+        HubBin --> HubLS["resources/bin/language_server (Go)"]
+        HubLS --> HubDir["~/.gemini/ (Default Root)"]
+    end
+
+    subgraph Antigravity IDE (VS Code Fork)
+        IDEBin["/opt/antigravity/antigravity-ide"] --> IDECode["resources/app/ (VS Code Core)"]
+        IDECode --> IDEExt["resources/app/extensions/antigravity/"]
+        IDEExt --> IDELSWrap["bin/language_server_linux_x64 (Wrapper)"]
+        IDELSWrap --> IDELSBin["bin/language_server_linux_x64.bin (Go)"]
+        IDELSBin --> IDEDir["~/.gemide/ or ~/.gemini/"]
+    end
+```
+
+### Installation Directory Matrix
+
+| Component | Antigravity Hub (Desktop App) | Antigravity IDE (Code Edition) |
+| :--- | :--- | :--- |
+| **Primary Directory** | `/opt/antigravity2/` | `/opt/antigravity/` |
+| **Main Executable** | `/opt/antigravity2/antigravity` | `/opt/antigravity/antigravity-ide` |
+| **Language Server** | `/opt/antigravity2/resources/bin/language_server` | `/opt/antigravity/resources/app/extensions/antigravity/bin/language_server_linux_x64.bin` |
+| **Config / User Data** | `~/.config/Antigravity/` | `~/.config/Antigravity IDE/` |
+| **Product Spec** | `package.json` inside `resources/app.asar` | `resources/app/product.json` |
+| **Launcher** | `~/.local/bin/antigravity-1`, `antigravity-acc2` | `~/.local/bin/antigravity-ide` |
+| **Desktop Shortcut** | `~/.local/share/applications/antigravity-1.desktop` | `~/.local/share/applications/antigravity-ide.desktop` |
+
+---
+
+## 2. Language Server Architecture & ConnectRPC Protocols
+
+Both Hub and IDE rely on a compiled Go language server (`language_server`) providing code intelligence, chat streaming, user state, and cloud sync.
+
+### Process Launch Arguments
+
+```bash
+/opt/antigravity/resources/app/extensions/antigravity/bin/language_server_linux_x64.bin \
+  --gemini_dir=/home/reza/.gemide \
+  --csrf_token=5ecc597a-0f7e-460a-9c01-3268282c7b5b \
+  --extension_server_port=33557 \
+  --extension_server_csrf_token=24a9e44c-a6df-4e5f-991f-a82a72bcac99 \
+  --app_data_dir=antigravity-ide \
+  --subclient_type=ide \
+  --cloud_code_endpoint=https://daily-cloudcode-pa.googleapis.com
+```
+
+#### Critical Flag Definitions
+- `--gemini_dir`: Root configuration directory containing tokens, history, and artifacts.
+- `--app_data_dir`: Relative subfolder under `gemini_dir` storing instance data (`antigravity` or `antigravity-ide`).
+- `--cloud_code_endpoint`: Target backend for Cloud Code APIs:
+  - `https://cloudcode-pa.googleapis.com`: Corporate/enterprise endpoint (returns `403 Forbidden` for consumer Google AI Pro accounts).
+  - `https://daily-cloudcode-pa.googleapis.com`: **Mandatory for consumer Google AI Pro / Google One accounts**.
+- `--csrf_token`: Session token required for authenticating loopback RPC HTTP/HTTPS requests.
+- `--subclient_type`: Informs backend telemetry of client mode (`ide` or `hub`).
+
+### Key ConnectRPC Endpoints (`exa.language_server_pb.LanguageServerService`)
+
+All loopback calls use ConnectRPC / gRPC-web over local loopback TLS with header `x-codeium-csrf-token: <csrf_token>`.
+
+#### 1. `GetUserStatus`
+Retrieves authenticated user identity, active tier, and capabilities:
+```python
+import urllib.request, json, ssl
+ctx = ssl._create_unverified_context()
+req = urllib.request.Request(
+    f"https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/GetUserStatus",
+    data=b"{}",
+    headers={"Content-Type": "application/json", "x-codeium-csrf-token": csrf}
+)
+with urllib.request.urlopen(req, context=ctx) as r:
+    data = json.loads(r.read().decode())
+    email = data.get("userStatus", {}).get("email")
+    tier = data.get("userStatus", {}).get("planStatus", {}).get("planInfo", {}).get("teamsTier")
+```
+
+#### 2. `RetrieveUserQuotaSummary`
+Fetches remaining token fractions and refresh timestamps:
+```python
+req = urllib.request.Request(
+    f"https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary",
+    data=b"{}",
+    headers={"Content-Type": "application/json", "x-codeium-csrf-token": csrf}
+)
+with urllib.request.urlopen(req, context=ctx) as r:
+    quota = json.loads(r.read().decode())
+    # Quota buckets: gemini-weekly, gemini-5h, 3p-weekly, 3p-5h
+```
+
+#### 3. `GetLoadCodeAssist`
+Checks cloud project binding and subscription metadata:
+- Consumer projects: `cloudaicompanionProject: aicode-consumers`.
+- Paid tier IDs: `g1-pro-tier` (Google AI Pro) vs `free-tier` (Antigravity Starter Quota).
+
+---
+
+## 3. Storage Taxonomy, Databases & Schema Layout
+
+### Directory Hierarchy
+
+```
+~/.gemini/ (or ~/.gemide/)
+├── jetski-standalone-oauth-token        # Primary OAuth2 credential cache
+├── oauth_credentials.json               # Google OAuth client ID & secret
+├── google_accounts.json                 # Cached account list
+├── cache/
+│   └── antigravity-keyring-unavailable # Sentinel file forcing file-based auth
+└── antigravity/ (or antigravity-ide/)
+    ├── conversations/                   # Trajectory JSON histories
+    │   └── <uuid>.json
+    ├── brain/                           # Conversation artifacts & logs
+    │   └── <uuid>/
+    │       ├── *.md                     # Markdown artifacts
+    │       └── .system_generated/       # Task logs & transcript.jsonl
+    ├── annotations/                     # Pinned messages & bookmarks
+    ├── conversation_summaries.db        # SQLite conversation index
+    ├── conversation_summaries.db-wal    # SQLite WAL journal
+    ├── conversation_summaries.db-shm    # SQLite shared memory
+    └── agyhub_summaries_proto.pb        # Protobuf binary conversation summaries
+```
+
+### 1. `jetski-standalone-oauth-token` Structure
+Stores Google OAuth2 tokens in JSON:
+```json
+{
+  "token": {
+    "access_token": "ya29.a0AX...",
+    "token_type": "Bearer",
+    "refresh_token": "1//0cwz...",
+    "expiry": "2026-10-15T03:24:55.245742+00:00"
+  },
+  "auth_method": "consumer",
+  "id_token": "eyJhbGciOi..."
+}
+```
+> [!NOTE]
+> `id_token` is a standard JWT containing `email`, `sub` (Google User ID), `aud`, and `iss`.
+
+### 2. `conversation_summaries.db` (SQLite Schema)
+Maintains conversation titles, active branches, and metadata:
+```sql
+CREATE TABLE IF NOT EXISTS summaries (
+    conversation_id TEXT PRIMARY KEY,
+    title TEXT,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP,
+    message_count INTEGER,
+    model TEXT,
+    is_archived INTEGER DEFAULT 0
+);
+```
+
+### 3. `agyhub_summaries_proto.pb` (Protobuf Format)
+Fast binary index used by the Electron UI sidebar to render conversation titles without scanning SQLite or JSON directories. Updated directly by `antigravity-merge-history.py`.
+
+### 4. `state.vscdb` (VS Code Global State SQLite)
+Located at `~/.config/Antigravity IDE/User/globalStorage/state.vscdb`:
+- **Table**: `ItemTable (key TEXT PRIMARY KEY, value TEXT)`
+- **Key Entries**:
+  - `antigravityAuthStatus`: JSON containing `{ "name": "...", "email": "...", "apiKey": "..." }`.
+  - `antigravityUnifiedStateSync.userStatus`: Base64-encoded Protobuf caching user status, models, and tiers.
+  - `antigravityUnifiedStateSync.trajectorySummaries`: Base64-encoded Protobuf index of all conversations.
+
+---
+
+## 4. Keyring Decoupling & Complete Isolation Protocol
+
+By default, the Go language server uses `github.com/zalando/go-keyring` to query DBus Secret Service (`service="gemini"`, `username="antigravity"`). If Secret Service responds, it loads Account 1's token regardless of local files.
+
+### 4-Point Isolation Strategy
+
+To isolate any Antigravity instance from GNOME Keyring completely:
+
+#### Step 1: Strip DBus Session Bus
+Unsetting `DBUS_SESSION_BUS_ADDRESS` breaks DBus IPC, forcing `go-keyring` to fail immediately and trigger the file-based token fallback:
+```bash
+export DBUS_SESSION_BUS_ADDRESS=""
+export GNOME_KEYRING_CONTROL=""
+export SSH_AUTH_SOCK=""
+```
+
+#### Step 2: Pass Password Store Basic Flag
+Forces Electron / VS Code secret storage to use plaintext local configuration instead of system `libsecret`:
+```bash
+--password-store=basic
+```
+
+#### Step 3: Touch Keyring Unavailable Sentinel
+Antigravity Hub checks for this sentinel file on startup:
+```bash
+mkdir -p "$HOME/.gemini/cache"
+touch "$HOME/.gemini/cache/antigravity-keyring-unavailable"
+```
+
+#### Step 4: Binary String Patching (IDE Language Server)
+The compiled Go binary `language_server_linux_x64.bin` contains hardcoded paths joining `os.UserHomeDir()` with `".gemini"` at offset `0x374087f`.
+
+Patch offset `0x374087f` from `b'.gemini'` to `b'.gemide'`:
+```python
+with open("/opt/antigravity/resources/app/extensions/antigravity/bin/language_server_linux_x64.bin", "r+b") as f:
+    f.seek(0x374087f)
+    assert f.read(7) == b".gemini"
+    f.seek(0x374087f)
+    f.write(b".gemide")
+```
+
+---
+
+## 5. Multi-Account Profile Isolation Matrix
+
+To run multiple Antigravity instances concurrently without credential collisions or quota mirroring:
+
+| Instance | Executable / Launcher | Profile Root | Gemini Dir | Password Store | Account Example |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Hub Acc 1** | `antigravity-1` | `~` | `~/.gemini` | `--password-store=basic` | `aisummerreza@gmail.com` |
+| **Hub Acc 2** | `antigravity-acc2` | `~/.antigravity-profile2` | `~/.antigravity-profile2/.gemini` | `--password-store=basic` | `reza93ai20224@gmail.com` |
+| **IDE** | `antigravity-ide` | `~` | `~/.gemide` | `--password-store=basic` | `rezalast4m@gmail.com` |
+
+### 3-Way Unified History Architecture
+While accounts and auth remain isolated, conversation histories and brain artifacts are unified via symlinks:
+```
+~/.gemini/antigravity/conversations/  <--- MASTER POOL
+    ▲                             ▲
+    │                             │
+    ├── (Symlinked by Acc 2)      ├── (Symlinked by IDE)
+    ~/.antigravity-profile2/           ~/.gemide/antigravity-ide/
+    .gemini/antigravity                conversations
+```
+
+---
+
+## 6. Google One AI Pro Quota Mechanics & Family Sharing
+
+### Quota Bucket Types
+1. `gemini-weekly`: Weekly tier quota budget (Gemini Pro / Flash).
+2. `gemini-5h`: 5-hour smoothing window to prevent burst capacity exhaustion.
+3. `3p-weekly` / `3p-5h`: Third-party models (Claude Sonnet/Opus, GPT-OSS).
+
+### Google Family Group Pooling Caveat
+> [!WARNING]
+> If two Google accounts belong to the same Google Family Group with a shared Google One AI Premium subscription, Google Cloud Code backend **pools rate limits across all family members**.
+> - Both accounts will report nearly identical remaining fractions.
+> - Both accounts will report identical weekly reset times down to the second (`resetTime`).
+> - Truly independent quotas require separate, unlinked Google One subscriptions outside of any shared family group.
+
+---
+
+## 7. Real-Time Synchronization Daemon (`antigravity-merge-history.py`)
+
+Runs as a systemd user service (`antigravity-sync.service`):
+- Uses Linux `inotify` / `watchdog` to monitor write events on `conversations/` across all instances.
+- Re-indexes conversation titles into SQLite `conversation_summaries.db`.
+- Serializes and writes binary `agyhub_summaries_proto.pb` for instantaneous Hub UI updates without app restarts.
+- Resolves title synchronization discrepancies between App and IDE transparently.
