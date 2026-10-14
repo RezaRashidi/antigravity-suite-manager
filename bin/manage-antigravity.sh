@@ -82,7 +82,7 @@ TARGET_IDE_VER=""
 
 # Terminal Colors
 GREEN="\033[1;32m"
-BLUE="\033[1;34m"
+BLUE="\033[1;38;5;75m"
 YELLOW="\033[1;33m"
 RED="\033[1;31m"
 CYAN="\033[1;36m"
@@ -250,7 +250,7 @@ LOCAL_BIN = sys.argv[15] if len(sys.argv) > 15 else os.path.join(REAL_HOME, '.lo
 G = '\033[1;32m'
 Y = '\033[1;33m'
 R = '\033[1;31m'
-B = '\033[1;34m'
+B = '\033[1;38;5;75m'
 C = '\033[1;36m'
 NC = '\033[0m'
 BOLD = '\033[1m'
@@ -1205,7 +1205,7 @@ shared_conv = sys.argv[3]
 
 G = '\033[1;32m'
 Y = '\033[1;33m'
-B = '\033[1;34m'
+B = '\033[1;38;5;75m'
 C = '\033[1;36m'
 NC = '\033[0m'
 BOLD = '\033[1m'

@@ -15,7 +15,7 @@ import argparse
 
 GREEN = '\033[1;32m'
 YELLOW = '\033[1;33m'
-BLUE = '\033[1;34m'
+BLUE = '\033[1;38;5;75m'
 CYAN = '\033[1;36m'
 RED = '\033[1;31m'
 NC = '\033[0m'
