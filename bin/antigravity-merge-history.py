@@ -22,6 +22,8 @@ import datetime
 import base64
 import time
 import argparse
+import urllib.request
+import urllib.parse
 
 def encode_varint(value):
     if value < 0:
@@ -264,6 +266,105 @@ def extract_entries_from_proto(data):
                     entries[uuid] = pure
     return entries
 
+def get_annotation_title(master_gemini, conv_id):
+    """Extracts user-defined or AI-generated title from annotations/<conv_id>.pbtxt."""
+    anno_file = os.path.join(master_gemini, "annotations", f"{conv_id}.pbtxt")
+    if os.path.isfile(anno_file):
+        try:
+            with open(anno_file, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+                m = re.search(r'title\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', content)
+                if m:
+                    raw_str = m.group(1)
+                    if r'\u' in raw_str or r'\x' in raw_str:
+                        try:
+                            val = raw_str.encode('latin1').decode('unicode_escape')
+                        except Exception:
+                            val = raw_str
+                    else:
+                        val = raw_str
+                    clean = val.strip()
+                    if clean:
+                        return clean
+        except Exception:
+            pass
+    return None
+
+def refresh_ide_oauth_token():
+    """Ensures ~/.gemini-ide/jetski-standalone-oauth-token stays refreshed for Account 2 (rezalast4m)."""
+    token_file = os.path.expanduser("~/.gemini-ide/jetski-standalone-oauth-token")
+    if not os.path.isfile(token_file):
+        return
+    try:
+        with open(token_file, "r") as f:
+            data = json.load(f)
+        tok = data.get("token", {})
+        expiry_str = tok.get("expiry")
+        rt = tok.get("refresh_token")
+        if not rt:
+            return
+
+        need_refresh = True
+        if expiry_str:
+            try:
+                clean_exp = expiry_str.replace("Z", "+00:00")
+                exp_dt = datetime.datetime.fromisoformat(clean_exp)
+                now_dt = datetime.datetime.now(datetime.timezone.utc)
+                if (exp_dt - now_dt).total_seconds() > 600:
+                    need_refresh = False
+            except Exception:
+                need_refresh = True
+
+        if need_refresh:
+            creds_file = os.path.expanduser("~/.gemini-ide/oauth_credentials.json")
+            if not os.path.isfile(creds_file):
+                return
+            with open(creds_file, "r") as cf:
+                creds = json.load(cf)
+            client_id = creds.get("client_id")
+            client_secret = creds.get("client_secret")
+            if not client_id or not client_secret:
+                return
+
+            body = urllib.parse.urlencode({
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "grant_type": "refresh_token",
+                "refresh_token": rt,
+            }).encode()
+            req = urllib.request.Request("https://oauth2.googleapis.com/token", data=body)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                res = json.loads(resp.read().decode())
+            if "access_token" in res:
+                tok["access_token"] = res["access_token"]
+                exp_in = res.get("expires_in", 3599)
+                new_exp = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=exp_in)).isoformat()
+                tok["expiry"] = new_exp
+                if "id_token" in res:
+                    data["id_token"] = res["id_token"]
+                data["token"] = tok
+                with open(token_file, "w") as f:
+                    json.dump(data, f, indent=2)
+                os.chmod(token_file, 0o600)
+
+                vscdb_path = os.path.expanduser("~/.config/Antigravity IDE/User/globalStorage/state.vscdb")
+                if os.path.exists(vscdb_path):
+                    try:
+                        v_con = sqlite3.connect(vscdb_path)
+                        v_cur = v_con.cursor()
+                        auth_json = json.dumps({
+                            "name": "Reza Last4m",
+                            "email": "rezalast4m@gmail.com",
+                            "apiKey": res["access_token"]
+                        })
+                        v_cur.execute("INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('antigravityAuthStatus', ?);", (auth_json,))
+                        v_con.commit()
+                        v_con.close()
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
 def extract_conv_text(db_path, transcript_path):
     """Extracts (title, preview) from transcript and sqlite steps."""
     first_user_prompt = ""
@@ -373,6 +474,10 @@ def merge_histories(master_gemini=None, quiet=False):
     if os.path.isdir(ide_gemini) and not os.path.islink(ide_gemini):
         pools.append(("ide-master", ide_gemini, "antigravity-ide"))
 
+    ide_gemini_isolated = os.path.join(real_home, ".gemini-ide", "antigravity-ide")
+    if os.path.isdir(ide_gemini_isolated) and not os.path.islink(ide_gemini_isolated):
+        pools.append(("ide-isolated", ide_gemini_isolated, "antigravity-ide"))
+
     for p_dir in glob.glob(os.path.join(real_home, ".antigravity-profile*")):
         c_dir = os.path.join(p_dir, ".gemini", "antigravity")
         if os.path.isdir(c_dir) and not os.path.islink(c_dir):
@@ -474,6 +579,7 @@ def merge_histories(master_gemini=None, quiet=False):
             pass
 
         transcript_file = os.path.join(master_brain_dir, conv_id, ".system_generated", "logs", "transcript.jsonl")
+        anno_title = get_annotation_title(master_gemini, conv_id)
 
         if conv_id in existing_rows:
             curr_title, curr_prev, curr_sc, curr_lm, curr_raw = existing_rows[conv_id]
@@ -481,11 +587,13 @@ def merge_histories(master_gemini=None, quiet=False):
             raw_title = parsed_raw.get("title")
             raw_summary = parsed_raw.get("summary")
 
-            final_title = curr_title or raw_title
+            final_title = anno_title or curr_title or raw_title
             final_prev = curr_prev or raw_summary
 
             needs_update = False
-            if actual_steps > curr_sc:
+            if anno_title and curr_title != anno_title:
+                needs_update = True
+            elif actual_steps > curr_sc:
                 needs_update = True
             elif not raw_title or not raw_summary:
                 needs_update = True
@@ -497,7 +605,7 @@ def merge_histories(master_gemini=None, quiet=False):
             if needs_update or not final_title or not final_prev:
                 ext_title, ext_prev = extract_conv_text(db_file, transcript_file)
                 if not final_title:
-                    final_title = ext_title or "Conversation"
+                    final_title = anno_title or ext_title or "Conversation"
                 if not final_prev or actual_steps > curr_sc:
                     final_prev = ext_prev or final_title
 
@@ -514,15 +622,15 @@ def merge_histories(master_gemini=None, quiet=False):
                             (final_title, final_prev, final_sc, final_lm, pure_bin, conv_id))
                 updated_db_rows += 1
         else:
-            if actual_steps == 0:
+            if actual_steps == 0 and not anno_title:
                 continue
             ext_title, ext_prev = extract_conv_text(db_file, transcript_file)
-            if not ext_title or ext_title in ["Conversation", "Untitled Conversation"]:
-                if not os.path.isfile(transcript_file):
+            final_title = anno_title or ext_title or "Conversation"
+            if not final_title or final_title in ["Conversation", "Untitled Conversation"]:
+                if not os.path.isfile(transcript_file) and not anno_title:
                     continue
-            final_title = ext_title or "Conversation"
             final_prev = ext_prev or final_title
-            pure_bin = build_cascade_summary(conv_id, final_title, final_prev, actual_steps, file_mtime_iso)
+            pure_bin = build_cascade_summary(conv_id, final_title, final_prev, max(1, actual_steps), file_mtime_iso)
             all_summaries[conv_id] = pure_bin
 
             try:
@@ -533,7 +641,7 @@ def merge_histories(master_gemini=None, quiet=False):
                     not_fully_idle, killed, last_user_input_time, last_user_input_step_index,
                     app_data_dir, raw_summary, group_id
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', (
-                    conv_id, final_title, final_prev, actual_steps, file_mtime_iso,
+                    conv_id, final_title, final_prev, max(1, actual_steps), file_mtime_iso,
                     "", "CASCADE_RUN_STATUS_IDLE", "", "outside-of-project", "",
                     "", 0, "", "", 0, 0, file_mtime_iso, -1,
                     "antigravity", pure_bin, ""
@@ -627,44 +735,49 @@ def merge_histories(master_gemini=None, quiet=False):
             pass
 
     # 7. Setup IDE directory symlinks and proto files
-    os.makedirs(ide_gemini, exist_ok=True)
+    target_ide_dirs = [ide_gemini]
+    if os.path.isdir(os.path.join(real_home, ".gemini-ide")):
+        target_ide_dirs.append(ide_gemini_isolated)
 
-    ide_conv_link = os.path.join(ide_gemini, "conversations")
-    if not os.path.islink(ide_conv_link):
-        if os.path.exists(ide_conv_link):
-            shutil.rmtree(ide_conv_link, ignore_errors=True)
-        os.symlink(master_conv_dir, ide_conv_link)
+    for target_dir in target_ide_dirs:
+        os.makedirs(target_dir, exist_ok=True)
 
-    ide_brain_link = os.path.join(ide_gemini, "brain")
-    if not os.path.islink(ide_brain_link):
-        if os.path.exists(ide_brain_link):
-            shutil.rmtree(ide_brain_link, ignore_errors=True)
-        os.symlink(master_brain_dir, ide_brain_link)
+        for link_name, master_path in [
+            ("conversations", master_conv_dir),
+            ("brain", master_brain_dir),
+            ("annotations", os.path.join(master_gemini, "annotations")),
+            ("conversation_summaries.db", master_sum_db),
+        ]:
+            dst_link = os.path.join(target_dir, link_name)
+            if not os.path.islink(dst_link):
+                if os.path.exists(dst_link):
+                    if os.path.isdir(dst_link):
+                        shutil.rmtree(dst_link, ignore_errors=True)
+                    else:
+                        os.remove(dst_link)
+                try:
+                    os.symlink(master_path, dst_link)
+                except Exception:
+                    pass
 
-    ide_db_link = os.path.join(ide_gemini, "conversation_summaries.db")
-    if not os.path.islink(ide_db_link):
-        if os.path.exists(ide_db_link):
-            os.remove(ide_db_link)
-        os.symlink(master_sum_db, ide_db_link)
+        for extra in ["conversation_summaries.db-shm", "conversation_summaries.db-wal"]:
+            ide_extra = os.path.join(target_dir, extra)
+            if os.path.islink(ide_extra) and not os.path.exists(os.path.realpath(ide_extra)):
+                try:
+                    os.unlink(ide_extra)
+                except Exception:
+                    pass
 
-    for extra in ["conversation_summaries.db-shm", "conversation_summaries.db-wal"]:
-        ide_extra = os.path.join(ide_gemini, extra)
-        if os.path.islink(ide_extra) and not os.path.exists(os.path.realpath(ide_extra)):
-            try:
-                os.unlink(ide_extra)
-            except Exception:
-                pass
-
-    for pb_name in ["jetbox_summaries.pb", "jetbox_summaries_proto.pb", "agyhub_summaries.pb", "agyhub_summaries_proto.pb"]:
-        ide_pb = os.path.join(ide_gemini, pb_name)
-        target = os.path.join(master_gemini, pb_name)
-        if not os.path.islink(ide_pb):
-            if os.path.exists(ide_pb):
-                os.remove(ide_pb)
-            try:
-                os.symlink(target, ide_pb)
-            except Exception:
-                pass
+        for pb_name in ["jetbox_summaries.pb", "jetbox_summaries_proto.pb", "agyhub_summaries.pb", "agyhub_summaries_proto.pb"]:
+            ide_pb = os.path.join(target_dir, pb_name)
+            target = os.path.join(master_gemini, pb_name)
+            if not os.path.islink(ide_pb):
+                if os.path.exists(ide_pb):
+                    os.remove(ide_pb)
+                try:
+                    os.symlink(target, ide_pb)
+                except Exception:
+                    pass
 
     # 8. Write Unified State Sync (Format B) to IDE state.vscdb
     if os.path.exists(vscdb_path):
@@ -767,6 +880,7 @@ def watch_mode(master_gemini=None):
         os.path.join(real_home, ".config", "Antigravity IDE", "User", "globalStorage", "state.vscdb"),
         os.path.join(real_home, ".config", "Antigravity IDE", "User", "globalStorage", "state.vscdb-wal"),
         os.path.join(real_home, ".config", "Antigravity", "app_storage.json"),
+        os.path.join(real_home, ".gemini-ide", "jetski-standalone-oauth-token"),
     ]
 
     def get_current_mtimes():
@@ -783,15 +897,23 @@ def watch_mode(master_gemini=None):
                 m[db_file] = os.path.getmtime(db_file)
             except Exception:
                 pass
+        # Live watch on all annotation files for prompt/title changes
+        for anno_file in glob.glob(os.path.join(master_gemini, "annotations", "*.pbtxt")):
+            try:
+                m[anno_file] = os.path.getmtime(anno_file)
+            except Exception:
+                pass
         return m
 
-    # Initial sync on daemon start
+    # Initial sync and token check on daemon start
+    refresh_ide_oauth_token()
     merge_histories(master_gemini=master_gemini, quiet=True)
     last_mtimes = get_current_mtimes()
 
     while True:
         time.sleep(2)
         try:
+            refresh_ide_oauth_token()
             curr = get_current_mtimes()
             if curr != last_mtimes:
                 time.sleep(0.5)  # Debounce active SQLite file writes
