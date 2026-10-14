@@ -557,6 +557,7 @@ EOF
     chmod +x "${LOCAL_APPS}/antigravity-1.desktop"
     ln -sfn "${LOCAL_APPS}/antigravity-1.desktop" "${LOCAL_APPS}/antigravity.desktop"
     update-desktop-database "${LOCAL_APPS}" 2>/dev/null || true
+    xdg-mime default antigravity-1.desktop x-scheme-handler/antigravity 2>/dev/null || true
     log_success "Account 1 configured with icons and launcher."
 }
 
@@ -687,6 +688,7 @@ StartupNotify=true
 EOF
     chmod +x "${LOCAL_APPS}/antigravity-ide.desktop"
     update-desktop-database "${LOCAL_APPS}" 2>/dev/null || true
+    xdg-mime default antigravity-ide.desktop x-scheme-handler/antigravity-ide 2>/dev/null || true
 
     # 3-Way Conversation History & Brain Artifact Sharing (App 1, App 2, IDE)
     local ide_gemini="${SHARED_GEMINI_DIR}/antigravity-ide"
