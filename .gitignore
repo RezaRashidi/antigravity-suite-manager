@@ -1,0 +1,17 @@
+# Build artifacts
+bin/scale_icon
+*.o
+*.raw
+
+# Logs and runtime caches
+*.log
+.tempmediaStorage/
+/tmp/
+
+# OS and Editor files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.bak
+*~
