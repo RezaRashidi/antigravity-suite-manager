@@ -687,9 +687,6 @@ export ANTIGRAVITY_APP_NAME="antigravity-1"
 export ANTIGRAVITY_ICON_PATH="${LOCAL_ICONS}/antigravity-1.png"
 
 cd "\${REAL_HOME}" || cd /tmp
-python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
-python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
-disown
 exec "${APP_INSTALL_DIR}/antigravity" ${pass_store_flag}--class="antigravity-1" --name="antigravity-1" "\$@"
 EOF
     chmod +x "${LOCAL_BIN}/antigravity-1"
@@ -781,13 +778,6 @@ if [ -n "\$running_pid" ]; then
 fi
 
 cd "\${REAL_HOME}" || cd /tmp
-
-# 3. Start background icon & tray cache updater
-python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
-python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
-disown
-
-# 4. Launch isolated Account 2 instance
 exec "${APP_INSTALL_DIR}/antigravity" ${pass_store_flag}--class="antigravity-2" --name="antigravity-2" "\$@"
 EOF
     chmod +x "${LOCAL_BIN}/antigravity-acc2"
@@ -833,9 +823,6 @@ setup_ide_shortcuts() {
 
     cat <<EOF > "${LOCAL_BIN}/antigravity-ide"
 #!/usr/bin/env bash
-python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
-python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
-disown
 exec "${IDE_INSTALL_DIR}/antigravity-ide" ${ide_pass_store}--class="antigravity-ide" --name="antigravity-ide" "\$@"
 EOF
     chmod +x "${LOCAL_BIN}/antigravity-ide"
@@ -1097,9 +1084,6 @@ if [ -n "\$running_pid" ]; then
 fi
 
 cd "\${REAL_HOME}" || cd /tmp
-python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
-disown
-
 exec "${APP_INSTALL_DIR}/antigravity" --password-store=basic --class="${wm_class}" --name="${wm_class}" "\$@"
 EOF
         chmod +x "$launcher"
