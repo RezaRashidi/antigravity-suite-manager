@@ -131,13 +131,20 @@ def focus_window(target_account="2"):
         target_wid = None
         for wid in wids:
             w_res = subprocess.run(["xprop", "-id", wid, "WM_CLASS"], capture_output=True, text=True)
-            if target_account == "2" and ("antigravity-2" in w_res.stdout or "account2" in w_res.stdout):
+            stdout_lower = w_res.stdout.lower()
+            if target_account == "2" and ("antigravity-2" in stdout_lower or "account2" in stdout_lower):
                 target_wid = int(wid, 16)
                 break
-            elif target_account == "1" and ('"antigravity-1"' in w_res.stdout or '"antigravity"' in w_res.stdout):
+            elif target_account == "1" and ('"antigravity-1"' in stdout_lower or '"antigravity"' in stdout_lower):
                 target_wid = int(wid, 16)
                 break
-            elif target_account == "ide" and ('"antigravity-ide"' in w_res.stdout):
+            elif target_account == "ide" and ('"antigravity-ide"' in stdout_lower):
+                target_wid = int(wid, 16)
+                break
+            elif (f"antigravity-{target_account}" in stdout_lower or 
+                  f"antigravity-app-{target_account}" in stdout_lower or 
+                  f"antigravity-ide-{target_account}" in stdout_lower or
+                  target_account in stdout_lower):
                 target_wid = int(wid, 16)
                 break
         
@@ -169,6 +176,17 @@ def focus_window(target_account="2"):
     except Exception:
         return False
 
+icon_cache = {}
+def get_icon_data(png_path):
+    if png_path not in icon_cache:
+        data = png_to_cardinal_array(png_path)
+        if data:
+            c_arr = (ctypes.c_ulong * len(data))(*data)
+            icon_cache[png_path] = (c_arr, len(data))
+        else:
+            icon_cache[png_path] = (None, 0)
+    return icon_cache[png_path]
+
 def apply_icon_to_windows():
     sync_tray_cache()
 
@@ -185,10 +203,6 @@ def apply_icon_to_windows():
     ]
     x11.XChangeProperty.restype = ctypes.c_int
 
-    acc1_data = png_to_cardinal_array(ACC1_ICON_PATH)
-    acc2_data = png_to_cardinal_array(ACC2_ICON_PATH)
-    ide_data = png_to_cardinal_array(IDE_ICON_PATH)
-
     atom_icon = x11.XInternAtom(display, b'_NET_WM_ICON', False)
     atom_cardinal = x11.XInternAtom(display, b'CARDINAL', False)
     atom_class = x11.XInternAtom(display, b'WM_CLASS', False)
@@ -197,10 +211,6 @@ def apply_icon_to_windows():
     cls_acc1 = b'antigravity-1\0antigravity-1\0'
     cls_acc2 = b'antigravity-2\0antigravity-2\0'
     cls_ide = b'antigravity-ide\0antigravity-ide\0'
-
-    c_arr_acc1 = (ctypes.c_ulong * len(acc1_data))(*acc1_data) if acc1_data else None
-    c_arr_acc2 = (ctypes.c_ulong * len(acc2_data))(*acc2_data) if acc2_data else None
-    c_arr_ide = (ctypes.c_ulong * len(ide_data))(*ide_data) if ide_data else None
 
     res = subprocess.run(['xwininfo', '-root', '-tree'], capture_output=True, text=True)
     for line in res.stdout.splitlines():
@@ -221,6 +231,17 @@ def apply_icon_to_windows():
                 except Exception:
                     pass
 
+            # Check if custom instance matching ~/.local/share/icons/{c1}.png exists
+            custom_icon_path = os.path.join(REAL_HOME, ".local/share/icons", f"{c1}.png")
+            if os.path.isfile(custom_icon_path) and c1 not in ("antigravity", "antigravity-1", "antigravity-acc2", "antigravity-ide"):
+                c_arr, length = get_icon_data(custom_icon_path)
+                if c_arr:
+                    cls_custom = f"{c1}\0{c1}\0".encode("utf-8")
+                    x11.XChangeProperty(display, wid, atom_icon, atom_cardinal, 32, 0, ctypes.cast(c_arr, ctypes.c_void_p), length)
+                    x11.XChangeProperty(display, wid, atom_class, atom_string, 8, 0, cls_custom, len(cls_custom))
+                    x11.XFlush(display)
+                    continue
+
             is_ide = False
             is_acc2 = False
 
@@ -229,18 +250,24 @@ def apply_icon_to_windows():
             elif "account 2" in title.lower() or "antigravity-2" in c1.lower() or "account2" in c1.lower() or (win_cmd and "antigravity-profile2" in win_cmd):
                 is_acc2 = True
 
-            if is_ide and c_arr_ide:
-                x11.XChangeProperty(display, wid, atom_icon, atom_cardinal, 32, 0, ctypes.cast(c_arr_ide, ctypes.c_void_p), len(ide_data))
-                x11.XChangeProperty(display, wid, atom_class, atom_string, 8, 0, cls_ide, len(cls_ide))
-                x11.XFlush(display)
-            elif is_acc2 and c_arr_acc2:
-                x11.XChangeProperty(display, wid, atom_icon, atom_cardinal, 32, 0, ctypes.cast(c_arr_acc2, ctypes.c_void_p), len(acc2_data))
-                x11.XChangeProperty(display, wid, atom_class, atom_string, 8, 0, cls_acc2, len(cls_acc2))
-                x11.XFlush(display)
-            elif not is_acc2 and not is_ide and c_arr_acc1:
-                x11.XChangeProperty(display, wid, atom_icon, atom_cardinal, 32, 0, ctypes.cast(c_arr_acc1, ctypes.c_void_p), len(acc1_data))
-                x11.XChangeProperty(display, wid, atom_class, atom_string, 8, 0, cls_acc1, len(cls_acc1))
-                x11.XFlush(display)
+            if is_ide:
+                c_arr, length = get_icon_data(IDE_ICON_PATH)
+                if c_arr:
+                    x11.XChangeProperty(display, wid, atom_icon, atom_cardinal, 32, 0, ctypes.cast(c_arr, ctypes.c_void_p), length)
+                    x11.XChangeProperty(display, wid, atom_class, atom_string, 8, 0, cls_ide, len(cls_ide))
+                    x11.XFlush(display)
+            elif is_acc2:
+                c_arr, length = get_icon_data(ACC2_ICON_PATH)
+                if c_arr:
+                    x11.XChangeProperty(display, wid, atom_icon, atom_cardinal, 32, 0, ctypes.cast(c_arr, ctypes.c_void_p), length)
+                    x11.XChangeProperty(display, wid, atom_class, atom_string, 8, 0, cls_acc2, len(cls_acc2))
+                    x11.XFlush(display)
+            elif not is_acc2 and not is_ide:
+                c_arr, length = get_icon_data(ACC1_ICON_PATH)
+                if c_arr:
+                    x11.XChangeProperty(display, wid, atom_icon, atom_cardinal, 32, 0, ctypes.cast(c_arr, ctypes.c_void_p), length)
+                    x11.XChangeProperty(display, wid, atom_class, atom_string, 8, 0, cls_acc1, len(cls_acc1))
+                    x11.XFlush(display)
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--focus":

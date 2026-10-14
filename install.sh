@@ -67,7 +67,8 @@ echo -e "${BLUE}[4/5] Installing scripts and master icon assets...${NC}"
 cp -f "${SCRIPT_DIR}/bin/manage-antigravity.sh" "${TARGET_BIN}/"
 cp -f "${SCRIPT_DIR}/bin/antigravity-generate-icons.py" "${TARGET_BIN}/"
 cp -f "${SCRIPT_DIR}/bin/antigravity-apply-icon.py" "${TARGET_BIN}/"
-chmod +x "${TARGET_BIN}/manage-antigravity.sh" "${TARGET_BIN}/antigravity-generate-icons.py" "${TARGET_BIN}/antigravity-apply-icon.py"
+cp -f "${SCRIPT_DIR}/bin/antigravity-merge-history.py" "${TARGET_BIN}/"
+chmod +x "${TARGET_BIN}/manage-antigravity.sh" "${TARGET_BIN}/antigravity-generate-icons.py" "${TARGET_BIN}/antigravity-apply-icon.py" "${TARGET_BIN}/antigravity-merge-history.py"
 
 # Master icons
 if [ -d "${SCRIPT_DIR}/assets" ]; then

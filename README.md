@@ -28,6 +28,8 @@ Provides seamless multi-instance profile isolation (Account 1, Account 2, & Anti
 - [Quick Start](#quick-start)
 - [Usage & Commands](#usage--commands)
   - [Status Inspection](#status-inspection)
+  - [Multi-Instance Creation & Management](#multi-instance-creation--management)
+  - [Conversation History Merging & Sync](#conversation-history-merging--sync)
   - [Smart Updates & Caching](#smart-updates--caching)
   - [Customizing Icon Themes & Recolor](#customizing-icon-themes--recolor)
   - [Component-Level Commands](#component-level-commands)
@@ -228,6 +230,71 @@ Environment & Permissions:
   • IDE Dir Ownership:      Writable by reza (Ready)
 ========================================================================================
 ```
+
+---
+
+### Multi-Instance Creation & Management
+
+You can create an arbitrary number of distinct Antigravity App profiles and Antigravity IDE instances (e.g. Account 3, Account 4, client-specific profiles, or isolated workspaces).
+
+#### 1. List All Active Instances
+```bash
+~/manage-antigravity.sh list-instances
+```
+Displays an inventory table with type, instance identifier, history mode (`Shared` vs `Isolated`), `WM_CLASS`, status, and launcher path.
+
+#### 2. Create a New Instance
+```bash
+~/manage-antigravity.sh create-instance [app|ide] [instance_id] [shared|isolated] [black|white] [hue_shift]
+```
+- **Interactive Mode**: Simply run `~/manage-antigravity.sh create-instance` to be prompted interactively through type, name, history mode, theme, and color tint options.
+- **Examples**:
+  ```bash
+  # Create a 3rd App profile with shared history and violet glow:
+  ~/manage-antigravity.sh create-instance app 3 shared black 0.52
+
+  # Create an isolated IDE instance for a private client with emerald green accent:
+  ~/manage-antigravity.sh create-instance ide client-a isolated white 0.33
+  ```
+
+Every created instance receives:
+- Dedicated profile directory (`~/.antigravity-profile-app-<id>` or `~/.antigravity-ide-profile-<id>`).
+- Completely isolated credentials, browser cookies, and keyring storage.
+- Custom recolored high-resolution icons across all resolutions (`16x16` to `512x512`).
+- Dedicated launcher script (`antigravity-app-<id>` or `antigravity-ide-<id>`) with single-instance raising and `--restart` support.
+- Unique `WM_CLASS` and `.desktop` entry to prevent taskbar grouping collisions.
+
+#### 3. Toggle History Mode (`Shared` vs `Isolated`)
+Switch any instance between shared and isolated on the fly:
+```bash
+# Switch an instance to shared (automatically merges any private chats into the pool first):
+~/manage-antigravity.sh set-history app 3 shared
+
+# Switch an instance to isolated (makes future chats private to this profile):
+~/manage-antigravity.sh set-history app 3 isolated
+```
+
+#### 4. Remove an Instance
+Safely delete an instance, removing its desktop entries and launchers while archiving the profile directory:
+```bash
+~/manage-antigravity.sh remove-instance app 3
+```
+
+---
+
+### Conversation History Merging & Sync
+
+Synchronize, merge, and backfill conversation history across all profiles and IDEs into the unified SQLite database and search index:
+
+```bash
+~/manage-antigravity.sh merge-history
+```
+*(Alias: `~/manage-antigravity.sh merge`)*
+
+- Discovers all `.db` databases across App and IDE profiles.
+- Performs non-destructive imports of missing conversations and project `brain/` folders.
+- Backfills missing rows into `conversation_summaries.db` by extracting prompt previews from `transcript.jsonl`.
+- Updates the FTS search index and verifies symlinks.
 
 ---
 

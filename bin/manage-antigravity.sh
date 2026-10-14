@@ -722,6 +722,434 @@ EOF
 }
 
 # ------------------------------------------------------------------------------
+# 11. Multi-Instance Management & History Synchronization
+# ------------------------------------------------------------------------------
+merge_history() {
+    log_info "Synchronizing and backfilling conversation history across all profiles..."
+    if [ -f "${LOCAL_BIN}/antigravity-merge-history.py" ]; then
+        python3 "${LOCAL_BIN}/antigravity-merge-history.py" --master "$SHARED_CONV_DIR"
+    elif [ -f "${SCRIPT_DIR}/bin/antigravity-merge-history.py" ]; then
+        python3 "${SCRIPT_DIR}/bin/antigravity-merge-history.py" --master "$SHARED_CONV_DIR"
+    else
+        log_err "antigravity-merge-history.py not found."
+        return 1
+    fi
+    log_success "History synchronization complete."
+}
+
+create_instance() {
+    local itype="$1"
+    local iid="$2"
+    local imode="$3"
+    local itheme="${4:-black}"
+    local ihue="$5"
+
+    if [ -z "$itype" ]; then
+        echo -e "${CYAN}=====================================================${NC}"
+        echo -e "${CYAN}         Create Antigravity Instance / Profile       ${NC}"
+        echo -e "${CYAN}=====================================================${NC}"
+        echo "Select Instance Type:"
+        echo "  1) Antigravity App (Desktop App)"
+        echo "  2) Antigravity IDE (VS Code Edition)"
+        read -rp "Enter choice [1-2]: " t_choice
+        case "$t_choice" in
+            2|ide|IDE) itype="ide" ;;
+            *) itype="app" ;;
+        esac
+    fi
+
+    itype=$(echo "$itype" | tr '[:upper:]' '[:lower:]')
+    if [ "$itype" != "app" ] && [ "$itype" != "ide" ]; then
+        log_err "Invalid instance type '${itype}'. Must be 'app' or 'ide'."
+        return 1
+    fi
+
+    if [ -z "$iid" ]; then
+        read -rp "Enter instance name or number (e.g. 3, 4, client, work, dev): " iid
+    fi
+    iid=$(echo "$iid" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_-]+/-/g; s/^-+|-+$//g')
+    if [ -z "$iid" ]; then
+        log_err "Instance name cannot be empty."
+        return 1
+    fi
+
+    if [ -z "$imode" ]; then
+        echo -e "\nSelect History Mode:"
+        echo "  1) Shared (Unified conversations & artifacts across instances) [Default]"
+        echo "  2) Isolated (Dedicated private conversations & artifacts)"
+        read -rp "Enter choice [1-2]: " m_choice
+        case "$m_choice" in
+            2|isolated|private) imode="isolated" ;;
+            *) imode="shared" ;;
+        esac
+    fi
+    imode=$(echo "$imode" | tr '[:upper:]' '[:lower:]')
+
+    # Accent color selection if not given
+    if [ -z "$ihue" ]; then
+        echo -e "\nSelect Icon Accent Color / Recolor Glow:"
+        echo "  1) Violet / Magenta (0.52)"
+        echo "  2) Emerald Green (0.33)"
+        echo "  3) Amber Orange (0.12)"
+        echo "  4) Royal Sapphire Blue (0.60)"
+        echo "  5) Ruby Rose (0.85)"
+        echo "  6) Cyan / Teal (0.45)"
+        echo "  7) Original Colors (No shift)"
+        read -rp "Enter choice [1-7, default: 1]: " h_choice
+        case "$h_choice" in
+            2) ihue="0.33" ;;
+            3) ihue="0.12" ;;
+            4) ihue="0.60" ;;
+            5) ihue="0.85" ;;
+            6) ihue="0.45" ;;
+            7) ihue="" ;;
+            *) ihue="0.52" ;;
+        esac
+    fi
+
+    log_info "Creating ${itype^^} instance '${iid}' [History: ${imode^^}, Theme: ${itheme}, Hue: ${ihue:-None}]..."
+
+    local profile_dir
+    local wm_class
+    local launcher
+    local desktop
+
+    if [ "$itype" = "app" ]; then
+        if [[ "$iid" =~ ^[0-9]+$ ]] && [ "$iid" -eq 2 ]; then
+            profile_dir="${REAL_HOME}/.antigravity-profile2"
+            wm_class="antigravity-2"
+            launcher="${LOCAL_BIN}/antigravity-acc2"
+            desktop="${LOCAL_APPS}/antigravity-2.desktop"
+        else
+            profile_dir="${REAL_HOME}/.antigravity-profile-app-${iid}"
+            wm_class="antigravity-app-${iid}"
+            launcher="${LOCAL_BIN}/antigravity-app-${iid}"
+            desktop="${LOCAL_APPS}/antigravity-app-${iid}.desktop"
+        fi
+
+        mkdir -p "${profile_dir}/.gemini/cache"
+        touch "${profile_dir}/.gemini/cache/antigravity-keyring-unavailable"
+
+        mkdir -p "${profile_dir}/.local/share"
+        ln -sfn "$LOCAL_APPS" "${profile_dir}/.local/share/applications"
+        ln -sfn "$LOCAL_ICONS" "${profile_dir}/.local/share/icons"
+
+        if [ "$imode" = "shared" ]; then
+            log_info "Configuring shared conversation history with master pool..."
+            rm -rf "${profile_dir}/.gemini/antigravity"
+            ln -sfn "$SHARED_CONV_DIR" "${profile_dir}/.gemini/antigravity"
+            ln -sfn "$SHARED_CONFIG_DIR" "${profile_dir}/.gemini/config"
+        else
+            log_info "Configuring isolated private conversation history..."
+            if [ -L "${profile_dir}/.gemini/antigravity" ]; then
+                rm -f "${profile_dir}/.gemini/antigravity"
+            fi
+            mkdir -p "${profile_dir}/.gemini/antigravity/conversations"
+            mkdir -p "${profile_dir}/.gemini/antigravity/brain"
+        fi
+
+        # Generate custom icon
+        log_info "Generating dedicated icon for ${wm_class}..."
+        local icon_args=(--custom-instance "$wm_class" --custom-theme "$itheme")
+        if [ -n "$ihue" ]; then
+            icon_args+=(--custom-hue "$ihue")
+        fi
+        python3 "${LOCAL_BIN}/antigravity-generate-icons.py" "${icon_args[@]}" >/dev/null 2>&1 || true
+
+        # Write launcher
+        cat <<EOF > "$launcher"
+#!/usr/bin/env bash
+set -e
+export REAL_HOME="${REAL_HOME}"
+export PROFILE="${profile_dir}"
+export HOME="\${PROFILE}"
+
+mkdir -p "\${PROFILE}/.gemini/cache"
+touch "\${PROFILE}/.gemini/cache/antigravity-keyring-unavailable"
+
+export ANTIGRAVITY_DESKTOP_NAME="${wm_class}.desktop"
+export ANTIGRAVITY_APP_NAME="${wm_class}"
+export ANTIGRAVITY_ICON_PATH="${LOCAL_ICONS}/${wm_class}.png"
+
+# Handle restart
+if [ "\$1" = "--restart" ] || [ "\$1" = "-r" ]; then
+    shift
+    echo "[INFO] Terminating existing ${wm_class} instance..."
+    pkill -f "user-data-dir=.*${profile_dir##*/}.*Antigravity" 2>/dev/null || true
+    sleep 1.5
+fi
+
+# Single instance check
+running_pid=\$(pgrep -f "user-data-dir=.*${profile_dir##*/}.*Antigravity" | head -n 1 || true)
+if [ -n "\$running_pid" ]; then
+    echo "[INFO] ${wm_class} is already running (PID: \${running_pid}). Bringing to front..."
+    python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --focus "${iid}" || true
+    exit 0
+fi
+
+cd "\${REAL_HOME}" || cd /tmp
+python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
+disown
+
+exec "${APP_INSTALL_DIR}/antigravity" --class="${wm_class}" --name="${wm_class}" "\$@"
+EOF
+        chmod +x "$launcher"
+
+        # Write desktop shortcut
+        cat <<EOF > "$desktop"
+[Desktop Entry]
+Name=Antigravity App (${iid})
+GenericName=AI Assistant
+Comment=Google Antigravity AI Assistant - Instance ${iid}
+Exec=${launcher} %U
+Terminal=false
+Type=Application
+Icon=${LOCAL_ICONS}/${wm_class}.png
+Categories=Development;Utility;
+StartupWMClass=${wm_class}
+MimeType=x-scheme-handler/antigravity;
+StartupNotify=true
+EOF
+        chmod +x "$desktop"
+
+    elif [ "$itype" = "ide" ]; then
+        profile_dir="${REAL_HOME}/.antigravity-ide-profile-${iid}"
+        wm_class="antigravity-ide-${iid}"
+        launcher="${LOCAL_BIN}/antigravity-ide-${iid}"
+        desktop="${LOCAL_APPS}/antigravity-ide-${iid}.desktop"
+
+        mkdir -p "${profile_dir}/.gemini"
+        mkdir -p "${profile_dir}/.local/share"
+        ln -sfn "$LOCAL_APPS" "${profile_dir}/.local/share/applications"
+        ln -sfn "$LOCAL_ICONS" "${profile_dir}/.local/share/icons"
+
+        if [ "$imode" = "shared" ]; then
+            log_info "Configuring shared conversation history with master pool..."
+            rm -rf "${profile_dir}/.gemini/antigravity-ide"
+            ln -sfn "$SHARED_CONV_DIR" "${profile_dir}/.gemini/antigravity-ide"
+        else
+            log_info "Configuring isolated private conversation history..."
+            if [ -L "${profile_dir}/.gemini/antigravity-ide" ]; then
+                rm -f "${profile_dir}/.gemini/antigravity-ide"
+            fi
+            mkdir -p "${profile_dir}/.gemini/antigravity-ide/conversations"
+            mkdir -p "${profile_dir}/.gemini/antigravity-ide/brain"
+        fi
+
+        # Generate custom icon
+        log_info "Generating dedicated icon for ${wm_class}..."
+        local icon_args=(--custom-instance "$wm_class" --custom-theme "$itheme")
+        if [ -n "$ihue" ]; then
+            icon_args+=(--custom-hue "$ihue")
+        fi
+        python3 "${LOCAL_BIN}/antigravity-generate-icons.py" "${icon_args[@]}" >/dev/null 2>&1 || true
+
+        # Write launcher
+        cat <<EOF > "$launcher"
+#!/usr/bin/env bash
+set -e
+export REAL_HOME="${REAL_HOME}"
+export PROFILE="${profile_dir}"
+export HOME="\${PROFILE}"
+
+python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
+disown
+
+exec "${IDE_INSTALL_DIR}/antigravity-ide" --user-data-dir "\${PROFILE}/.config/Antigravity IDE" --class="${wm_class}" --name="${wm_class}" "\$@"
+EOF
+        chmod +x "$launcher"
+
+        # Write desktop shortcut
+        cat <<EOF > "$desktop"
+[Desktop Entry]
+Name=Antigravity IDE (${iid})
+GenericName=Code Editor
+Comment=Google Antigravity AI IDE - Instance ${iid}
+Exec=${launcher} %U
+Terminal=false
+Type=Application
+Icon=${LOCAL_ICONS}/${wm_class}.png
+Categories=TextEditor;Development;IDE;
+StartupWMClass=${wm_class}
+MimeType=x-scheme-handler/antigravity-ide;
+StartupNotify=true
+EOF
+        chmod +x "$desktop"
+    fi
+
+    update-desktop-database "$LOCAL_APPS" 2>/dev/null || true
+    log_success "Instance '${iid}' (${itype^^}) created successfully!"
+    echo -e "  • Launcher:       ${BOLD}${launcher}${NC}"
+    echo -e "  • Desktop Entry:  ${BOLD}${desktop}${NC}"
+    echo -e "  • Profile Dir:    ${BOLD}${profile_dir}${NC}"
+    echo -e "  • History Mode:   ${BOLD}${imode^^}${NC}"
+    echo -e "  • WM_CLASS:       ${BOLD}${wm_class}${NC}"
+}
+
+list_instances() {
+    python3 - "$REAL_HOME" "$PROFILE2_DIR" "$SHARED_CONV_DIR" << 'EOF'
+import os, sys, glob, subprocess
+
+real_home = sys.argv[1]
+p2_dir = sys.argv[2]
+shared_conv = sys.argv[3]
+
+G = '\033[1;32m'
+Y = '\033[1;33m'
+B = '\033[1;34m'
+C = '\033[1;36m'
+NC = '\033[0m'
+BOLD = '\033[1m'
+
+print(f"{C}========================================================================================{NC}")
+print(f"{BOLD}{C}                        Antigravity Suite Multi-Instance Inventory                      {NC}")
+print(f"{C}========================================================================================{NC}")
+print(f"{BOLD}{B}Instance Name        Type   History Mode            WM_CLASS             Status   Launcher{NC}")
+print(f"----------------------------------------------------------------------------------------")
+
+instances = []
+
+# 1. Primary App 1
+p1_running = subprocess.run(["pgrep", "-f", "user-data-dir=.*Antigravity$"], capture_output=True).returncode == 0
+instances.append(("Antigravity (Acc 1)", "App", "Primary (Shared)", "antigravity-1", f"{G}Running{NC}" if p1_running else "Stopped", "~/.local/bin/antigravity-1"))
+
+# 2. Account 2
+if os.path.isdir(p2_dir):
+    p2_shared = os.path.islink(os.path.join(p2_dir, ".gemini", "antigravity"))
+    p2_running = subprocess.run(["pgrep", "-f", "antigravity-profile2.*Antigravity"], capture_output=True).returncode == 0
+    instances.append(("Antigravity (Acc 2)", "App", f"{G}Shared{NC}" if p2_shared else f"{Y}Isolated{NC}", "antigravity-2", f"{G}Running{NC}" if p2_running else "Stopped", "~/.local/bin/antigravity-acc2"))
+
+# 3. Custom App profiles
+for p in sorted(glob.glob(os.path.join(real_home, ".antigravity-profile-app-*"))):
+    if ".bak" in p or ".removed" in p: continue
+    name = os.path.basename(p).replace(".antigravity-profile-app-", "")
+    is_shared = os.path.islink(os.path.join(p, ".gemini", "antigravity"))
+    is_run = subprocess.run(["pgrep", "-f", f"{os.path.basename(p)}.*Antigravity"], capture_output=True).returncode == 0
+    instances.append((f"App ({name})", "App", f"{G}Shared{NC}" if is_shared else f"{Y}Isolated{NC}", f"antigravity-app-{name}", f"{G}Running{NC}" if is_run else "Stopped", f"~/.local/bin/antigravity-app-{name}"))
+
+# 4. Primary IDE
+ide_shared = os.path.islink(os.path.join(real_home, ".gemini", "antigravity-ide", "conversations"))
+ide_run = subprocess.run(["pgrep", "-f", "/opt/antigravity/antigravity-ide"], capture_output=True).returncode == 0
+instances.append(("Antigravity IDE (1)", "IDE", f"{G}Shared{NC}" if ide_shared else f"{Y}Isolated{NC}", "antigravity-ide", f"{G}Running{NC}" if ide_run else "Stopped", "~/.local/bin/antigravity-ide"))
+
+# 5. Custom IDE profiles
+for p in sorted(glob.glob(os.path.join(real_home, ".antigravity-ide-profile-*"))):
+    if ".bak" in p or ".removed" in p: continue
+    name = os.path.basename(p).replace(".antigravity-ide-profile-", "")
+    is_shared = os.path.islink(os.path.join(p, ".gemini", "antigravity-ide"))
+    is_run = subprocess.run(["pgrep", "-f", f"{os.path.basename(p)}"], capture_output=True).returncode == 0
+    instances.append((f"IDE ({name})", "IDE", f"{G}Shared{NC}" if is_shared else f"{Y}Isolated{NC}", f"antigravity-ide-{name}", f"{G}Running{NC}" if is_run else "Stopped", f"~/.local/bin/antigravity-ide-{name}"))
+
+for iname, itype, imode, iclass, istat, ilnch in instances:
+    # Strip ANSI when calculating pad
+    raw_mode = imode.replace(G, '').replace(Y, '').replace(NC, '')
+    pad_mode = 20 + (len(imode) - len(raw_mode))
+    raw_stat = istat.replace(G, '').replace(NC, '')
+    pad_stat = 10 + (len(istat) - len(raw_stat))
+    print(f"{iname:<20} {itype:<6} {imode:<{pad_mode}} {iclass:<24} {istat:<{pad_stat}} {ilnch}")
+
+print(f"{C}========================================================================================{NC}")
+EOF
+}
+
+set_history_mode() {
+    local itype="$1"
+    local iid="$2"
+    local target_mode="$3"
+
+    if [ -z "$itype" ] || [ -z "$iid" ] || [ -z "$target_mode" ]; then
+        echo "Usage: $(basename "$0") set-history [app|ide] [instance_id] [shared|isolated]"
+        return 1
+    fi
+
+    itype=$(echo "$itype" | tr '[:upper:]' '[:lower:]')
+    target_mode=$(echo "$target_mode" | tr '[:upper:]' '[:lower:]')
+
+    local profile_gemini=""
+    if [ "$itype" = "app" ]; then
+        if [ "$iid" = "2" ]; then
+            profile_gemini="${REAL_HOME}/.antigravity-profile2/.gemini/antigravity"
+        else
+            profile_gemini="${REAL_HOME}/.antigravity-profile-app-${iid}/.gemini/antigravity"
+        fi
+    elif [ "$itype" = "ide" ]; then
+        if [ "$iid" = "1" ] || [ "$iid" = "default" ]; then
+            profile_gemini="${REAL_HOME}/.gemini/antigravity-ide"
+        else
+            profile_gemini="${REAL_HOME}/.antigravity-ide-profile-${iid}/.gemini/antigravity-ide"
+        fi
+    fi
+
+    local parent_dir
+    parent_dir="$(dirname "$profile_gemini")"
+    if [ ! -d "$parent_dir" ]; then
+        log_err "Instance directory for ${itype} '${iid}' does not exist (${parent_dir})."
+        return 1
+    fi
+
+    if [ "$target_mode" = "shared" ]; then
+        log_info "Switching ${itype} '${iid}' to SHARED history..."
+        if [ -d "$profile_gemini" ] && [ ! -L "$profile_gemini" ]; then
+            log_info "Preserving and merging private conversations into shared pool first..."
+            merge_history
+            mv "$profile_gemini" "${profile_gemini}.bak_$(date +%s)"
+        fi
+        ln -sfn "$SHARED_CONV_DIR" "$profile_gemini"
+        log_success "${itype^^} '${iid}' is now linked to SHARED history."
+    elif [ "$target_mode" = "isolated" ]; then
+        log_info "Switching ${itype} '${iid}' to ISOLATED history..."
+        if [ -L "$profile_gemini" ]; then
+            rm -f "$profile_gemini"
+        fi
+        mkdir -p "${profile_gemini}/conversations" "${profile_gemini}/brain"
+        log_success "${itype^^} '${iid}' now has ISOLATED private history."
+    else
+        log_err "Unknown mode '${target_mode}'. Use 'shared' or 'isolated'."
+        return 1
+    fi
+}
+
+remove_instance() {
+    local itype="$1"
+    local iid="$2"
+
+    if [ -z "$itype" ] || [ -z "$iid" ]; then
+        echo "Usage: $(basename "$0") remove-instance [app|ide] [instance_id]"
+        return 1
+    fi
+
+    itype=$(echo "$itype" | tr '[:upper:]' '[:lower:]')
+    local wm_class=""
+    local profile_dir=""
+    local launcher=""
+    local desktop=""
+
+    if [ "$itype" = "app" ]; then
+        wm_class="antigravity-app-${iid}"
+        profile_dir="${REAL_HOME}/.antigravity-profile-app-${iid}"
+        launcher="${LOCAL_BIN}/antigravity-app-${iid}"
+        desktop="${LOCAL_APPS}/antigravity-app-${iid}.desktop"
+    elif [ "$itype" = "ide" ]; then
+        wm_class="antigravity-ide-${iid}"
+        profile_dir="${REAL_HOME}/.antigravity-ide-profile-${iid}"
+        launcher="${LOCAL_BIN}/antigravity-ide-${iid}"
+        desktop="${LOCAL_APPS}/antigravity-ide-${iid}.desktop"
+    fi
+
+    log_warn "Removing instance ${itype^^} '${iid}'..."
+    rm -f "$launcher" "$desktop"
+    rm -f "${LOCAL_ICONS}/${wm_class}.png"
+    rm -f "${LOCAL_ICONS}/hicolor"/*/apps/"${wm_class}.png"
+    update-desktop-database "$LOCAL_APPS" 2>/dev/null || true
+
+    if [ -d "$profile_dir" ]; then
+        log_info "Backing up profile directory before removal..."
+        mv "$profile_dir" "${profile_dir}.removed_bak_$(date +%s)"
+    fi
+    log_success "Instance ${itype^^} '${iid}' successfully removed."
+}
+
+# ------------------------------------------------------------------------------
 # 11. Patch RTL for App & IDE (mmnaderi/antigravity-rtl)
 # ------------------------------------------------------------------------------
 patch_rtl_app() {
@@ -959,6 +1387,11 @@ Commands:
   app2          Configure Account 2 isolated profile, shared history, and shortcuts
   ide-shortcuts Configure Antigravity IDE launcher and desktop shortcut
   set-icons     Configure or re-apply icons (Black/White and Acc 2 Recolor)
+  merge-history Sync & backfill conversation history across all profiles/IDEs (alias: merge)
+  create-instance Create arbitrary App or IDE instances with shared/isolated history (alias: add)
+  list-instances  Show all created App and IDE instances and their history status (alias: list)
+  set-history     Toggle instance history between 'shared' and 'isolated'
+  remove-instance Delete an App or IDE instance and archive its profile (alias: remove)
   f5            Re-apply manual F5 backend reload sync patch
   rtl           Apply / re-apply antigravity-rtl to App and IDE
   update-rtl    Update antigravity-rtl to latest and re-apply
@@ -1005,10 +1438,14 @@ interactive_menu() {
     echo "7) Check Versions, Cache & Patch Statuses (Status Table)"
     echo "8) Force Full Re-download & Reinstall Everything (--force)"
     echo "9) Clean Download Cache (/tmp/antigravity-cache)"
-    echo "10) Configure Icons (Black/White Themes & Account 2 Recolor)"
+    echo "11) Merge & Sync Conversation History (All Profiles & IDEs)"
+    echo "12) Create New Instance (App or IDE with Shared/Isolated History)"
+    echo "13) List All Instances & History Statuses"
+    echo "14) Set / Toggle Instance History Mode (Shared vs Isolated)"
+    echo "15) Remove an Instance"
     echo "0) Exit"
     echo -e "${CYAN}-----------------------------------------------------${NC}"
-    read -rp "Select an option [0-10]: " choice
+    read -rp "Select an option [0-15]: " choice
 
     case "$choice" in
         1) update_all ;;
@@ -1021,6 +1458,20 @@ interactive_menu() {
         8) FORCE_INSTALL=true update_all ;;
         9) clean_cache ;;
         10) configure_icons_interactive ;;
+        11) merge_history ;;
+        12) create_instance ;;
+        13) list_instances ;;
+        14)
+            read -rp "Enter instance type [app/ide]: " stype
+            read -rp "Enter instance id/name: " sid
+            read -rp "Enter mode [shared/isolated]: " smode
+            set_history_mode "$stype" "$sid" "$smode"
+            ;;
+        15)
+            read -rp "Enter instance type [app/ide]: " rtype
+            read -rp "Enter instance id/name: " rid
+            remove_instance "$rtype" "$rid"
+            ;;
         0) exit 0 ;;
         *)
             log_err "Invalid selection."
@@ -1033,6 +1484,7 @@ interactive_menu() {
 # Main Argument Parsing
 # ------------------------------------------------------------------------------
 COMMAND=""
+CMD_ARGS=()
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -1092,6 +1544,32 @@ while [ $# -gt 0 ]; do
             SKIP_F5=true
             shift
             ;;
+        merge-history|merge)
+            COMMAND="merge-history"
+            shift
+            ;;
+        create-instance|add-instance|add-profile|create-profile|add)
+            COMMAND="create-instance"
+            shift
+            CMD_ARGS=("$@")
+            break
+            ;;
+        list-instances|list-profiles|list)
+            COMMAND="list-instances"
+            shift
+            ;;
+        set-history|toggle-history)
+            COMMAND="set-history"
+            shift
+            CMD_ARGS=("$@")
+            break
+            ;;
+        remove-instance|delete-instance|remove)
+            COMMAND="remove-instance"
+            shift
+            CMD_ARGS=("$@")
+            break
+            ;;
         status|all|app|ide|app1|app2|ide-shortcuts|f5|rtl|update-rtl|update|clean-cache|set-icons|icons|help)
             COMMAND="$1"
             shift
@@ -1141,6 +1619,21 @@ else
             else
                 configure_icons_interactive
             fi
+            ;;
+        merge-history)
+            merge_history
+            ;;
+        create-instance)
+            create_instance "${CMD_ARGS[@]}"
+            ;;
+        list-instances)
+            list_instances
+            ;;
+        set-history)
+            set_history_mode "${CMD_ARGS[@]}"
+            ;;
+        remove-instance)
+            remove_instance "${CMD_ARGS[@]}"
             ;;
         f5)
             patch_f5_reload

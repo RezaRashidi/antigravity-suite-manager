@@ -57,6 +57,9 @@ parser.add_argument("--acc2-recolor", choices=["true", "false", "1", "0"], defau
 parser.add_argument("--ide", choices=["black", "white"], default=cfg.get("IDE_ICON_THEME", "white"),
                     help="Antigravity IDE icon theme (white or black)")
 parser.add_argument("--save-config", action="store_true", help="Persist chosen options into icons.conf")
+parser.add_argument("--custom-instance", help="Generate icons for a custom instance name (e.g. antigravity-app-3)")
+parser.add_argument("--custom-theme", choices=["black", "white"], default="black", help="Base theme for custom instance")
+parser.add_argument("--custom-hue", type=float, default=None, help="Hue shift (0.0 to 1.0) for custom instance recolor")
 
 args = parser.parse_args()
 
@@ -165,10 +168,8 @@ def write_png(w, h, rgba_data, out_path):
         f.write(chunk(b'IDAT', idat))
         f.write(chunk(b'IEND', b''))
 
-def recolor_emblem_to_violet(w, h, data_in, is_white_bg=False):
+def recolor_emblem_to_hue(w, h, data_in, is_white_bg=False, hue_shift=0.52):
     out = bytearray(len(data_in))
-    HUE_SHIFT = 0.52  # 180-deg shift: Blue/Yellow -> Violet/Magenta/Coral
-
     for i in range(0, len(data_in), 4):
         r, g, b, a = data_in[i], data_in[i+1], data_in[i+2], data_in[i+3]
         if a < 10:
@@ -179,7 +180,7 @@ def recolor_emblem_to_violet(w, h, data_in, is_white_bg=False):
         
         # Saturated emblem gradient
         if s_val > 0.08 and v_val > 0.08:
-            new_h = (h_val + HUE_SHIFT) % 1.0
+            new_h = (h_val + hue_shift) % 1.0
             new_s = min(1.0, s_val * 1.15)
             new_v = min(1.0, v_val * 1.08)
             nr, ng, nb = colorsys.hsv_to_rgb(new_h, new_s, new_v)
@@ -187,9 +188,8 @@ def recolor_emblem_to_violet(w, h, data_in, is_white_bg=False):
             out[i+1] = int(ng * 255)
             out[i+2] = int(nb * 255)
             out[i+3] = a
-        # Subtle squircle border aura in deep violet if black background
         elif not is_white_bg and (0.04 < v_val < 0.22 and s_val < 0.25):
-            nr, ng, nb = colorsys.hsv_to_rgb(0.77, 0.40, v_val * 1.25)
+            nr, ng, nb = colorsys.hsv_to_rgb((hue_shift + 0.25) % 1.0, 0.40, v_val * 1.25)
             out[i] = int(nr * 255)
             out[i+1] = int(ng * 255)
             out[i+2] = int(nb * 255)
@@ -199,11 +199,45 @@ def recolor_emblem_to_violet(w, h, data_in, is_white_bg=False):
 
     return out
 
-print(f"[INFO] Settings: App1={acc1_theme}, App2={acc2_theme} (Recolor: {acc2_recolor}), IDE={ide_theme}")
+def recolor_emblem_to_violet(w, h, data_in, is_white_bg=False):
+    return recolor_emblem_to_hue(w, h, data_in, is_white_bg=is_white_bg, hue_shift=0.52)
 
 # Load Master Black & White
 w_blk, h_blk, rgba_black = reconstruct_png(MASTER_BLACK)
 w_wht, h_wht, rgba_white = reconstruct_png(MASTER_WHITE)
+sizes = [512, 256, 128, 64, 48, 32, 24, 16]
+
+# Handle single custom instance generation
+if args.custom_instance:
+    inst_name = args.custom_instance
+    inst_theme = args.custom_theme.lower()
+    base_inst = rgba_white if inst_theme == "white" else rgba_black
+    if args.custom_hue is not None:
+        rgba_inst = recolor_emblem_to_hue(1024, 1024, base_inst, is_white_bg=(inst_theme == "white"), hue_shift=args.custom_hue)
+    else:
+        rgba_inst = bytearray(base_inst)
+    
+    icon_filename = f"{inst_name}.png"
+    write_png(1024, 1024, rgba_inst, os.path.join(LOCAL_ICONS, icon_filename))
+    
+    raw_path = f"/tmp/raw_{inst_name}_1024.raw"
+    with open(raw_path, "wb") as f:
+        f.write(rgba_inst)
+    for sz in sizes:
+        theme_dir = os.path.join(LOCAL_ICONS, "hicolor", f"{sz}x{sz}", "apps")
+        os.makedirs(theme_dir, exist_ok=True)
+        out_raw = f"/tmp/scaled_{sz}_{icon_filename}.raw"
+        subprocess.run([SCALE_BIN, raw_path, "1024", "1024", out_raw, str(sz), str(sz)], check=True)
+        with open(out_raw, "rb") as rf:
+            s_data = rf.read()
+        write_png(sz, sz, s_data, os.path.join(theme_dir, icon_filename))
+    
+    subprocess.run(["gtk-update-icon-cache", "-f", "-t", os.path.join(LOCAL_ICONS, "hicolor")], check=False)
+    subprocess.run(["update-desktop-database", LOCAL_APPS], check=False)
+    print(f"[SUCCESS] Custom icon {icon_filename} created in all hicolor resolutions.")
+    sys.exit(0)
+
+print(f"[INFO] Settings: App1={acc1_theme}, App2={acc2_theme} (Recolor: {acc2_recolor}), IDE={ide_theme}")
 
 # 1. Prepare App 1
 rgba_acc1 = bytearray(rgba_black if acc1_theme == "black" else rgba_white)
@@ -225,9 +259,6 @@ write_png(1024, 1024, rgba_acc2, os.path.join(LOCAL_ICONS, "antigravity-acc2.png
 write_png(1024, 1024, rgba_ide, os.path.join(LOCAL_ICONS, "antigravity-ide.png"))
 
 print("[SUCCESS] Master 1024x1024 icons written.")
-
-# 4. Multi-resolution Downscaling via Catmull-Rom Bicubic Resampler
-sizes = [512, 256, 128, 64, 48, 32, 24, 16]
 
 raw_map = {
     "antigravity.png": ("/tmp/raw_acc1_1024.raw", rgba_acc1),
