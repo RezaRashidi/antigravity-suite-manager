@@ -18,10 +18,53 @@ Provides seamless multi-instance profile isolation (Account 1, Account 2, & Anti
 
 ---
 
+## 🚀 Key Features at a Glance
+
+Antigravity Suite Manager is engineered to make Google Antigravity and Antigravity IDE feel like first-class, production-ready desktop citizens on Ubuntu 24.04 LTS:
+
+### 1. 🛡️ True Multi-Account Isolation (No Session Logouts)
+- **Concurrent Independent Execution**: Run personal, work, and client Google accounts simultaneously side-by-side without Electron single-instance locks or account eviction.
+- **Siloed Keyrings & Secret Stores**: App 1 binds to system GNOME Keyring, App 2 runs in an isolated profile directory (`~/.antigravity-profile2`) with sandboxed keyring storage, and Antigravity IDE leverages VS Code's internal `SecretStorage`.
+- **Zero Cross-Contamination**: Cookies, OAuth refresh tokens, and active sessions are strictly quarantined per profile.
+
+### 2. 🔄 3-Way Unified Chat History & Brain Artifacts
+- **Universal Conversation Sync**: All chat history, active threads, conversation summaries, and brain artifacts are symlinked across App 1, App 2, and Antigravity IDE.
+- **Seamless Context Continuity**: Initiate an AI pair programming session in App 1, continue discussing in App 2, or review generated code artifacts directly in Antigravity IDE.
+- **Concurrent SQLite WAL Safety**: Operates via SQLite Write-Ahead Logging (`.db-wal`), allowing concurrent reads/writes without database locks or corruption.
+- **Configurable Isolation vs Sharing**: New instances can be spawned in either `--shared` mode (participates in 3-way history) or `--isolated` mode (private isolated database).
+
+### 3. 🖥️ Taskbar De-Grouping & Window Independence
+- **Dedicated Window Classes**: Overrides Electron's default `WM_CLASS` to bind each instance to its own unique identifier (`antigravity-1`, `antigravity-2`, `antigravity-ide`).
+- **No More Collapsed Icons**: Ubuntu Dock, GNOME Dash to Panel, and taskbars will never stack your distinct accounts under a single generic window group.
+- **Live X11 Window Injector**: Includes a lightweight daemon (`antigravity-apply-icon.py`) that monitors window creation and dynamically applies `_NET_WM_ICON` directly onto the X11 surface.
+
+### 4. 🎨 C-Powered High-Resolution Icon Engine & Visual Theming
+- **Catmull-Rom Bicubic Scaler in Pure C**: Includes a custom C resampler (`src/scale_icon.c`) with premultiplied alpha calculation, generating razor-sharp icons from 16×16 system trays up to 1024×1024 Retina/4K displays without blurring or dark fringes.
+- **Distinct Icon Schemes**: Choose between official Black and White themes for each application.
+- **Accent Glow for Account 2**: Supports custom hue-shift tinting (e.g. Violet/Magenta glow) so you instantly recognize which account is active on your dock.
+
+### 5. 🌐 Dynamic Upstream Discovery & Zero-Waste Smart Caching
+- **Live Endpoint Scraping**: Automatically queries Google's official auto-updater and release endpoints on-the-fly, downloading the freshest release without hardcoded URLs.
+- **Persistent Tarball Cache**: Stores downloads in `/tmp/antigravity-cache`. Re-running installations, repairing shortcuts, or adding instances never re-downloads hundreds of megabytes.
+
+### 6. ✍️ First-Class Persian & Arabic RTL Typography
+- **Automated RTL Integration**: Embedded patch from [antigravity-rtl](https://github.com/mmnaderi/antigravity-rtl) providing correct right-to-left layout and bidirectionality for Persian and Arabic text.
+- **Vazirmatn Typography**: Injects premium Persian font rendering and provides an intuitive topbar toggle (`Alt+R` / `⌥R`).
+
+### 7. 🔁 Manual F5 Refresh & Crash Resilience
+- **No More Jarring Auto-Reloads**: Prevents intrusive background auto-restarts from breaking your active AI workflow.
+- **Native Keyboard Hook**: Hooks `F5` to trigger a clean webview reload on demand.
+
+### 8. 🐧 Tailored Exclusively for Ubuntu 24.04 LTS (Noble Numbat)
+- **Native Desktop Integration**: Fully compliant with XDG Desktop standards (`~/.local/share/applications`, `~/.local/bin`, MIME scheme handlers).
+- **Rock-Solid Scheme Routing**: Binds `antigravity://` and `antigravity-ide://` protocols to their respective targets to ensure OAuth and deep links never route to the wrong app.
+
+---
+
 ## Table of Contents
 
+- [Key Features](#-key-features-at-a-glance)
 - [Overview](#overview)
-- [Key Features](#key-features)
 - [Platform Compatibility & Requirements](#platform-compatibility--requirements)
 - [Architecture & Profile Isolation](#architecture--profile-isolation)
 - [Shared Chat History & Profile Isolation](#shared-chat-history--profile-isolation)
@@ -53,21 +96,6 @@ Running Google Antigravity on Linux in production workflows often encounters thr
 3. **Typography & Auto-Reload Issues**: Lack of native RTL support for Persian/Arabic text and background auto-reload events interrupting active chat sessions.
 
 **Antigravity Suite Manager** resolves these issues natively without container overhead.
-
----
-
-## Key Features
-
-- **Dual Isolated Accounts with Shared Chats**: Run Account 1 and Account 2 concurrently with distinct keyrings, isolated credentials, yet **100% shared chat history and conversation databases**.
-- **Ubuntu 24.04 LTS Native**: Tailored specifically for Ubuntu 24.04 and GNOME Shell environment.
-- **Side-by-Side Antigravity IDE**: Automated installation, configuration, and desktop integration for the VS Code-based Antigravity IDE.
-- **Taskbar De-Grouping**: Enforces unique `WM_CLASS` identifiers (`antigravity-1`, `antigravity-2`, `antigravity-ide`) so docks and taskbars maintain separate entries.
-- **High-Resolution Icon Engine**: High-performance Catmull-Rom bicubic resampler written in C with premultiplied alpha to produce razor-sharp icons (`16x16` up to `1024x1024`).
-- **Configurable Themes**: Select White or Black base icons for any app, plus an optional Violet/Magenta recoloring glow for Account 2.
-- **Dynamic Release Discovery**: Queries Google's official endpoints to detect the latest versions without hardcoding release URLs.
-- **Zero-Waste Archive Cache**: Caches tarballs in `/tmp/antigravity-cache` to avoid repeated multi-hundred-megabyte downloads.
-- **Automated RTL Patch**: Integrates [antigravity-rtl](https://github.com/mmnaderi/antigravity-rtl) for proper Persian and Arabic text rendering.
-- **Manual F5 Reload**: Binds manual reload to F5 and disables intrusive background auto-restarts.
 
 ---
 
