@@ -1814,98 +1814,207 @@ apply_icons_config() {
 }
 
 configure_icons_interactive() {
-    echo -e "${CYAN}=====================================================${NC}"
-    echo -e "${CYAN}        Configure Antigravity Suite Icons            ${NC}"
-    echo -e "${CYAN}=====================================================${NC}"
-    echo -e "Current Configuration:"
-    echo -e "  • Antigravity 1:    Background: ${BOLD}${ACC1_ICON_THEME}${NC} | Emblem: ${BOLD}${ACC1_EMBLEM_COLOR}${NC}"
-    echo -e "  • Antigravity IDE:  Background: ${BOLD}${IDE_ICON_THEME}${NC} | Emblem: ${BOLD}${IDE_EMBLEM_COLOR}${NC}"
-    if [ -d "$PROFILE2_DIR" ] || [ -f "${LOCAL_BIN}/antigravity-acc2" ]; then
-        echo -e "  • Antigravity 2:    Background: ${BOLD}${ACC2_ICON_THEME}${NC} | Emblem: ${BOLD}${ACC2_EMBLEM_COLOR}${NC}"
-    fi
-    echo -e "${CYAN}-----------------------------------------------------${NC}"
+    local target="${1:-all}"
+    case "$target" in
+        app1|acc1|1)
+            echo -e "${CYAN}=====================================================${NC}"
+            echo -e "${CYAN}   Configure Antigravity (Account 1) Icon            ${NC}"
+            echo -e "${CYAN}=====================================================${NC}"
+            echo -e "Current Configuration: Background: ${BOLD}${ACC1_ICON_THEME}${NC} | Emblem: ${BOLD}${ACC1_EMBLEM_COLOR}${NC}"
+            echo -e "${CYAN}-----------------------------------------------------${NC}"
 
-    echo -e "\n${BOLD}[1] Configure Antigravity (Account 1):${NC}"
-    read -rp "  Background Color [1: Black (default), 2: White]: " bg1
-    case "$bg1" in
-        2|white) ACC1_ICON_THEME="white" ;;
-        *) ACC1_ICON_THEME="black" ;;
+            echo -e "\n${BOLD}Configure Antigravity (Account 1):${NC}"
+            read -rp "  Background Color [1: Black (default), 2: White]: " bg1
+            case "$bg1" in
+                2|white) ACC1_ICON_THEME="white" ;;
+                *) ACC1_ICON_THEME="black" ;;
+            esac
+
+            echo -e "  Emblem Colors:"
+            echo -e "    [1] Original Google Multi-Color (default)"
+            echo -e "    [2] Violet / Magenta"
+            echo -e "    [3] Royal Blue / Cyan"
+            echo -e "    [4] Emerald Green"
+            echo -e "    [5] Amber / Gold"
+            echo -e "    [6] Ruby Red"
+            echo -e "    [7] Monochrome Silver"
+            read -rp "  Select Emblem Color [1-7, Default: 1]: " col1
+            case "$col1" in
+                2|violet|purple) ACC1_EMBLEM_COLOR="violet" ;;
+                3|blue|cyan) ACC1_EMBLEM_COLOR="blue" ;;
+                4|green|emerald) ACC1_EMBLEM_COLOR="green" ;;
+                5|amber|gold|orange) ACC1_EMBLEM_COLOR="amber" ;;
+                6|red|ruby) ACC1_EMBLEM_COLOR="red" ;;
+                7|silver|monochrome|grey) ACC1_EMBLEM_COLOR="monochrome" ;;
+                *) ACC1_EMBLEM_COLOR="original" ;;
+            esac
+            ;;
+
+        ide)
+            echo -e "${CYAN}=====================================================${NC}"
+            echo -e "${CYAN}        Configure Antigravity IDE Icon               ${NC}"
+            echo -e "${CYAN}=====================================================${NC}"
+            echo -e "Current Configuration: Background: ${BOLD}${IDE_ICON_THEME}${NC} | Emblem: ${BOLD}${IDE_EMBLEM_COLOR}${NC}"
+            echo -e "${CYAN}-----------------------------------------------------${NC}"
+
+            echo -e "\n${BOLD}Configure Antigravity IDE:${NC}"
+            read -rp "  Background Color [1: White (default), 2: Black]: " bgi
+            case "$bgi" in
+                2|black) IDE_ICON_THEME="black" ;;
+                *) IDE_ICON_THEME="white" ;;
+            esac
+
+            echo -e "  Emblem Colors:"
+            echo -e "    [1] Original Google Multi-Color (default)"
+            echo -e "    [2] Royal Blue / Cyan"
+            echo -e "    [3] Violet / Magenta"
+            echo -e "    [4] Emerald Green"
+            echo -e "    [5] Amber / Gold"
+            echo -e "    [6] Ruby Red"
+            echo -e "    [7] Monochrome Silver"
+            read -rp "  Select Emblem Color [1-7, Default: 1]: " coli
+            case "$coli" in
+                2|blue|cyan) IDE_EMBLEM_COLOR="blue" ;;
+                3|violet|purple) IDE_EMBLEM_COLOR="violet" ;;
+                4|green|emerald) IDE_EMBLEM_COLOR="green" ;;
+                5|amber|gold|orange) IDE_EMBLEM_COLOR="amber" ;;
+                6|red|ruby) IDE_EMBLEM_COLOR="red" ;;
+                7|silver|monochrome|grey) IDE_EMBLEM_COLOR="monochrome" ;;
+                *) IDE_EMBLEM_COLOR="original" ;;
+            esac
+            ;;
+
+        app2|acc2|2)
+            echo -e "${CYAN}=====================================================${NC}"
+            echo -e "${CYAN}   Configure Antigravity (Account 2) Icon            ${NC}"
+            echo -e "${CYAN}=====================================================${NC}"
+            echo -e "Current Configuration: Background: ${BOLD}${ACC2_ICON_THEME}${NC} | Emblem: ${BOLD}${ACC2_EMBLEM_COLOR}${NC}"
+            echo -e "${CYAN}-----------------------------------------------------${NC}"
+
+            echo -e "\n${BOLD}Configure Antigravity (Account 2):${NC}"
+            read -rp "  Background Color [1: Black (default), 2: White]: " bg2
+            case "$bg2" in
+                2|white) ACC2_ICON_THEME="white" ;;
+                *) ACC2_ICON_THEME="black" ;;
+            esac
+
+            echo -e "  Emblem Colors:"
+            echo -e "    [1] Violet / Magenta (default)"
+            echo -e "    [2] Original Google Multi-Color"
+            echo -e "    [3] Royal Blue / Cyan"
+            echo -e "    [4] Emerald Green"
+            echo -e "    [5] Amber / Gold"
+            echo -e "    [6] Ruby Red"
+            echo -e "    [7] Monochrome Silver"
+            read -rp "  Select Emblem Color [1-7, Default: 1]: " col2
+            case "$col2" in
+                2|original) ACC2_EMBLEM_COLOR="original" ;;
+                3|blue|cyan) ACC2_EMBLEM_COLOR="blue" ;;
+                4|green|emerald) ACC2_EMBLEM_COLOR="green" ;;
+                5|amber|gold|orange) ACC2_EMBLEM_COLOR="amber" ;;
+                6|red|ruby) ACC2_EMBLEM_COLOR="red" ;;
+                7|silver|monochrome|grey) ACC2_EMBLEM_COLOR="monochrome" ;;
+                *) ACC2_EMBLEM_COLOR="violet" ;;
+            esac
+            ACC2_RECOLOR="true"
+            [ "$ACC2_EMBLEM_COLOR" = "original" ] && ACC2_RECOLOR="false"
+            ;;
+
+        *)
+            echo -e "${CYAN}=====================================================${NC}"
+            echo -e "${CYAN}        Configure Antigravity Suite Icons            ${NC}"
+            echo -e "${CYAN}=====================================================${NC}"
+            echo -e "Current Configuration:"
+            echo -e "  • Antigravity 1:    Background: ${BOLD}${ACC1_ICON_THEME}${NC} | Emblem: ${BOLD}${ACC1_EMBLEM_COLOR}${NC}"
+            echo -e "  • Antigravity IDE:  Background: ${BOLD}${IDE_ICON_THEME}${NC} | Emblem: ${BOLD}${IDE_EMBLEM_COLOR}${NC}"
+            if [ -d "$PROFILE2_DIR" ] || [ -f "${LOCAL_BIN}/antigravity-acc2" ]; then
+                echo -e "  • Antigravity 2:    Background: ${BOLD}${ACC2_ICON_THEME}${NC} | Emblem: ${BOLD}${ACC2_EMBLEM_COLOR}${NC}"
+            fi
+            echo -e "${CYAN}-----------------------------------------------------${NC}"
+
+            echo -e "\n${BOLD}[1] Configure Antigravity (Account 1):${NC}"
+            read -rp "  Background Color [1: Black (default), 2: White]: " bg1
+            case "$bg1" in
+                2|white) ACC1_ICON_THEME="white" ;;
+                *) ACC1_ICON_THEME="black" ;;
+            esac
+
+            echo -e "  Emblem Colors:"
+            echo -e "    [1] Original Google Multi-Color (default)"
+            echo -e "    [2] Violet / Magenta"
+            echo -e "    [3] Royal Blue / Cyan"
+            echo -e "    [4] Emerald Green"
+            echo -e "    [5] Amber / Gold"
+            echo -e "    [6] Ruby Red"
+            echo -e "    [7] Monochrome Silver"
+            read -rp "  Select Emblem Color [1-7, Default: 1]: " col1
+            case "$col1" in
+                2|violet|purple) ACC1_EMBLEM_COLOR="violet" ;;
+                3|blue|cyan) ACC1_EMBLEM_COLOR="blue" ;;
+                4|green|emerald) ACC1_EMBLEM_COLOR="green" ;;
+                5|amber|gold|orange) ACC1_EMBLEM_COLOR="amber" ;;
+                6|red|ruby) ACC1_EMBLEM_COLOR="red" ;;
+                7|silver|monochrome|grey) ACC1_EMBLEM_COLOR="monochrome" ;;
+                *) ACC1_EMBLEM_COLOR="original" ;;
+            esac
+
+            echo -e "\n${BOLD}[2] Configure Antigravity IDE:${NC}"
+            read -rp "  Background Color [1: White (default), 2: Black]: " bgi
+            case "$bgi" in
+                2|black) IDE_ICON_THEME="black" ;;
+                *) IDE_ICON_THEME="white" ;;
+            esac
+
+            echo -e "  Emblem Colors:"
+            echo -e "    [1] Original Google Multi-Color (default)"
+            echo -e "    [2] Royal Blue / Cyan"
+            echo -e "    [3] Violet / Magenta"
+            echo -e "    [4] Emerald Green"
+            echo -e "    [5] Amber / Gold"
+            echo -e "    [6] Ruby Red"
+            echo -e "    [7] Monochrome Silver"
+            read -rp "  Select Emblem Color [1-7, Default: 1]: " coli
+            case "$coli" in
+                2|blue|cyan) IDE_EMBLEM_COLOR="blue" ;;
+                3|violet|purple) IDE_EMBLEM_COLOR="violet" ;;
+                4|green|emerald) IDE_EMBLEM_COLOR="green" ;;
+                5|amber|gold|orange) IDE_EMBLEM_COLOR="amber" ;;
+                6|red|ruby) IDE_EMBLEM_COLOR="red" ;;
+                7|silver|monochrome|grey) IDE_EMBLEM_COLOR="monochrome" ;;
+                *) IDE_EMBLEM_COLOR="original" ;;
+            esac
+
+            if [ -d "$PROFILE2_DIR" ] || [ -f "${LOCAL_BIN}/antigravity-acc2" ]; then
+                echo -e "\n${BOLD}[3] Configure Antigravity (Account 2):${NC}"
+                read -rp "  Background Color [1: Black (default), 2: White]: " bg2
+                case "$bg2" in
+                    2|white) ACC2_ICON_THEME="white" ;;
+                    *) ACC2_ICON_THEME="black" ;;
+                esac
+
+                echo -e "  Emblem Colors:"
+                echo -e "    [1] Violet / Magenta (default)"
+                echo -e "    [2] Original Google Multi-Color"
+                echo -e "    [3] Royal Blue / Cyan"
+                echo -e "    [4] Emerald Green"
+                echo -e "    [5] Amber / Gold"
+                echo -e "    [6] Ruby Red"
+                echo -e "    [7] Monochrome Silver"
+                read -rp "  Select Emblem Color [1-7, Default: 1]: " col2
+                case "$col2" in
+                    2|original) ACC2_EMBLEM_COLOR="original" ;;
+                    3|blue|cyan) ACC2_EMBLEM_COLOR="blue" ;;
+                    4|green|emerald) ACC2_EMBLEM_COLOR="green" ;;
+                    5|amber|gold|orange) ACC2_EMBLEM_COLOR="amber" ;;
+                    6|red|ruby) ACC2_EMBLEM_COLOR="red" ;;
+                    7|silver|monochrome|grey) ACC2_EMBLEM_COLOR="monochrome" ;;
+                    *) ACC2_EMBLEM_COLOR="violet" ;;
+                esac
+                ACC2_RECOLOR="true"
+                [ "$ACC2_EMBLEM_COLOR" = "original" ] && ACC2_RECOLOR="false"
+            fi
+            ;;
     esac
-
-    echo -e "  Emblem Colors:"
-    echo -e "    [1] Original Google Multi-Color (default)"
-    echo -e "    [2] Violet / Magenta"
-    echo -e "    [3] Royal Blue / Cyan"
-    echo -e "    [4] Emerald Green"
-    echo -e "    [5] Amber / Gold"
-    echo -e "    [6] Ruby Red"
-    echo -e "    [7] Monochrome Silver"
-    read -rp "  Select Emblem Color [1-7, Default: 1]: " col1
-    case "$col1" in
-        2|violet|purple) ACC1_EMBLEM_COLOR="violet" ;;
-        3|blue|cyan) ACC1_EMBLEM_COLOR="blue" ;;
-        4|green|emerald) ACC1_EMBLEM_COLOR="green" ;;
-        5|amber|gold|orange) ACC1_EMBLEM_COLOR="amber" ;;
-        6|red|ruby) ACC1_EMBLEM_COLOR="red" ;;
-        7|silver|monochrome|grey) ACC1_EMBLEM_COLOR="monochrome" ;;
-        *) ACC1_EMBLEM_COLOR="original" ;;
-    esac
-
-    echo -e "\n${BOLD}[2] Configure Antigravity IDE:${NC}"
-    read -rp "  Background Color [1: White (default), 2: Black]: " bgi
-    case "$bgi" in
-        2|black) IDE_ICON_THEME="black" ;;
-        *) IDE_ICON_THEME="white" ;;
-    esac
-
-    echo -e "  Emblem Colors:"
-    echo -e "    [1] Original Google Multi-Color (default)"
-    echo -e "    [2] Royal Blue / Cyan"
-    echo -e "    [3] Violet / Magenta"
-    echo -e "    [4] Emerald Green"
-    echo -e "    [5] Amber / Gold"
-    echo -e "    [6] Ruby Red"
-    echo -e "    [7] Monochrome Silver"
-    read -rp "  Select Emblem Color [1-7, Default: 1]: " coli
-    case "$coli" in
-        2|blue|cyan) IDE_EMBLEM_COLOR="blue" ;;
-        3|violet|purple) IDE_EMBLEM_COLOR="violet" ;;
-        4|green|emerald) IDE_EMBLEM_COLOR="green" ;;
-        5|amber|gold|orange) IDE_EMBLEM_COLOR="amber" ;;
-        6|red|ruby) IDE_EMBLEM_COLOR="red" ;;
-        7|silver|monochrome|grey) IDE_EMBLEM_COLOR="monochrome" ;;
-        *) IDE_EMBLEM_COLOR="original" ;;
-    esac
-
-    if [ -d "$PROFILE2_DIR" ] || [ -f "${LOCAL_BIN}/antigravity-acc2" ]; then
-        echo -e "\n${BOLD}[3] Configure Antigravity (Account 2):${NC}"
-        read -rp "  Background Color [1: Black (default), 2: White]: " bg2
-        case "$bg2" in
-            2|white) ACC2_ICON_THEME="white" ;;
-            *) ACC2_ICON_THEME="black" ;;
-        esac
-
-        echo -e "  Emblem Colors:"
-        echo -e "    [1] Violet / Magenta (default)"
-        echo -e "    [2] Original Google Multi-Color"
-        echo -e "    [3] Royal Blue / Cyan"
-        echo -e "    [4] Emerald Green"
-        echo -e "    [5] Amber / Gold"
-        echo -e "    [6] Ruby Red"
-        echo -e "    [7] Monochrome Silver"
-        read -rp "  Select Emblem Color [1-7, Default: 1]: " col2
-        case "$col2" in
-            2|original) ACC2_EMBLEM_COLOR="original" ;;
-            3|blue|cyan) ACC2_EMBLEM_COLOR="blue" ;;
-            4|green|emerald) ACC2_EMBLEM_COLOR="green" ;;
-            5|amber|gold|orange) ACC2_EMBLEM_COLOR="amber" ;;
-            6|red|ruby) ACC2_EMBLEM_COLOR="red" ;;
-            7|silver|monochrome|grey) ACC2_EMBLEM_COLOR="monochrome" ;;
-            *) ACC2_EMBLEM_COLOR="violet" ;;
-        esac
-        ACC2_RECOLOR="true"
-        [ "$ACC2_EMBLEM_COLOR" = "original" ] && ACC2_RECOLOR="false"
-    fi
 
     apply_icons_config
 }
@@ -2340,7 +2449,15 @@ while [ $# -gt 0 ]; do
             COMMAND="f5"
             shift
             ;;
-        status|all|app|ide|app1|app2|ide-shortcuts|update-rtl|update|clean-cache|set-icons|icons|help)
+        set-icons|icons)
+            COMMAND="set-icons"
+            shift
+            if [ -n "$1" ] && [[ "$1" != -* ]]; then
+                SUB_COMMAND="$1"
+                shift
+            fi
+            ;;
+        status|all|app|ide|app1|app2|ide-shortcuts|update-rtl|update|clean-cache|help)
             COMMAND="$1"
             shift
             ;;
@@ -2434,7 +2551,7 @@ else
             if [ "$CLI_ICON_GIVEN" = true ]; then
                 apply_icons_config
             else
-                configure_icons_interactive
+                configure_icons_interactive "$SUB_COMMAND"
             fi
             ;;
         merge-history)

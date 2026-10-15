@@ -860,9 +860,16 @@ def configure_single_clone(clone):
             if not os.path.isfile(manage_sh):
                 manage_sh = os.path.join(os.path.dirname(__file__), "manage-antigravity.sh")
             if os.path.isfile(manage_sh):
-                ico_custom = input("Customize Icon appearance (Background & Colors)? [y/N]: ").strip().lower()
+                ico_custom = input(f"Customize Icon appearance (Background & Colors) for {clone['name']}? [y/N]: ").strip().lower()
                 if ico_custom in ["y", "yes"]:
-                    subprocess.run(["bash", manage_sh, "set-icons"], check=False)
+                    if is_ide1:
+                        subprocess.run(["bash", manage_sh, "set-icons", "ide"], check=False)
+                    elif is_acc2:
+                        subprocess.run(["bash", manage_sh, "set-icons", "app2"], check=False)
+                    elif is_acc1:
+                        subprocess.run(["bash", manage_sh, "set-icons", "app1"], check=False)
+                    else:
+                        subprocess.run(["bash", manage_sh, "set-icons"], check=False)
                 if is_acc2:
                     subprocess.run(["bash", manage_sh, "app2"], check=False)
                 elif is_acc1:
@@ -1237,9 +1244,16 @@ def configure_unified_instance(u_item, curr_app, curr_ide, custom_paths):
                         print(f"{RED}[ERROR] Failed to update launcher file.{NC}")
             elif choice == "4":
                 if os.path.isfile(manage_sh):
-                    ico_custom = input("Customize Icon appearance (Background & Colors)? [y/N]: ").strip().lower()
+                    ico_custom = input(f"Customize Icon appearance (Background & Colors) for {u_item['name']}? [y/N]: ").strip().lower()
                     if ico_custom in ["y", "yes"]:
-                        subprocess.run(["bash", manage_sh, "set-icons"], check=False)
+                        if is_ide1:
+                            subprocess.run(["bash", manage_sh, "set-icons", "ide"], check=False)
+                        elif is_acc2:
+                            subprocess.run(["bash", manage_sh, "set-icons", "app2"], check=False)
+                        elif is_acc1:
+                            subprocess.run(["bash", manage_sh, "set-icons", "app1"], check=False)
+                        else:
+                            subprocess.run(["bash", manage_sh, "set-icons"], check=False)
                     if is_acc2: subprocess.run(["bash", manage_sh, "app2"], check=False)
                     elif is_acc1: subprocess.run(["bash", manage_sh, "app1"], check=False)
                     elif is_ide1: subprocess.run(["bash", manage_sh, "ide-shortcuts"], check=False)
