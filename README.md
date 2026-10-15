@@ -68,6 +68,11 @@ Antigravity Suite Manager is engineered to make Google Antigravity and Antigravi
 - **Zero-Downtime Token Migration**: When switching from GNOME Keyring to Normal mode, active OAuth tokens are automatically extracted from GNOME Keyring into local standalone token files, preventing any re-login prompts.
 - **GNOME Keyring Purging**: Cleanly purge all Antigravity secret items, tokens, and encryption keys from GNOME Keyring with a single command.
 
+### 11. ⚙️ Universal Config, Skills, Rules & MCP Synchronization
+- **Single Source of Truth**: All custom instructions (`GEMINI.md`), skills (`skills/`), agent rules, plugins, and MCP servers (`mcp_config.json`) are maintained in `~/.gemini` and cleanly unified across App 1, App 2, and Antigravity IDE.
+- **Dedicated Quota Preservation**: While configurations are shared, OAuth credentials and tokens remain strictly isolated (`~/.gemide` wrapper) so each account retains its dedicated Google One AI Pro quota.
+- **Automatic Rule Deduplication**: Clean symlink topology prevents duplicate `user_global` rule registration in language server ConnectRPC engines.
+
 ---
 
 ## Table of Contents

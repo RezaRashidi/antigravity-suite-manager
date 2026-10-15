@@ -369,6 +369,18 @@ def check_history_sharing():
         return f"{Y}2-Way (App 1 & App 2 only){NC}"
     return f"{R}Not Shared{NC}"
 
+def check_customization_sharing():
+    real_gemini = os.path.join(os.path.dirname(PROFILE2_DIR), '.gemini')
+    gemide = os.path.join(os.path.dirname(PROFILE2_DIR), '.gemide')
+    gemide_rule = os.path.islink(os.path.join(gemide, 'GEMINI.md'))
+    gemide_cfg = os.path.islink(os.path.join(gemide, 'config'))
+    p2_rule = os.path.islink(os.path.join(PROFILE2_DIR, '.gemini', 'GEMINI.md'))
+    if gemide_rule and gemide_cfg and p2_rule:
+        return f"{G}Unified (Rules, Skills, MCP across all instances){NC}"
+    elif gemide_rule or p2_rule:
+        return f"{Y}Partially Shared{NC}"
+    return f"{Y}Standalone{NC}"
+
 def check_write(d):
     if not os.path.isdir(d):
         return f"{R}Directory Missing{NC}"
@@ -469,6 +481,7 @@ print(f"{BOLD}Environment & Permissions:{NC}")
 print(f"  • Account 2 Status:       {acc2_st}")
 print(f"  • Keyring Storage Mode:   {check_keyring_storage()}")
 print(f"  • History Sharing:        {check_history_sharing()}")
+print(f"  • Customizations Sharing: {check_customization_sharing()}")
 print(f"  • App Dir Ownership:      {check_write(APP_DIR)}")
 print(f"  • IDE Dir Ownership:      {check_write(IDE_DIR)}")
 print(f"  • Discovered App URL:     {APP_URL}")
@@ -922,6 +935,9 @@ EOF
             mkdir -p "$target_ide_app"
             ln -sfn "$SHARED_CONV_DIR/mcp" "$target_ide_app/mcp"
             ln -sfn "$SHARED_CONV_DIR/plugin_data" "$target_ide_app/plugin_data"
+
+            # Clean up redundant legacy GEMINI.md symlinks to prevent duplicate rule registration
+            rm -f "$target_ide_app/GEMINI.md" "$ide_root/config/GEMINI.md"
         fi
     done
 
