@@ -422,12 +422,15 @@ step_8_setup_launchers_and_sync() {
     fi
 
     "${TARGET_BIN}/manage-antigravity.sh" app1 >/dev/null 2>&1 || true
-    "${TARGET_BIN}/manage-antigravity.sh" app2 >/dev/null 2>&1 || true
+    if [ -d "${REAL_HOME}/.antigravity-profile2" ] || [ -f "${TARGET_BIN}/antigravity-acc2" ]; then
+        "${TARGET_BIN}/manage-antigravity.sh" app2 >/dev/null 2>&1 || true
+    fi
     "${TARGET_BIN}/manage-antigravity.sh" ide-shortcuts >/dev/null 2>&1 || true
     "${TARGET_BIN}/manage-antigravity.sh" merge-history >/dev/null 2>&1 || true
+    rm -f "${REAL_HOME}/.local/share/applications/antigravity.desktop" 2>/dev/null || true
 
-    echo -e "${GREEN}[OK] Launchers configured: antigravity-1, antigravity-acc2, antigravity-ide.${NC}"
-    echo -e "${GREEN}[OK] 3-Way Unified Chat History synchronized.${NC}"
+    echo -e "${GREEN}[OK] Launchers configured.${NC}"
+    echo -e "${GREEN}[OK] Unified Chat History synchronized.${NC}"
 
     echo -e "\n${CYAN}======================================================================${NC}"
     echo -e "${GREEN}${BOLD}Verification & System Status:${NC}"

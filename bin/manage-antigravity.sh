@@ -656,7 +656,9 @@ install_antigravity_app() {
 
     install_binary "Antigravity-App" "$APP_URL" "$TARGET_APP_VER" "$APP_INSTALL_DIR"
     setup_account_1
-    setup_account_2
+    if [ -d "$PROFILE2_DIR" ] || [ -f "${LOCAL_BIN}/antigravity-acc2" ]; then
+        setup_account_2
+    fi
 
     if [ "$SKIP_RTL" != true ]; then
         patch_rtl_app
@@ -752,7 +754,7 @@ MimeType=x-scheme-handler/antigravity;
 StartupNotify=true
 EOF
     chmod +x "${LOCAL_APPS}/antigravity-1.desktop"
-    ln -sfn "${LOCAL_APPS}/antigravity-1.desktop" "${LOCAL_APPS}/antigravity.desktop"
+    rm -f "${LOCAL_APPS}/antigravity.desktop" 2>/dev/null || true
     update-desktop-database "${LOCAL_APPS}" 2>/dev/null || true
     xdg-mime default antigravity-1.desktop x-scheme-handler/antigravity 2>/dev/null || true
     log_success "Account 1 configured with icons and launcher."
@@ -1592,7 +1594,9 @@ install_antigravity_all() {
 
     install_binary "Antigravity-App" "$APP_URL" "$TARGET_APP_VER" "$APP_INSTALL_DIR"
     setup_account_1
-    setup_account_2
+    if [ -d "$PROFILE2_DIR" ] || [ -f "${LOCAL_BIN}/antigravity-acc2" ]; then
+        setup_account_2
+    fi
 
     install_binary "Antigravity-IDE" "$IDE_URL" "$TARGET_IDE_VER" "$IDE_INSTALL_DIR"
     setup_ide_shortcuts
@@ -1663,8 +1667,52 @@ EOF
 apply_icons_config() {
     log_info "Configuring Suite Icons: App1=${ACC1_ICON_THEME}, App2=${ACC2_ICON_THEME} (Recolor: ${ACC2_RECOLOR}), IDE=${IDE_ICON_THEME}..."
     save_icons_config
-    if [ -f "${LOCAL_BIN}/antigravity-generate-icons.py" ]; then
-        python3 "${LOCAL_BIN}/antigravity-generate-icons.py" \
+
+    local gen_py="${LOCAL_BIN}/antigravity-generate-icons.py"
+    if [ ! -f "$gen_py" ]; then
+        local SCRIPT_DIR
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        if [ -f "${SCRIPT_DIR}/antigravity-generate-icons.py" ]; then
+            gen_py="${SCRIPT_DIR}/antigravity-generate-icons.py"
+        elif [ -f "${SCRIPT_DIR}/bin/antigravity-generate-icons.py" ]; then
+            gen_py="${SCRIPT_DIR}/bin/antigravity-generate-icons.py"
+        elif [ -f "${REAL_HOME}/.antigravity-suite-manager/bin/antigravity-generate-icons.py" ]; then
+            gen_py="${REAL_HOME}/.antigravity-suite-manager/bin/antigravity-generate-icons.py"
+        fi
+    fi
+
+    # Ensure generator script is copied into LOCAL_BIN
+    if [ -f "$gen_py" ] && [ ! -f "${LOCAL_BIN}/antigravity-generate-icons.py" ]; then
+        mkdir -p "$LOCAL_BIN"
+        cp -f "$gen_py" "${LOCAL_BIN}/antigravity-generate-icons.py" 2>/dev/null || true
+        chmod +x "${LOCAL_BIN}/antigravity-generate-icons.py" 2>/dev/null || true
+    fi
+
+    # Immediately ensure master icons exist in LOCAL_ICONS as guaranteed baseline
+    mkdir -p "$LOCAL_ICONS"
+    for master_b in "${LOCAL_ICONS}/antigravity-master-black.png" \
+                    "${REAL_HOME}/.antigravity-suite-manager/assets/antigravity-master-black.png" \
+                    "$(dirname "$(dirname "$gen_py")")/assets/antigravity-master-black.png"; do
+        if [ -f "$master_b" ]; then
+            cp -f "$master_b" "${LOCAL_ICONS}/antigravity-master-black.png" 2>/dev/null || true
+            [ ! -f "${LOCAL_ICONS}/antigravity-1.png" ] && cp -f "$master_b" "${LOCAL_ICONS}/antigravity-1.png"
+            [ ! -f "${LOCAL_ICONS}/antigravity.png" ] && cp -f "$master_b" "${LOCAL_ICONS}/antigravity.png"
+            break
+        fi
+    done
+
+    for master_w in "${LOCAL_ICONS}/antigravity-master-white.png" \
+                    "${REAL_HOME}/.antigravity-suite-manager/assets/antigravity-master-white.png" \
+                    "$(dirname "$(dirname "$gen_py")")/assets/antigravity-master-white.png"; do
+        if [ -f "$master_w" ]; then
+            cp -f "$master_w" "${LOCAL_ICONS}/antigravity-master-white.png" 2>/dev/null || true
+            [ ! -f "${LOCAL_ICONS}/antigravity-ide.png" ] && cp -f "$master_w" "${LOCAL_ICONS}/antigravity-ide.png"
+            break
+        fi
+    done
+
+    if [ -f "$gen_py" ]; then
+        python3 "$gen_py" \
             --acc1 "${ACC1_ICON_THEME}" \
             --acc2 "${ACC2_ICON_THEME}" \
             --acc2-recolor "${ACC2_RECOLOR}" \
