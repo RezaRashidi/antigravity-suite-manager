@@ -89,10 +89,10 @@ CYAN="\033[1;36m"
 NC="\033[0m"
 BOLD="\033[1m"
 
-log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
-log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_err() { echo -e "${RED}[ERROR]${NC} $1"; }
+log_info() { echo -e "${BLUE}[INFO]${NC} $1" >&2; }
+log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1" >&2; }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $1" >&2; }
+log_err() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 
 mkdir -p "$LOCAL_BIN" "$LOCAL_APPS" "$LOCAL_ICONS" "$SHARED_CONV_DIR" "$SHARED_CONFIG_DIR" "$CACHE_DIR"
 
@@ -549,6 +549,11 @@ get_or_download_package() {
     local tmp_download="${cache_file}.part"
     rm -f "$tmp_download"
     curl -fL --progress-bar "$url" -o "$tmp_download"
+    if [ ! -f "$tmp_download" ] || [ ! -s "$tmp_download" ]; then
+        log_err "Download failed or package is empty for ${name} from ${url}"
+        rm -f "$tmp_download"
+        return 1
+    fi
     mv "$tmp_download" "$cache_file"
 
     log_success "Package downloaded and saved to cache: ${cache_file}"
@@ -603,7 +608,12 @@ if os.path.isfile(p):
 
     log_info "Installing / Updating ${name} to v${ver}..."
     local archive_path
-    archive_path=$(get_or_download_package "$name" "$url" "$ver")
+    archive_path=$(get_or_download_package "$name" "$url" "$ver" | tail -n1 | tr -d '\r\n')
+
+    if [ -z "$archive_path" ] || [ ! -f "$archive_path" ]; then
+        log_err "Failed to obtain package archive for ${name} v${ver} (archive: '$archive_path')."
+        return 1
+    fi
 
     if [ "$EUID" -ne 0 ] && [ ! -w "$(dirname "$target_dir")" ] && [ ! -d "$target_dir" ]; then
         sudo mkdir -p "$target_dir"
