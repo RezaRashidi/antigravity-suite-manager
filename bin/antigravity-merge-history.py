@@ -289,28 +289,32 @@ def extract_entries_from_proto(data):
                     entries[uuid] = pure
     return entries
 
-def get_annotation_title(master_gemini, conv_id):
-    """Extracts user-defined or AI-generated title from annotations/<conv_id>.pbtxt."""
-    anno_file = os.path.join(master_gemini, "annotations", f"{conv_id}.pbtxt")
-    if os.path.isfile(anno_file):
-        try:
-            with open(anno_file, "r", encoding="utf-8", errors="ignore") as f:
-                content = f.read()
-                m = re.search(r'title\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', content)
-                if m:
-                    raw_str = m.group(1)
-                    if r'\u' in raw_str or r'\x' in raw_str:
-                        try:
-                            val = raw_str.encode('latin1').decode('unicode_escape')
-                        except Exception:
+def get_annotation_title(master_gemini, conv_id, search_dirs=None):
+    """Extracts user-defined or AI-generated title from annotations/<conv_id>.pbtxt across all roots."""
+    roots = [master_gemini]
+    if search_dirs:
+        roots.extend(search_dirs)
+    for g_dir in roots:
+        anno_file = os.path.join(g_dir, "annotations", f"{conv_id}.pbtxt")
+        if os.path.isfile(anno_file):
+            try:
+                with open(anno_file, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+                    m = re.search(r'title\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', content)
+                    if m:
+                        raw_str = m.group(1)
+                        if r'\u' in raw_str or r'\x' in raw_str:
+                            try:
+                                val = raw_str.encode('latin1').decode('unicode_escape')
+                            except Exception:
+                                val = raw_str
+                        else:
                             val = raw_str
-                    else:
-                        val = raw_str
-                    clean = val.strip()
-                    if clean:
-                        return clean
-        except Exception:
-            pass
+                        clean = val.strip()
+                        if clean:
+                            return clean
+            except Exception:
+                pass
     return None
 
 def refresh_ide_oauth_token():
@@ -452,8 +456,49 @@ def parse_step14_user_prompt(payload):
             return cand
     return ""
 
+def is_synthesized_db_incomplete(db_path):
+    """
+    Checks if a conversation SQLite database has missing/empty message payloads
+    (e.g. legacy synthesized databases missing Tag 20 assistant messages or Tag 19 chunk headers).
+    """
+    if not os.path.isfile(db_path) or os.path.getsize(db_path) == 0:
+        return True
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT count(*) FROM steps;")
+        total_steps = cur.fetchone()[0]
+        if total_steps == 0:
+            conn.close()
+            return True
+
+        # Check step 15 (assistant messages)
+        cur.execute("SELECT step_payload FROM steps WHERE step_type = 15 LIMIT 5;")
+        s15_rows = cur.fetchall()
+        if s15_rows:
+            # Wire format for tag 20 wire type 2: (20 << 3) | 2 = 162 = 0xa2, 0x01
+            has_tag20 = any(b"\xa2\x01" in row[0] for row in s15_rows if row[0])
+            if not has_tag20:
+                conn.close()
+                return True
+
+        # Check step 14 (user prompts)
+        cur.execute("SELECT step_payload FROM steps WHERE step_type = 14 LIMIT 5;")
+        s14_rows = cur.fetchall()
+        if s14_rows:
+            # Wire format for tag 19 subfield 3 wire type 2: (3 << 3) | 2 = 26 = 0x1a
+            has_subfield3 = any(b"\x1a" in row[0] for row in s14_rows if row[0])
+            if not has_subfield3:
+                conn.close()
+                return True
+
+        conn.close()
+        return False
+    except Exception:
+        return True
+
 def synthesize_db_from_transcript(conv_id, db_path, transcript_path):
-    """Synthesizes a valid SQLite conversation database from transcript JSON lines."""
+    """Synthesizes a valid SQLite conversation database from transcript JSON lines with full Protobuf payloads."""
     if not os.path.isfile(transcript_path):
         return False
     try:
@@ -478,6 +523,15 @@ def synthesize_db_from_transcript(conv_id, db_path, transcript_path):
         cur.execute("INSERT OR REPLACE INTO trajectory_meta VALUES (?, ?, 4, 1);", (conv_id, conv_id))
         cur.execute("INSERT OR REPLACE INTO trajectory_metadata_blob VALUES (\"main\", ?);", (conv_id.encode("utf-8"),))
 
+        # Tracking metadata blob (Tag 5 and metadata column)
+        meta = bytearray()
+        meta += encode_tag_bytes(12, conv_id.encode("utf-8"))
+        sub_meta = bytearray()
+        sub_meta += encode_tag_bytes(1, conv_id.encode("utf-8"))
+        sub_meta += encode_tag_bytes(4, conv_id.encode("utf-8"))
+        meta += encode_tag_bytes(20, bytes(sub_meta))
+        meta_bytes = bytes(meta)
+
         step_count = 0
         with open(transcript_path, "r", encoding="utf-8", errors="ignore") as f:
             for line in f:
@@ -493,31 +547,82 @@ def synthesize_db_from_transcript(conv_id, db_path, transcript_path):
                 typ = entry.get("type", "")
                 st_str = entry.get("status", "DONE")
                 content = entry.get("content", "")
+                thinking = entry.get("thinking", "")
+                tool_calls = entry.get("tool_calls", [])
 
-                step_type = 1
                 if "<USER_REQUEST>" in content or typ == "USER_INPUT" or src == "USER_EXPLICIT":
                     step_type = 14
-                elif typ == "PLANNER_RESPONSE" or src == "MODEL":
-                    step_type = 15
-                elif typ in ["VIEW_FILE", "RUN_COMMAND", "GENERIC"]:
+                elif typ in ["VIEW_FILE", "RUN_COMMAND", "GENERIC"] or (src == "MODEL" and typ == "GENERIC"):
                     step_type = 132
+                elif typ == "PLANNER_RESPONSE" or src == "MODEL" or thinking or tool_calls:
+                    step_type = 15
+                else:
+                    step_type = 1
 
                 status = 4 if st_str == "ERROR" else 3
 
                 payload = bytearray()
                 payload += encode_tag_uint(1, step_type)
                 payload += encode_tag_uint(4, status)
-                meta = bytearray()
-                meta += encode_tag_bytes(3, conv_id.encode("utf-8"))
-                payload += encode_tag_bytes(5, bytes(meta))
-                if content:
-                    sub = bytearray()
-                    sub += encode_tag_bytes(2, content[:4000].encode("utf-8", errors="ignore"))
-                    payload += encode_tag_bytes(19, bytes(sub))
+                payload += encode_tag_bytes(5, meta_bytes)
+
+                if step_type == 14:
+                    u_bytes = bytearray()
+                    if content:
+                        u_bytes += encode_tag_bytes(2, content.encode("utf-8", errors="ignore"))
+                        chunk = bytearray()
+                        clean = content
+                        m = re.search(r"<USER_REQUEST>(.*?)</USER_REQUEST>", content, re.DOTALL)
+                        if m:
+                            clean = m.group(1).strip()
+                        chunk += encode_tag_bytes(1, clean.encode("utf-8", errors="ignore"))
+                        u_bytes += encode_tag_bytes(3, bytes(chunk))
+                    payload += encode_tag_bytes(19, bytes(u_bytes))
+
+                elif step_type == 15:
+                    m_bytes = bytearray()
+                    if content:
+                        m_bytes += encode_tag_bytes(1, content.encode("utf-8", errors="ignore"))
+                    if thinking:
+                        m_bytes += encode_tag_bytes(3, thinking.encode("utf-8", errors="ignore"))
+                    m_bytes += encode_tag_bytes(6, b"antigravity-agent")
+                    if tool_calls:
+                        for tci, tc in enumerate(tool_calls):
+                            tc_b = bytearray()
+                            tc_id = tc.get("id") or f"call_{idx}_{tci}"
+                            tc_name = tc.get("name") or tc.get("function", {}).get("name", "")
+                            tc_args = tc.get("args") or tc.get("function", {}).get("arguments", "")
+                            if isinstance(tc_args, (dict, list)):
+                                tc_args = json.dumps(tc_args)
+                            if tc_id:
+                                tc_b += encode_tag_bytes(1, str(tc_id).encode("utf-8", errors="ignore"))
+                            if tc_name:
+                                tc_b += encode_tag_bytes(2, str(tc_name).encode("utf-8", errors="ignore"))
+                            if tc_args:
+                                tc_b += encode_tag_bytes(3, str(tc_args).encode("utf-8", errors="ignore"))
+                            if tc_name:
+                                tc_b += encode_tag_bytes(9, str(tc_name).encode("utf-8", errors="ignore"))
+                            m_bytes += encode_tag_bytes(7, bytes(tc_b))
+                    if content:
+                        m_bytes += encode_tag_bytes(8, content.encode("utf-8", errors="ignore"))
+                    m_bytes += encode_tag_uint(12, 2)
+                    payload += encode_tag_bytes(20, bytes(m_bytes))
+
+                elif step_type == 132:
+                    t_bytes = bytearray()
+                    if content:
+                        t_bytes += encode_tag_bytes(2, content.encode("utf-8", errors="ignore"))
+                    payload += encode_tag_bytes(140, bytes(t_bytes))
+
+                else:
+                    if content:
+                        s_bytes = bytearray()
+                        s_bytes += encode_tag_bytes(2, content.encode("utf-8", errors="ignore"))
+                        payload += encode_tag_bytes(19, bytes(s_bytes))
 
                 cur.execute("""INSERT OR REPLACE INTO steps 
-                    (idx, step_type, status, step_payload) VALUES (?, ?, ?, ?);""",
-                    (idx, step_type, status, bytes(payload)))
+                    (idx, step_type, status, metadata, step_payload) VALUES (?, ?, ?, ?, ?);""",
+                    (idx, step_type, status, meta_bytes, bytes(payload)))
                 step_count += 1
 
         conn.commit()
@@ -587,6 +692,21 @@ def extract_conv_text(db_path, transcript_path):
     if brain_dir and os.path.isdir(brain_dir):
         for f in os.listdir(brain_dir):
             if f.endswith(".md") and not f.startswith("."):
+                # Try extracting genuine H1 heading (# Document Title)
+                try:
+                    with open(os.path.join(brain_dir, f), "r", encoding="utf-8", errors="ignore") as mf:
+                        for mline in mf:
+                            mline = mline.strip()
+                            if mline.startswith("# ") and len(mline) > 2:
+                                h1 = mline[2:].strip().strip("#").strip()
+                                if h1 and h1.lower() not in ["walkthrough", "implementation plan", "task", "todo", "readme"]:
+                                    artifact_title = h1
+                                    break
+                except Exception:
+                    pass
+                if artifact_title:
+                    break
+
                 name = f[:-3].replace("_", " ").replace("-", " ").strip()
                 if name.lower() not in ["walkthrough", "implementation plan", "task", "todo", "readme"]:
                     artifact_title = name.title()
@@ -649,7 +769,7 @@ def discover_all_history_sources(real_home, custom_sources=None):
     """
     Thoroughly discovers all conversation databases, brain directories, and custom
     installation paths across the system, including manual installations, older backups,
-    standalone IDE stores, desktop launchers, and trash.
+    standalone IDE stores, desktop launchers, and user profiles.
     """
     conv_dirs = set()
     brain_dirs = set()
@@ -667,28 +787,46 @@ def discover_all_history_sources(real_home, custom_sources=None):
                     if "brain" in os.path.basename(s):
                         brain_dirs.add(real_s)
 
-    # 2. Standard and named profile roots
-    search_roots = [
-        os.path.join(real_home, ".gemini"),
-        os.path.join(real_home, ".gemini-ide"),
-        os.path.join(real_home, ".gemide"),
-        os.path.join(real_home, ".config", "Antigravity"),
-        os.path.join(real_home, ".config", "Antigravity IDE"),
-        os.path.join(real_home, ".config", "antigravity"),
-        os.path.join(real_home, ".config", "antigravity-ide"),
-        os.path.join(real_home, ".config", "Google", "Antigravity"),
-        os.path.join(real_home, ".local", "share", "antigravity"),
-        os.path.join(real_home, ".local", "share", "Antigravity"),
-        os.path.join(real_home, ".local", "share", "Trash"),
-    ]
-    search_roots.extend(glob.glob(os.path.join(real_home, ".antigravity*")))
+    # 2. Collect all candidate user home directories
+    homes = set()
+    if real_home:
+        homes.add(real_home)
+    homes.add(os.path.expanduser("~"))
+    try:
+        user = os.environ.get("USER") or getpass.getuser()
+        homes.add(os.path.expanduser(f"~{user}"))
+    except Exception:
+        pass
 
-    # 3. Inspect desktop launchers for custom data directories
+    # 3. Standard and named profile roots across all homes
+    search_roots = set()
+    for h in homes:
+        if not os.path.isdir(h):
+            continue
+        search_roots.add(os.path.join(h, ".gemini"))
+        search_roots.add(os.path.join(h, ".gemini-ide"))
+        search_roots.add(os.path.join(h, ".gemide"))
+        search_roots.add(os.path.join(h, ".config", "Antigravity"))
+        search_roots.add(os.path.join(h, ".config", "Antigravity IDE"))
+        search_roots.add(os.path.join(h, ".config", "antigravity"))
+        search_roots.add(os.path.join(h, ".config", "antigravity-ide"))
+        search_roots.add(os.path.join(h, ".config", "Google", "Antigravity"))
+        search_roots.add(os.path.join(h, ".local", "share", "antigravity"))
+        search_roots.add(os.path.join(h, ".local", "share", "Antigravity"))
+        search_roots.add(os.path.join(h, ".local", "share", "Trash"))
+        for p in glob.glob(os.path.join(h, ".antigravity*")):
+            search_roots.add(p)
+        for p in glob.glob(os.path.join(h, ".gemini*")):
+            search_roots.add(p)
+
+    # 4. Inspect desktop launchers for custom data directories
     desktop_locations = [
-        os.path.join(real_home, ".local", "share", "applications"),
         "/usr/share/applications",
         "/usr/local/share/applications"
     ]
+    for h in homes:
+        desktop_locations.append(os.path.join(h, ".local", "share", "applications"))
+
     for d_dir in desktop_locations:
         if os.path.isdir(d_dir):
             for d_file in glob.glob(os.path.join(d_dir, "*.desktop")):
@@ -697,52 +835,90 @@ def discover_all_history_sources(real_home, custom_sources=None):
                         content = f.read()
                         if "antigravity" in content.lower() or "gemini" in content.lower():
                             for m in re.finditer(r"--user-data-dir=[\"\']?([^\s\"\']+)[\"\']?", content):
-                                search_roots.append(os.path.expanduser(m.group(1)))
+                                search_roots.add(os.path.expanduser(m.group(1)))
                             for m in re.finditer(r"--profile-directory=[\"\']?([^\s\"\']+)[\"\']?", content):
-                                search_roots.append(os.path.expanduser(m.group(1)))
+                                search_roots.add(os.path.expanduser(m.group(1)))
                             for m in re.finditer(r"GEMINI_DIR=[\"\']?([^\s\"\']+)[\"\']?", content):
-                                search_roots.append(os.path.expanduser(m.group(1)))
+                                search_roots.add(os.path.expanduser(m.group(1)))
                 except Exception:
                     pass
 
-    # 4. Glob specific patterns across roots
-    for root in sorted(set(search_roots)):
-        if not os.path.exists(root):
+    # 5. Targeted recursive scan across all discovered roots (depth limited to 5)
+    deep_walk_targets = set()
+    for h in homes:
+        if not os.path.isdir(h):
             continue
-        for pat in ["conversations*", "brain*"]:
-            for match in glob.glob(os.path.join(root, pat)):
-                if os.path.isdir(match):
-                    r_match = os.path.realpath(match)
-                    if "conversations" in os.path.basename(match):
-                        conv_dirs.add(r_match)
-                    elif "brain" in os.path.basename(match):
-                        brain_dirs.add(r_match)
-        for pat in ["*/conversations*", "*/brain*", "*/*/conversations*", "*/*/brain*", ".gemini/*/conversations*", ".gemini/*/brain*"]:
-            for match in glob.glob(os.path.join(root, pat)):
-                if os.path.isdir(match):
-                    r_match = os.path.realpath(match)
-                    if "conversations" in os.path.basename(match):
-                        conv_dirs.add(r_match)
-                    elif "brain" in os.path.basename(match):
-                        brain_dirs.add(r_match)
+        for pat in glob.glob(os.path.join(h, ".gemini*")):
+            deep_walk_targets.add(pat)
+        for pat in glob.glob(os.path.join(h, ".antigravity*")):
+            deep_walk_targets.add(pat)
+        for pat in glob.glob(os.path.join(h, ".config", "*antigravity*")):
+            deep_walk_targets.add(pat)
+        for pat in glob.glob(os.path.join(h, ".config", "*Antigravity*")):
+            deep_walk_targets.add(pat)
+        for pat in glob.glob(os.path.join(h, ".local", "share", "*antigravity*")):
+            deep_walk_targets.add(pat)
+        for pat in glob.glob(os.path.join(h, ".local", "share", "*Antigravity*")):
+            deep_walk_targets.add(pat)
 
-        dbs = [f for f in glob.glob(os.path.join(root, "*.db")) if re.match(r'^[0-9a-fA-F-]{36}\.db$', os.path.basename(f))]
-        if dbs:
-            conv_dirs.add(os.path.realpath(root))
+    for droot in sorted(deep_walk_targets):
+        if not os.path.isdir(droot):
+            continue
+        try:
+            for root, dirs, files in os.walk(droot, followlinks=False):
+                rel = os.path.relpath(root, droot)
+                if rel.count(os.sep) > 5:
+                    continue
 
-    hist_backup_dir = os.path.join(real_home, ".config", "antigravity", "backups", "history")
-    if os.path.isdir(hist_backup_dir):
-        for b_cand in glob.glob(os.path.join(hist_backup_dir, "*", "conversations*")):
-            if os.path.isdir(b_cand):
-                conv_dirs.add(os.path.realpath(b_cand))
-        for b_cand in glob.glob(os.path.join(hist_backup_dir, "*", "brain*")):
-            if os.path.isdir(b_cand):
-                brain_dirs.add(os.path.realpath(b_cand))
+                # Heuristic 1: Brain store detection via transcript logs
+                if "transcript.jsonl" in files or "transcript_full.jsonl" in files:
+                    parts = root.split(os.sep)
+                    for i in range(len(parts) - 1, -1, -1):
+                        if re.match(r'^[0-9a-fA-F-]{36}$', parts[i]):
+                            brain_parent = os.sep.join(parts[:i])
+                            if os.path.isdir(brain_parent):
+                                brain_dirs.add(os.path.realpath(brain_parent))
+                            break
+
+                # Heuristic 2: Conversation database store detection via UUID .db files
+                has_conv_db = any(re.match(r'^[0-9a-fA-F-]{36}\.db$', f) for f in files)
+                if has_conv_db:
+                    conv_dirs.add(os.path.realpath(root))
+
+                # Heuristic 3: Directory named conversations or brain
+                bname = os.path.basename(root).lower()
+                if "conversations" in bname and (has_conv_db or not files):
+                    conv_dirs.add(os.path.realpath(root))
+                elif "brain" in bname:
+                    brain_dirs.add(os.path.realpath(root))
+        except Exception:
+            pass
+
+    # 6. Legacy backup history directories
+    for h in homes:
+        hist_backup_dir = os.path.join(h, ".config", "antigravity", "backups", "history")
+        if os.path.isdir(hist_backup_dir):
+            for b_cand in glob.glob(os.path.join(hist_backup_dir, "*", "conversations*")):
+                if os.path.isdir(b_cand):
+                    conv_dirs.add(os.path.realpath(b_cand))
+            for b_cand in glob.glob(os.path.join(hist_backup_dir, "*", "brain*")):
+                if os.path.isdir(b_cand):
+                    brain_dirs.add(os.path.realpath(b_cand))
 
     return sorted(conv_dirs), sorted(brain_dirs)
 
-def merge_histories(master_gemini=None, source_dir=None, target_dir=None, quiet=False):
+def merge_histories(master_gemini=None, source_dir=None, target_dir=None, quiet=False, force_rebuild=False):
     real_home = os.environ.get("REAL_HOME", os.path.expanduser("~"))
+    homes = set()
+    if real_home:
+        homes.add(real_home)
+    homes.add(os.path.expanduser("~"))
+    try:
+        user = os.environ.get("USER") or getpass.getuser()
+        homes.add(os.path.expanduser(f"~{user}"))
+    except Exception:
+        pass
+
     if not master_gemini:
         if target_dir:
             master_gemini = os.path.dirname(target_dir) if target_dir.rstrip("/").endswith("conversations") else target_dir
@@ -792,23 +968,46 @@ def merge_histories(master_gemini=None, source_dir=None, target_dir=None, quiet=
                     copied_brains += 1
                 except Exception:
                     pass
+            elif os.path.isdir(b_item) and os.path.isdir(b_dst):
+                for sub_p in [
+                    os.path.join(".system_generated", "logs", "transcript_full.jsonl"),
+                    os.path.join(".system_generated", "logs", "transcript.jsonl"),
+                ]:
+                    src_f = os.path.join(b_item, sub_p)
+                    dst_f = os.path.join(b_dst, sub_p)
+                    if os.path.isfile(src_f) and not os.path.isfile(dst_f):
+                        try:
+                            os.makedirs(os.path.dirname(dst_f), exist_ok=True)
+                            shutil.copy2(src_f, dst_f)
+                        except Exception:
+                            pass
 
-    # 3. Reconstruct missing .db files for conversations that exist in brain
+    # 3. Reconstruct or repair missing/incomplete .db files from transcripts
     reconstructed_dbs = 0
-    for b_item in glob.glob(os.path.join(master_brain_dir, "*")):
-        if not os.path.isdir(b_item):
-            continue
-        c_uuid = os.path.basename(b_item)
-        if not re.match(r'^[0-9a-fA-F-]{36}$', c_uuid):
-            continue
-        target_db = os.path.join(master_conv_dir, f"{c_uuid}.db")
-        if not os.path.exists(target_db):
+    all_brain_pools = set(candidate_brain_dirs)
+    all_brain_pools.add(master_brain_dir)
+
+    reconstructed_uuids = set()
+    for b_pool in all_brain_pools:
+        for b_item in glob.glob(os.path.join(b_pool, "*")):
+            if not os.path.isdir(b_item):
+                continue
+            c_uuid = os.path.basename(b_item)
+            if not re.match(r'^[0-9a-fA-F-]{36}$', c_uuid):
+                continue
+            if c_uuid in reconstructed_uuids:
+                continue
+
+            target_db = os.path.join(master_conv_dir, f"{c_uuid}.db")
             tf = os.path.join(b_item, ".system_generated", "logs", "transcript_full.jsonl")
             if not os.path.isfile(tf):
                 tf = os.path.join(b_item, ".system_generated", "logs", "transcript.jsonl")
+
             if os.path.isfile(tf):
-                if synthesize_db_from_transcript(c_uuid, target_db, tf):
-                    reconstructed_dbs += 1
+                if not os.path.exists(target_db) or is_synthesized_db_incomplete(target_db) or force_rebuild:
+                    if synthesize_db_from_transcript(c_uuid, target_db, tf):
+                        reconstructed_dbs += 1
+                        reconstructed_uuids.add(c_uuid)
 
     # 4. Read and Synchronize conversation_summaries.db
     all_summaries = {}  # uuid -> pure_bin
@@ -839,11 +1038,19 @@ def merge_histories(master_gemini=None, source_dir=None, target_dir=None, quiet=
     );''')
     con.commit()
 
-    # Ingest from sub-directory conversation_summaries.db if present
+    # Ingest from all discovered conversation_summaries.db candidates across the system
+    sum_db_candidates = set()
+    for c_dir in candidate_conv_dirs:
+        cand_p = os.path.join(c_dir, "conversation_summaries.db")
+        if os.path.exists(cand_p) and not os.path.islink(cand_p) and os.path.realpath(cand_p) != os.path.realpath(master_sum_db):
+            sum_db_candidates.add(cand_p)
     sub_sum_db = os.path.join(master_conv_dir, "conversation_summaries.db")
-    if os.path.exists(sub_sum_db) and not os.path.islink(sub_sum_db):
+    if os.path.exists(sub_sum_db) and not os.path.islink(sub_sum_db) and os.path.realpath(sub_sum_db) != os.path.realpath(master_sum_db):
+        sum_db_candidates.add(sub_sum_db)
+
+    for s_db in sorted(sum_db_candidates):
         try:
-            s_con = sqlite3.connect(sub_sum_db)
+            s_con = sqlite3.connect(s_db)
             s_rows = s_con.cursor().execute("SELECT conversation_id, title, preview, step_count, last_modified_time, raw_summary FROM conversation_summaries;").fetchall()
             s_con.close()
             for r in s_rows:
@@ -853,8 +1060,8 @@ def merge_histories(master_gemini=None, source_dir=None, target_dir=None, quiet=
                     ) VALUES (?, ?, ?, ?, ?, ?)''', (r[0], r[1], r[2], r[3], r[4], r[5]))
             con.commit()
             try:
-                os.rename(sub_sum_db, f"{sub_sum_db}.bak_{int(time.time())}")
-                os.symlink(master_sum_db, sub_sum_db)
+                os.rename(s_db, f"{s_db}.bak_{int(time.time())}")
+                os.symlink(master_sum_db, s_db)
             except Exception:
                 pass
         except Exception:
@@ -890,7 +1097,13 @@ def merge_histories(master_gemini=None, source_dir=None, target_dir=None, quiet=
             pass
 
         transcript_file = os.path.join(master_brain_dir, conv_id, ".system_generated", "logs", "transcript.jsonl")
-        anno_title = get_annotation_title(master_gemini, conv_id)
+        if not os.path.isfile(transcript_file):
+            for b_dir in candidate_brain_dirs:
+                cand_tf = os.path.join(b_dir, conv_id, ".system_generated", "logs", "transcript.jsonl")
+                if os.path.isfile(cand_tf):
+                    transcript_file = cand_tf
+                    break
+        anno_title = get_annotation_title(master_gemini, conv_id, [os.path.join(h, ".gemini", "antigravity") for h in homes])
 
         if conv_id in existing_rows:
             curr_title, curr_prev, curr_sc, curr_lm, curr_raw = existing_rows[conv_id]
@@ -1047,15 +1260,20 @@ def merge_histories(master_gemini=None, source_dir=None, target_dir=None, quiet=
     # 7. Setup IDE directory symlinks and proto files for shared IDEs
     ide_candidates = [
         os.path.join(real_home, ".gemini", "antigravity-ide"),
+        os.path.join(real_home, ".gemini", "antigravity-cli"),
+        os.path.join(real_home, ".gemini", "antigravity-acp"),
         os.path.join(real_home, ".gemini-ide", "antigravity-ide"),
         os.path.join(real_home, ".gemide", "antigravity-ide"),
     ]
+    for h in homes:
+        ide_candidates.extend(glob.glob(os.path.join(h, ".gemini", "antigravity*")))
+        ide_candidates.extend(glob.glob(os.path.join(h, ".gemini*")))
+        ide_candidates.extend(glob.glob(os.path.join(h, ".antigravity*")))
+
     target_ide_dirs = []
-    for td in ide_candidates:
-        if os.path.exists(td):
-            c_link = os.path.join(td, "conversations")
-            if os.path.islink(c_link) or not os.path.exists(c_link):
-                target_ide_dirs.append(td)
+    for td in sorted(set(ide_candidates)):
+        if os.path.isdir(td) and os.path.realpath(td) != os.path.realpath(master_gemini):
+            target_ide_dirs.append(td)
 
     for target_dir in target_ide_dirs:
         os.makedirs(target_dir, exist_ok=True)
@@ -1109,7 +1327,10 @@ def merge_histories(master_gemini=None, source_dir=None, target_dir=None, quiet=
         os.path.join(real_home, ".config", "Antigravity IDE", "User", "globalStorage", "state.vscdb"),
         os.path.join(real_home, ".config", "Antigravity", "User", "globalStorage", "state.vscdb"),
     ]
-    vscdb_targets.extend(glob.glob(os.path.join(real_home, ".antigravity*", "**", "state.vscdb"), recursive=True))
+    for h in homes:
+        vscdb_targets.extend(glob.glob(os.path.join(h, ".config", "*antigravity*", "**", "state.vscdb"), recursive=True))
+        vscdb_targets.extend(glob.glob(os.path.join(h, ".config", "*Antigravity*", "**", "state.vscdb"), recursive=True))
+        vscdb_targets.extend(glob.glob(os.path.join(h, ".antigravity*", "**", "state.vscdb"), recursive=True))
 
     unified_vsc_bin = build_unified_state_sync(all_summaries)
     unified_b64 = base64.b64encode(unified_vsc_bin).decode('ascii')
@@ -1265,10 +1486,11 @@ if __name__ == "__main__":
     parser.add_argument("--source", help="Source directory containing conversations or profile")
     parser.add_argument("--target", help="Target master antigravity directory")
     parser.add_argument("--quiet", action="store_true", help="Quiet output")
+    parser.add_argument("--rebuild", action="store_true", help="Force rebuild of SQLite databases from transcripts")
     parser.add_argument("--watch", action="store_true", help="Run continuously in background and auto-sync on changes")
     args = parser.parse_args()
 
     if args.watch:
         watch_mode(master_gemini=args.master)
     else:
-        merge_histories(master_gemini=args.master, source_dir=args.source, target_dir=args.target, quiet=args.quiet)
+        merge_histories(master_gemini=args.master, source_dir=args.source, target_dir=args.target, quiet=args.quiet, force_rebuild=args.rebuild)
