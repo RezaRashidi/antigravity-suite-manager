@@ -213,6 +213,12 @@ While authentication tokens and keyring secrets are strictly siloed, all 3 appli
 Run the automated installer directly via `curl`:
 
 ```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/RezaRashidi/antigravity-suite-manager/main/install.sh)"
+```
+
+Or via standard pipe:
+
+```bash
 curl -fsSL https://raw.githubusercontent.com/RezaRashidi/antigravity-suite-manager/main/install.sh | bash
 ```
 
