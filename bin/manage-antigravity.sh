@@ -731,9 +731,13 @@ setup_account_2() {
         rm -f "$PROFILE2_DIR/.gemini/cache/antigravity-keyring-unavailable" 2>/dev/null || true
     fi
 
-    # Symlink shared history and configs
+    # Symlink shared history, configs, and master GEMINI.md
     ln -sfn "$SHARED_CONV_DIR" "$PROFILE2_DIR/.gemini/antigravity"
     ln -sfn "$SHARED_CONFIG_DIR" "$PROFILE2_DIR/.gemini/config"
+    [ -f "$SHARED_GEMINI_DIR/GEMINI.md" ] && ln -sfn "$SHARED_GEMINI_DIR/GEMINI.md" "$PROFILE2_DIR/.gemini/GEMINI.md"
+    for shared_json in projects.json settings.json .env state.json trustedFolders.json; do
+        [ -f "$SHARED_GEMINI_DIR/$shared_json" ] && ln -sfn "$SHARED_GEMINI_DIR/$shared_json" "$PROFILE2_DIR/.gemini/$shared_json"
+    done
 
     mkdir -p "$PROFILE2_DIR/.local/share"
     ln -sfn "$LOCAL_APPS" "$PROFILE2_DIR/.local/share/applications"
@@ -898,18 +902,25 @@ EOF
         fi
     done
 
-    # Symlink MCP tool schemas, custom skills, rules, and plugins across IDE instances
+    # Symlink master GEMINI.md, MCP tool schemas, custom skills, rules, and plugins across IDE instances
     for ide_root in "${SHARED_GEMINI_DIR}" "${REAL_HOME}/.gemide" "${REAL_HOME}/.gemini-ide"; do
         if [ -d "$ide_root" ]; then
+            # Link root GEMINI.md and shared global configs
+            [ -f "${SHARED_GEMINI_DIR}/GEMINI.md" ] && ln -sfn "${SHARED_GEMINI_DIR}/GEMINI.md" "$ide_root/GEMINI.md"
+            for shared_json in projects.json settings.json .env state.json trustedFolders.json; do
+                [ -f "${SHARED_GEMINI_DIR}/$shared_json" ] && ln -sfn "${SHARED_GEMINI_DIR}/$shared_json" "$ide_root/$shared_json"
+            done
+
             # Link config directory (skills, rules, plugins, mcp_config.json)
             if [ -d "$ide_root/config" ] && [ ! -L "$ide_root/config" ]; then
                 mv "$ide_root/config" "$ide_root/config.bak_$(date +%s)"
             fi
             ln -sfn "$SHARED_CONFIG_DIR" "$ide_root/config"
 
-            # Link mcp schemas and plugin data under antigravity-ide
+            # Link mcp schemas, plugin data, and GEMINI.md under antigravity-ide
             local target_ide_app="$ide_root/antigravity-ide"
             mkdir -p "$target_ide_app"
+            [ -f "${SHARED_GEMINI_DIR}/GEMINI.md" ] && ln -sfn "${SHARED_GEMINI_DIR}/GEMINI.md" "$target_ide_app/GEMINI.md"
             ln -sfn "$SHARED_CONV_DIR/mcp" "$target_ide_app/mcp"
             ln -sfn "$SHARED_CONV_DIR/plugin_data" "$target_ide_app/plugin_data"
         fi

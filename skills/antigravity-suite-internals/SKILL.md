@@ -288,6 +288,13 @@ To guarantee all MCP servers, custom skills, rules, and plugins are shared betwe
    - **Workspace LSP LS (`[LS lspClient]`)**: Spawned by extension host for the active workspace, binds remaining MCP servers (`elasticsearch`, `caveman`).
    - Both language servers register tools under ConnectRPC endpoint `GetMcpServerStates` (response field `states`).
 
+4. **Root GEMINI.md & Shared Global Configuration**:
+   - The Language Server resolves global system rules and instructions from `${gemini_dir}/GEMINI.md` as `user_global` (`CORTEX_MEMORY_SOURCE_USER`, `globalScope`, `discoveryCategory: DISCOVERY_CATEGORY_CONFIG`).
+   - If `${gemini_dir}/GEMINI.md` is missing, the instance operates without custom rules or language protocols.
+   - Symlink `${gemini_dir}/GEMINI.md -> ~/.gemini/GEMINI.md` across all instances (`~/.gemide`, `~/.gemini-ide`, `~/.antigravity-profile2/.gemini`).
+   - Symlink `projects.json`, `settings.json`, `.env`, `state.json`, and `trustedFolders.json` identically.
+   - **Strict Isolation Boundary**: ONLY OAuth token files (`jetski-standalone-oauth-token`, `oauth_credentials.json`, `google_accounts.json`) and DBus keyring state are kept isolated per instance.
+
 ---
 
 ## 6. Google One AI Pro Quota Mechanics & Family Sharing
