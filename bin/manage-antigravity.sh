@@ -1546,26 +1546,147 @@ set_history_mode() {
         return 1
     fi
 
+    # Automated restorable backup before altering history mode
+    if [ -f "${LOCAL_BIN}/antigravity-migration.py" ]; then
+        python3 "${LOCAL_BIN}/antigravity-migration.py" create-backup --category history --label "pre_set_history_${itype}_${iid}" >/dev/null 2>&1 || true
+    elif [ -f "${SCRIPT_DIR}/bin/antigravity-migration.py" ]; then
+        python3 "${SCRIPT_DIR}/bin/antigravity-migration.py" create-backup --category history --label "pre_set_history_${itype}_${iid}" >/dev/null 2>&1 || true
+    fi
+
     if [ "$target_mode" = "shared" ]; then
         log_info "Switching ${itype} '${iid}' to SHARED history..."
-        if [ -d "$profile_gemini" ] && [ ! -L "$profile_gemini" ]; then
-            log_info "Preserving and merging private conversations into shared pool first..."
+        if [ "$itype" = "ide" ]; then
+            local ide_conv="${profile_gemini}/conversations"
+            local ide_brain="${profile_gemini}/brain"
+            mkdir -p "${SHARED_CONV_DIR}/conversations" "${SHARED_CONV_DIR}/brain"
+            if [ -d "$ide_conv" ] && [ ! -L "$ide_conv" ]; then
+                cp -n "${ide_conv}"/*.db "${SHARED_CONV_DIR}/conversations/" 2>/dev/null || true
+                mv "$ide_conv" "${ide_conv}.bak_$(date +%s)"
+            fi
+            if [ -d "$ide_brain" ] && [ ! -L "$ide_brain" ]; then
+                cp -rn "${ide_brain}"/* "${SHARED_CONV_DIR}/brain/" 2>/dev/null || true
+                mv "$ide_brain" "${ide_brain}.bak_$(date +%s)"
+            fi
+            ln -sfn "${SHARED_CONV_DIR}/conversations" "$ide_conv"
+            ln -sfn "${SHARED_CONV_DIR}/brain" "$ide_brain"
             merge_history
-            mv "$profile_gemini" "${profile_gemini}.bak_$(date +%s)"
+        else
+            if [ -d "$profile_gemini" ] && [ ! -L "$profile_gemini" ]; then
+                log_info "Preserving and merging private conversations into shared pool first..."
+                mkdir -p "${SHARED_CONV_DIR}/conversations" "${SHARED_CONV_DIR}/brain"
+                if [ -d "${profile_gemini}/conversations" ]; then
+                    cp -n "${profile_gemini}/conversations"/*.db "${SHARED_CONV_DIR}/conversations/" 2>/dev/null || true
+                fi
+                if [ -d "${profile_gemini}/brain" ]; then
+                    cp -rn "${profile_gemini}/brain"/* "${SHARED_CONV_DIR}/brain/" 2>/dev/null || true
+                fi
+                mv "$profile_gemini" "${profile_gemini}.bak_$(date +%s)"
+            fi
+            ln -sfn "$SHARED_CONV_DIR" "$profile_gemini"
+            merge_history
         fi
-        ln -sfn "$SHARED_CONV_DIR" "$profile_gemini"
         log_success "${itype^^} '${iid}' is now linked to SHARED history."
     elif [ "$target_mode" = "isolated" ]; then
         log_info "Switching ${itype} '${iid}' to ISOLATED history..."
-        if [ -L "$profile_gemini" ]; then
-            rm -f "$profile_gemini"
+        if [ "$itype" = "ide" ]; then
+            local ide_conv="${profile_gemini}/conversations"
+            local ide_brain="${profile_gemini}/brain"
+            [ -L "$ide_conv" ] && rm -f "$ide_conv"
+            [ -L "$ide_brain" ] && rm -f "$ide_brain"
+            mkdir -p "$ide_conv" "$ide_brain"
+            # Clone existing conversations so chats do not vanish
+            cp -n "${SHARED_CONV_DIR}/conversations"/*.db "$ide_conv/" 2>/dev/null || true
+        else
+            if [ -L "$profile_gemini" ]; then
+                rm -f "$profile_gemini"
+            fi
+            mkdir -p "${profile_gemini}/conversations" "${profile_gemini}/brain"
+            # Clone existing conversations so chats do not vanish
+            cp -n "${SHARED_CONV_DIR}/conversations"/*.db "${profile_gemini}/conversations/" 2>/dev/null || true
+            cp -n "${SHARED_CONV_DIR}"/*summaries* "${profile_gemini}/" 2>/dev/null || true
         fi
-        mkdir -p "${profile_gemini}/conversations" "${profile_gemini}/brain"
-        log_success "${itype^^} '${iid}' now has ISOLATED private history."
+        log_success "${itype^^} '${iid}' now has ISOLATED private history (existing conversations cloned). "
     else
         log_err "Unknown mode '${target_mode}'. Use 'shared' or 'isolated'."
         return 1
     fi
+}
+
+# ------------------------------------------------------------------------------
+# Cross-System Migration & Backup Wrappers
+# ------------------------------------------------------------------------------
+get_migration_script() {
+    if [ -f "${LOCAL_BIN}/antigravity-migration.py" ]; then
+        echo "${LOCAL_BIN}/antigravity-migration.py"
+    elif [ -f "${SCRIPT_DIR}/bin/antigravity-migration.py" ]; then
+        echo "${SCRIPT_DIR}/bin/antigravity-migration.py"
+    else
+        echo ""
+    fi
+}
+
+export_history() {
+    local m_script
+    m_script="$(get_migration_script)"
+    [ -z "$m_script" ] && { log_err "antigravity-migration.py not found."; return 1; }
+    python3 "$m_script" export-history "$@"
+}
+
+import_history() {
+    local m_script
+    m_script="$(get_migration_script)"
+    [ -z "$m_script" ] && { log_err "antigravity-migration.py not found."; return 1; }
+    python3 "$m_script" import-history "$@"
+}
+
+export_suite() {
+    local m_script
+    m_script="$(get_migration_script)"
+    [ -z "$m_script" ] && { log_err "antigravity-migration.py not found."; return 1; }
+    python3 "$m_script" export-suite "$@"
+}
+
+import_suite() {
+    local m_script
+    m_script="$(get_migration_script)"
+    [ -z "$m_script" ] && { log_err "antigravity-migration.py not found."; return 1; }
+    python3 "$m_script" import-suite "$@"
+}
+
+export_all() {
+    local m_script
+    m_script="$(get_migration_script)"
+    [ -z "$m_script" ] && { log_err "antigravity-migration.py not found."; return 1; }
+    python3 "$m_script" export-all "$@"
+}
+
+import_all() {
+    local m_script
+    m_script="$(get_migration_script)"
+    [ -z "$m_script" ] && { log_err "antigravity-migration.py not found."; return 1; }
+    python3 "$m_script" import-all "$@"
+}
+
+manage_backups() {
+    local m_script
+    m_script="$(get_migration_script)"
+    [ -z "$m_script" ] && { log_err "antigravity-migration.py not found."; return 1; }
+    local act="${1:-list}"
+    shift || true
+    case "$act" in
+        list)
+            python3 "$m_script" list-backups
+            ;;
+        create)
+            python3 "$m_script" create-backup "$@"
+            ;;
+        restore)
+            python3 "$m_script" restore-backup "$@"
+            ;;
+        *)
+            echo "Usage: $(basename "$0") backups [list|create|restore <path>]"
+            ;;
+    esac
 }
 
 remove_instance() {
@@ -2266,6 +2387,13 @@ Commands:
   rtl           Apply / re-apply antigravity-rtl to App and IDE
   update-rtl    Update antigravity-rtl to latest and re-apply
   update        Smart update: checks versions, downloads to /tmp/antigravity-cache, skips if up-to-date
+  export-history Export conversation history & brains to portable tarball [out]
+  import-history Import & merge conversation history from archive <file>
+  export-suite  Export suite configurations (rules, skills, plugins, MCP, accounts) [out]
+  import-suite  Import & merge suite configurations from archive <file>
+  export-all    Export full unified migration bundle (History + Configs) [out]
+  import-all    Auto-detect & import any Antigravity archive <file>
+  backups       Manage safety backups (list | create [--label <name>] | restore <file>)
   clean-cache   Remove cached tarballs in /tmp/antigravity-cache
   help          Show this help message
 
@@ -2325,9 +2453,12 @@ interactive_menu() {
     echo "18) Remove an Instance"
     echo "19) Force Full Re-download & Reinstall Everything (--force)"
     echo "20) Clean Download Cache (/tmp/antigravity-cache)"
+    echo "21) Export Suite or History Archive (Cross-System Migration)"
+    echo "22) Import Suite or History Archive (Cross-System Restore/Merge)"
+    echo "23) Manage Backups & Snapshots (List, Create, Restore)"
     echo "0) Exit"
     echo -e "${CYAN}-----------------------------------------------------${NC}"
-    read -rp "Select an option [0-20]: " choice
+    read -rp "Select an option [0-23]: " choice
 
     case "$choice" in
         1) install_antigravity_all ;;
@@ -2371,6 +2502,47 @@ interactive_menu() {
             ;;
         19) FORCE_INSTALL=true install_antigravity_all ;;
         20) clean_cache ;;
+        21)
+            echo -e "\nSelect Export Category:"
+            echo "1) Full Bundle (History + Suite Configs, Skills, Rules, MCP, Accounts)"
+            echo "2) Conversation History Only (Chats, Brain, Summaries)"
+            echo "3) Suite Configurations Only (Rules, Skills, Plugins, MCP, Accounts)"
+            read -rp "Choose [1-3, Default: 1]: " ecat
+            read -rp "Enter output destination path [Enter for default]: " edest
+            case "$ecat" in
+                2) export_history ${edest:+"$edest"} ;;
+                3) export_suite ${edest:+"$edest"} ;;
+                *) export_all ${edest:+"$edest"} ;;
+            esac
+            ;;
+        22)
+            read -rp "Enter path to archive (.tar.gz) to import: " iarc
+            if [ -n "$iarc" ]; then
+                import_all "$iarc"
+            else
+                log_err "No archive path provided."
+            fi
+            ;;
+        23)
+            echo -e "\nManage Backups:"
+            echo "1) List Available Snapshots"
+            echo "2) Create Instant Snapshot"
+            echo "3) Restore From Snapshot"
+            read -rp "Choose [1-3, Default: 1]: " bcat
+            case "$bcat" in
+                2)
+                    read -rp "Enter snapshot label [default: manual]: " blbl
+                    manage_backups create --label "${blbl:-manual}"
+                    ;;
+                3)
+                    read -rp "Enter path to backup archive (.tar.gz): " barc
+                    manage_backups restore "$barc"
+                    ;;
+                *)
+                    manage_backups list
+                    ;;
+            esac
+            ;;
         0) exit 0 ;;
         *)
             log_err "Invalid selection."
@@ -2446,6 +2618,48 @@ while [ $# -gt 0 ]; do
         merge-history|merge)
             COMMAND="merge-history"
             shift
+            ;;
+        export-history|export-chats)
+            COMMAND="export-history"
+            shift
+            CMD_ARGS=("$@")
+            break
+            ;;
+        import-history|import-chats)
+            COMMAND="import-history"
+            shift
+            CMD_ARGS=("$@")
+            break
+            ;;
+        export-suite|export-config)
+            COMMAND="export-suite"
+            shift
+            CMD_ARGS=("$@")
+            break
+            ;;
+        import-suite|import-config)
+            COMMAND="import-suite"
+            shift
+            CMD_ARGS=("$@")
+            break
+            ;;
+        export-all|export)
+            COMMAND="export-all"
+            shift
+            CMD_ARGS=("$@")
+            break
+            ;;
+        import-all|import)
+            COMMAND="import-all"
+            shift
+            CMD_ARGS=("$@")
+            break
+            ;;
+        backups|backup)
+            COMMAND="backups"
+            shift
+            CMD_ARGS=("$@")
+            break
             ;;
         create-instance|add-instance|add-profile|create-profile|add)
             COMMAND="create-instance"
@@ -2633,6 +2847,27 @@ else
             ;;
         merge-history)
             merge_history
+            ;;
+        export-history|export-chats)
+            export_history "${CMD_ARGS[@]}"
+            ;;
+        import-history|import-chats)
+            import_history "${CMD_ARGS[@]}"
+            ;;
+        export-suite|export-config)
+            export_suite "${CMD_ARGS[@]}"
+            ;;
+        import-suite|import-config)
+            import_suite "${CMD_ARGS[@]}"
+            ;;
+        export-all|export)
+            export_all "${CMD_ARGS[@]}"
+            ;;
+        import-all|import)
+            import_all "${CMD_ARGS[@]}"
+            ;;
+        backups|backup)
+            manage_backups "${CMD_ARGS[@]}"
             ;;
         create-instance)
             create_instance "${CMD_ARGS[@]}"

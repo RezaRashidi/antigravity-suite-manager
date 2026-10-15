@@ -299,7 +299,7 @@ step_3_compile_resampler() {
 step_4_deploy_scripts() {
     echo -e "\n${BLUE}[Step 4/8] $(get_step_name 4)...${NC}"
     mkdir -p "$TARGET_BIN" "$TARGET_ICONS" "$TARGET_CONF"
-    for s in manage-antigravity.sh antigravity-generate-icons.py antigravity-apply-icon.py antigravity-merge-history.py antigravity-detect.py antigravity-keyring.py antigravity-f5-patch.js; do
+    for s in manage-antigravity.sh antigravity-generate-icons.py antigravity-apply-icon.py antigravity-merge-history.py antigravity-migration.py antigravity-detect.py antigravity-keyring.py antigravity-f5-patch.js; do
         if [ -f "${SCRIPT_DIR}/bin/${s}" ]; then
             cp -f "${SCRIPT_DIR}/bin/${s}" "${TARGET_BIN}/" 2>/dev/null || sudo -n cp -f "${SCRIPT_DIR}/bin/${s}" "${TARGET_BIN}/" 2>/dev/null || true
             chmod +x "${TARGET_BIN}/${s}" 2>/dev/null || true

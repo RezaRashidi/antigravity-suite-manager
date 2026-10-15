@@ -322,8 +322,8 @@ def scan_clones(curr_app="", curr_ide=""):
     acc1_running = subprocess.run(['pgrep', '-f', 'user-data-dir=.*Antigravity$'], capture_output=True).returncode == 0
     acc1_cache = os.path.join(acc1_profile, 'cache', 'antigravity-keyring-unavailable')
 
-    app1_name = 'Antigravity (Default)' if not has_other_app_accounts else 'Antigravity (Account 1 - Default)'
-    app1_role = 'Default Account' if not has_other_app_accounts else 'Primary Account'
+    app1_name = 'Antigravity' if not has_other_app_accounts else 'Antigravity (Account 1 - Default)'
+    app1_role = 'Primary Application' if not has_other_app_accounts else 'Primary Account'
     app1_wm = 'antigravity' if not has_other_app_accounts else 'antigravity-1'
 
     # Only register app1 if launcher exists, desktop exists, or the engine directory actually exists
@@ -728,6 +728,144 @@ def configure_paths_interactive(installs):
         else:
             print(f"{RED}[ERROR] Invalid selection '{choice}'.{NC}")
 
+def safe_toggle_history_mode(is_ide, is_acc1, is_shared, p_dir, local_bin, REAL_HOME, name=""):
+    """Safely toggles between Shared and Isolated history with automated backup and zero data loss."""
+    if is_acc1:
+        print(f"{YELLOW}[NOTICE] Account 1 is the Master Shared Pool and cannot be isolated.{NC}")
+        return
+
+    shared_pool = os.path.join(REAL_HOME, ".gemini", "antigravity")
+    os.makedirs(os.path.join(shared_pool, "conversations"), exist_ok=True)
+    os.makedirs(os.path.join(shared_pool, "brain"), exist_ok=True)
+
+    # 1. ALWAYS create an automated restorable backup first
+    migration_tool = os.path.join(local_bin, "antigravity-migration.py")
+    if not os.path.isfile(migration_tool):
+        migration_tool = os.path.join(os.path.dirname(os.path.abspath(__file__)), "antigravity-migration.py")
+
+    if os.path.isfile(migration_tool):
+        safe_label = f"pre_toggle_{name or 'instance'}"
+        subprocess.run([sys.executable, migration_tool, "create-backup", "--category", "history", "--label", safe_label], check=False)
+
+    merge_script = os.path.join(local_bin, "antigravity-merge-history.py")
+    if not os.path.isfile(merge_script):
+        merge_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "antigravity-merge-history.py")
+
+    ts = int(datetime.datetime.now().timestamp())
+
+    if is_ide:
+        ide_conv = os.path.join(p_dir, "conversations")
+        ide_brain = os.path.join(p_dir, "brain")
+
+        if is_shared:
+            # Switching from Shared -> Isolated
+            if os.path.islink(ide_conv):
+                os.unlink(ide_conv)
+            os.makedirs(ide_conv, exist_ok=True)
+
+            copied = 0
+            for db in glob.glob(os.path.join(shared_pool, "conversations", "*.db")):
+                shutil.copy2(db, os.path.join(ide_conv, os.path.basename(db)))
+                copied += 1
+
+            if os.path.islink(ide_brain):
+                os.unlink(ide_brain)
+            os.makedirs(ide_brain, exist_ok=True)
+
+            print(f"{GREEN}[SUCCESS] Antigravity IDE history set to Isolated Private.{NC}")
+            print(f"  • Existing {copied} conversations cloned locally to {ide_conv}.")
+        else:
+            # Switching from Isolated -> Shared
+            copied = 0
+            if os.path.isdir(ide_conv) and not os.path.islink(ide_conv):
+                for db in glob.glob(os.path.join(ide_conv, "*.db")):
+                    dst = os.path.join(shared_pool, "conversations", os.path.basename(db))
+                    if not os.path.exists(dst):
+                        shutil.copy2(db, dst)
+                        copied += 1
+                try:
+                    os.rename(ide_conv, f"{ide_conv}.bak_{ts}")
+                except Exception:
+                    pass
+
+            if os.path.isdir(ide_brain) and not os.path.islink(ide_brain):
+                for b in glob.glob(os.path.join(ide_brain, "*")):
+                    dst_b = os.path.join(shared_pool, "brain", os.path.basename(b))
+                    if not os.path.exists(dst_b):
+                        if os.path.isdir(b):
+                            shutil.copytree(b, dst_b)
+                        else:
+                            shutil.copy2(b, dst_b)
+                try:
+                    os.rename(ide_brain, f"{ide_brain}.bak_{ts}")
+                except Exception:
+                    pass
+
+            if not os.path.islink(ide_conv):
+                os.symlink(os.path.join(shared_pool, "conversations"), ide_conv)
+
+            if os.path.isfile(merge_script):
+                subprocess.run([sys.executable, merge_script, "--master", shared_pool, "--quiet"], check=False)
+
+            print(f"{GREEN}[SUCCESS] Antigravity IDE history merged and linked to Shared 3-Way Sync.{NC}")
+            print(f"  • {copied} private conversations merged into master pool.")
+    else:
+        # App Clone
+        target_link = os.path.join(p_dir, ".gemini", "antigravity")
+        if is_shared:
+            # Switching from Shared -> Isolated
+            if os.path.islink(target_link):
+                os.unlink(target_link)
+            iso_conv = os.path.join(target_link, "conversations")
+            iso_brain = os.path.join(target_link, "brain")
+            os.makedirs(iso_conv, exist_ok=True)
+            os.makedirs(iso_brain, exist_ok=True)
+
+            copied = 0
+            for db in glob.glob(os.path.join(shared_pool, "conversations", "*.db")):
+                shutil.copy2(db, os.path.join(iso_conv, os.path.basename(db)))
+                copied += 1
+
+            for sum_f in glob.glob(os.path.join(shared_pool, "*summaries*")):
+                shutil.copy2(sum_f, os.path.join(target_link, os.path.basename(sum_f)))
+
+            print(f"{GREEN}[SUCCESS] Clone history set to Isolated Private.{NC}")
+            print(f"  • Existing {copied} conversations cloned locally to {iso_conv}.")
+        else:
+            # Switching from Isolated -> Shared
+            copied = 0
+            if os.path.isdir(target_link) and not os.path.islink(target_link):
+                c_conv = os.path.join(target_link, "conversations")
+                if os.path.isdir(c_conv):
+                    for db in glob.glob(os.path.join(c_conv, "*.db")):
+                        dst = os.path.join(shared_pool, "conversations", os.path.basename(db))
+                        if not os.path.exists(dst):
+                            shutil.copy2(db, dst)
+                            copied += 1
+                c_brain = os.path.join(target_link, "brain")
+                if os.path.isdir(c_brain):
+                    for b in glob.glob(os.path.join(c_brain, "*")):
+                        dst_b = os.path.join(shared_pool, "brain", os.path.basename(b))
+                        if not os.path.exists(dst_b):
+                            if os.path.isdir(b):
+                                shutil.copytree(b, dst_b)
+                            else:
+                                shutil.copy2(b, dst_b)
+                try:
+                    os.rename(target_link, f"{target_link}.bak_{ts}")
+                except Exception:
+                    pass
+
+            os.makedirs(os.path.dirname(target_link), exist_ok=True)
+            if not os.path.islink(target_link):
+                os.symlink(shared_pool, target_link)
+
+            if os.path.isfile(merge_script):
+                subprocess.run([sys.executable, merge_script, "--master", shared_pool, "--quiet"], check=False)
+
+            print(f"{GREEN}[SUCCESS] Clone history merged and linked to Shared 3-Way Sync.{NC}")
+            print(f"  • {copied} private conversations merged into master pool.")
+
 def configure_single_clone(clone):
     while True:
         local_bin = os.path.join(REAL_HOME, ".local", "bin")
@@ -818,43 +956,7 @@ def configure_single_clone(clone):
         if choice in ["0", "", "q", "exit"]:
             break
         elif choice == "1":
-            if is_acc1:
-                print(f"{YELLOW}[NOTICE] Account 1 is the Master Shared Pool and cannot be isolated.{NC}")
-                continue
-            shared_pool = os.path.join(REAL_HOME, ".gemini", "antigravity")
-            if is_ide1:
-                ide_conv = os.path.join(p_dir, "conversations")
-                if is_shared:
-                    if os.path.islink(ide_conv):
-                        os.unlink(ide_conv)
-                    os.makedirs(ide_conv, exist_ok=True)
-                    print(f"{GREEN}[SUCCESS] Antigravity IDE history set to Isolated.{NC}")
-                else:
-                    if os.path.isdir(ide_conv) and not os.path.islink(ide_conv):
-                        merge_script = os.path.join(local_bin, "antigravity-merge-history.py")
-                        if os.path.isfile(merge_script):
-                            subprocess.run([sys.executable, merge_script, "--source", ide_conv, "--target", os.path.join(shared_pool, "conversations")], check=False)
-                        shutil.rmtree(ide_conv, ignore_errors=True)
-                    os.makedirs(os.path.join(shared_pool, "conversations"), exist_ok=True)
-                    os.symlink(os.path.join(shared_pool, "conversations"), ide_conv)
-                    print(f"{GREEN}[SUCCESS] Antigravity IDE history set to Shared 3-Way Sync.{NC}")
-            else:
-                target_link = os.path.join(p_dir, ".gemini", "antigravity")
-                if is_shared:
-                    if os.path.islink(target_link):
-                        os.unlink(target_link)
-                    os.makedirs(os.path.join(target_link, "conversations"), exist_ok=True)
-                    os.makedirs(os.path.join(target_link, "brain"), exist_ok=True)
-                    print(f"{GREEN}[SUCCESS] Clone history set to Isolated Private.{NC}")
-                else:
-                    if os.path.isdir(target_link) and not os.path.islink(target_link):
-                        merge_script = os.path.join(local_bin, "antigravity-merge-history.py")
-                        if os.path.isfile(merge_script):
-                            subprocess.run([sys.executable, merge_script, "--source", os.path.join(target_link, "conversations"), "--target", os.path.join(shared_pool, "conversations")], check=False)
-                        shutil.rmtree(target_link, ignore_errors=True)
-                    os.makedirs(os.path.dirname(target_link), exist_ok=True)
-                    os.symlink(shared_pool, target_link)
-                    print(f"{GREEN}[SUCCESS] Clone history set to Shared 3-Way Sync.{NC}")
+            safe_toggle_history_mode(is_ide1, is_acc1, is_shared, p_dir, local_bin, REAL_HOME, name=cid)
         elif choice == "2":
             os.makedirs(os.path.dirname(cache_f), exist_ok=True)
             if is_normal_keyring:
@@ -1225,41 +1327,7 @@ def configure_unified_instance(u_item, curr_app, curr_ide, custom_paths):
 
         if c:
             if choice == "1":
-                if is_acc1:
-                    print(f"{YELLOW}[NOTICE] Account 1 is the Master Shared Pool and cannot be isolated.{NC}")
-                    continue
-                shared_pool = os.path.join(REAL_HOME, ".gemini", "antigravity")
-                if is_ide1:
-                    ide_conv = os.path.join(p_dir, "conversations")
-                    if is_shared:
-                        if os.path.islink(ide_conv): os.unlink(ide_conv)
-                        os.makedirs(ide_conv, exist_ok=True)
-                        print(f"{GREEN}[SUCCESS] Antigravity IDE history set to Isolated.{NC}")
-                    else:
-                        if os.path.isdir(ide_conv) and not os.path.islink(ide_conv):
-                            merge_script = os.path.join(local_bin, "antigravity-merge-history.py")
-                            if os.path.isfile(merge_script):
-                                subprocess.run([sys.executable, merge_script, "--source", ide_conv, "--target", os.path.join(shared_pool, "conversations")], check=False)
-                            shutil.rmtree(ide_conv, ignore_errors=True)
-                        os.makedirs(os.path.join(shared_pool, "conversations"), exist_ok=True)
-                        os.symlink(os.path.join(shared_pool, "conversations"), ide_conv)
-                        print(f"{GREEN}[SUCCESS] Antigravity IDE history set to Shared 3-Way Sync.{NC}")
-                else:
-                    target_link = os.path.join(p_dir, ".gemini", "antigravity")
-                    if is_shared:
-                        if os.path.islink(target_link): os.unlink(target_link)
-                        os.makedirs(os.path.join(target_link, "conversations"), exist_ok=True)
-                        os.makedirs(os.path.join(target_link, "brain"), exist_ok=True)
-                        print(f"{GREEN}[SUCCESS] Clone history set to Isolated Private.{NC}")
-                    else:
-                        if os.path.isdir(target_link) and not os.path.islink(target_link):
-                            merge_script = os.path.join(local_bin, "antigravity-merge-history.py")
-                            if os.path.isfile(merge_script):
-                                subprocess.run([sys.executable, merge_script, "--source", os.path.join(target_link, "conversations"), "--target", os.path.join(shared_pool, "conversations")], check=False)
-                            shutil.rmtree(target_link, ignore_errors=True)
-                        os.makedirs(os.path.dirname(target_link), exist_ok=True)
-                        os.symlink(shared_pool, target_link)
-                        print(f"{GREEN}[SUCCESS] Clone history set to Shared 3-Way Sync.{NC}")
+                safe_toggle_history_mode(is_ide1, is_acc1, is_shared, p_dir, local_bin, REAL_HOME, name=cid)
             elif choice == "2":
                 os.makedirs(os.path.dirname(cache_f), exist_ok=True)
                 if is_normal_keyring:
@@ -1514,13 +1582,16 @@ def run_control_center():
         print(f"  [N] Install New Google Antigravity Binary (Download & Install)")
         print(f"  [C] Create New Clone / Account Profile (Add isolated account)")
         print(f"  [R] Apply RTL & Persian Patch to Suite (App & IDE)")
+        print(f"  [E] Export Suite or History Archive (Cross-system backup/transfer)")
+        print(f"  [I] Import Suite or History Archive (Restore / cross-system merge)")
+        print(f"  [B] Manage History Backups (List & Restore Snapshots)")
         print(f"  [W] Run Full Setup Wizard (Sequential Steps 1-8)")
         print(f"  [S] Run a Specific Setup Step by Name (Select from named steps)")
         print(f"  [Q] Exit Setup")
         print(f"{CYAN}========================================================================================{NC}")
 
         try:
-            choice = input(f"Select option [1-{len(unified)}, N, C, R, W, S, Q, Default: Q]: ").strip()
+            choice = input(f"Select option [1-{len(unified)}, N, C, R, E, I, B, W, S, Q, Default: Q]: ").strip()
         except (KeyboardInterrupt, EOFError):
             print("\nExiting Control Center.")
             break
@@ -1561,6 +1632,62 @@ def run_control_center():
             r_target = input("Choose target [1-3, Default: 1]: ").strip()
             r_arg = "all" if r_target in ["1", ""] else ("app" if r_target == "2" else "ide")
             subprocess.run(["bash", manage_sh, "rtl", r_arg], check=False)
+        elif choice.upper() == "E":
+            print(f"\n{CYAN}--- Export Antigravity Suite or History Archive ---{NC}")
+            print("Select export category:")
+            print("  [1] Full Bundle (Conversation History + Brains + Suite Configs, Skills, MCP, Accounts)")
+            print("  [2] History Only (Conversations, Brain artifacts, Summaries, Annotations)")
+            print("  [3] Suite Configurations Only (Rules, Skills, Plugins, MCP Servers, Accounts & Tokens)")
+            exp_choice = input("Enter selection [1-3, Default: 1]: ").strip()
+            dest_input = input("Enter output tarball path [Enter for default ~/antigravity-...]: ").strip()
+
+            tool_py = os.path.join(local_bin, "antigravity-migration.py")
+            if not os.path.isfile(tool_py):
+                tool_py = os.path.join(os.path.dirname(os.path.abspath(__file__)), "antigravity-migration.py")
+
+            cmd = [sys.executable, tool_py]
+            if exp_choice == "2":
+                cmd.append("export-history")
+            elif exp_choice == "3":
+                cmd.append("export-suite")
+            else:
+                cmd.append("export-all")
+            if dest_input:
+                cmd.append(os.path.realpath(os.path.expanduser(dest_input)))
+            subprocess.run(cmd, check=False)
+            input("\nPress Enter to return to Control Center...")
+        elif choice.upper() == "I":
+            print(f"\n{CYAN}--- Import Antigravity Suite or History Archive ---{NC}")
+            arc_path = input("Enter path to archive (.tar.gz) to import: ").strip()
+            if not arc_path or not os.path.isfile(os.path.realpath(os.path.expanduser(arc_path))):
+                print(f"{RED}[ERROR] File not found or not specified.{NC}")
+            else:
+                real_arc = os.path.realpath(os.path.expanduser(arc_path))
+                tool_py = os.path.join(local_bin, "antigravity-migration.py")
+                if not os.path.isfile(tool_py):
+                    tool_py = os.path.join(os.path.dirname(os.path.abspath(__file__)), "antigravity-migration.py")
+                subprocess.run([sys.executable, tool_py, "import-all", real_arc], check=False)
+            input("\nPress Enter to return to Control Center...")
+        elif choice.upper() == "B":
+            print(f"\n{CYAN}--- Manage Antigravity History & Suite Backups ---{NC}")
+            print("  [1] List Available Safety Snapshots & Backups")
+            print("  [2] Create New Immediate Safety Snapshot")
+            print("  [3] Restore System from a Backup Tarball")
+            b_choice = input("Enter choice [1-3, Default: 1]: ").strip()
+            tool_py = os.path.join(local_bin, "antigravity-migration.py")
+            if not os.path.isfile(tool_py):
+                tool_py = os.path.join(os.path.dirname(os.path.abspath(__file__)), "antigravity-migration.py")
+            if b_choice == "2":
+                subprocess.run([sys.executable, tool_py, "create-backup", "--category", "all", "--label", "manual_control_center"], check=False)
+            elif b_choice == "3":
+                tar_in = input("Enter path to backup archive to restore: ").strip()
+                if tar_in and os.path.isfile(os.path.realpath(os.path.expanduser(tar_in))):
+                    subprocess.run([sys.executable, tool_py, "restore-backup", os.path.realpath(os.path.expanduser(tar_in))], check=False)
+                else:
+                    print(f"{RED}[ERROR] Invalid backup path.{NC}")
+            else:
+                subprocess.run([sys.executable, tool_py, "list-backups"], check=False)
+            input("\nPress Enter to return to Control Center...")
         elif choice.upper() == "W":
             sys.exit(10)
         elif choice.upper() == "S":

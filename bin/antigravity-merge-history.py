@@ -388,6 +388,70 @@ def refresh_ide_oauth_token():
     except Exception:
         pass
 
+def parse_step14_user_prompt(payload):
+    """Extracts genuine clean user request from Protobuf payload in step_type 14."""
+    if not payload:
+        return ""
+    m = re.search(rb"<USER_REQUEST>(.*?)</USER_REQUEST>", payload, re.DOTALL)
+    if m:
+        try:
+            return " ".join(m.group(1).decode("utf-8", "ignore").split())
+        except Exception:
+            pass
+
+    pos = 0
+    total = len(payload)
+    while pos < total:
+        tag, pos = read_varint(payload, pos)
+        fn = tag >> 3
+        wt = tag & 7
+        if wt == 0:
+            val, pos = read_varint(payload, pos)
+        elif wt == 2:
+            l, pos = read_varint(payload, pos)
+            chunk = payload[pos:pos+l]
+            pos += l
+            if fn == 19:
+                cpos = 0
+                while cpos < len(chunk):
+                    ctag, cpos = read_varint(chunk, cpos)
+                    cfn = ctag >> 3
+                    cwt = ctag & 7
+                    if cwt == 2:
+                        cl, cpos = read_varint(chunk, cpos)
+                        subchunk = chunk[cpos:cpos+cl]
+                        cpos += cl
+                        if cfn in (2, 3):
+                            try:
+                                stag, spos = read_varint(subchunk, 0)
+                                if (stag >> 3) == 1 and (stag & 7) == 2:
+                                    sl, spos = read_varint(subchunk, spos)
+                                    text = subchunk[spos:spos+sl].decode("utf-8", "ignore").strip()
+                                    if text:
+                                        text = re.sub(r"^@\[TerminalName:[^\]]+\]\s*", "", text)
+                                        return " ".join(text.split())
+                            except Exception:
+                                pass
+                            try:
+                                text = subchunk.decode("utf-8", "ignore").strip()
+                                if text:
+                                    text = re.sub(r"^@\[TerminalName:[^\]]+\]\s*", "", text)
+                                    return " ".join(text.split())
+                            except Exception:
+                                pass
+                    elif cwt == 0:
+                        _, cpos = read_varint(chunk, cpos)
+                    else:
+                        break
+        else:
+            break
+
+    for match in re.finditer(rb"[\x20-\x7e\xd8-\xdb\xdc-\xdf]{8,}", payload):
+        cand = match.group(0).decode("utf-8", "ignore").strip()
+        if not re.match(r"^[0-9a-fA-F-]{36}", cand) and not cand.startswith("TerminalName:") and not cand.startswith("file://") and not cand.startswith("read_url(") and not cand.startswith("mcp("):
+            return cand
+    return ""
+
 def extract_conv_text(db_path, transcript_path):
     """Extracts (title, preview) from transcript and sqlite steps."""
     first_user_prompt = ""
@@ -413,30 +477,25 @@ def extract_conv_text(db_path, transcript_path):
         except Exception:
             pass
 
-    if not latest_user_prompt and os.path.isfile(db_path):
+    if os.path.isfile(db_path):
         try:
             c = sqlite3.connect(db_path)
             cur = c.cursor()
             rows = cur.execute("SELECT idx, step_payload FROM steps WHERE step_type = 14 ORDER BY idx ASC;").fetchall()
             c.close()
             for r_idx, payload in rows:
-                if not payload: continue
-                m = re.search(rb"<USER_REQUEST>(.*?)</USER_REQUEST>", payload, re.DOTALL)
-                if m:
-                    try:
-                        clean = " ".join(m.group(1).decode("utf-8", "ignore").split())
-                        if clean:
-                            if not first_user_prompt:
-                                first_user_prompt = clean
-                            latest_user_prompt = clean
-                            break
-                    except Exception:
-                        pass
+                if not payload:
+                    continue
+                p_text = parse_step14_user_prompt(payload)
+                if p_text:
+                    if not first_user_prompt:
+                        first_user_prompt = p_text
+                    latest_user_prompt = p_text
         except Exception:
             pass
 
-    title = first_user_prompt[:50] if first_user_prompt else ""
-    preview = latest_user_prompt[:200] if latest_user_prompt else ""
+    title = first_user_prompt[:80] if first_user_prompt else ""
+    preview = latest_user_prompt[:250] if latest_user_prompt else ""
     return title, preview
 
 def build_summaries_state(entries_dict):
@@ -479,10 +538,13 @@ def build_unified_state_sync(entries_dict):
         out.extend(entry)
     return bytes(out)
 
-def merge_histories(master_gemini=None, quiet=False):
+def merge_histories(master_gemini=None, source_dir=None, target_dir=None, quiet=False):
     real_home = os.environ.get("REAL_HOME", os.path.expanduser("~"))
     if not master_gemini:
-        master_gemini = os.path.join(real_home, ".gemini", "antigravity")
+        if target_dir:
+            master_gemini = os.path.dirname(target_dir) if target_dir.rstrip("/").endswith("conversations") else target_dir
+        else:
+            master_gemini = os.path.join(real_home, ".gemini", "antigravity")
 
     master_conv_dir = os.path.join(master_gemini, "conversations")
     master_brain_dir = os.path.join(master_gemini, "brain")
@@ -493,60 +555,95 @@ def merge_histories(master_gemini=None, quiet=False):
 
     # 1. Discover all profile pools
     pools = []
+    if source_dir and os.path.exists(source_dir):
+        if os.path.isdir(source_dir):
+            if glob.glob(os.path.join(source_dir, "*.db")):
+                pools.append(("explicit-source-conv", os.path.dirname(source_dir) if source_dir.rstrip("/").endswith("conversations") else source_dir, "custom"))
+            else:
+                pools.append(("explicit-source-dir", source_dir, "custom"))
+
     ide_gemini = os.path.join(real_home, ".gemini", "antigravity-ide")
-    if os.path.isdir(ide_gemini) and not os.path.islink(ide_gemini):
+    if os.path.isdir(ide_gemini):
         pools.append(("ide-master", ide_gemini, "antigravity-ide"))
 
     ide_gemini_isolated = os.path.join(real_home, ".gemini-ide", "antigravity-ide")
-    if os.path.isdir(ide_gemini_isolated) and not os.path.islink(ide_gemini_isolated):
+    if os.path.isdir(ide_gemini_isolated):
         pools.append(("ide-isolated", ide_gemini_isolated, "antigravity-ide"))
 
     ide_gemide_isolated = os.path.join(real_home, ".gemide", "antigravity-ide")
-    if os.path.isdir(ide_gemide_isolated) and not os.path.islink(ide_gemide_isolated):
+    if os.path.isdir(ide_gemide_isolated):
         pools.append(("gemide-isolated", ide_gemide_isolated, "antigravity-ide"))
 
     for p_dir in glob.glob(os.path.join(real_home, ".antigravity-profile*")):
         c_dir = os.path.join(p_dir, ".gemini", "antigravity")
-        if os.path.isdir(c_dir) and not os.path.islink(c_dir):
+        if os.path.isdir(c_dir):
             pools.append((os.path.basename(p_dir), c_dir, "antigravity"))
 
     for p_dir in glob.glob(os.path.join(real_home, ".antigravity-ide-profile*")):
         c_dir = os.path.join(p_dir, ".gemini", "antigravity-ide")
-        if os.path.isdir(c_dir) and not os.path.islink(c_dir):
+        if os.path.isdir(c_dir):
             pools.append((os.path.basename(p_dir), c_dir, "antigravity-ide"))
 
     # 2. Copy missing .db files and brain directories into master
     copied_dbs = 0
     copied_brains = 0
 
+    # Also search for any conversations.bak* and brain.bak* across ~/.gemini/
+    candidate_conv_dirs = []
+    candidate_brain_dirs = []
+
     for name, pool_dir, app_tag in pools:
-        p_conv = os.path.join(pool_dir, "conversations")
-        p_brain = os.path.join(pool_dir, "brain")
+        # Check standard and backup conversations folders
+        for p_conv in glob.glob(os.path.join(pool_dir, "conversations*")):
+            if os.path.isdir(p_conv) and not os.path.islink(p_conv):
+                candidate_conv_dirs.append(p_conv)
+        # If pool_dir itself contains *.db directly
+        if glob.glob(os.path.join(pool_dir, "*.db")):
+            candidate_conv_dirs.append(pool_dir)
 
-        if os.path.isdir(p_conv) and not os.path.islink(p_conv):
-            for db_src in glob.glob(os.path.join(p_conv, "*.db")):
-                fname = os.path.basename(db_src)
-                db_dst = os.path.join(master_conv_dir, fname)
-                if not os.path.exists(db_dst):
-                    try:
-                        shutil.copy2(db_src, db_dst)
-                        copied_dbs += 1
-                    except Exception:
-                        pass
+        # Check standard and backup brain folders
+        for p_brain in glob.glob(os.path.join(pool_dir, "brain*")):
+            if os.path.isdir(p_brain) and not os.path.islink(p_brain):
+                candidate_brain_dirs.append(p_brain)
 
-        if os.path.isdir(p_brain) and not os.path.islink(p_brain):
-            for b_item in glob.glob(os.path.join(p_brain, "*")):
-                b_name = os.path.basename(b_item)
-                b_dst = os.path.join(master_brain_dir, b_name)
-                if not os.path.exists(b_dst):
-                    try:
-                        if os.path.isdir(b_item):
-                            shutil.copytree(b_item, b_dst)
-                        else:
-                            shutil.copy2(b_item, b_dst)
-                        copied_brains += 1
-                    except Exception:
-                        pass
+    # Search directly in ~/.gemini/ and profile directories for backup folders
+    for base_d in [os.path.join(real_home, ".gemini"), os.path.join(real_home, ".config", "antigravity")]:
+        if os.path.isdir(base_d):
+            for b_conv in glob.glob(os.path.join(base_d, "*", "conversations*")):
+                if os.path.isdir(b_conv) and not os.path.islink(b_conv):
+                    candidate_conv_dirs.append(b_conv)
+            for b_brain in glob.glob(os.path.join(base_d, "*", "brain*")):
+                if os.path.isdir(b_brain) and not os.path.islink(b_brain):
+                    candidate_brain_dirs.append(b_brain)
+
+    for c_dir in sorted(set(candidate_conv_dirs)):
+        if os.path.realpath(c_dir) == os.path.realpath(master_conv_dir):
+            continue
+        for db_src in glob.glob(os.path.join(c_dir, "*.db")):
+            fname = os.path.basename(db_src)
+            db_dst = os.path.join(master_conv_dir, fname)
+            if not os.path.exists(db_dst):
+                try:
+                    shutil.copy2(db_src, db_dst)
+                    copied_dbs += 1
+                except Exception:
+                    pass
+
+    for b_dir in sorted(set(candidate_brain_dirs)):
+        if os.path.realpath(b_dir) == os.path.realpath(master_brain_dir):
+            continue
+        for b_item in glob.glob(os.path.join(b_dir, "*")):
+            b_name = os.path.basename(b_item)
+            b_dst = os.path.join(master_brain_dir, b_name)
+            if not os.path.exists(b_dst):
+                try:
+                    if os.path.isdir(b_item):
+                        shutil.copytree(b_item, b_dst)
+                    else:
+                        shutil.copy2(b_item, b_dst)
+                    copied_brains += 1
+                except Exception:
+                    pass
     # 3. Read and Synchronize conversation_summaries.db
     all_summaries = {}  # uuid -> pure_bin
     con = sqlite3.connect(master_sum_db)
@@ -635,12 +732,16 @@ def merge_histories(master_gemini=None, quiet=False):
                         (final_title, final_prev, max(actual_steps, curr_sc), file_mtime_iso, pure_bin, user_step, conv_id))
             updated_db_rows += 1
         else:
-            if actual_steps == 0 and not anno_title:
+            if actual_steps == 0 and not anno_title and not os.path.isfile(transcript_file):
                 continue
             ext_title, ext_prev = extract_conv_text(db_file, transcript_file)
-            final_title = anno_title or ext_title or "Conversation"
+            final_title = anno_title or ext_title
             if not final_title or final_title in ["Conversation", "Untitled Conversation"]:
-                if not os.path.isfile(transcript_file) and not anno_title:
+                if actual_steps > 0:
+                    final_title = f"Conversation ({conv_id[:8]})"
+                elif os.path.isfile(transcript_file) or anno_title:
+                    final_title = "Conversation"
+                else:
                     continue
             final_prev = ext_prev or final_title
             user_step = get_last_user_step_index(db_file, actual_steps)
@@ -747,12 +848,12 @@ def merge_histories(master_gemini=None, quiet=False):
         except Exception:
             pass
 
-    # 7. Setup IDE directory symlinks and proto files
-    target_ide_dirs = [ide_gemini]
-    if os.path.isdir(os.path.join(real_home, ".gemini-ide")):
-        target_ide_dirs.append(ide_gemini_isolated)
-    if os.path.isdir(os.path.join(real_home, ".gemide")):
-        target_ide_dirs.append(ide_gemide_isolated)
+    # 7. Setup IDE directory symlinks and proto files for shared IDEs
+    target_ide_dirs = []
+    for td in [ide_gemini]:
+        c_link = os.path.join(td, "conversations")
+        if os.path.islink(c_link) or not os.path.exists(c_link):
+            target_ide_dirs.append(td)
 
     for target_dir in target_ide_dirs:
         os.makedirs(target_dir, exist_ok=True)
@@ -767,9 +868,16 @@ def merge_histories(master_gemini=None, quiet=False):
             if not os.path.islink(dst_link):
                 if os.path.exists(dst_link):
                     if os.path.isdir(dst_link):
-                        shutil.rmtree(dst_link, ignore_errors=True)
+                        bak_path = f"{dst_link}.bak_{int(time.time())}"
+                        try:
+                            os.rename(dst_link, bak_path)
+                        except Exception:
+                            pass
                     else:
-                        os.remove(dst_link)
+                        try:
+                            os.remove(dst_link)
+                        except Exception:
+                            pass
                 try:
                     os.symlink(master_path, dst_link)
                 except Exception:
@@ -941,6 +1049,8 @@ def watch_mode(master_gemini=None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Antigravity History Merger")
     parser.add_argument("--master", help="Path to master antigravity directory")
+    parser.add_argument("--source", help="Source directory containing conversations or profile")
+    parser.add_argument("--target", help="Target master antigravity directory")
     parser.add_argument("--quiet", action="store_true", help="Quiet output")
     parser.add_argument("--watch", action="store_true", help="Run continuously in background and auto-sync on changes")
     args = parser.parse_args()
@@ -948,4 +1058,4 @@ if __name__ == "__main__":
     if args.watch:
         watch_mode(master_gemini=args.master)
     else:
-        merge_histories(master_gemini=args.master, quiet=args.quiet)
+        merge_histories(master_gemini=args.master, source_dir=args.source, target_dir=args.target, quiet=args.quiet)

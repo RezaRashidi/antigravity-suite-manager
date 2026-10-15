@@ -20,6 +20,7 @@ install: build
 	install -m 755 bin/antigravity-generate-icons.py $(BINDIR)/antigravity-generate-icons.py
 	install -m 755 bin/antigravity-apply-icon.py $(BINDIR)/antigravity-apply-icon.py
 	install -m 755 bin/antigravity-merge-history.py $(BINDIR)/antigravity-merge-history.py
+	install -m 755 bin/antigravity-migration.py $(BINDIR)/antigravity-migration.py
 	install -m 755 bin/antigravity-detect.py $(BINDIR)/antigravity-detect.py
 	install -m 755 bin/antigravity-keyring.py $(BINDIR)/antigravity-keyring.py
 	install -m 755 bin/scale_icon $(BINDIR)/scale_icon
