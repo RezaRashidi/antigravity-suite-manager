@@ -31,6 +31,7 @@ if [ -z "${BASH_SOURCE[0]}" ] || [ ! -f "${SCRIPT_DIR}/src/scale_icon.c" ] || [ 
     if [ -d "${INSTALL_REPO_DIR}/.git" ]; then
         echo -e "${BLUE}Existing repository found at ${INSTALL_REPO_DIR}, updating...${NC}"
         git -C "$INSTALL_REPO_DIR" fetch --depth=1 origin main 2>/dev/null || true
+        git -C "$INSTALL_REPO_DIR" clean -fd 2>/dev/null || true
         git -C "$INSTALL_REPO_DIR" reset --hard origin/main 2>/dev/null || git -C "$INSTALL_REPO_DIR" pull --ff-only 2>/dev/null || true
     elif command -v git >/dev/null 2>&1; then
         echo -e "${BLUE}Cloning repository to ${INSTALL_REPO_DIR}...${NC}"
@@ -42,6 +43,16 @@ if [ -z "${BASH_SOURCE[0]}" ] || [ ! -f "${SCRIPT_DIR}/src/scale_icon.c" ] || [ 
     fi
 
     echo -e "${GREEN}[OK] Repository ready at ${INSTALL_REPO_DIR}${NC}\n"
+
+    # Immediately deploy updated scripts and master assets to ~/.local/bin and ~/.local/share/icons
+    mkdir -p "${REAL_HOME}/.local/bin" "${REAL_HOME}/.local/share/icons" "${REAL_HOME}/.config/antigravity"
+    if [ -d "${INSTALL_REPO_DIR}/bin" ]; then
+        cp -f "${INSTALL_REPO_DIR}/bin/"* "${REAL_HOME}/.local/bin/" 2>/dev/null || sudo -n cp -f "${INSTALL_REPO_DIR}/bin/"* "${REAL_HOME}/.local/bin/" 2>/dev/null || true
+        chmod +x "${REAL_HOME}/.local/bin/"* 2>/dev/null || true
+    fi
+    if [ -d "${INSTALL_REPO_DIR}/assets" ]; then
+        cp -f "${INSTALL_REPO_DIR}/assets"/antigravity-master-*.png "${REAL_HOME}/.local/share/icons/" 2>/dev/null || true
+    fi
 
     # Re-exec install.sh from cloned repository
     if [ -r /dev/tty ] && [ ! -t 0 ]; then
@@ -290,8 +301,8 @@ step_4_deploy_scripts() {
     mkdir -p "$TARGET_BIN" "$TARGET_ICONS" "$TARGET_CONF"
     for s in manage-antigravity.sh antigravity-generate-icons.py antigravity-apply-icon.py antigravity-merge-history.py antigravity-detect.py antigravity-keyring.py antigravity-f5-patch.js; do
         if [ -f "${SCRIPT_DIR}/bin/${s}" ]; then
-            cp -f "${SCRIPT_DIR}/bin/${s}" "${TARGET_BIN}/"
-            chmod +x "${TARGET_BIN}/${s}"
+            cp -f "${SCRIPT_DIR}/bin/${s}" "${TARGET_BIN}/" 2>/dev/null || sudo -n cp -f "${SCRIPT_DIR}/bin/${s}" "${TARGET_BIN}/" 2>/dev/null || true
+            chmod +x "${TARGET_BIN}/${s}" 2>/dev/null || true
         fi
     done
 

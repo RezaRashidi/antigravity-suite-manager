@@ -274,7 +274,7 @@ def update_launcher_binary(launcher_path, new_binary):
     try:
         with open(launcher_path, 'r', encoding='utf-8') as f:
             content = f.read()
-        content = re.sub(r'exec\s+["\'][^"\']+["\']', f'exec "{new_binary}"', content)
+        content = re.sub(r'exec\s+["\']?[^\s"\']+["\']?', f'exec "{new_binary}"', content, count=1)
         with open(launcher_path, 'w', encoding='utf-8') as f:
             f.write(content)
         return True
@@ -436,7 +436,12 @@ def load_paths_config(detected_app="", detected_ide=""):
     elif app_dir:
         final_app = app_dir
     else:
-        final_app = "/opt/antigravity2"
+        for cand in ["/opt/Antigravity-x64", "/opt/antigravity2", "/opt/antigravity"]:
+            if os.path.isdir(cand):
+                final_app = cand
+                break
+        else:
+            final_app = "/opt/Antigravity-x64"
 
     if ide_dir and os.path.isdir(ide_dir):
         final_ide = ide_dir
@@ -445,7 +450,12 @@ def load_paths_config(detected_app="", detected_ide=""):
     elif ide_dir:
         final_ide = ide_dir
     else:
-        final_ide = "/opt/antigravity"
+        for cand in ["/opt/antigravity-ide", "/opt/antigravity", "/opt/antigravity2"]:
+            if os.path.isdir(cand):
+                final_ide = cand
+                break
+        else:
+            final_ide = "/opt/antigravity-ide"
 
     return final_app, final_ide, custom_paths
 
@@ -722,13 +732,20 @@ def configure_single_clone(clone):
         elif is_acc2:
             running = subprocess.run(["pgrep", "-f", "antigravity-profile2.*Antigravity"], capture_output=True).returncode == 0
         elif is_ide1:
-            running = subprocess.run(["pgrep", "-f", "/opt/antigravity/antigravity-ide"], capture_output=True).returncode == 0
+            running = subprocess.run(["pgrep", "-f", "antigravity-ide"], capture_output=True).returncode == 0
         else:
             bname = os.path.basename(p_dir)
             running = subprocess.run(["pgrep", "-f", f"{bname}"], capture_output=True).returncode == 0
 
         launcher_f = clone['launcher']
-        linked_bin = get_launcher_binary(launcher_f) if os.path.isfile(launcher_f) else "Default System Binary"
+        linked_bin = get_launcher_binary(launcher_f) if (launcher_f and os.path.isfile(launcher_f)) else "Default System Binary"
+        if launcher_f and os.path.isfile(launcher_f) and (not linked_bin or not os.path.isfile(linked_bin)):
+            cand_exes = ["/opt/antigravity-ide/antigravity-ide", "/opt/antigravity/antigravity-ide"] if is_ide1 else ["/opt/Antigravity-x64/antigravity", "/opt/antigravity2/antigravity", "/opt/antigravity/antigravity"]
+            for ce in cand_exes:
+                if os.path.isfile(ce):
+                    update_launcher_binary(launcher_f, ce)
+                    linked_bin = ce
+                    break
 
         print(f"\n{CYAN}----------------------------------------------------------------------------------------{NC}")
         print(f"{BOLD}{CYAN}  Configuring Account / Clone: {clone['name']}{NC}")
@@ -852,6 +869,14 @@ def configure_single_clone(clone):
                     subprocess.run(["bash", manage_sh, "app1"], check=False)
                 elif is_ide1:
                     subprocess.run(["bash", manage_sh, "ide-shortcuts"], check=False)
+            if launcher_f and os.path.isfile(launcher_f):
+                cur_bin = get_launcher_binary(launcher_f)
+                if not cur_bin or not os.path.isfile(cur_bin):
+                    cand_exes = ["/opt/antigravity-ide/antigravity-ide", "/opt/antigravity/antigravity-ide"] if is_ide1 else ["/opt/Antigravity-x64/antigravity", "/opt/antigravity2/antigravity"]
+                    for ce in cand_exes:
+                        if os.path.isfile(ce):
+                            update_launcher_binary(launcher_f, ce)
+                            break
             dup_dt = os.path.join(local_apps, "antigravity.desktop")
             if os.path.islink(dup_dt) or (os.path.isfile(dup_dt) and os.path.isfile(os.path.join(local_apps, "antigravity-1.desktop"))):
                 try: os.remove(dup_dt)
@@ -947,6 +972,12 @@ def get_unified_instances():
 
         eng_path = eng['path'] if eng else (curr_ide if 'IDE' in c['type'] else curr_app)
         eng_ver = eng['version'] if eng else "Unknown"
+
+        # Auto-heal launcher if the linked binary does not exist or is broken
+        if launcher_f and os.path.isfile(launcher_f):
+            if (not linked_bin or not os.path.isfile(linked_bin)) and eng and eng.get('executable') and os.path.isfile(eng['executable']):
+                update_launcher_binary(launcher_f, eng['executable'])
+                linked_bin = eng['executable']
 
         # Exclude phantom clones where engine does not exist on disk AND launcher does not exist
         if not eng and not os.path.isfile(launcher_f) and not os.path.isdir(eng_path):
@@ -1060,6 +1091,13 @@ def configure_unified_instance(u_item, curr_app, curr_ide, custom_paths):
             eng = fresh_eng
             eng_v = fresh_eng.get('version', 'Unknown')
             u_item['version'] = eng_v
+
+        # Auto-heal launcher if the linked binary does not exist or is broken
+        if launcher_f and os.path.isfile(launcher_f):
+            if (not linked_bin or not os.path.isfile(linked_bin)) and eng and eng.get('executable') and os.path.isfile(eng['executable']):
+                update_launcher_binary(launcher_f, eng['executable'])
+                linked_bin = eng['executable']
+
         is_primary_app = (curr_app and os.path.realpath(eng_p) == os.path.realpath(curr_app))
         is_primary_ide = (curr_ide and os.path.realpath(eng_p) == os.path.realpath(curr_ide))
         if is_primary_app:
@@ -1205,6 +1243,10 @@ def configure_unified_instance(u_item, curr_app, curr_ide, custom_paths):
                     if is_acc2: subprocess.run(["bash", manage_sh, "app2"], check=False)
                     elif is_acc1: subprocess.run(["bash", manage_sh, "app1"], check=False)
                     elif is_ide1: subprocess.run(["bash", manage_sh, "ide-shortcuts"], check=False)
+                if launcher_f and os.path.isfile(launcher_f):
+                    cur_bin = get_launcher_binary(launcher_f)
+                    if (not cur_bin or not os.path.isfile(cur_bin)) and eng and eng.get('executable') and os.path.isfile(eng['executable']):
+                        update_launcher_binary(launcher_f, eng['executable'])
                 dup_dt = os.path.join(local_apps, "antigravity.desktop")
                 if os.path.islink(dup_dt) or (os.path.isfile(dup_dt) and os.path.isfile(os.path.join(local_apps, "antigravity-1.desktop"))):
                     try: os.remove(dup_dt)
@@ -1531,8 +1573,8 @@ if __name__ == '__main__':
                 ide_path = i['path']
                 ide_ver = i['version']
         conf_app, conf_ide, custom_paths = load_paths_config(app_path, ide_path)
-        final_app = conf_app if (conf_app and os.path.isdir(conf_app)) else (app_path or "/opt/antigravity2")
-        final_ide = conf_ide if (conf_ide and os.path.isdir(conf_ide)) else (ide_path or "/opt/antigravity")
+        final_app = conf_app if (conf_app and os.path.isdir(conf_app)) else (app_path or "/opt/Antigravity-x64")
+        final_ide = conf_ide if (conf_ide and os.path.isdir(conf_ide)) else (ide_path or "/opt/antigravity-ide")
         print(f'ANTIGRAVITY_DETECTED_APP="{final_app}"')
         print(f'ANTIGRAVITY_DETECTED_APP_VER="{app_ver}"')
         print(f'ANTIGRAVITY_DETECTED_IDE="{final_ide}"')

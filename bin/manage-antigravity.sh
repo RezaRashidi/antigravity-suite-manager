@@ -120,19 +120,31 @@ auto_detect_installations() {
         fi
     fi
 
-    if [ -z "$APP_INSTALL_DIR" ]; then
-        if [ -n "$ANTIGRAVITY_DETECTED_APP" ]; then
+    if [ -z "$APP_INSTALL_DIR" ] || [ ! -f "${APP_INSTALL_DIR}/antigravity" ]; then
+        if [ -n "$ANTIGRAVITY_DETECTED_APP" ] && [ -f "${ANTIGRAVITY_DETECTED_APP}/antigravity" ]; then
             APP_INSTALL_DIR="$ANTIGRAVITY_DETECTED_APP"
         else
-            APP_INSTALL_DIR="/opt/antigravity2"
+            for cand in "/opt/Antigravity-x64" "/opt/antigravity2" "/opt/antigravity"; do
+                if [ -f "${cand}/antigravity" ]; then
+                    APP_INSTALL_DIR="$cand"
+                    break
+                fi
+            done
+            APP_INSTALL_DIR="${APP_INSTALL_DIR:-/opt/Antigravity-x64}"
         fi
     fi
 
-    if [ -z "$IDE_INSTALL_DIR" ]; then
-        if [ -n "$ANTIGRAVITY_DETECTED_IDE" ]; then
+    if [ -z "$IDE_INSTALL_DIR" ] || [ ! -f "${IDE_INSTALL_DIR}/antigravity-ide" ]; then
+        if [ -n "$ANTIGRAVITY_DETECTED_IDE" ] && [ -f "${ANTIGRAVITY_DETECTED_IDE}/antigravity-ide" ]; then
             IDE_INSTALL_DIR="$ANTIGRAVITY_DETECTED_IDE"
         else
-            IDE_INSTALL_DIR="/opt/antigravity"
+            for cand in "/opt/antigravity-ide" "/opt/antigravity" "/opt/antigravity2"; do
+                if [ -f "${cand}/antigravity-ide" ]; then
+                    IDE_INSTALL_DIR="$cand"
+                    break
+                fi
+            done
+            IDE_INSTALL_DIR="${IDE_INSTALL_DIR:-/opt/antigravity-ide}"
         fi
     fi
 }
@@ -708,9 +720,10 @@ setup_account_1() {
             fi
         done
     fi
+    APP_INSTALL_DIR="${APP_INSTALL_DIR:-/opt/Antigravity-x64}"
 
     # Generate and deploy icons according to configuration
-    apply_icons_config
+    apply_icons_config || true
 
     local pass_store_flag=""
     if [ "$KEYRING_MODE_APP1" = "normal" ]; then
@@ -794,6 +807,17 @@ EOF
 setup_account_2() {
     log_info "Configuring Account 2 (Secondary isolated profile)..."
 
+    auto_detect_installations
+    if [ -z "$APP_INSTALL_DIR" ] || [ ! -f "${APP_INSTALL_DIR}/antigravity" ]; then
+        for cand in "$APP_INSTALL_DIR" "/opt/Antigravity-x64" "/opt/antigravity2" "/opt/antigravity"; do
+            if [ -n "$cand" ] && [ -f "${cand}/antigravity" ]; then
+                APP_INSTALL_DIR="$cand"
+                break
+            fi
+        done
+    fi
+    APP_INSTALL_DIR="${APP_INSTALL_DIR:-/opt/Antigravity-x64}"
+
     local pass_store_flag=""
     if [ "$KEYRING_MODE_APP2" = "normal" ]; then
         pass_store_flag="--password-store=basic "
@@ -816,7 +840,7 @@ setup_account_2() {
     ln -sfn "$LOCAL_ICONS" "$PROFILE2_DIR/.local/share/icons"
 
     # Generate and deploy icons according to configuration
-    apply_icons_config
+    apply_icons_config || true
 
     # Launcher script for Account 2 with single-instance raising & --restart
     cat <<EOF > "${LOCAL_BIN}/antigravity-acc2"
@@ -921,9 +945,10 @@ setup_ide_shortcuts() {
             fi
         done
     fi
+    IDE_INSTALL_DIR="${IDE_INSTALL_DIR:-/opt/antigravity-ide}"
 
     # Generate and deploy icons according to configuration
-    apply_icons_config
+    apply_icons_config || true
 
     local ide_pass_store=""
     if [ "$KEYRING_MODE_IDE" = "normal" ]; then
@@ -1389,7 +1414,7 @@ for p in sorted(glob.glob(os.path.join(real_home, ".antigravity-profile-app-*"))
 
 # 4. Primary IDE
 ide_shared = os.path.islink(os.path.join(real_home, ".gemini", "antigravity-ide", "conversations"))
-ide_run = subprocess.run(["pgrep", "-f", "/opt/antigravity/antigravity-ide"], capture_output=True).returncode == 0
+ide_run = subprocess.run(["pgrep", "-f", "antigravity-ide"], capture_output=True).returncode == 0
 instances.append(("Antigravity IDE (1)", "IDE", f"{G}Shared{NC}" if ide_shared else f"{Y}Isolated{NC}", "antigravity-ide", f"{G}Running{NC}" if ide_run else "Stopped", "~/.local/bin/antigravity-ide"))
 
 # 5. Custom IDE profiles
@@ -1718,24 +1743,27 @@ apply_icons_config() {
     log_info "Configuring Suite Icons: App1=${ACC1_ICON_THEME} (${ACC1_EMBLEM_COLOR}), App2=${ACC2_ICON_THEME} (${ACC2_EMBLEM_COLOR}), IDE=${IDE_ICON_THEME} (${IDE_EMBLEM_COLOR})..."
     save_icons_config
 
-    local gen_py="${LOCAL_BIN}/antigravity-generate-icons.py"
-    if [ ! -f "$gen_py" ]; then
-        local SCRIPT_DIR
-        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        if [ -f "${SCRIPT_DIR}/antigravity-generate-icons.py" ]; then
-            gen_py="${SCRIPT_DIR}/antigravity-generate-icons.py"
-        elif [ -f "${SCRIPT_DIR}/bin/antigravity-generate-icons.py" ]; then
-            gen_py="${SCRIPT_DIR}/bin/antigravity-generate-icons.py"
-        elif [ -f "${REAL_HOME}/.antigravity-suite-manager/bin/antigravity-generate-icons.py" ]; then
-            gen_py="${REAL_HOME}/.antigravity-suite-manager/bin/antigravity-generate-icons.py"
+    local gen_py=""
+    local SCRIPT_DIR
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    for cand in "${SCRIPT_DIR}/antigravity-generate-icons.py" \
+                "${SCRIPT_DIR}/bin/antigravity-generate-icons.py" \
+                "${REAL_HOME}/.antigravity-suite-manager/bin/antigravity-generate-icons.py" \
+                "${LOCAL_BIN}/antigravity-generate-icons.py"; do
+        if [ -f "$cand" ]; then
+            gen_py="$cand"
+            break
         fi
-    fi
+    done
 
-    # Ensure generator script is copied into LOCAL_BIN
-    if [ -f "$gen_py" ] && [ ! -f "${LOCAL_BIN}/antigravity-generate-icons.py" ]; then
-        mkdir -p "$LOCAL_BIN"
-        cp -f "$gen_py" "${LOCAL_BIN}/antigravity-generate-icons.py" 2>/dev/null || true
-        chmod +x "${LOCAL_BIN}/antigravity-generate-icons.py" 2>/dev/null || true
+    # Ensure generator script in LOCAL_BIN is copied/updated from source
+    if [ -n "$gen_py" ] && [ -f "$gen_py" ]; then
+        if [ "$gen_py" != "${LOCAL_BIN}/antigravity-generate-icons.py" ]; then
+            mkdir -p "$LOCAL_BIN"
+            cp -f "$gen_py" "${LOCAL_BIN}/antigravity-generate-icons.py" 2>/dev/null || sudo -n cp -f "$gen_py" "${LOCAL_BIN}/antigravity-generate-icons.py" 2>/dev/null || true
+            chmod +x "${LOCAL_BIN}/antigravity-generate-icons.py" 2>/dev/null || true
+            gen_py="${LOCAL_BIN}/antigravity-generate-icons.py"
+        fi
     fi
 
     # Immediately ensure master icons exist in LOCAL_ICONS as guaranteed baseline
@@ -1781,7 +1809,7 @@ apply_icons_config() {
             --acc2-recolor "${ACC2_RECOLOR}" \
             --ide "${IDE_ICON_THEME}" \
             --ide-color "${IDE_EMBLEM_COLOR}" \
-            --save-config
+            --save-config 2>/dev/null || python3 "$gen_py" 2>/dev/null || true
     fi
 }
 
