@@ -18,9 +18,9 @@ import glob
 import shutil
 
 REAL_HOME = os.environ.get("REAL_HOME", os.path.expanduser("~"))
-ACC1_ICON_PATH = os.path.join(REAL_HOME, ".local/share/icons/antigravity-1.png")
+ACC1_ICON_PATH = os.path.join(REAL_HOME, ".local/share/icons/antigravity.png")
 if not os.path.isfile(ACC1_ICON_PATH):
-    ACC1_ICON_PATH = os.path.join(REAL_HOME, ".local/share/icons/antigravity.png")
+    ACC1_ICON_PATH = os.path.join(REAL_HOME, ".local/share/icons/antigravity-1.png")
 
 ACC2_ICON_PATH = os.path.join(REAL_HOME, ".local/share/icons/antigravity-acc2.png")
 IDE_ICON_PATH = os.path.join(REAL_HOME, ".local/share/icons/antigravity-ide.png")
@@ -208,7 +208,11 @@ def apply_icon_to_windows():
     atom_class = x11.XInternAtom(display, b'WM_CLASS', False)
     atom_string = x11.XInternAtom(display, b'STRING', False)
 
-    cls_acc1 = b'antigravity-1\0antigravity-1\0'
+    has_other_apps = os.path.isdir(os.path.join(REAL_HOME, ".antigravity-profile2")) or \
+                     os.path.isfile(os.path.join(REAL_HOME, ".local/bin/antigravity-acc2")) or \
+                     bool(glob.glob(os.path.join(REAL_HOME, ".antigravity-profile-app-*")))
+
+    cls_acc1 = b'antigravity-1\0antigravity-1\0' if has_other_apps else b'antigravity\0antigravity\0'
     cls_acc2 = b'antigravity-2\0antigravity-2\0'
     cls_ide = b'antigravity-ide\0antigravity-ide\0'
 

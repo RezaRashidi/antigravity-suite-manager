@@ -249,7 +249,14 @@ def print_table(installs):
         print(f"{t:<20} {v:<11} {w:<20} {exe_base:<27} {p}")
     print(f"{CYAN}========================================================================================{NC}")
 
-REAL_HOME = os.path.expanduser("~")
+REAL_HOME = os.environ.get("REAL_HOME", "")
+if not REAL_HOME:
+    try:
+        import pwd
+        user = os.environ.get("SUDO_USER") or os.environ.get("USER") or pwd.getpwuid(os.getuid()).pw_name
+        REAL_HOME = pwd.getpwnam(user).pw_dir
+    except Exception:
+        REAL_HOME = os.path.expanduser("~")
 CONF_DIR = os.path.join(REAL_HOME, ".config", "antigravity")
 PATHS_CONF = os.path.join(CONF_DIR, "paths.conf")
 
@@ -286,23 +293,50 @@ def scan_clones(curr_app="", curr_ide=""):
     local_bin = os.path.join(REAL_HOME, '.local', 'bin')
     local_apps = os.path.join(REAL_HOME, '.local', 'share', 'applications')
 
-    # 1. Primary App (Account 1 - Default)
+    has_other_app_accounts = False
+    acc2_profile = os.path.join(REAL_HOME, '.antigravity-profile2')
+    if os.path.isdir(acc2_profile) or os.path.isfile(os.path.join(local_bin, 'antigravity-acc2')):
+        has_other_app_accounts = True
+    else:
+        for p in glob.glob(os.path.join(REAL_HOME, '.antigravity-profile-app-*')):
+            if '.bak' not in p and '.removed' not in p and os.path.isdir(p):
+                has_other_app_accounts = True
+                break
+
+    # 1. Primary App (Account 1 - Default / Single Account)
     acc1_profile = os.path.join(REAL_HOME, '.gemini')
-    acc1_launcher = os.path.join(local_bin, 'antigravity-1')
-    acc1_desktop = os.path.join(local_apps, 'antigravity-1.desktop')
+    acc1_launcher = os.path.join(local_bin, 'antigravity') if not has_other_app_accounts else os.path.join(local_bin, 'antigravity-1')
+    if not os.path.isfile(acc1_launcher):
+        if os.path.isfile(os.path.join(local_bin, 'antigravity')):
+            acc1_launcher = os.path.join(local_bin, 'antigravity')
+        elif os.path.isfile(os.path.join(local_bin, 'antigravity-1')):
+            acc1_launcher = os.path.join(local_bin, 'antigravity-1')
+
+    acc1_desktop = os.path.join(local_apps, 'antigravity.desktop') if not has_other_app_accounts else os.path.join(local_apps, 'antigravity-1.desktop')
+    if not os.path.isfile(acc1_desktop):
+        if os.path.isfile(os.path.join(local_apps, 'antigravity.desktop')):
+            acc1_desktop = os.path.join(local_apps, 'antigravity.desktop')
+        elif os.path.isfile(os.path.join(local_apps, 'antigravity-1.desktop')):
+            acc1_desktop = os.path.join(local_apps, 'antigravity-1.desktop')
+
     acc1_running = subprocess.run(['pgrep', '-f', 'user-data-dir=.*Antigravity$'], capture_output=True).returncode == 0
     acc1_cache = os.path.join(acc1_profile, 'cache', 'antigravity-keyring-unavailable')
+
+    app1_name = 'Antigravity (Default)' if not has_other_app_accounts else 'Antigravity (Account 1 - Default)'
+    app1_role = 'Default Account' if not has_other_app_accounts else 'Primary Account'
+    app1_wm = 'antigravity' if not has_other_app_accounts else 'antigravity-1'
+
     # Only register app1 if launcher exists, desktop exists, or the engine directory actually exists
     if os.path.isfile(acc1_launcher) or os.path.isfile(acc1_desktop) or (curr_app and os.path.isdir(curr_app)):
         clones.append({
             'id': 'app1',
-            'name': 'Antigravity (Account 1 - Default)',
+            'name': app1_name,
             'type': 'App',
-            'role': 'Primary Account',
+            'role': app1_role,
             'profile_dir': acc1_profile,
             'launcher': acc1_launcher if os.path.isfile(acc1_launcher) else (curr_app if os.path.isdir(curr_app) else 'Default binary'),
             'desktop': acc1_desktop,
-            'wm_class': 'antigravity-1',
+            'wm_class': app1_wm,
             'history_mode': 'Master Shared Pool',
             'keyring_mode': 'Normal (File Storage)' if os.path.isfile(acc1_cache) else 'GNOME Keyring',
             'status': 'Running' if acc1_running else 'Stopped'
@@ -767,10 +801,12 @@ def configure_single_clone(clone):
         print("  [3] Change Linked Antigravity Binary / Engine Executable")
         print("  [4] Re-generate Desktop Launcher & Icons")
         print("  [5] Relocate / Rename Profile Directory")
-        if not is_acc1:
-            print("  [6] Delete / Remove this Clone")
+        if is_ide1:
+            print("  [6] Create Additional IDE Clone / Profile")
+        elif is_acc1:
+            print("  [6] Create Additional App Account Profile (Account 2 / Custom)")
         else:
-            print("  [6] Create Secondary Account Profile (Account 2)")
+            print("  [6] Delete / Remove this Clone")
         print("  [0] Done with this clone (Return to Control Center)")
         print(f"{CYAN}----------------------------------------------------------------------------------------{NC}")
 
@@ -884,10 +920,12 @@ def configure_single_clone(clone):
                         if os.path.isfile(ce):
                             update_launcher_binary(launcher_f, ce)
                             break
-            dup_dt = os.path.join(local_apps, "antigravity.desktop")
-            if os.path.islink(dup_dt) or (os.path.isfile(dup_dt) and os.path.isfile(os.path.join(local_apps, "antigravity-1.desktop"))):
-                try: os.remove(dup_dt)
-                except Exception: pass
+            has_other_apps = os.path.isdir(os.path.join(REAL_HOME, ".antigravity-profile2")) or \
+                             os.path.isfile(os.path.join(local_bin, "antigravity-acc2")) or \
+                             bool(glob.glob(os.path.join(REAL_HOME, ".antigravity-profile-app-*")))
+            dup_dt = os.path.join(local_apps, "antigravity.desktop" if has_other_apps else "antigravity-1.desktop")
+            try: os.remove(dup_dt)
+            except Exception: pass
             subprocess.run(["update-desktop-database", local_apps], check=False, stderr=subprocess.DEVNULL)
             print(f"{GREEN}[SUCCESS] Regenerated desktop launcher and icons.{NC}")
         elif choice == "5":
@@ -908,13 +946,25 @@ def configure_single_clone(clone):
                 clone['profile_dir'] = new_p
                 print(f"{GREEN}[SUCCESS] Profile directory moved to {new_p} and launcher updated.{NC}")
         elif choice == "6":
-            if is_acc1:
-                c_ans = input("Create secondary isolated account profile (Account 2)? [y/N]: ").strip().lower()
-                if c_ans in ["y", "yes"]:
-                    if os.path.isfile(manage_sh):
-                        subprocess.run(["bash", manage_sh, "app2"], check=False)
-                        print(f"{GREEN}[SUCCESS] Account 2 created with isolated profile and launcher.{NC}")
-                        break
+            manage_sh = os.path.join(local_bin, "manage-antigravity.sh")
+            if not os.path.isfile(manage_sh):
+                manage_sh = os.path.join(os.path.dirname(__file__), "manage-antigravity.sh")
+            if is_ide1:
+                print(f"\n{CYAN}--- Create Additional IDE Clone / Profile ---{NC}")
+                if os.path.isfile(manage_sh):
+                    subprocess.run(["bash", manage_sh, "create-instance", "ide"], check=False)
+                break
+            elif is_acc1:
+                print(f"\n{CYAN}--- Create Additional App Account Profile ---{NC}")
+                print("  [1] Standard Account 2 (antigravity-acc2)")
+                print("  [2] Custom App Profile (Named instance)")
+                sub_c = input("Choose option [1-2, Default: 1]: ").strip()
+                if sub_c == "2":
+                    subprocess.run(["bash", manage_sh, "create-instance", "app"], check=False)
+                else:
+                    subprocess.run(["bash", manage_sh, "app2"], check=False)
+                subprocess.run(["bash", manage_sh, "app1"], check=False)
+                break
             else:
                 c_confirm = input(f"Are you sure you want to delete clone '{clone['name']}'? [y/N]: ").strip().lower()
                 if c_confirm in ["y", "yes"]:
@@ -928,6 +978,8 @@ def configure_single_clone(clone):
                     if d_prof in ["y", "yes"]:
                         shutil.rmtree(p_dir, ignore_errors=True)
                     subprocess.run(["update-desktop-database", local_apps], check=False, stderr=subprocess.DEVNULL)
+                    if is_acc2 or 'app-' in cid:
+                        subprocess.run(["bash", manage_sh, "app1"], check=False)
                     print(f"{GREEN}[SUCCESS] Clone '{clone['name']}' removed.{NC}")
                     break
 
@@ -1136,10 +1188,12 @@ def configure_unified_instance(u_item, curr_app, curr_ide, custom_paths):
             print("  [3] Change Linked Antigravity Binary / Executable")
             print("  [4] Re-generate Desktop Launcher & Icons")
             print("  [5] Relocate / Rename Profile Directory")
-            if not is_acc1:
-                print("  [6] Delete / Remove this Clone Profile")
+            if is_ide1:
+                print("  [6] Create Additional IDE Clone / Profile")
+            elif is_acc1:
+                print("  [6] Create Additional App Account Profile (Account 2 / Custom)")
             else:
-                print("  [6] Create Secondary Account Profile (Account 2)")
+                print("  [6] Delete / Remove this Clone Profile")
             print(f"\n{BOLD}Engine & Installation Settings:{NC}")
             print(f"  [7] Change / Relocate Engine Directory Path ({eng_p})")
             print(f"  [8] Download & Re-install Latest Binaries into Engine Path")
@@ -1261,10 +1315,12 @@ def configure_unified_instance(u_item, curr_app, curr_ide, custom_paths):
                     cur_bin = get_launcher_binary(launcher_f)
                     if (not cur_bin or not os.path.isfile(cur_bin)) and eng and eng.get('executable') and os.path.isfile(eng['executable']):
                         update_launcher_binary(launcher_f, eng['executable'])
-                dup_dt = os.path.join(local_apps, "antigravity.desktop")
-                if os.path.islink(dup_dt) or (os.path.isfile(dup_dt) and os.path.isfile(os.path.join(local_apps, "antigravity-1.desktop"))):
-                    try: os.remove(dup_dt)
-                    except Exception: pass
+                has_other_apps = os.path.isdir(os.path.join(REAL_HOME, ".antigravity-profile2")) or \
+                                 os.path.isfile(os.path.join(local_bin, "antigravity-acc2")) or \
+                                 bool(glob.glob(os.path.join(REAL_HOME, ".antigravity-profile-app-*")))
+                dup_dt = os.path.join(local_apps, "antigravity.desktop" if has_other_apps else "antigravity-1.desktop")
+                try: os.remove(dup_dt)
+                except Exception: pass
                 subprocess.run(["update-desktop-database", local_apps], check=False, stderr=subprocess.DEVNULL)
                 print(f"{GREEN}[SUCCESS] Regenerated desktop launcher and icons.{NC}")
             elif choice == "5":
@@ -1285,13 +1341,22 @@ def configure_unified_instance(u_item, curr_app, curr_ide, custom_paths):
                     c['profile_dir'] = new_p
                     print(f"{GREEN}[SUCCESS] Profile directory moved to {new_p} and launcher updated.{NC}")
             elif choice == "6":
-                if is_acc1:
-                    c_ans = input("Create secondary isolated account profile (Account 2)? [y/N]: ").strip().lower()
-                    if c_ans in ["y", "yes"]:
-                        if os.path.isfile(manage_sh):
-                            subprocess.run(["bash", manage_sh, "app2"], check=False)
-                            print(f"{GREEN}[SUCCESS] Account 2 created with isolated profile and launcher.{NC}")
-                            break
+                if is_ide1:
+                    print(f"\n{CYAN}--- Create Additional IDE Clone / Profile ---{NC}")
+                    if os.path.isfile(manage_sh):
+                        subprocess.run(["bash", manage_sh, "create-instance", "ide"], check=False)
+                    break
+                elif is_acc1:
+                    print(f"\n{CYAN}--- Create Additional App Account Profile ---{NC}")
+                    print("  [1] Standard Account 2 (antigravity-acc2)")
+                    print("  [2] Custom App Profile (Named instance)")
+                    sub_c = input("Choose option [1-2, Default: 1]: ").strip()
+                    if sub_c == "2":
+                        subprocess.run(["bash", manage_sh, "create-instance", "app"], check=False)
+                    else:
+                        subprocess.run(["bash", manage_sh, "app2"], check=False)
+                    subprocess.run(["bash", manage_sh, "app1"], check=False)
+                    break
                 else:
                     c_confirm = input(f"Are you sure you want to delete clone '{c['name']}'? [y/N]: ").strip().lower()
                     if c_confirm in ["y", "yes"]:
@@ -1305,6 +1370,8 @@ def configure_unified_instance(u_item, curr_app, curr_ide, custom_paths):
                         if d_prof in ["y", "yes"]:
                             shutil.rmtree(p_dir, ignore_errors=True)
                         subprocess.run(["update-desktop-database", local_apps], check=False, stderr=subprocess.DEVNULL)
+                        if is_acc2 or 'app-' in cid:
+                            subprocess.run(["bash", manage_sh, "app1"], check=False)
                         print(f"{GREEN}[SUCCESS] Clone '{c['name']}' removed.{NC}")
                         break
             elif choice == "7":
@@ -1478,7 +1545,13 @@ def run_control_center():
             subprocess.run(cmd, check=False)
         elif choice.upper() == "C":
             print(f"\n{CYAN}--- Create New Clone / Account Profile ---{NC}")
-            subprocess.run(["bash", manage_sh, "create-instance"], check=False)
+            print("Select Profile Type to Create:")
+            print("  [1] Antigravity App Profile / Clone (Account 2 or Custom App)")
+            print("  [2] Antigravity IDE Profile / Clone (Secondary / Custom IDE)")
+            c_type_choice = input("Enter choice [1-2, Default: 1]: ").strip()
+            target_itype = "ide" if c_type_choice == "2" else "app"
+            subprocess.run(["bash", manage_sh, "create-instance", target_itype], check=False)
+            subprocess.run(["bash", manage_sh, "app1"], check=False)
         elif choice.upper() == "R":
             print(f"\n{CYAN}--- Apply RTL & Persian Patch to Suite ---{NC}")
             print("Select target for RTL patch:")

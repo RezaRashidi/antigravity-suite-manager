@@ -23,11 +23,11 @@ IDE_INSTALL_DIR="${ANTIGRAVITY_IDE_DIR:-}"
 
 if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
     REAL_USER="$SUDO_USER"
-    REAL_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
 else
-    REAL_USER="$(whoami)"
-    REAL_HOME="${REAL_HOME:-$HOME}"
+    REAL_USER="${USER:-$(whoami)}"
 fi
+REAL_HOME=$(getent passwd "$REAL_USER" 2>/dev/null | cut -d: -f6)
+REAL_HOME="${REAL_HOME:-$HOME}"
 
 PROFILE2_DIR="${REAL_HOME}/.antigravity-profile2"
 SHARED_GEMINI_DIR="${REAL_HOME}/.gemini"
@@ -734,19 +734,42 @@ setup_account_1() {
         rm -f "${REAL_HOME}/.gemini/cache/antigravity-keyring-unavailable" 2>/dev/null || true
     fi
 
-    local wm_class="antigravity"
+    local has_other_accounts=false
     if [ -d "$PROFILE2_DIR" ] || [ -f "${LOCAL_BIN}/antigravity-acc2" ]; then
-        wm_class="antigravity-1"
+        has_other_accounts=true
+    else
+        for p in "${REAL_HOME}"/.antigravity-profile-app-*; do
+            if [ -d "$p" ]; then
+                has_other_accounts=true
+                break
+            fi
+        done
     fi
+
+    local wm_class="antigravity"
+    local desktop_name="antigravity.desktop"
+    local app_title="Antigravity"
+    local app_comment="Antigravity AI Platform"
+    local icon_name="antigravity"
+
+    if [ "$has_other_accounts" = true ]; then
+        wm_class="antigravity-1"
+        desktop_name="antigravity-1.desktop"
+        app_title="Antigravity (Account 1)"
+        app_comment="Antigravity AI Platform - Account 1"
+        icon_name="antigravity-1"
+    fi
+
+    log_info "Configuring ${app_title} (${desktop_name})..."
 
     cat <<EOF > "${LOCAL_BIN}/antigravity-1"
 #!/usr/bin/env bash
 set -e
 export REAL_HOME="${REAL_HOME}"
 export HOME="\${REAL_HOME}"
-export ANTIGRAVITY_DESKTOP_NAME="antigravity-1.desktop"
-export ANTIGRAVITY_APP_NAME="antigravity-1"
-export ANTIGRAVITY_ICON_PATH="${LOCAL_ICONS}/antigravity-1.png"
+export ANTIGRAVITY_DESKTOP_NAME="${desktop_name}"
+export ANTIGRAVITY_APP_NAME="${wm_class}"
+export ANTIGRAVITY_ICON_PATH="${LOCAL_ICONS}/${icon_name}.png"
 
 cd "\${REAL_HOME}" || cd /tmp
 python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
@@ -771,34 +794,45 @@ EOF
     chmod +x "${LOCAL_BIN}/antigravity-1"
     ln -sfn "${LOCAL_BIN}/antigravity-1" "${LOCAL_BIN}/antigravity"
 
-    cat <<EOF > "${LOCAL_APPS}/antigravity-1.desktop"
+    cat <<EOF > "${LOCAL_APPS}/${desktop_name}"
 [Desktop Entry]
-Name=Antigravity (Account 1)
+Name=${app_title}
 GenericName=AI Pair Programmer
-Comment=Antigravity AI Platform - Account 1
-Exec=${LOCAL_BIN}/antigravity-1 %U
+Comment=${app_comment}
+Exec=${LOCAL_BIN}/antigravity %U
 Terminal=false
 Type=Application
-Icon=antigravity-1
+Icon=${icon_name}
 Categories=Development;IDE;
 StartupWMClass=${wm_class}
 MimeType=x-scheme-handler/antigravity;
 StartupNotify=true
 EOF
-    chmod +x "${LOCAL_APPS}/antigravity-1.desktop"
-    # Guarantee antigravity-1.png exists on disk
-    if [ ! -f "${LOCAL_ICONS}/antigravity-1.png" ]; then
-        if [ -f "${LOCAL_ICONS}/antigravity-master-black.png" ]; then
-            cp -f "${LOCAL_ICONS}/antigravity-master-black.png" "${LOCAL_ICONS}/antigravity-1.png" 2>/dev/null || true
-        elif [ -f "${APP_INSTALL_DIR}/resources/icon.png" ]; then
-            cp -f "${APP_INSTALL_DIR}/resources/icon.png" "${LOCAL_ICONS}/antigravity-1.png" 2>/dev/null || true
-        fi
+    chmod +x "${LOCAL_APPS}/${desktop_name}"
+
+    if [ "$has_other_accounts" = true ]; then
+        rm -f "${LOCAL_APPS}/antigravity.desktop" 2>/dev/null || true
+    else
+        rm -f "${LOCAL_APPS}/antigravity-1.desktop" 2>/dev/null || true
     fi
 
-    rm -f "${LOCAL_APPS}/antigravity.desktop" 2>/dev/null || true
+    # Guarantee icon exists on disk for both antigravity and antigravity-1
+    if [ ! -f "${LOCAL_ICONS}/${icon_name}.png" ]; then
+        if [ -f "${LOCAL_ICONS}/antigravity-master-black.png" ]; then
+            cp -f "${LOCAL_ICONS}/antigravity-master-black.png" "${LOCAL_ICONS}/${icon_name}.png" 2>/dev/null || true
+        elif [ -f "${APP_INSTALL_DIR}/resources/icon.png" ]; then
+            cp -f "${APP_INSTALL_DIR}/resources/icon.png" "${LOCAL_ICONS}/${icon_name}.png" 2>/dev/null || true
+        fi
+    fi
+    if [ -f "${LOCAL_ICONS}/antigravity-1.png" ] && [ ! -f "${LOCAL_ICONS}/antigravity.png" ]; then
+        cp -f "${LOCAL_ICONS}/antigravity-1.png" "${LOCAL_ICONS}/antigravity.png" 2>/dev/null || true
+    elif [ -f "${LOCAL_ICONS}/antigravity.png" ] && [ ! -f "${LOCAL_ICONS}/antigravity-1.png" ]; then
+        cp -f "${LOCAL_ICONS}/antigravity.png" "${LOCAL_ICONS}/antigravity-1.png" 2>/dev/null || true
+    fi
+
     update-desktop-database "${LOCAL_APPS}" 2>/dev/null || true
-    xdg-mime default antigravity-1.desktop x-scheme-handler/antigravity 2>/dev/null || true
-    log_success "Account 1 configured with icons and launcher."
+    xdg-mime default "${desktop_name}" x-scheme-handler/antigravity 2>/dev/null || true
+    log_success "${app_title} configured with launcher and icons."
 }
 
 # ------------------------------------------------------------------------------
@@ -926,6 +960,9 @@ Exec=${LOCAL_BIN}/antigravity-acc2 --restart
 EOF
     chmod +x "${LOCAL_APPS}/antigravity-2.desktop"
     update-desktop-database "${LOCAL_APPS}" 2>/dev/null || true
+
+    # Synchronize Account 1 to ensure distinct naming (antigravity-1.desktop)
+    setup_account_1
 
     log_success "Account 2 configured with distinct icons and single-instance management."
 }
@@ -1129,6 +1166,10 @@ create_instance() {
     local itheme="${4:-black}"
     local ihue="$5"
 
+    auto_detect_installations
+    APP_INSTALL_DIR="${APP_INSTALL_DIR:-/opt/Antigravity-x64}"
+    IDE_INSTALL_DIR="${IDE_INSTALL_DIR:-/opt/antigravity-ide}"
+
     if [ -z "$itype" ]; then
         echo -e "${CYAN}=====================================================${NC}"
         echo -e "${CYAN}         Create Antigravity Instance / Profile       ${NC}"
@@ -1276,7 +1317,20 @@ cd "\${REAL_HOME}" || cd /tmp
 python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
 disown
 
-exec "${APP_INSTALL_DIR}/antigravity" --password-store=basic --class="${wm_class}" --name="${wm_class}" "\$@"
+# SUID sandbox verification guard: prevent fatal crash if chrome-sandbox lacks 4755 root permissions
+SANDBOX_FLAG=""
+if [ -f "${APP_INSTALL_DIR}/chrome-sandbox" ]; then
+    sb_stat=\$(stat -c "%u:%a" "${APP_INSTALL_DIR}/chrome-sandbox" 2>/dev/null || true)
+    if [ "\$sb_stat" != "0:4755" ]; then
+        if sudo -n chown root:root "${APP_INSTALL_DIR}/chrome-sandbox" 2>/dev/null && sudo -n chmod 4755 "${APP_INSTALL_DIR}/chrome-sandbox" 2>/dev/null; then
+            :
+        else
+            SANDBOX_FLAG="--no-sandbox "
+        fi
+    fi
+fi
+
+exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}--password-store=basic --class="${wm_class}" --name="${wm_class}" "\$@"
 EOF
         chmod +x "$launcher"
 
@@ -1336,11 +1390,28 @@ set -e
 export REAL_HOME="${REAL_HOME}"
 export PROFILE="${profile_dir}"
 export HOME="\${PROFILE}"
+export DBUS_SESSION_BUS_ADDRESS=""
+export GNOME_KEYRING_CONTROL=""
+export SSH_AUTH_SOCK=""
 
 python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
+python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
 disown
 
-exec "${IDE_INSTALL_DIR}/antigravity-ide" --user-data-dir "\${PROFILE}/.config/Antigravity IDE" --class="${wm_class}" --name="${wm_class}" "\$@"
+# SUID sandbox verification guard: prevent fatal crash if chrome-sandbox lacks 4755 root permissions
+SANDBOX_FLAG=""
+if [ -f "${IDE_INSTALL_DIR}/chrome-sandbox" ]; then
+    sb_stat=\$(stat -c "%u:%a" "${IDE_INSTALL_DIR}/chrome-sandbox" 2>/dev/null || true)
+    if [ "\$sb_stat" != "0:4755" ]; then
+        if sudo -n chown root:root "${IDE_INSTALL_DIR}/chrome-sandbox" 2>/dev/null && sudo -n chmod 4755 "${IDE_INSTALL_DIR}/chrome-sandbox" 2>/dev/null; then
+            :
+        else
+            SANDBOX_FLAG="--no-sandbox "
+        fi
+    fi
+fi
+
+exec "${IDE_INSTALL_DIR}/antigravity-ide" \${SANDBOX_FLAG}--user-data-dir "\${PROFILE}/.config/Antigravity IDE" --class="${wm_class}" --name="${wm_class}" "\$@"
 EOF
         chmod +x "$launcher"
 
@@ -1363,6 +1434,9 @@ EOF
     fi
 
     update-desktop-database "$LOCAL_APPS" 2>/dev/null || true
+    if [ "$itype" = "app" ]; then
+        setup_account_1
+    fi
     log_success "Instance '${iid}' (${itype^^}) created successfully!"
     echo -e "  • Launcher:       ${BOLD}${launcher}${NC}"
     echo -e "  • Desktop Entry:  ${BOLD}${desktop}${NC}"
@@ -1532,6 +1606,9 @@ remove_instance() {
         mv "$profile_dir" "${profile_dir}.removed_bak_$(date +%s)"
     fi
     log_success "Instance ${itype^^} '${iid}' successfully removed."
+    if [ "$itype" = "app" ]; then
+        setup_account_1
+    fi
 }
 
 # ------------------------------------------------------------------------------

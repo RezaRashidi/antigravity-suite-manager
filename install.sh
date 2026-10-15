@@ -313,7 +313,6 @@ step_4_deploy_scripts() {
         [ -f "${TARGET_ICONS}/antigravity-master-white.png" ] && cp -f "${TARGET_ICONS}/antigravity-master-white.png" "${TARGET_ICONS}/antigravity-ide.png" 2>/dev/null || true
     fi
 
-    rm -f "${REAL_HOME}/.local/share/applications/antigravity.desktop" 2>/dev/null || true
     ln -sfn "${TARGET_BIN}/manage-antigravity.sh" "${REAL_HOME}/manage-antigravity.sh"
     echo -e "${GREEN}[OK] Installed management tools to ${TARGET_BIN} and symlinked ~/manage-antigravity.sh${NC}"
 }
