@@ -246,17 +246,22 @@ def extract_pure_binary_summary(raw):
     if not raw or not isinstance(raw, (bytes, bytearray)):
         return None
     # Check if raw is wrapped in ValueWrapper: tag 0x0a + varint len + base64 string
+    # In ValueWrapper, the string field comprises the entirety of the message (pos + length == len(raw))
     if raw.startswith(b'\n'):
         pos = 1
         length, pos = read_varint(raw, pos)
-        if pos + length <= len(raw):
+        if pos + length == len(raw) and length >= 4:
             candidate_b64 = raw[pos:pos+length]
-            try:
-                decoded = base64.b64decode(candidate_b64)
-                if decoded and decoded.startswith(b'\n'):
-                    return decoded
-            except Exception:
-                pass
+            # Ensure candidate_b64 is valid base64 ASCII without spaces
+            if re.match(rb'^[A-Za-z0-9+/=]+$', candidate_b64):
+                try:
+                    decoded = base64.b64decode(candidate_b64, validate=True)
+                    if decoded and len(decoded) >= 20:
+                        parsed = parse_cascade_summary(decoded)
+                        if parsed.get("summary") or parsed.get("trajectory_id") or parsed.get(2):
+                            return decoded
+                except Exception:
+                    pass
     return bytes(raw)
 
 def extract_entries_from_proto(data):
@@ -458,8 +463,8 @@ def parse_step14_user_prompt(payload):
 
 def is_synthesized_db_incomplete(db_path):
     """
-    Checks if a conversation SQLite database has missing/empty message payloads
-    (e.g. legacy synthesized databases missing Tag 20 assistant messages or Tag 19 chunk headers).
+    Checks if a conversation SQLite database is empty or unreadable.
+    NEVER marks an existing database with valid steps as incomplete.
     """
     if not os.path.isfile(db_path) or os.path.getsize(db_path) == 0:
         return True
@@ -468,37 +473,68 @@ def is_synthesized_db_incomplete(db_path):
         cur = conn.cursor()
         cur.execute("SELECT count(*) FROM steps;")
         total_steps = cur.fetchone()[0]
-        if total_steps == 0:
-            conn.close()
-            return True
-
-        # Check step 15 (assistant messages)
-        cur.execute("SELECT step_payload FROM steps WHERE step_type = 15 LIMIT 5;")
-        s15_rows = cur.fetchall()
-        if s15_rows:
-            # Wire format for tag 20 wire type 2: (20 << 3) | 2 = 162 = 0xa2, 0x01
-            has_tag20 = any(b"\xa2\x01" in row[0] for row in s15_rows if row[0])
-            if not has_tag20:
-                conn.close()
-                return True
-
-        # Check step 14 (user prompts)
-        cur.execute("SELECT step_payload FROM steps WHERE step_type = 14 LIMIT 5;")
-        s14_rows = cur.fetchall()
-        if s14_rows:
-            # Wire format for tag 19 subfield 3 wire type 2: (3 << 3) | 2 = 26 = 0x1a
-            has_subfield3 = any(b"\x1a" in row[0] for row in s14_rows if row[0])
-            if not has_subfield3:
-                conn.close()
-                return True
-
         conn.close()
-        return False
+        return total_steps == 0
     except Exception:
         return True
 
-def synthesize_db_from_transcript(conv_id, db_path, transcript_path):
+def build_trajectory_metadata_blob(conv_id, workspace_uri=None, project_id=None):
+    """Builds valid Protobuf trajectory_metadata_blob containing workspaces, project, and root ID."""
+    if not workspace_uri:
+        workspace_uri = "file:///home/reza"
+    if not project_id:
+        project_id = "outside-of-project"
+    out = bytearray()
+    ws = bytearray()
+    ws += encode_tag_bytes(1, workspace_uri.encode("utf-8"))
+    ws += encode_tag_bytes(2, workspace_uri.encode("utf-8"))
+    out += encode_tag_bytes(1, bytes(ws))
+    out += encode_tag_bytes(6, conv_id.encode("utf-8"))
+    out += encode_tag_bytes(7, workspace_uri.encode("utf-8"))
+    out += encode_tag_bytes(18, project_id.encode("utf-8"))
+    return bytes(out)
+
+def sync_annotation_file(master_gemini, conv_id, title):
+    """Ensures annotations/<conv_id>.pbtxt exists and has title so Desktop App shows it."""
+    if not title or title.strip() in ["", "Conversation", "Untitled Conversation"]:
+        return
+    anno_dir = os.path.join(master_gemini, "annotations")
+    os.makedirs(anno_dir, exist_ok=True)
+    anno_file = os.path.join(anno_dir, f"{conv_id}.pbtxt")
+
+    clean_title = title.strip().replace('\\', '\\\\').replace('"', '\\"').replace('\n', ' ')
+    title_line = f'title: "{clean_title}"'
+
+    if os.path.isfile(anno_file):
+        try:
+            with open(anno_file, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+            m = re.search(r'title\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', content)
+            if m:
+                existing_t = m.group(1).strip()
+                if not existing_t or existing_t in ["Conversation", "Untitled Conversation"]:
+                    new_content = re.sub(r'title\s*:\s*"[^"\\]*(?:\\.[^"\\]*)*"', title_line, content)
+                    with open(anno_file, "w", encoding="utf-8") as f:
+                        f.write(new_content)
+            else:
+                new_content = f"{title_line}  {content}".strip()
+                with open(anno_file, "w", encoding="utf-8") as f:
+                    f.write(f"{new_content}\n")
+        except Exception:
+            pass
+    else:
+        try:
+            with open(anno_file, "w", encoding="utf-8") as f:
+                f.write(f"{title_line}\n")
+        except Exception:
+            pass
+
+def synthesize_db_from_transcript(conv_id, db_path, transcript_path, workspace_uri=None, project_id=None):
     """Synthesizes a valid SQLite conversation database from transcript JSON lines with full Protobuf payloads."""
+    if transcript_path.endswith("transcript.jsonl"):
+        full_tf = transcript_path.replace("transcript.jsonl", "transcript_full.jsonl")
+        if os.path.isfile(full_tf):
+            transcript_path = full_tf
     if not os.path.isfile(transcript_path):
         return False
     try:
@@ -520,19 +556,43 @@ def synthesize_db_from_transcript(conv_id, db_path, transcript_path):
         cur.execute("""CREATE TABLE IF NOT EXISTS `trajectory_metadata_blob` (`id` text DEFAULT "main", `data` blob, PRIMARY KEY (`id`));""")
         cur.execute("""CREATE TABLE IF NOT EXISTS `battle_mode_infos` (`idx` integer, `data` blob, PRIMARY KEY (`idx`));""")
 
+        # Extract workspace if not provided
+        if not workspace_uri:
+            tf = transcript_path
+            if os.path.isfile(tf):
+                with open(tf, "r", encoding="utf-8", errors="ignore") as tf_f:
+                    for line in tf_f:
+                        if "Active Document:" in line:
+                            m = re.search(r"Active Document:\s*([^\s\n\r]+)", line)
+                            if m:
+                                doc_p = m.group(1).strip()
+                                workspace_uri = "file://" + os.path.dirname(doc_p)
+                                break
+                        elif "Active Workspaces:" in line or "Workspace" in line:
+                            m = re.search(r"file:///[^\s\n\r\"'>]+", line)
+                            if m:
+                                workspace_uri = m.group(0).strip()
+                                break
+                        elif "file:///home/reza/" in line:
+                            m = re.search(r"file://(/home/reza/[^\s\n\r\"'>]+)", line)
+                            if m:
+                                p_candidate = m.group(1).rstrip(",.;'\"")
+                                if os.path.isdir(p_candidate):
+                                    workspace_uri = "file://" + p_candidate
+                                    break
+                                elif os.path.isfile(p_candidate) or "/" in p_candidate:
+                                    workspace_uri = "file://" + os.path.dirname(p_candidate)
+                                    break
+
+        ws_blob = build_trajectory_metadata_blob(conv_id, workspace_uri, project_id)
         cur.execute("INSERT OR REPLACE INTO trajectory_meta VALUES (?, ?, 4, 1);", (conv_id, conv_id))
-        cur.execute("INSERT OR REPLACE INTO trajectory_metadata_blob VALUES (\"main\", ?);", (conv_id.encode("utf-8"),))
+        cur.execute("INSERT OR REPLACE INTO trajectory_metadata_blob VALUES (\"main\", ?);", (ws_blob,))
 
-        # Tracking metadata blob (Tag 5 and metadata column)
-        meta = bytearray()
-        meta += encode_tag_bytes(12, conv_id.encode("utf-8"))
-        sub_meta = bytearray()
-        sub_meta += encode_tag_bytes(1, conv_id.encode("utf-8"))
-        sub_meta += encode_tag_bytes(4, conv_id.encode("utf-8"))
-        meta += encode_tag_bytes(20, bytes(sub_meta))
-        meta_bytes = bytes(meta)
+        # Clear existing steps table in case of re-synthesis
+        cur.execute("DELETE FROM steps;")
 
-        step_count = 0
+        pending_tool_calls = []
+        out_idx = 0
         with open(transcript_path, "r", encoding="utf-8", errors="ignore") as f:
             for line in f:
                 line = line.strip()
@@ -542,7 +602,6 @@ def synthesize_db_from_transcript(conv_id, db_path, transcript_path):
                     entry = json.loads(line)
                 except Exception:
                     continue
-                idx = entry.get("step_index", step_count)
                 src = entry.get("source", "")
                 typ = entry.get("type", "")
                 st_str = entry.get("status", "DONE")
@@ -550,36 +609,55 @@ def synthesize_db_from_transcript(conv_id, db_path, transcript_path):
                 thinking = entry.get("thinking", "")
                 tool_calls = entry.get("tool_calls", [])
 
-                if "<USER_REQUEST>" in content or typ == "USER_INPUT" or src == "USER_EXPLICIT":
+                # Skip internal transcript-only system markers
+                if typ in ["CHECKPOINT", "CONVERSATION_HISTORY", "KNOWLEDGE_ARTIFACTS", "EPHEMERAL_MESSAGE", "SYSTEM_MESSAGE"] or src == "SYSTEM":
+                    continue
+
+                # Classify step
+                if typ == "USER_INPUT" or ("<USER_REQUEST>" in content and src != "MODEL") or (src == "USER_EXPLICIT" and typ not in ["VIEW_FILE", "CODE_ACTION"]):
                     step_type = 14
-                elif typ in ["VIEW_FILE", "RUN_COMMAND", "GENERIC"] or (src == "MODEL" and typ == "GENERIC"):
+                elif typ in ["VIEW_FILE", "RUN_COMMAND", "GENERIC", "GREP_SEARCH", "LIST_DIRECTORY", "SEARCH_WEB", "READ_URL_CONTENT", "GENERATE_IMAGE", "ASK_QUESTION", "CODE_ACTION", "ERROR_MESSAGE"]:
                     step_type = 132
                 elif typ == "PLANNER_RESPONSE" or src == "MODEL" or thinking or tool_calls:
                     step_type = 15
                 else:
-                    step_type = 1
+                    if content:
+                        step_type = 15 if src == "MODEL" else 14
+                    else:
+                        continue
 
                 status = 4 if st_str == "ERROR" else 3
+
+                # Step metadata blob
+                meta = bytearray()
+                meta += encode_tag_bytes(12, conv_id.encode("utf-8"))
+                sub_meta = bytearray()
+                sub_meta += encode_tag_bytes(1, conv_id.encode("utf-8"))
+                sub_meta += encode_tag_bytes(4, conv_id.encode("utf-8"))
+                meta += encode_tag_bytes(20, bytes(sub_meta))
 
                 payload = bytearray()
                 payload += encode_tag_uint(1, step_type)
                 payload += encode_tag_uint(4, status)
-                payload += encode_tag_bytes(5, meta_bytes)
 
                 if step_type == 14:
+                    payload += encode_tag_bytes(5, bytes(meta))
+                    clean = content
+                    m = re.search(r"<USER_REQUEST>(.*?)</USER_REQUEST>", content, re.DOTALL)
+                    if m:
+                        clean = m.group(1).strip()
+                    else:
+                        clean = content.strip()
                     u_bytes = bytearray()
-                    if content:
-                        u_bytes += encode_tag_bytes(2, content.encode("utf-8", errors="ignore"))
+                    if clean:
+                        u_bytes += encode_tag_bytes(2, clean.encode("utf-8", errors="ignore"))
                         chunk = bytearray()
-                        clean = content
-                        m = re.search(r"<USER_REQUEST>(.*?)</USER_REQUEST>", content, re.DOTALL)
-                        if m:
-                            clean = m.group(1).strip()
                         chunk += encode_tag_bytes(1, clean.encode("utf-8", errors="ignore"))
                         u_bytes += encode_tag_bytes(3, bytes(chunk))
                     payload += encode_tag_bytes(19, bytes(u_bytes))
 
                 elif step_type == 15:
+                    payload += encode_tag_bytes(5, bytes(meta))
                     m_bytes = bytearray()
                     if content:
                         m_bytes += encode_tag_bytes(1, content.encode("utf-8", errors="ignore"))
@@ -588,18 +666,21 @@ def synthesize_db_from_transcript(conv_id, db_path, transcript_path):
                     m_bytes += encode_tag_bytes(6, b"antigravity-agent")
                     if tool_calls:
                         for tci, tc in enumerate(tool_calls):
+                            pending_tool_calls.append(tc)
                             tc_b = bytearray()
-                            tc_id = tc.get("id") or f"call_{idx}_{tci}"
+                            tc_id = tc.get("id") or f"call_{out_idx}_{tci}"
                             tc_name = tc.get("name") or tc.get("function", {}).get("name", "")
                             tc_args = tc.get("args") or tc.get("function", {}).get("arguments", "")
                             if isinstance(tc_args, (dict, list)):
-                                tc_args = json.dumps(tc_args)
+                                tc_args_str = json.dumps(tc_args)
+                            else:
+                                tc_args_str = str(tc_args)
                             if tc_id:
                                 tc_b += encode_tag_bytes(1, str(tc_id).encode("utf-8", errors="ignore"))
                             if tc_name:
                                 tc_b += encode_tag_bytes(2, str(tc_name).encode("utf-8", errors="ignore"))
-                            if tc_args:
-                                tc_b += encode_tag_bytes(3, str(tc_args).encode("utf-8", errors="ignore"))
+                            if tc_args_str:
+                                tc_b += encode_tag_bytes(3, str(tc_args_str).encode("utf-8", errors="ignore"))
                             if tc_name:
                                 tc_b += encode_tag_bytes(9, str(tc_name).encode("utf-8", errors="ignore"))
                             m_bytes += encode_tag_bytes(7, bytes(tc_b))
@@ -609,25 +690,47 @@ def synthesize_db_from_transcript(conv_id, db_path, transcript_path):
                     payload += encode_tag_bytes(20, bytes(m_bytes))
 
                 elif step_type == 132:
-                    t_bytes = bytearray()
-                    if content:
-                        t_bytes += encode_tag_bytes(2, content.encode("utf-8", errors="ignore"))
-                    payload += encode_tag_bytes(140, bytes(t_bytes))
+                    tc = pending_tool_calls.pop(0) if pending_tool_calls else {}
+                    tc_id = tc.get("id") or f"call_{out_idx}"
+                    tc_name = tc.get("name") or typ.lower()
+                    tc_args = tc.get("args", {})
+                    if isinstance(tc_args, str):
+                        try:
+                            tc_args = json.loads(tc_args)
+                        except Exception:
+                            tc_args = {}
 
-                else:
+                    tc_b = bytearray()
+                    tc_b += encode_tag_bytes(1, str(tc_id).encode("utf-8", errors="ignore"))
+                    tc_b += encode_tag_bytes(2, str(tc_name).encode("utf-8", errors="ignore"))
+                    tc_b += encode_tag_bytes(3, json.dumps(tc_args).encode("utf-8", errors="ignore"))
+                    tc_b += encode_tag_bytes(9, str(tc_name).encode("utf-8", errors="ignore"))
+                    meta += encode_tag_bytes(4, bytes(tc_b))
+
+                    payload += encode_tag_bytes(5, bytes(meta))
+
+                    t_bytes = bytearray()
+                    if isinstance(tc_args, dict):
+                        for k, v in tc_args.items():
+                            pair = bytearray()
+                            pair += encode_tag_bytes(1, str(k).encode("utf-8", errors="ignore"))
+                            val_str = json.dumps(v) if isinstance(v, (dict, list)) else str(v).strip("\"")
+                            pair += encode_tag_bytes(2, val_str.encode("utf-8", errors="ignore"))
+                            t_bytes += encode_tag_bytes(1, bytes(pair))
                     if content:
-                        s_bytes = bytearray()
-                        s_bytes += encode_tag_bytes(2, content.encode("utf-8", errors="ignore"))
-                        payload += encode_tag_bytes(19, bytes(s_bytes))
+                        out_sub = bytearray()
+                        out_sub += encode_tag_bytes(1, content.encode("utf-8", errors="ignore"))
+                        t_bytes += encode_tag_bytes(2, bytes(out_sub))
+                    payload += encode_tag_bytes(140, bytes(t_bytes))
 
                 cur.execute("""INSERT OR REPLACE INTO steps 
                     (idx, step_type, status, metadata, step_payload) VALUES (?, ?, ?, ?, ?);""",
-                    (idx, step_type, status, meta_bytes, bytes(payload)))
-                step_count += 1
+                    (out_idx, step_type, status, bytes(meta), bytes(payload)))
+                out_idx += 1
 
         conn.commit()
         conn.close()
-        return step_count > 0
+        return out_idx > 0
     except Exception:
         return False
 
@@ -1077,24 +1180,51 @@ def merge_histories(master_gemini=None, source_dir=None, target_dir=None, quiet=
     updated_db_rows = 0
     backfilled = 0
 
-    all_dbs = glob.glob(os.path.join(master_conv_dir, "*.db"))
+    all_conv_ids = set()
+    for db_f in glob.glob(os.path.join(master_conv_dir, "*.db")):
+        cid = os.path.basename(db_f)[:-3]
+        if re.match(r'^[0-9a-fA-F-]{36}$', cid):
+            all_conv_ids.add(cid)
+    for pb_f in glob.glob(os.path.join(master_conv_dir, "*.pb")):
+        cid = os.path.basename(pb_f)[:-3]
+        if re.match(r'^[0-9a-fA-F-]{36}$', cid):
+            all_conv_ids.add(cid)
+    for cid in existing_rows.keys():
+        if re.match(r'^[0-9a-fA-F-]{36}$', cid):
+            all_conv_ids.add(cid)
 
-    for db_file in all_dbs:
-        conv_id = os.path.basename(db_file)[:-3]
-        if not re.match(r'^[0-9a-fA-F-]{36}$', conv_id):
-            continue
+    for conv_id in sorted(all_conv_ids):
+        db_file = os.path.join(master_conv_dir, f"{conv_id}.db")
+        has_db = os.path.isfile(db_file)
+        pb_file = os.path.join(master_conv_dir, f"{conv_id}.pb")
+        has_pb = os.path.isfile(pb_file)
 
-        file_mtime = os.path.getmtime(db_file)
+        if has_db:
+            file_mtime = os.path.getmtime(db_file)
+        elif has_pb:
+            file_mtime = os.path.getmtime(pb_file)
+        elif conv_id in existing_rows and existing_rows[conv_id][3]:
+            try:
+                dt = datetime.datetime.fromisoformat(str(existing_rows[conv_id][3]).replace('Z', '+00:00'))
+                file_mtime = dt.timestamp()
+            except Exception:
+                file_mtime = time.time()
+        else:
+            file_mtime = time.time()
+
         file_mtime_iso = datetime.datetime.fromtimestamp(file_mtime, tz=datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S.000000+00:00")
 
         # Get actual step count from sqlite steps table
         actual_steps = 0
-        try:
-            c = sqlite3.connect(db_file)
-            actual_steps = c.cursor().execute("SELECT count(*) FROM steps;").fetchone()[0]
-            c.close()
-        except Exception:
-            pass
+        if has_db:
+            try:
+                c = sqlite3.connect(db_file)
+                actual_steps = c.cursor().execute("SELECT count(*) FROM steps;").fetchone()[0]
+                c.close()
+            except Exception:
+                pass
+        elif conv_id in existing_rows:
+            actual_steps = existing_rows[conv_id][2]
 
         transcript_file = os.path.join(master_brain_dir, conv_id, ".system_generated", "logs", "transcript.jsonl")
         if not os.path.isfile(transcript_file):
@@ -1114,21 +1244,30 @@ def merge_histories(master_gemini=None, source_dir=None, target_dir=None, quiet=
             final_title = anno_title or curr_title or raw_title
             final_prev = curr_prev or raw_summary
 
-            # If title is empty or generic, extract authentic title from prompt or artifacts
+            # If title is empty or generic, fallback to preview/summary or extract authentic title from prompt or artifacts
+            if not final_title or final_title.strip() == "" or final_title in ["Conversation", "Untitled Conversation"]:
+                if curr_prev and curr_prev.strip() and curr_prev not in ["Conversation", "Untitled Conversation"]:
+                    final_title = curr_prev.strip().split('\n')[0][:80]
+                elif raw_summary and raw_summary.strip() and raw_summary not in ["Conversation", "Untitled Conversation"]:
+                    final_title = raw_summary.strip().split('\n')[0][:80]
+
             if not final_title or final_title.strip() == "" or final_title in ["Conversation", "Untitled Conversation"]:
                 ext_t, ext_p = extract_conv_text(db_file, transcript_file)
                 if ext_t:
                     final_title = ext_t
                     final_prev = ext_p or final_prev
 
-            # If existing raw_summary had empty title, rebuild it
+            # If existing raw_summary had empty title or title changed, rebuild it
             curr_raw_title = parsed_raw.get("title") or parsed_raw.get("summary")
-            needs_title_rebuild = bool(final_title and (not curr_raw_title or curr_raw_title in ["Conversation", "Untitled Conversation"]))
+            needs_title_rebuild = bool(final_title and (not curr_raw_title or curr_raw_title in ["Conversation", "Untitled Conversation"] or not parsed_raw.get("title")))
 
-            if curr_raw and len(curr_raw) > 20 and not needs_title_rebuild:
+            # Also check if raw_summary was corrupted (e.g. unprintable chars)
+            is_corrupt_raw = bool(curr_raw and any(ord(c) < 32 and c not in '\n\r\t' for c in (raw_summary or '')))
+
+            if curr_raw and len(curr_raw) > 20 and not needs_title_rebuild and not is_corrupt_raw:
                 all_summaries[conv_id] = curr_raw
-                if anno_title and curr_title != anno_title:
-                    cur.execute("UPDATE conversation_summaries SET title=? WHERE conversation_id=?;", (anno_title, conv_id))
+                if curr_title != final_title or curr_prev != final_prev:
+                    cur.execute("UPDATE conversation_summaries SET title=?, preview=? WHERE conversation_id=?;", (final_title, final_prev, conv_id))
                     updated_db_rows += 1
                 continue
 
@@ -1231,10 +1370,13 @@ def merge_histories(master_gemini=None, source_dir=None, target_dir=None, quiet=
                         curr_parsed = parse_cascade_summary(all_summaries[u_id])
                         curr_t = curr_parsed.get("title") or curr_parsed.get("summary")
                         if ide_title and (not curr_t or curr_t in ["Conversation", "IDE Conversation", "Untitled Conversation"]):
-                            cur.execute("UPDATE conversation_summaries SET title=? WHERE conversation_id=?", (ide_title, u_id))
+                            sc = curr_parsed.get(2, 1)
+                            user_step = get_last_user_step_index(db_p, sc)
+                            new_bin = build_cascade_summary(u_id, ide_title, ide_title, sc, last_user_step=user_step)
+                            all_summaries[u_id] = new_bin
+                            cur.execute("UPDATE conversation_summaries SET title=?, raw_summary=? WHERE conversation_id=?", (ide_title, new_bin, u_id))
             v_con.close()
-            if vsc_ingested:
-                con.commit()
+            con.commit()
         except Exception:
             pass
             pass
@@ -1273,6 +1415,8 @@ def merge_histories(master_gemini=None, source_dir=None, target_dir=None, quiet=
     target_ide_dirs = []
     for td in sorted(set(ide_candidates)):
         if os.path.isdir(td) and os.path.realpath(td) != os.path.realpath(master_gemini):
+            if "suite-manager" in os.path.basename(td):
+                continue
             target_ide_dirs.append(td)
 
     for target_dir in target_ide_dirs:
@@ -1392,6 +1536,10 @@ def merge_histories(master_gemini=None, source_dir=None, target_dir=None, quiet=
                     os.replace(tmp_p, p_storage)
             except Exception:
                 pass
+
+    # 9b. Synchronize annotations/<conv_id>.pbtxt files for Desktop App UI title rendering
+    for c_id, c_title in cur.execute("SELECT conversation_id, title FROM conversation_summaries WHERE length(title) > 0;").fetchall():
+        sync_annotation_file(master_gemini, c_id, c_title)
 
     total_summaries = cur.execute("SELECT count(*) FROM conversation_summaries;").fetchone()[0]
     con.close()
