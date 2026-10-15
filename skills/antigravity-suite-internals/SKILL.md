@@ -270,6 +270,24 @@ While accounts and auth remain isolated, conversation histories and brain artifa
     .gemini/antigravity                conversations
 ```
 
+### Customizations, Skills, Rules & MCP Servers Unification
+To guarantee all MCP servers, custom skills, rules, and plugins are shared between App and IDE without duplicating configs:
+
+1. **Global Configuration Sharing**:
+   - The IDE Language Server looks for customizations in `${gemini_dir}/config`.
+   - Symlink `${REAL_HOME}/.gemide/config -> ~/.gemini/config`.
+   - Exposes master `mcp_config.json`, `skills/`, `plugins/`, `sidecars/`, and hierarchical rules across all instances.
+
+2. **MCP Tool Schemas & State Directory**:
+   - The Language Server caches MCP tool JSON schemas inside `${app_data_dir}/mcp`.
+   - Symlink `${REAL_HOME}/.gemide/antigravity-ide/mcp -> ~/.gemini/antigravity/mcp`.
+   - Symlink `${REAL_HOME}/.gemide/antigravity-ide/plugin_data -> ~/.gemini/antigravity/plugin_data`.
+
+3. **Dual Language Server MCP Architecture in IDE**:
+   - **Main LS (`[LS Main]`)**: Spawned by Electron main process on random HTTPS port, binds core MCP servers (`grafana`, `kibana`, `portainer`, `proxmox`).
+   - **Workspace LSP LS (`[LS lspClient]`)**: Spawned by extension host for the active workspace, binds remaining MCP servers (`elasticsearch`, `caveman`).
+   - Both language servers register tools under ConnectRPC endpoint `GetMcpServerStates` (response field `states`).
+
 ---
 
 ## 6. Google One AI Pro Quota Mechanics & Family Sharing

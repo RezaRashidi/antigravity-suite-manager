@@ -898,6 +898,23 @@ EOF
         fi
     done
 
+    # Symlink MCP tool schemas, custom skills, rules, and plugins across IDE instances
+    for ide_root in "${SHARED_GEMINI_DIR}" "${REAL_HOME}/.gemide" "${REAL_HOME}/.gemini-ide"; do
+        if [ -d "$ide_root" ]; then
+            # Link config directory (skills, rules, plugins, mcp_config.json)
+            if [ -d "$ide_root/config" ] && [ ! -L "$ide_root/config" ]; then
+                mv "$ide_root/config" "$ide_root/config.bak_$(date +%s)"
+            fi
+            ln -sfn "$SHARED_CONFIG_DIR" "$ide_root/config"
+
+            # Link mcp schemas and plugin data under antigravity-ide
+            local target_ide_app="$ide_root/antigravity-ide"
+            mkdir -p "$target_ide_app"
+            ln -sfn "$SHARED_CONV_DIR/mcp" "$target_ide_app/mcp"
+            ln -sfn "$SHARED_CONV_DIR/plugin_data" "$target_ide_app/plugin_data"
+        fi
+    done
+
     # Run history merger & index synchronization
     merge_history
     enable_sync_service
