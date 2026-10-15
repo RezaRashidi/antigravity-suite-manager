@@ -1037,6 +1037,11 @@ def configure_unified_instance(u_item, curr_app, curr_ide, custom_paths):
         linked_bin = get_launcher_binary(launcher_f) if (launcher_f and os.path.isfile(launcher_f)) else ""
         eng_p = u_item.get('engine_path', '')
         eng_v = u_item.get('version', 'Unknown')
+        fresh_eng = inspect_ide_dir(eng_p) if (u_item.get('type') and 'IDE' in u_item['type']) else inspect_app_dir(eng_p)
+        if fresh_eng:
+            eng = fresh_eng
+            eng_v = fresh_eng.get('version', 'Unknown')
+            u_item['version'] = eng_v
         is_primary_app = (curr_app and os.path.realpath(eng_p) == os.path.realpath(curr_app))
         is_primary_ide = (curr_ide and os.path.realpath(eng_p) == os.path.realpath(curr_ide))
         if is_primary_app:
@@ -1074,6 +1079,9 @@ def configure_unified_instance(u_item, curr_app, curr_ide, custom_paths):
             print(f"  [7] Change / Relocate Engine Directory Path ({eng_p})")
             print(f"  [8] Download & Re-install Latest Binaries into Engine Path")
             print(f"  [9] Set Engine as Suite Primary Target (Primary App / IDE)")
+            print(f"  [R] Apply RTL Patch to this Engine ({eng_p})")
+            if "IDE" not in u_item.get('type', ''):
+                print(f"  [F] Apply F5 Backend Reload & Isolation Patch ({eng_p})")
             print(f"  [0] Done with this instance (Return to Control Center)")
         else:
             print(f"{BOLD}Engine & Installation Settings:{NC}")
@@ -1082,6 +1090,9 @@ def configure_unified_instance(u_item, curr_app, curr_ide, custom_paths):
             print("  [3] Re-generate Desktop Launcher & Shortcut for this Installation")
             print("  [4] Toggle Credential Storage Mode (Normal File Storage vs GNOME Keyring)")
             print("  [5] Download & Re-install Latest Binaries into this Directory")
+            print(f"  [R] Apply RTL Patch to this Engine ({eng_p})")
+            if "IDE" not in u_item.get('type', ''):
+                print(f"  [F] Apply F5 Backend Reload & Isolation Patch ({eng_p})")
             print("  [0] Done with this installation (Return to Control Center)")
         print(f"{CYAN}----------------------------------------------------------------------------------------{NC}")
 
@@ -1252,7 +1263,14 @@ def configure_unified_instance(u_item, curr_app, curr_ide, custom_paths):
                     if is_primary_app: curr_app = ""
                     if is_primary_ide: curr_ide = ""
                     print(f"{GREEN}[SUCCESS] Cleared primary role for {eng_p}.{NC}")
-                save_paths_config(curr_app, curr_ide, custom_paths)
+            elif choice.upper() == "R":
+                c_type = "ide" if "IDE" in u_item['type'] else "app"
+                flag = "--ide-dir" if c_type == "ide" else "--app-dir"
+                print(f"\n{CYAN}Applying RTL patch to {u_item['type']} at {eng_p}...{NC}")
+                subprocess.run(["bash", manage_sh, "rtl", c_type, flag, eng_p], check=False)
+            elif choice.upper() == "F" and "IDE" not in u_item.get('type', ''):
+                print(f"\n{CYAN}Applying F5 reload & isolation patch to {eng_p}...{NC}")
+                subprocess.run(["bash", manage_sh, "f5", "--app-dir", eng_p], check=False)
         else:
             if choice == "1":
                 old_p = eng_p
@@ -1293,6 +1311,14 @@ def configure_unified_instance(u_item, curr_app, curr_ide, custom_paths):
                 c_type = "ide" if "IDE" in u_item['type'] else "app"
                 flag = "--ide-dir" if c_type == "ide" else "--app-dir"
                 subprocess.run(["bash", manage_sh, "install", c_type, flag, eng_p], check=False)
+            elif choice.upper() == "R":
+                c_type = "ide" if "IDE" in u_item['type'] else "app"
+                flag = "--ide-dir" if c_type == "ide" else "--app-dir"
+                print(f"\n{CYAN}Applying RTL patch to {u_item['type']} at {eng_p}...{NC}")
+                subprocess.run(["bash", manage_sh, "rtl", c_type, flag, eng_p], check=False)
+            elif choice.upper() == "F" and "IDE" not in u_item.get('type', ''):
+                print(f"\n{CYAN}Applying F5 reload & isolation patch to {eng_p}...{NC}")
+                subprocess.run(["bash", manage_sh, "f5", "--app-dir", eng_p], check=False)
 
     return curr_app, curr_ide
 
@@ -1328,13 +1354,14 @@ def run_control_center():
         print(f"Or select an action:")
         print(f"  [N] Install New Google Antigravity Binary (Download & Install)")
         print(f"  [C] Create New Clone / Account Profile (Add isolated account)")
+        print(f"  [R] Apply RTL & Persian Patch to Suite (App & IDE)")
         print(f"  [W] Run Full Setup Wizard (Sequential Steps 1-8)")
         print(f"  [S] Run a Specific Setup Step by Name (Select from named steps)")
         print(f"  [Q] Exit Setup")
         print(f"{CYAN}========================================================================================{NC}")
 
         try:
-            choice = input(f"Select option [1-{len(unified)}, N, C, W, S, Q, Default: Q]: ").strip()
+            choice = input(f"Select option [1-{len(unified)}, N, C, R, W, S, Q, Default: Q]: ").strip()
         except (KeyboardInterrupt, EOFError):
             print("\nExiting Control Center.")
             break
@@ -1360,6 +1387,15 @@ def run_control_center():
         elif choice.upper() == "C":
             print(f"\n{CYAN}--- Create New Clone / Account Profile ---{NC}")
             subprocess.run(["bash", manage_sh, "create-instance"], check=False)
+        elif choice.upper() == "R":
+            print(f"\n{CYAN}--- Apply RTL & Persian Patch to Suite ---{NC}")
+            print("Select target for RTL patch:")
+            print("  [1] All Targets (App + IDE + F5 reload)")
+            print("  [2] Antigravity App only")
+            print("  [3] Antigravity IDE only")
+            r_target = input("Choose target [1-3, Default: 1]: ").strip()
+            r_arg = "all" if r_target in ["1", ""] else ("app" if r_target == "2" else "ide")
+            subprocess.run(["bash", manage_sh, "rtl", r_arg], check=False)
         elif choice.upper() == "W":
             sys.exit(10)
         elif choice.upper() == "S":

@@ -1493,11 +1493,24 @@ patch_f5_reload() {
     fix_permissions "$APP_INSTALL_DIR"
 
     log_info "Applying manual F5 backend reload and window/tray isolation patch..."
+    local patch_js="${LOCAL_BIN}/antigravity-f5-patch.js"
+    if [ ! -f "$patch_js" ]; then
+        local SCRIPT_DIR
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        if [ -f "${SCRIPT_DIR}/antigravity-f5-patch.js" ]; then
+            patch_js="${SCRIPT_DIR}/antigravity-f5-patch.js"
+        fi
+    fi
+    if [ ! -f "$patch_js" ]; then
+        log_err "antigravity-f5-patch.js not found in ${LOCAL_BIN} or ${SCRIPT_DIR}."
+        return 1
+    fi
+
     local tmp_dir
     tmp_dir=$(mktemp -d /tmp/asar_patch_XXXXXX)
 
     npx --yes asar extract "$asar_file" "$tmp_dir/unpacked"
-    node "${LOCAL_BIN}/antigravity-f5-patch.js" "$tmp_dir/unpacked"
+    node "$patch_js" "$tmp_dir/unpacked"
     npx --yes asar pack "$tmp_dir/unpacked" "$tmp_dir/app.asar.patched"
     cp "$tmp_dir/app.asar.patched" "$asar_file"
     rm -rf "$tmp_dir"
@@ -2068,7 +2081,19 @@ while [ $# -gt 0 ]; do
             CMD_ARGS=("$@")
             break
             ;;
-        status|all|app|ide|app1|app2|ide-shortcuts|f5|rtl|update-rtl|update|clean-cache|set-icons|icons|help)
+        rtl|patch-rtl)
+            COMMAND="rtl"
+            shift
+            if [ -n "$1" ] && [[ "$1" != -* ]]; then
+                SUB_COMMAND="$1"
+                shift
+            fi
+            ;;
+        f5|patch-f5)
+            COMMAND="f5"
+            shift
+            ;;
+        status|all|app|ide|app1|app2|ide-shortcuts|update-rtl|update|clean-cache|set-icons|icons|help)
             COMMAND="$1"
             shift
             ;;
@@ -2180,11 +2205,23 @@ else
         remove-instance)
             remove_instance "${CMD_ARGS[@]}"
             ;;
-        f5)
+        f5|patch-f5)
             patch_f5_reload
             ;;
-        rtl)
-            patch_rtl_all
+        rtl|patch-rtl)
+            auto_detect_installations
+            case "${SUB_COMMAND:-all}" in
+                app)
+                    patch_rtl_app
+                    patch_f5_reload
+                    ;;
+                ide)
+                    patch_rtl_ide
+                    ;;
+                all|*)
+                    patch_rtl_all
+                    ;;
+            esac
             ;;
         update-rtl)
             update_rtl
