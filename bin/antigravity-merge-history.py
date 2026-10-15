@@ -839,6 +839,27 @@ def merge_histories(master_gemini=None, source_dir=None, target_dir=None, quiet=
     );''')
     con.commit()
 
+    # Ingest from sub-directory conversation_summaries.db if present
+    sub_sum_db = os.path.join(master_conv_dir, "conversation_summaries.db")
+    if os.path.exists(sub_sum_db) and not os.path.islink(sub_sum_db):
+        try:
+            s_con = sqlite3.connect(sub_sum_db)
+            s_rows = s_con.cursor().execute("SELECT conversation_id, title, preview, step_count, last_modified_time, raw_summary FROM conversation_summaries;").fetchall()
+            s_con.close()
+            for r in s_rows:
+                if r[5] or r[1]:
+                    cur.execute('''INSERT OR REPLACE INTO conversation_summaries (
+                        conversation_id, title, preview, step_count, last_modified_time, raw_summary
+                    ) VALUES (?, ?, ?, ?, ?, ?)''', (r[0], r[1], r[2], r[3], r[4], r[5]))
+            con.commit()
+            try:
+                os.rename(sub_sum_db, f"{sub_sum_db}.bak_{int(time.time())}")
+                os.symlink(master_sum_db, sub_sum_db)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
     rows = cur.execute("SELECT conversation_id, title, preview, step_count, last_modified_time, raw_summary FROM conversation_summaries;").fetchall()
     existing_rows = {r[0]: (r[1], r[2], r[3], r[4], r[5]) for r in rows}
     for r in rows:
@@ -1083,18 +1104,26 @@ def merge_histories(master_gemini=None, source_dir=None, target_dir=None, quiet=
                 except Exception:
                     pass
 
-    # 8. Write Unified State Sync (Format B) to IDE state.vscdb
-    if os.path.exists(vscdb_path):
-        try:
-            unified_vsc_bin = build_unified_state_sync(all_summaries)
-            unified_b64 = base64.b64encode(unified_vsc_bin).decode('ascii')
-            v_con = sqlite3.connect(vscdb_path)
-            v_cur = v_con.cursor()
-            v_cur.execute("INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('antigravityUnifiedStateSync.trajectorySummaries', ?);", (unified_b64,))
-            v_con.commit()
-            v_con.close()
-        except Exception:
-            pass
+    # 8. Write Unified State Sync (Format B) to all IDE state.vscdb files
+    vscdb_targets = [
+        os.path.join(real_home, ".config", "Antigravity IDE", "User", "globalStorage", "state.vscdb"),
+        os.path.join(real_home, ".config", "Antigravity", "User", "globalStorage", "state.vscdb"),
+    ]
+    vscdb_targets.extend(glob.glob(os.path.join(real_home, ".antigravity*", "**", "state.vscdb"), recursive=True))
+
+    unified_vsc_bin = build_unified_state_sync(all_summaries)
+    unified_b64 = base64.b64encode(unified_vsc_bin).decode('ascii')
+
+    for vp in sorted(set(vscdb_targets)):
+        if os.path.exists(vp):
+            try:
+                v_con = sqlite3.connect(vp)
+                v_cur = v_con.cursor()
+                v_cur.execute("INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('antigravityUnifiedStateSync.trajectorySummaries', ?);", (unified_b64,))
+                v_con.commit()
+                v_con.close()
+            except Exception:
+                pass
 
     # 9. Sync conversation layouts in Desktop App storage.json
     app_storage_path = os.path.join(real_home, ".config", "Antigravity", "app_storage.json")
