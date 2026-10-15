@@ -158,18 +158,40 @@ Stores Google OAuth2 tokens in JSON:
 > `id_token` is a standard JWT containing `email`, `sub` (Google User ID), `aud`, and `iss`.
 
 ### 2. `conversation_summaries.db` (SQLite Schema)
-Maintains conversation titles, active branches, and metadata:
+Maintains conversation titles, previews, step counts, and user interaction states:
 ```sql
-CREATE TABLE IF NOT EXISTS summaries (
-    conversation_id TEXT PRIMARY KEY,
-    title TEXT,
-    created_at TIMESTAMP,
-    updated_at TIMESTAMP,
-    message_count INTEGER,
-    model TEXT,
-    is_archived INTEGER DEFAULT 0
+CREATE TABLE `conversation_summaries` (
+    `conversation_id` TEXT PRIMARY KEY,
+    `title` TEXT NOT NULL DEFAULT "",
+    `preview` TEXT NOT NULL DEFAULT "",
+    `step_count` INTEGER NOT NULL DEFAULT 0,
+    `last_modified_time` DATETIME NOT NULL,
+    `workspace_uris` TEXT NOT NULL DEFAULT "",
+    `status` TEXT NOT NULL DEFAULT "CASCADE_RUN_STATUS_IDLE",
+    `source` TEXT NOT NULL DEFAULT "",
+    `project_id` TEXT NOT NULL DEFAULT "outside-of-project",
+    `agent_name` TEXT NOT NULL DEFAULT "",
+    `parent_conversation_id` TEXT NOT NULL DEFAULT "",
+    `nesting_depth` INTEGER NOT NULL DEFAULT 0,
+    `battle_id` TEXT NOT NULL DEFAULT "",
+    `winning_conversation_id` TEXT NOT NULL DEFAULT "",
+    `not_fully_idle` NUMERIC NOT NULL DEFAULT 0,
+    `killed` NUMERIC NOT NULL DEFAULT 0,
+    `last_user_input_time` DATETIME NOT NULL,
+    `last_user_input_step_index` INTEGER NOT NULL DEFAULT -1,
+    `app_data_dir` TEXT NOT NULL DEFAULT "antigravity",
+    `raw_summary` BLOB,
+    `group_id` TEXT NOT NULL DEFAULT ""
 );
 ```
+
+> [!CRITICAL]
+> **Read/Unread "New" ("تازه") Badge Mechanics**:
+> - Antigravity UI sidebar marks any conversation as **"New" / "Unread" ("تازه")** if `last_user_input_step_index == -1` while `step_count > 0` or if Field 16 in `CascadeTrajectorySummary` is omitted.
+> - To mark conversations as read and prevent spurious "New" badges across all chats:
+>   1. Query the conversation's step table (`SELECT idx FROM steps WHERE step_type = 14 ORDER BY idx DESC LIMIT 1`) to find the last user message index.
+>   2. Set `last_user_input_step_index = idx` (or `max(0, step_count - 1)`).
+>   3. Preserve the native `raw_summary` binary protobuf blob instead of overwriting it with synthetic stubs.
 
 ### 3. `agyhub_summaries_proto.pb` (Protobuf Format)
 Fast binary index used by the Electron UI sidebar to render conversation titles without scanning SQLite or JSON directories. Updated directly by `antigravity-merge-history.py`.
