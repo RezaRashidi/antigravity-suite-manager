@@ -917,10 +917,9 @@ EOF
             fi
             ln -sfn "$SHARED_CONFIG_DIR" "$ide_root/config"
 
-            # Link mcp schemas, plugin data, and GEMINI.md under antigravity-ide
+            # Link mcp schemas and plugin data under antigravity-ide
             local target_ide_app="$ide_root/antigravity-ide"
             mkdir -p "$target_ide_app"
-            [ -f "${SHARED_GEMINI_DIR}/GEMINI.md" ] && ln -sfn "${SHARED_GEMINI_DIR}/GEMINI.md" "$target_ide_app/GEMINI.md"
             ln -sfn "$SHARED_CONV_DIR/mcp" "$target_ide_app/mcp"
             ln -sfn "$SHARED_CONV_DIR/plugin_data" "$target_ide_app/plugin_data"
         fi
