@@ -452,30 +452,117 @@ def parse_step14_user_prompt(payload):
             return cand
     return ""
 
+def synthesize_db_from_transcript(conv_id, db_path, transcript_path):
+    """Synthesizes a valid SQLite conversation database from transcript JSON lines."""
+    if not os.path.isfile(transcript_path):
+        return False
+    try:
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute("""CREATE TABLE IF NOT EXISTS `trajectory_meta` (
+            `trajectory_id` text, `cascade_id` text, `trajectory_type` integer, `source` integer, PRIMARY KEY (`trajectory_id`)
+        );""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS `steps` (
+            `idx` integer, `step_type` integer NOT NULL DEFAULT 0, `status` integer NOT NULL DEFAULT 0,
+            `has_subtrajectory` numeric NOT NULL DEFAULT false, `metadata` blob, `error_details` blob,
+            `permissions` blob, `task_details` blob, `render_info` blob, `step_payload` blob,
+            `step_format` integer NOT NULL DEFAULT 0, PRIMARY KEY (`idx`)
+        );""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS `gen_metadata` (`idx` integer, `data` blob, `size` integer NOT NULL DEFAULT 0, PRIMARY KEY (`idx`));""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS `executor_metadata` (`idx` integer, `data` blob, PRIMARY KEY (`idx`));""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS `parent_references` (`idx` integer, `data` blob, PRIMARY KEY (`idx`));""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS `trajectory_metadata_blob` (`id` text DEFAULT "main", `data` blob, PRIMARY KEY (`id`));""")
+        cur.execute("""CREATE TABLE IF NOT EXISTS `battle_mode_infos` (`idx` integer, `data` blob, PRIMARY KEY (`idx`));""")
+
+        cur.execute("INSERT OR REPLACE INTO trajectory_meta VALUES (?, ?, 4, 1);", (conv_id, conv_id))
+        cur.execute("INSERT OR REPLACE INTO trajectory_metadata_blob VALUES (\"main\", ?);", (conv_id.encode("utf-8"),))
+
+        step_count = 0
+        with open(transcript_path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except Exception:
+                    continue
+                idx = entry.get("step_index", step_count)
+                src = entry.get("source", "")
+                typ = entry.get("type", "")
+                st_str = entry.get("status", "DONE")
+                content = entry.get("content", "")
+
+                step_type = 1
+                if "<USER_REQUEST>" in content or typ == "USER_INPUT" or src == "USER_EXPLICIT":
+                    step_type = 14
+                elif typ == "PLANNER_RESPONSE" or src == "MODEL":
+                    step_type = 15
+                elif typ in ["VIEW_FILE", "RUN_COMMAND", "GENERIC"]:
+                    step_type = 132
+
+                status = 4 if st_str == "ERROR" else 3
+
+                payload = bytearray()
+                payload += encode_tag_uint(1, step_type)
+                payload += encode_tag_uint(4, status)
+                meta = bytearray()
+                meta += encode_tag_bytes(3, conv_id.encode("utf-8"))
+                payload += encode_tag_bytes(5, bytes(meta))
+                if content:
+                    sub = bytearray()
+                    sub += encode_tag_bytes(2, content[:4000].encode("utf-8", errors="ignore"))
+                    payload += encode_tag_bytes(19, bytes(sub))
+
+                cur.execute("""INSERT OR REPLACE INTO steps 
+                    (idx, step_type, status, step_payload) VALUES (?, ?, ?, ?);""",
+                    (idx, step_type, status, bytes(payload)))
+                step_count += 1
+
+        conn.commit()
+        conn.close()
+        return step_count > 0
+    except Exception:
+        return False
+
 def extract_conv_text(db_path, transcript_path):
-    """Extracts (title, preview) from transcript and sqlite steps."""
+    """Extracts (title, preview) from transcript, artifacts, and sqlite steps."""
     first_user_prompt = ""
     latest_user_prompt = ""
 
-    if os.path.isfile(transcript_path):
-        try:
-            with open(transcript_path, "r", encoding="utf-8", errors="ignore") as f:
-                for line in f:
-                    try:
-                        data = json.loads(line)
-                    except Exception:
-                        continue
-                    content = data.get("content", "")
-                    step_type = data.get("type", "")
-                    if step_type == "USER_INPUT" and content:
-                        m = re.search(r"<USER_REQUEST>(.*?)</USER_REQUEST>", content, re.DOTALL)
-                        req = m.group(1).strip() if m else content.strip()
-                        clean = " ".join(req.split())
-                        if not first_user_prompt:
-                            first_user_prompt = clean
-                        latest_user_prompt = clean
-        except Exception:
-            pass
+    t_candidates = []
+    if transcript_path:
+        t_candidates.append(transcript_path)
+        if "transcript.jsonl" in transcript_path:
+            t_candidates.insert(0, transcript_path.replace("transcript.jsonl", "transcript_full.jsonl"))
+
+    for tf in t_candidates:
+        if os.path.isfile(tf):
+            try:
+                with open(tf, "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            data = json.loads(line)
+                        except Exception:
+                            continue
+                        content = data.get("content", "")
+                        step_type = data.get("type", "")
+                        source = data.get("source", "")
+                        if content and ("<USER_REQUEST>" in content or step_type == "USER_INPUT" or source == "USER_EXPLICIT"):
+                            m = re.search(r"<USER_REQUEST>(.*?)</USER_REQUEST>", content, re.DOTALL)
+                            req = m.group(1).strip() if m else content.strip()
+                            clean = " ".join(req.split())
+                            if not first_user_prompt:
+                                first_user_prompt = clean
+                            latest_user_prompt = clean
+                if first_user_prompt:
+                    break
+            except Exception:
+                pass
 
     if os.path.isfile(db_path):
         try:
@@ -494,8 +581,28 @@ def extract_conv_text(db_path, transcript_path):
         except Exception:
             pass
 
-    title = first_user_prompt[:80] if first_user_prompt else ""
-    preview = latest_user_prompt[:250] if latest_user_prompt else ""
+    # Check for artifact plan/walkthrough markdown files in brain folder
+    artifact_title = ""
+    brain_dir = os.path.dirname(os.path.dirname(os.path.dirname(transcript_path))) if "logs" in transcript_path else ""
+    if brain_dir and os.path.isdir(brain_dir):
+        for f in os.listdir(brain_dir):
+            if f.endswith(".md") and not f.startswith("."):
+                name = f[:-3].replace("_", " ").replace("-", " ").strip()
+                if name.lower() not in ["walkthrough", "implementation plan", "task", "todo", "readme"]:
+                    artifact_title = name.title()
+                    break
+                elif not artifact_title:
+                    artifact_title = name.title()
+
+    title = ""
+    if artifact_title and (not first_user_prompt or len(first_user_prompt) > 80 or not first_user_prompt.isascii()):
+        title = artifact_title
+    elif first_user_prompt:
+        title = first_user_prompt[:80]
+    elif artifact_title:
+        title = artifact_title
+
+    preview = latest_user_prompt[:250] if latest_user_prompt else (first_user_prompt[:250] if first_user_prompt else title)
     return title, preview
 
 def build_summaries_state(entries_dict):
@@ -538,6 +645,102 @@ def build_unified_state_sync(entries_dict):
         out.extend(entry)
     return bytes(out)
 
+def discover_all_history_sources(real_home, custom_sources=None):
+    """
+    Thoroughly discovers all conversation databases, brain directories, and custom
+    installation paths across the system, including manual installations, older backups,
+    standalone IDE stores, desktop launchers, and trash.
+    """
+    conv_dirs = set()
+    brain_dirs = set()
+
+    # 1. Custom sources passed via CLI / caller
+    if custom_sources:
+        for s in custom_sources:
+            if s and os.path.exists(s):
+                real_s = os.path.realpath(s)
+                if os.path.isdir(s):
+                    if glob.glob(os.path.join(s, "*.db")):
+                        conv_dirs.add(real_s)
+                    if "conversations" in os.path.basename(s):
+                        conv_dirs.add(real_s)
+                    if "brain" in os.path.basename(s):
+                        brain_dirs.add(real_s)
+
+    # 2. Standard and named profile roots
+    search_roots = [
+        os.path.join(real_home, ".gemini"),
+        os.path.join(real_home, ".gemini-ide"),
+        os.path.join(real_home, ".gemide"),
+        os.path.join(real_home, ".config", "Antigravity"),
+        os.path.join(real_home, ".config", "Antigravity IDE"),
+        os.path.join(real_home, ".config", "antigravity"),
+        os.path.join(real_home, ".config", "antigravity-ide"),
+        os.path.join(real_home, ".config", "Google", "Antigravity"),
+        os.path.join(real_home, ".local", "share", "antigravity"),
+        os.path.join(real_home, ".local", "share", "Antigravity"),
+        os.path.join(real_home, ".local", "share", "Trash"),
+    ]
+    search_roots.extend(glob.glob(os.path.join(real_home, ".antigravity*")))
+
+    # 3. Inspect desktop launchers for custom data directories
+    desktop_locations = [
+        os.path.join(real_home, ".local", "share", "applications"),
+        "/usr/share/applications",
+        "/usr/local/share/applications"
+    ]
+    for d_dir in desktop_locations:
+        if os.path.isdir(d_dir):
+            for d_file in glob.glob(os.path.join(d_dir, "*.desktop")):
+                try:
+                    with open(d_file, "r", errors="ignore") as f:
+                        content = f.read()
+                        if "antigravity" in content.lower() or "gemini" in content.lower():
+                            for m in re.finditer(r"--user-data-dir=[\"\']?([^\s\"\']+)[\"\']?", content):
+                                search_roots.append(os.path.expanduser(m.group(1)))
+                            for m in re.finditer(r"--profile-directory=[\"\']?([^\s\"\']+)[\"\']?", content):
+                                search_roots.append(os.path.expanduser(m.group(1)))
+                            for m in re.finditer(r"GEMINI_DIR=[\"\']?([^\s\"\']+)[\"\']?", content):
+                                search_roots.append(os.path.expanduser(m.group(1)))
+                except Exception:
+                    pass
+
+    # 4. Glob specific patterns across roots
+    for root in sorted(set(search_roots)):
+        if not os.path.exists(root):
+            continue
+        for pat in ["conversations*", "brain*"]:
+            for match in glob.glob(os.path.join(root, pat)):
+                if os.path.isdir(match):
+                    r_match = os.path.realpath(match)
+                    if "conversations" in os.path.basename(match):
+                        conv_dirs.add(r_match)
+                    elif "brain" in os.path.basename(match):
+                        brain_dirs.add(r_match)
+        for pat in ["*/conversations*", "*/brain*", "*/*/conversations*", "*/*/brain*", ".gemini/*/conversations*", ".gemini/*/brain*"]:
+            for match in glob.glob(os.path.join(root, pat)):
+                if os.path.isdir(match):
+                    r_match = os.path.realpath(match)
+                    if "conversations" in os.path.basename(match):
+                        conv_dirs.add(r_match)
+                    elif "brain" in os.path.basename(match):
+                        brain_dirs.add(r_match)
+
+        dbs = [f for f in glob.glob(os.path.join(root, "*.db")) if re.match(r'^[0-9a-fA-F-]{36}\.db$', os.path.basename(f))]
+        if dbs:
+            conv_dirs.add(os.path.realpath(root))
+
+    hist_backup_dir = os.path.join(real_home, ".config", "antigravity", "backups", "history")
+    if os.path.isdir(hist_backup_dir):
+        for b_cand in glob.glob(os.path.join(hist_backup_dir, "*", "conversations*")):
+            if os.path.isdir(b_cand):
+                conv_dirs.add(os.path.realpath(b_cand))
+        for b_cand in glob.glob(os.path.join(hist_backup_dir, "*", "brain*")):
+            if os.path.isdir(b_cand):
+                brain_dirs.add(os.path.realpath(b_cand))
+
+    return sorted(conv_dirs), sorted(brain_dirs)
+
 def merge_histories(master_gemini=None, source_dir=None, target_dir=None, quiet=False):
     real_home = os.environ.get("REAL_HOME", os.path.expanduser("~"))
     if not master_gemini:
@@ -553,70 +756,15 @@ def merge_histories(master_gemini=None, source_dir=None, target_dir=None, quiet=
     os.makedirs(master_conv_dir, exist_ok=True)
     os.makedirs(master_brain_dir, exist_ok=True)
 
-    # 1. Discover all profile pools
-    pools = []
-    if source_dir and os.path.exists(source_dir):
-        if os.path.isdir(source_dir):
-            if glob.glob(os.path.join(source_dir, "*.db")):
-                pools.append(("explicit-source-conv", os.path.dirname(source_dir) if source_dir.rstrip("/").endswith("conversations") else source_dir, "custom"))
-            else:
-                pools.append(("explicit-source-dir", source_dir, "custom"))
-
-    ide_gemini = os.path.join(real_home, ".gemini", "antigravity-ide")
-    if os.path.isdir(ide_gemini):
-        pools.append(("ide-master", ide_gemini, "antigravity-ide"))
-
-    ide_gemini_isolated = os.path.join(real_home, ".gemini-ide", "antigravity-ide")
-    if os.path.isdir(ide_gemini_isolated):
-        pools.append(("ide-isolated", ide_gemini_isolated, "antigravity-ide"))
-
-    ide_gemide_isolated = os.path.join(real_home, ".gemide", "antigravity-ide")
-    if os.path.isdir(ide_gemide_isolated):
-        pools.append(("gemide-isolated", ide_gemide_isolated, "antigravity-ide"))
-
-    for p_dir in glob.glob(os.path.join(real_home, ".antigravity-profile*")):
-        c_dir = os.path.join(p_dir, ".gemini", "antigravity")
-        if os.path.isdir(c_dir):
-            pools.append((os.path.basename(p_dir), c_dir, "antigravity"))
-
-    for p_dir in glob.glob(os.path.join(real_home, ".antigravity-ide-profile*")):
-        c_dir = os.path.join(p_dir, ".gemini", "antigravity-ide")
-        if os.path.isdir(c_dir):
-            pools.append((os.path.basename(p_dir), c_dir, "antigravity-ide"))
+    # 1. Discover all history pools across the system
+    custom_srcs = [source_dir] if source_dir else None
+    candidate_conv_dirs, candidate_brain_dirs = discover_all_history_sources(real_home, custom_srcs)
 
     # 2. Copy missing .db files and brain directories into master
     copied_dbs = 0
     copied_brains = 0
 
-    # Also search for any conversations.bak* and brain.bak* across ~/.gemini/
-    candidate_conv_dirs = []
-    candidate_brain_dirs = []
-
-    for name, pool_dir, app_tag in pools:
-        # Check standard and backup conversations folders
-        for p_conv in glob.glob(os.path.join(pool_dir, "conversations*")):
-            if os.path.isdir(p_conv) and not os.path.islink(p_conv):
-                candidate_conv_dirs.append(p_conv)
-        # If pool_dir itself contains *.db directly
-        if glob.glob(os.path.join(pool_dir, "*.db")):
-            candidate_conv_dirs.append(pool_dir)
-
-        # Check standard and backup brain folders
-        for p_brain in glob.glob(os.path.join(pool_dir, "brain*")):
-            if os.path.isdir(p_brain) and not os.path.islink(p_brain):
-                candidate_brain_dirs.append(p_brain)
-
-    # Search directly in ~/.gemini/ and profile directories for backup folders
-    for base_d in [os.path.join(real_home, ".gemini"), os.path.join(real_home, ".config", "antigravity")]:
-        if os.path.isdir(base_d):
-            for b_conv in glob.glob(os.path.join(base_d, "*", "conversations*")):
-                if os.path.isdir(b_conv) and not os.path.islink(b_conv):
-                    candidate_conv_dirs.append(b_conv)
-            for b_brain in glob.glob(os.path.join(base_d, "*", "brain*")):
-                if os.path.isdir(b_brain) and not os.path.islink(b_brain):
-                    candidate_brain_dirs.append(b_brain)
-
-    for c_dir in sorted(set(candidate_conv_dirs)):
+    for c_dir in candidate_conv_dirs:
         if os.path.realpath(c_dir) == os.path.realpath(master_conv_dir):
             continue
         for db_src in glob.glob(os.path.join(c_dir, "*.db")):
@@ -629,7 +777,7 @@ def merge_histories(master_gemini=None, source_dir=None, target_dir=None, quiet=
                 except Exception:
                     pass
 
-    for b_dir in sorted(set(candidate_brain_dirs)):
+    for b_dir in candidate_brain_dirs:
         if os.path.realpath(b_dir) == os.path.realpath(master_brain_dir):
             continue
         for b_item in glob.glob(os.path.join(b_dir, "*")):
@@ -644,7 +792,25 @@ def merge_histories(master_gemini=None, source_dir=None, target_dir=None, quiet=
                     copied_brains += 1
                 except Exception:
                     pass
-    # 3. Read and Synchronize conversation_summaries.db
+
+    # 3. Reconstruct missing .db files for conversations that exist in brain
+    reconstructed_dbs = 0
+    for b_item in glob.glob(os.path.join(master_brain_dir, "*")):
+        if not os.path.isdir(b_item):
+            continue
+        c_uuid = os.path.basename(b_item)
+        if not re.match(r'^[0-9a-fA-F-]{36}$', c_uuid):
+            continue
+        target_db = os.path.join(master_conv_dir, f"{c_uuid}.db")
+        if not os.path.exists(target_db):
+            tf = os.path.join(b_item, ".system_generated", "logs", "transcript_full.jsonl")
+            if not os.path.isfile(tf):
+                tf = os.path.join(b_item, ".system_generated", "logs", "transcript.jsonl")
+            if os.path.isfile(tf):
+                if synthesize_db_from_transcript(c_uuid, target_db, tf):
+                    reconstructed_dbs += 1
+
+    # 4. Read and Synchronize conversation_summaries.db
     all_summaries = {}  # uuid -> pure_bin
     con = sqlite3.connect(master_sum_db)
     cur = con.cursor()
@@ -714,15 +880,24 @@ def merge_histories(master_gemini=None, source_dir=None, target_dir=None, quiet=
             final_title = anno_title or curr_title or raw_title
             final_prev = curr_prev or raw_summary
 
-            # PRESERVE native raw_summary whenever it exists! Never overwrite with synthetic stub.
-            if curr_raw and len(curr_raw) > 20:
+            # If title is empty or generic, extract authentic title from prompt or artifacts
+            if not final_title or final_title.strip() == "" or final_title in ["Conversation", "Untitled Conversation"]:
+                ext_t, ext_p = extract_conv_text(db_file, transcript_file)
+                if ext_t:
+                    final_title = ext_t
+                    final_prev = ext_p or final_prev
+
+            # If existing raw_summary had empty title, rebuild it
+            curr_raw_title = parsed_raw.get("title") or parsed_raw.get("summary")
+            needs_title_rebuild = bool(final_title and (not curr_raw_title or curr_raw_title in ["Conversation", "Untitled Conversation"]))
+
+            if curr_raw and len(curr_raw) > 20 and not needs_title_rebuild:
                 all_summaries[conv_id] = curr_raw
                 if anno_title and curr_title != anno_title:
                     cur.execute("UPDATE conversation_summaries SET title=? WHERE conversation_id=?;", (anno_title, conv_id))
                     updated_db_rows += 1
                 continue
 
-            # Only reconstruct if curr_raw is missing or empty
             user_step = get_last_user_step_index(db_file, max(actual_steps, curr_sc))
             pure_bin = build_cascade_summary(conv_id, final_title, final_prev, max(actual_steps, curr_sc), file_mtime_iso, last_user_step=user_step)
             all_summaries[conv_id] = pure_bin
@@ -849,11 +1024,17 @@ def merge_histories(master_gemini=None, source_dir=None, target_dir=None, quiet=
             pass
 
     # 7. Setup IDE directory symlinks and proto files for shared IDEs
+    ide_candidates = [
+        os.path.join(real_home, ".gemini", "antigravity-ide"),
+        os.path.join(real_home, ".gemini-ide", "antigravity-ide"),
+        os.path.join(real_home, ".gemide", "antigravity-ide"),
+    ]
     target_ide_dirs = []
-    for td in [ide_gemini]:
-        c_link = os.path.join(td, "conversations")
-        if os.path.islink(c_link) or not os.path.exists(c_link):
-            target_ide_dirs.append(td)
+    for td in ide_candidates:
+        if os.path.exists(td):
+            c_link = os.path.join(td, "conversations")
+            if os.path.islink(c_link) or not os.path.exists(c_link):
+                target_ide_dirs.append(td)
 
     for target_dir in target_ide_dirs:
         os.makedirs(target_dir, exist_ok=True)
@@ -969,20 +1150,23 @@ def merge_histories(master_gemini=None, source_dir=None, target_dir=None, quiet=
         print(f"========================================================================================")
         print(f"                       Antigravity History Synchronization Report                       ")
         print(f"========================================================================================")
-        print(f"  • Source Pools Scanned:       {len(pools) + 1} pools")
+        print(f"  • History Pools Scanned:      {len(candidate_conv_dirs)} conv stores, {len(candidate_brain_dirs)} brain stores")
         print(f"  • DB Files Merged:            {copied_dbs} new databases imported")
         print(f"  • Brain Folders Merged:       {copied_brains} new project folders imported")
+        print(f"  • Databases Reconstructed:    {reconstructed_dbs} SQLite databases built from transcript logs")
         print(f"  • Summaries Backfilled:       {backfilled} newly indexed conversations")
-        print(f"  • Conversations Updated:      {updated_db_rows} existing chats refreshed with new steps")
+        print(f"  • Conversations Updated:      {updated_db_rows} existing chats refreshed with authentic titles")
         print(f"  • IDE state.vscdb Ingested:   {vsc_ingested} conversations from IDE")
         print(f"  • Total Active History:       {len(all_summaries)} conversations synchronized")
         print(f"  • Target Stores Updated:      Desktop App, IDE state.vscdb, SQLite DB, Protobuf Files")
         print(f"========================================================================================")
 
     return {
-        "pools_scanned": len(pools) + 1,
+        "conv_pools": len(candidate_conv_dirs),
+        "brain_pools": len(candidate_brain_dirs),
         "copied_dbs": copied_dbs,
         "copied_brains": copied_brains,
+        "reconstructed_dbs": reconstructed_dbs,
         "backfilled": backfilled,
         "updated": updated_db_rows,
         "total_summaries": len(all_summaries),

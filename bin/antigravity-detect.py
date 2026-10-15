@@ -803,6 +803,15 @@ def safe_toggle_history_mode(is_ide, is_acc1, is_shared, p_dir, local_bin, REAL_
 
             if not os.path.islink(ide_conv):
                 os.symlink(os.path.join(shared_pool, "conversations"), ide_conv)
+            if not os.path.islink(ide_brain):
+                os.symlink(os.path.join(shared_pool, "brain"), ide_brain)
+            sum_link = os.path.join(p_dir, "conversation_summaries.db")
+            if not os.path.islink(sum_link):
+                if os.path.isfile(sum_link):
+                    try: os.rename(sum_link, f"{sum_link}.bak_{ts}")
+                    except Exception: pass
+                if os.path.isfile(os.path.join(shared_pool, "conversation_summaries.db")):
+                    os.symlink(os.path.join(shared_pool, "conversation_summaries.db"), sum_link)
 
             if os.path.isfile(merge_script):
                 subprocess.run([sys.executable, merge_script, "--master", shared_pool, "--quiet"], check=False)

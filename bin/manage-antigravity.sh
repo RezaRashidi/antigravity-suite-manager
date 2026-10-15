@@ -1052,22 +1052,30 @@ EOF
     # Merge existing IDE conversations non-destructively if real directory
     if [ -d "$ide_gemini/conversations" ] && [ ! -L "$ide_gemini/conversations" ]; then
         log_info "Merging existing IDE conversations into shared history..."
-        cp -a --update=none "$ide_gemini/conversations/"* "$SHARED_CONV_DIR/conversations/" 2>/dev/null || true
-        mv "$ide_gemini/conversations" "$ide_gemini/conversations.bak"
+        for f in "$ide_gemini/conversations/"*; do
+            [ -e "$f" ] || continue
+            dst="$SHARED_CONV_DIR/conversations/$(basename "$f")"
+            [ -e "$dst" ] || cp -a "$f" "$dst" 2>/dev/null || true
+        done
+        mv "$ide_gemini/conversations" "$ide_gemini/conversations.bak_$(date +%s)"
     fi
     ln -sfn "$SHARED_CONV_DIR/conversations" "$ide_gemini/conversations"
 
     # Merge existing IDE brain artifacts non-destructively if real directory
     if [ -d "$ide_gemini/brain" ] && [ ! -L "$ide_gemini/brain" ]; then
         log_info "Merging existing IDE brain artifacts into shared brain..."
-        cp -a --update=none "$ide_gemini/brain/"* "$SHARED_CONV_DIR/brain/" 2>/dev/null || true
-        mv "$ide_gemini/brain" "$ide_gemini/brain.bak"
+        for b in "$ide_gemini/brain/"*; do
+            [ -e "$b" ] || continue
+            dst="$SHARED_CONV_DIR/brain/$(basename "$b")"
+            [ -e "$dst" ] || cp -a "$b" "$dst" 2>/dev/null || true
+        done
+        mv "$ide_gemini/brain" "$ide_gemini/brain.bak_$(date +%s)"
     fi
     ln -sfn "$SHARED_CONV_DIR/brain" "$ide_gemini/brain"
 
     # Symlink conversation_summaries.db
     if [ -f "$ide_gemini/conversation_summaries.db" ] && [ ! -L "$ide_gemini/conversation_summaries.db" ]; then
-        mv "$ide_gemini/conversation_summaries.db" "$ide_gemini/conversation_summaries.db.bak"
+        mv "$ide_gemini/conversation_summaries.db" "$ide_gemini/conversation_summaries.db.bak_$(date +%s)"
     fi
     if [ -f "$SHARED_CONV_DIR/conversation_summaries.db" ]; then
         ln -sfn "$SHARED_CONV_DIR/conversation_summaries.db" "$ide_gemini/conversation_summaries.db"
@@ -1081,6 +1089,11 @@ EOF
             ln -sfn "$SHARED_CONV_DIR/agyhub_summaries_proto.pb" "$ide_gemini/$sym_proto"
         fi
     done
+
+    # Run comprehensive history merge and title backfill
+    if [ -f "${LOCAL_BIN}/antigravity-merge-history.py" ]; then
+        python3 "${LOCAL_BIN}/antigravity-merge-history.py" --master "$SHARED_CONV_DIR" --quiet >/dev/null 2>&1 || true
+    fi
 
     # Symlink master GEMINI.md, MCP tool schemas, custom skills, rules, and plugins across IDE instances
     for ide_root in "${REAL_HOME}/.gemide" "${REAL_HOME}/.gemini-ide"; do
