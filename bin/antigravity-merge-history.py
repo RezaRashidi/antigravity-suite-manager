@@ -70,7 +70,19 @@ def encode_annotations_field(title):
         body.extend(encode_tag_bytes(1, t_bytes))
     return encode_tag_bytes(15, body)
 
-def build_cascade_summary(uuid_str, title, summary_text, step_count=1, mtime_iso="", created_iso=""):
+def get_last_user_step_index(conv_db_path, step_count=0):
+    if conv_db_path and os.path.isfile(conv_db_path):
+        try:
+            c = sqlite3.connect(conv_db_path)
+            row = c.cursor().execute("SELECT idx FROM steps WHERE step_type = 14 ORDER BY idx DESC LIMIT 1;").fetchone()
+            c.close()
+            if row is not None:
+                return row[0]
+        except Exception:
+            pass
+    return max(0, step_count - 1)
+
+def build_cascade_summary(uuid_str, title, summary_text, step_count=1, mtime_iso="", created_iso="", last_user_step=None):
     """
     Creates a complete standard binary CascadeTrajectorySummary protobuf:
       Field 1: summary (string - UI preview/summary)
@@ -81,7 +93,10 @@ def build_cascade_summary(uuid_str, title, summary_text, step_count=1, mtime_iso
       Field 7: created_time (Timestamp)
       Field 10: last_user_input_time (Timestamp)
       Field 15: annotations (ConversationAnnotations containing subfield 1 = title)
-      Field 16: trajectory_type (1)
+      Field 16: last_user_input_step_index (uint32)
+      Field 20: source (17)
+      Field 22: trajectory_type (4)
+      Field 28: latest_executor_termination_reason (2)
     """
     out = bytearray()
     clean_title = (title or summary_text or "Conversation").strip().split('\n')[0].strip()[:100]
@@ -120,7 +135,15 @@ def build_cascade_summary(uuid_str, title, summary_text, step_count=1, mtime_iso
     out.extend(encode_timestamp_field(10, ts_sec))
 
     out.extend(encode_annotations_field(clean_title[:80]))
-    out.extend(encode_tag_uint(22, 1))
+
+    if last_user_step is None or last_user_step < 0:
+        actual_step = max(0, step_count - 1)
+    else:
+        actual_step = last_user_step
+    out.extend(encode_tag_uint(16, actual_step))
+    out.extend(encode_tag_uint(20, 17))
+    out.extend(encode_tag_uint(22, 4))
+    out.extend(encode_tag_uint(28, 2))
 
     return bytes(out)
 
@@ -587,44 +610,30 @@ def merge_histories(master_gemini=None, quiet=False):
 
         if conv_id in existing_rows:
             curr_title, curr_prev, curr_sc, curr_lm, curr_raw = existing_rows[conv_id]
-            parsed_raw = parse_cascade_summary(curr_raw)
+            parsed_raw = parse_cascade_summary(curr_raw) if curr_raw else {}
             raw_title = parsed_raw.get("title")
             raw_summary = parsed_raw.get("summary")
 
             final_title = anno_title or curr_title or raw_title
             final_prev = curr_prev or raw_summary
 
-            needs_update = False
-            if anno_title and curr_title != anno_title:
-                needs_update = True
-            elif actual_steps > curr_sc:
-                needs_update = True
-            elif not raw_title or not raw_summary:
-                needs_update = True
-            elif not curr_title or not curr_prev:
-                needs_update = True
-            elif raw_summary != final_title:
-                needs_update = True
+            # PRESERVE native raw_summary whenever it exists! Never overwrite with synthetic stub.
+            if curr_raw and len(curr_raw) > 20:
+                all_summaries[conv_id] = curr_raw
+                if anno_title and curr_title != anno_title:
+                    cur.execute("UPDATE conversation_summaries SET title=? WHERE conversation_id=?;", (anno_title, conv_id))
+                    updated_db_rows += 1
+                continue
 
-            if needs_update or not final_title or not final_prev:
-                ext_title, ext_prev = extract_conv_text(db_file, transcript_file)
-                if not final_title:
-                    final_title = anno_title or ext_title or "Conversation"
-                if not final_prev or actual_steps > curr_sc:
-                    final_prev = ext_prev or final_title
-
-            final_sc = max(actual_steps, curr_sc)
-            final_lm = file_mtime_iso if actual_steps > curr_sc else curr_lm
-
-            pure_bin = build_cascade_summary(conv_id, final_title, final_prev, final_sc, final_lm)
+            # Only reconstruct if curr_raw is missing or empty
+            user_step = get_last_user_step_index(db_file, max(actual_steps, curr_sc))
+            pure_bin = build_cascade_summary(conv_id, final_title, final_prev, max(actual_steps, curr_sc), file_mtime_iso, last_user_step=user_step)
             all_summaries[conv_id] = pure_bin
-
-            if needs_update or pure_bin != curr_raw:
-                cur.execute('''UPDATE conversation_summaries
-                               SET title=?, preview=?, step_count=?, last_modified_time=?, raw_summary=?
-                               WHERE conversation_id=?;''',
-                            (final_title, final_prev, final_sc, final_lm, pure_bin, conv_id))
-                updated_db_rows += 1
+            cur.execute('''UPDATE conversation_summaries
+                           SET title=?, preview=?, step_count=?, last_modified_time=?, raw_summary=?, last_user_input_step_index=?
+                           WHERE conversation_id=?;''',
+                        (final_title, final_prev, max(actual_steps, curr_sc), file_mtime_iso, pure_bin, user_step, conv_id))
+            updated_db_rows += 1
         else:
             if actual_steps == 0 and not anno_title:
                 continue
@@ -634,7 +643,8 @@ def merge_histories(master_gemini=None, quiet=False):
                 if not os.path.isfile(transcript_file) and not anno_title:
                     continue
             final_prev = ext_prev or final_title
-            pure_bin = build_cascade_summary(conv_id, final_title, final_prev, max(1, actual_steps), file_mtime_iso)
+            user_step = get_last_user_step_index(db_file, actual_steps)
+            pure_bin = build_cascade_summary(conv_id, final_title, final_prev, max(1, actual_steps), file_mtime_iso, last_user_step=user_step)
             all_summaries[conv_id] = pure_bin
 
             try:
@@ -647,7 +657,7 @@ def merge_histories(master_gemini=None, quiet=False):
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', (
                     conv_id, final_title, final_prev, max(1, actual_steps), file_mtime_iso,
                     "", "CASCADE_RUN_STATUS_IDLE", "", "outside-of-project", "",
-                    "", 0, "", "", 0, 0, file_mtime_iso, -1,
+                    "", 0, "", "", 0, 0, file_mtime_iso, user_step,
                     "antigravity", pure_bin, ""
                 ))
                 backfilled += 1
@@ -691,7 +701,8 @@ def merge_histories(master_gemini=None, quiet=False):
                     if u_id not in all_summaries:
                         u_title = ide_title or "IDE Conversation"
                         u_prev = u_title
-                        fixed_bin = build_cascade_summary(u_id, u_title, u_prev, ide_sc, ide_lm_iso, ide_ct_iso)
+                        user_step = get_last_user_step_index(db_p, ide_sc)
+                        fixed_bin = build_cascade_summary(u_id, u_title, u_prev, ide_sc, ide_lm_iso, ide_ct_iso, last_user_step=user_step)
                         all_summaries[u_id] = fixed_bin
                         vsc_ingested += 1
                         cur.execute('''INSERT OR IGNORE INTO conversation_summaries (
@@ -703,21 +714,19 @@ def merge_histories(master_gemini=None, quiet=False):
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', (
                             u_id, u_title, u_prev, ide_sc, ide_lm_iso,
                             "", "CASCADE_RUN_STATUS_IDLE", "", "outside-of-project", "",
-                            "", 0, "", "", 0, 0, ide_lm_iso, -1,
+                            "", 0, "", "", 0, 0, ide_lm_iso, user_step,
                             "antigravity", fixed_bin, ""
                         ))
                     else:
                         curr_parsed = parse_cascade_summary(all_summaries[u_id])
                         curr_t = curr_parsed.get("title") or curr_parsed.get("summary")
-                        curr_lm_sec = curr_parsed.get("last_modified_time")
                         if ide_title and (not curr_t or curr_t in ["Conversation", "IDE Conversation", "Untitled Conversation"]):
-                            fixed_bin = build_cascade_summary(u_id, ide_title, ide_title, max(ide_sc, curr_parsed.get(2, 1)), mtime_iso=curr_lm_sec)
-                            all_summaries[u_id] = fixed_bin
-                            cur.execute("UPDATE conversation_summaries SET title=?, raw_summary=? WHERE conversation_id=?", (ide_title, fixed_bin, u_id))
+                            cur.execute("UPDATE conversation_summaries SET title=? WHERE conversation_id=?", (ide_title, u_id))
             v_con.close()
             if vsc_ingested:
                 con.commit()
         except Exception:
+            pass
             pass
     # 5. Write Unified SummariesState (Format A) to all LS proto paths
     summaries_state_bin = build_summaries_state(all_summaries)
