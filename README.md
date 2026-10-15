@@ -208,11 +208,31 @@ While authentication tokens and keyring secrets are strictly siloed, all 3 appli
 
 ## Quick Start
 
-### 1. Clone the Repository
+### ⚡ One-Line Automated Install (Recommended)
+
+Run the automated installer directly via `curl`:
 
 ```bash
-git clone https://github.com/<your-username>/antigravity-suite-manager.git
+curl -fsSL https://raw.githubusercontent.com/RezaRashidi/antigravity-suite-manager/main/install.sh | bash
+```
+
+Or run fully non-interactive with default settings:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/RezaRashidi/antigravity-suite-manager/main/install.sh | bash -s -- -y
+```
+
+> [!TIP]
+> The one-line installer automatically bootstraps the suite repository to `~/.antigravity-suite-manager`, compiles the C icon resampler, deploys tools to `~/.local/bin`, and creates the `~/manage-antigravity.sh` shortcut.
+
+---
+
+### 🛠️ Manual Installation (Clone & Build)
+
+```bash
+git clone https://github.com/RezaRashidi/antigravity-suite-manager.git
 cd antigravity-suite-manager
+./install.sh
 ```
 
 ### 2. Install the Suite

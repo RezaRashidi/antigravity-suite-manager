@@ -13,10 +13,46 @@ CYAN="\033[1;36m"
 NC="\033[0m"
 BOLD="\033[1m"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TARGET_BIN="${HOME}/.local/bin"
-TARGET_ICONS="${HOME}/.local/share/icons"
-TARGET_CONF="${HOME}/.config/antigravity"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+
+REAL_USER="${SUDO_USER:-$USER}"
+REAL_HOME=$(getent passwd "$REAL_USER" 2>/dev/null | cut -d: -f6)
+REAL_HOME="${REAL_HOME:-$HOME}"
+
+# ==============================================================================
+# Auto-Bootstrap if executed directly via curl / pipe outside repo
+# ==============================================================================
+if [ -z "${BASH_SOURCE[0]}" ] || [ ! -f "${SCRIPT_DIR}/src/scale_icon.c" ] || [ ! -f "${SCRIPT_DIR}/bin/manage-antigravity.sh" ]; then
+    echo -e "${CYAN}======================================================================${NC}"
+    echo -e "${BOLD}${CYAN}   Bootstrapping Antigravity Suite Manager from GitHub...${NC}"
+    echo -e "${CYAN}======================================================================${NC}"
+
+    INSTALL_REPO_DIR="${REAL_HOME}/.antigravity-suite-manager"
+    if [ -d "${INSTALL_REPO_DIR}/.git" ]; then
+        echo -e "${BLUE}Existing repository found at ${INSTALL_REPO_DIR}, updating...${NC}"
+        git -C "$INSTALL_REPO_DIR" pull --ff-only 2>/dev/null || true
+    elif command -v git >/dev/null 2>&1; then
+        echo -e "${BLUE}Cloning repository to ${INSTALL_REPO_DIR}...${NC}"
+        git clone --depth=1 https://github.com/RezaRashidi/antigravity-suite-manager.git "$INSTALL_REPO_DIR"
+    else
+        echo -e "${BLUE}Downloading repository to ${INSTALL_REPO_DIR}...${NC}"
+        mkdir -p "$INSTALL_REPO_DIR"
+        curl -fsSL https://github.com/RezaRashidi/antigravity-suite-manager/archive/refs/heads/main.tar.gz | tar -xz -C "$INSTALL_REPO_DIR" --strip-components=1
+    fi
+
+    echo -e "${GREEN}[OK] Repository ready at ${INSTALL_REPO_DIR}${NC}\n"
+
+    # Re-exec install.sh from cloned repository
+    if [ -r /dev/tty ] && [ ! -t 0 ]; then
+        exec bash "${INSTALL_REPO_DIR}/install.sh" "$@" < /dev/tty
+    else
+        exec bash "${INSTALL_REPO_DIR}/install.sh" "$@"
+    fi
+fi
+
+TARGET_BIN="${REAL_HOME}/.local/bin"
+TARGET_ICONS="${REAL_HOME}/.local/share/icons"
+TARGET_CONF="${REAL_HOME}/.config/antigravity"
 PATHS_CONF="${TARGET_CONF}/paths.conf"
 ICONS_CONF="${TARGET_CONF}/icons.conf"
 KEYRING_CONF="${TARGET_CONF}/keyring.conf"
@@ -247,7 +283,7 @@ step_4_deploy_scripts() {
         cp -f "${SCRIPT_DIR}/assets"/antigravity-master-*.png "${TARGET_ICONS}/" 2>/dev/null || true
     fi
 
-    ln -sfn "${TARGET_BIN}/manage-antigravity.sh" "${HOME}/manage-antigravity.sh"
+    ln -sfn "${TARGET_BIN}/manage-antigravity.sh" "${REAL_HOME}/manage-antigravity.sh"
     echo -e "${GREEN}[OK] Installed management tools to ${TARGET_BIN} and symlinked ~/manage-antigravity.sh${NC}"
 }
 
