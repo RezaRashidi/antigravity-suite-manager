@@ -27,9 +27,12 @@ SCALE_BIN = os.path.join(REAL_HOME, ".local/bin/scale_icon")
 # Read default configurations from config file if available
 cfg = {
     "ACC1_ICON_THEME": "black",
+    "ACC1_EMBLEM_COLOR": "original",
     "ACC2_ICON_THEME": "black",
+    "ACC2_EMBLEM_COLOR": "violet",
     "ACC2_RECOLOR": "true",
     "IDE_ICON_THEME": "white",
+    "IDE_EMBLEM_COLOR": "original",
 }
 
 if os.path.isfile(CONFIG_FILE):
@@ -47,15 +50,23 @@ if os.path.isfile(CONFIG_FILE):
     except Exception:
         pass
 
+COLOR_CHOICES = ["original", "violet", "blue", "green", "amber", "red", "monochrome"]
+
 parser = argparse.ArgumentParser(description="Antigravity Icon Generator")
 parser.add_argument("--acc1", choices=["black", "white"], default=cfg.get("ACC1_ICON_THEME", "black"),
-                    help="Account 1 icon theme (black or white)")
+                    help="Account 1 icon background theme (black or white)")
+parser.add_argument("--acc1-color", choices=COLOR_CHOICES, default=cfg.get("ACC1_EMBLEM_COLOR", "original"),
+                    help="Account 1 emblem color")
 parser.add_argument("--acc2", choices=["black", "white"], default=cfg.get("ACC2_ICON_THEME", "black"),
-                    help="Account 2 icon theme (black or white)")
+                    help="Account 2 icon background theme (black or white)")
+parser.add_argument("--acc2-color", choices=COLOR_CHOICES, default=cfg.get("ACC2_EMBLEM_COLOR", "violet"),
+                    help="Account 2 emblem color")
 parser.add_argument("--acc2-recolor", choices=["true", "false", "1", "0"], default=cfg.get("ACC2_RECOLOR", "true"),
-                    help="Account 2 color transformation (true=violet, false=original)")
+                    help="Account 2 legacy color transformation (true=violet, false=original)")
 parser.add_argument("--ide", choices=["black", "white"], default=cfg.get("IDE_ICON_THEME", "white"),
-                    help="Antigravity IDE icon theme (white or black)")
+                    help="Antigravity IDE icon background theme (white or black)")
+parser.add_argument("--ide-color", choices=COLOR_CHOICES, default=cfg.get("IDE_EMBLEM_COLOR", "original"),
+                    help="Antigravity IDE emblem color")
 parser.add_argument("--save-config", action="store_true", help="Persist chosen options into icons.conf")
 parser.add_argument("--custom-instance", help="Generate icons for a custom instance name (e.g. antigravity-app-3)")
 parser.add_argument("--custom-theme", choices=["black", "white"], default="black", help="Base theme for custom instance")
@@ -64,18 +75,24 @@ parser.add_argument("--custom-hue", type=float, default=None, help="Hue shift (0
 args = parser.parse_args()
 
 acc1_theme = args.acc1.lower()
+acc1_color = args.acc1_color.lower()
 acc2_theme = args.acc2.lower()
-acc2_recolor = args.acc2_recolor.lower() in ["true", "1", "yes"]
+acc2_color = args.acc2_color.lower() if args.acc2_color else ("violet" if args.acc2_recolor.lower() in ["true", "1", "yes"] else "original")
+acc2_recolor = "true" if acc2_color != "original" else "false"
 ide_theme = args.ide.lower()
+ide_color = args.ide_color.lower()
 
 if args.save_config:
     os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
     with open(CONFIG_FILE, "w") as f:
         f.write("# Antigravity Suite Icon Configuration\n")
         f.write(f'ACC1_ICON_THEME="{acc1_theme}"\n')
+        f.write(f'ACC1_EMBLEM_COLOR="{acc1_color}"\n')
         f.write(f'ACC2_ICON_THEME="{acc2_theme}"\n')
-        f.write(f'ACC2_RECOLOR="{"true" if acc2_recolor else "false"}"\n')
+        f.write(f'ACC2_EMBLEM_COLOR="{acc2_color}"\n')
+        f.write(f'ACC2_RECOLOR="{acc2_recolor}"\n')
         f.write(f'IDE_ICON_THEME="{ide_theme}"\n')
+        f.write(f'IDE_EMBLEM_COLOR="{ide_color}"\n')
     print(f"[INFO] Configuration saved to {CONFIG_FILE}")
 
 # Auto-compile scale_icon if not present
@@ -219,7 +236,38 @@ def write_png(w, h, rgba_data, out_path):
         f.write(chunk(b'IDAT', idat))
         f.write(chunk(b'IEND', b''))
 
-def recolor_emblem_to_hue(w, h, data_in, is_white_bg=False, hue_shift=0.52):
+def resample_raw(src_data, src_w, src_h, dst_w, dst_h):
+    dst = bytearray(dst_w * dst_h * 4)
+    x_ratio = float(src_w) / dst_w
+    y_ratio = float(src_h) / dst_h
+    for y in range(dst_h):
+        sy = int(y * y_ratio)
+        if sy >= src_h: sy = src_h - 1
+        dst_row_start = y * dst_w * 4
+        src_row_start = sy * src_w * 4
+        for x in range(dst_w):
+            sx = int(x * x_ratio)
+            if sx >= src_w: sx = src_w - 1
+            src_idx = src_row_start + sx * 4
+            dst_idx = dst_row_start + x * 4
+            dst[dst_idx:dst_idx+4] = src_data[src_idx:src_idx+4]
+    return dst
+
+def recolor_emblem(w, h, data_in, is_white_bg=False, color="original"):
+    if not color or color == "original":
+        return bytearray(data_in)
+    
+    color_map = {
+        "violet": 0.52, "magenta": 0.52, "purple": 0.52,
+        "blue": 0.60, "cyan": 0.60,
+        "green": 0.32, "emerald": 0.32,
+        "amber": 0.12, "gold": 0.12, "orange": 0.12,
+        "red": 0.90, "ruby": 0.90,
+    }
+    
+    is_monochrome = color in ("monochrome", "silver", "grey", "gray")
+    hue_shift = color_map.get(color, 0.52)
+    
     out = bytearray(len(data_in))
     for i in range(0, len(data_in), 4):
         r, g, b, a = data_in[i], data_in[i+1], data_in[i+2], data_in[i+3]
@@ -229,29 +277,34 @@ def recolor_emblem_to_hue(w, h, data_in, is_white_bg=False, hue_shift=0.52):
         
         h_val, s_val, v_val = colorsys.rgb_to_hsv(r/255.0, g/255.0, b/255.0)
         
-        # Saturated emblem gradient
-        if s_val > 0.08 and v_val > 0.08:
-            new_h = (h_val + hue_shift) % 1.0
-            new_s = min(1.0, s_val * 1.15)
-            new_v = min(1.0, v_val * 1.08)
-            nr, ng, nb = colorsys.hsv_to_rgb(new_h, new_s, new_v)
-            out[i] = int(nr * 255)
-            out[i+1] = int(ng * 255)
-            out[i+2] = int(nb * 255)
-            out[i+3] = a
-        elif not is_white_bg and (0.04 < v_val < 0.22 and s_val < 0.25):
-            nr, ng, nb = colorsys.hsv_to_rgb((hue_shift + 0.25) % 1.0, 0.40, v_val * 1.25)
-            out[i] = int(nr * 255)
-            out[i+1] = int(ng * 255)
-            out[i+2] = int(nb * 255)
-            out[i+3] = a
+        if is_monochrome:
+            if s_val > 0.08 and v_val > 0.08:
+                out[i] = int(v_val * 255)
+                out[i+1] = int(v_val * 255)
+                out[i+2] = int(v_val * 255)
+                out[i+3] = a
+            else:
+                out[i:i+4] = (r, g, b, a)
         else:
-            out[i:i+4] = (r, g, b, a)
+            if s_val > 0.08 and v_val > 0.08:
+                new_h = (h_val + hue_shift) % 1.0
+                new_s = min(1.0, s_val * 1.15)
+                new_v = min(1.0, v_val * 1.08)
+                nr, ng, nb = colorsys.hsv_to_rgb(new_h, new_s, new_v)
+                out[i] = int(nr * 255)
+                out[i+1] = int(ng * 255)
+                out[i+2] = int(nb * 255)
+                out[i+3] = a
+            elif not is_white_bg and (0.04 < v_val < 0.22 and s_val < 0.25):
+                nr, ng, nb = colorsys.hsv_to_rgb((hue_shift + 0.25) % 1.0, 0.40, v_val * 1.25)
+                out[i] = int(nr * 255)
+                out[i+1] = int(ng * 255)
+                out[i+2] = int(nb * 255)
+                out[i+3] = a
+            else:
+                out[i:i+4] = (r, g, b, a)
 
     return out
-
-def recolor_emblem_to_violet(w, h, data_in, is_white_bg=False):
-    return recolor_emblem_to_hue(w, h, data_in, is_white_bg=is_white_bg, hue_shift=0.52)
 
 # Load Master Black & White
 w_blk, h_blk, rgba_black = reconstruct_png(MASTER_BLACK)
@@ -264,7 +317,7 @@ if args.custom_instance:
     inst_theme = args.custom_theme.lower()
     base_inst = rgba_white if inst_theme == "white" else rgba_black
     if args.custom_hue is not None:
-        rgba_inst = recolor_emblem_to_hue(1024, 1024, base_inst, is_white_bg=(inst_theme == "white"), hue_shift=args.custom_hue)
+        rgba_inst = recolor_emblem(1024, 1024, base_inst, is_white_bg=(inst_theme == "white"), color="violet")
     else:
         rgba_inst = bytearray(base_inst)
     
@@ -278,9 +331,17 @@ if args.custom_instance:
         theme_dir = os.path.join(LOCAL_ICONS, "hicolor", f"{sz}x{sz}", "apps")
         os.makedirs(theme_dir, exist_ok=True)
         out_raw = f"/tmp/scaled_{sz}_{icon_filename}.raw"
-        subprocess.run([SCALE_BIN, raw_path, "1024", "1024", out_raw, str(sz), str(sz)], check=True)
-        with open(out_raw, "rb") as rf:
-            s_data = rf.read()
+        s_data = None
+        if os.path.isfile(SCALE_BIN) and os.access(SCALE_BIN, os.X_OK):
+            try:
+                subprocess.run([SCALE_BIN, raw_path, "1024", "1024", out_raw, str(sz), str(sz)], check=True)
+                if os.path.isfile(out_raw):
+                    with open(out_raw, "rb") as rf:
+                        s_data = rf.read()
+            except Exception:
+                pass
+        if not s_data:
+            s_data = resample_raw(rgba_inst, 1024, 1024, sz, sz)
         write_png(sz, sz, s_data, os.path.join(theme_dir, icon_filename))
     
     subprocess.run(["gtk-update-icon-cache", "-f", "-t", os.path.join(LOCAL_ICONS, "hicolor")], check=False)
@@ -288,20 +349,19 @@ if args.custom_instance:
     print(f"[SUCCESS] Custom icon {icon_filename} created in all hicolor resolutions.")
     sys.exit(0)
 
-print(f"[INFO] Settings: App1={acc1_theme}, App2={acc2_theme} (Recolor: {acc2_recolor}), IDE={ide_theme}")
+print(f"[INFO] Settings: App1={acc1_theme} (Emblem: {acc1_color}), App2={acc2_theme} (Emblem: {acc2_color}), IDE={ide_theme} (Emblem: {ide_color})")
 
 # 1. Prepare App 1
-rgba_acc1 = bytearray(rgba_black if acc1_theme == "black" else rgba_white)
+base_acc1 = rgba_white if acc1_theme == "white" else rgba_black
+rgba_acc1 = recolor_emblem(1024, 1024, base_acc1, is_white_bg=(acc1_theme == "white"), color=acc1_color)
 
 # 2. Prepare App 2
-base_acc2 = rgba_black if acc2_theme == "black" else rgba_white
-if acc2_recolor:
-    rgba_acc2 = recolor_emblem_to_violet(1024, 1024, base_acc2, is_white_bg=(acc2_theme == "white"))
-else:
-    rgba_acc2 = bytearray(base_acc2)
+base_acc2 = rgba_white if acc2_theme == "white" else rgba_black
+rgba_acc2 = recolor_emblem(1024, 1024, base_acc2, is_white_bg=(acc2_theme == "white"), color=acc2_color)
 
 # 3. Prepare IDE
-rgba_ide = bytearray(rgba_white if ide_theme == "white" else rgba_black)
+base_ide = rgba_white if ide_theme == "white" else rgba_black
+rgba_ide = recolor_emblem(1024, 1024, base_ide, is_white_bg=(ide_theme == "white"), color=ide_color)
 
 # Write Master Icons in ~/.local/share/icons
 write_png(1024, 1024, rgba_acc1, os.path.join(LOCAL_ICONS, "antigravity.png"))
@@ -330,6 +390,7 @@ for sz in sizes:
     
     for name, (in_raw, rgba_data) in raw_map.items():
         dst_png = os.path.join(theme_dir, name)
+        s_data = None
         if has_scaler:
             out_raw = f"/tmp/scaled_{sz}_{name}.raw"
             try:
@@ -337,13 +398,31 @@ for sz in sizes:
                 if os.path.isfile(out_raw):
                     with open(out_raw, "rb") as rf:
                         s_data = rf.read()
-                    write_png(sz, sz, s_data, dst_png)
-                    continue
             except Exception:
                 pass
-        write_png(1024, 1024, rgba_data, dst_png)
+        if not s_data:
+            s_data = resample_raw(rgba_data, 1024, 1024, sz, sz)
+        write_png(sz, sz, s_data, dst_png)
 
 print("[SUCCESS] Multi-resolution hicolor themes (16 to 512) generated.")
+
+# Ensure index.theme exists in hicolor for GTK validation
+index_theme = os.path.join(LOCAL_ICONS, "hicolor", "index.theme")
+if not os.path.isfile(index_theme):
+    for sys_idx in ["/usr/share/icons/hicolor/index.theme", "/usr/local/share/icons/hicolor/index.theme"]:
+        if os.path.isfile(sys_idx):
+            try: shutil.copy2(sys_idx, index_theme)
+            except Exception: pass
+            break
+
+# Also copy top-level icons into ~/.local/share/pixmaps as standard FreeDesktop fallback
+pixmaps_dir = os.path.join(REAL_HOME, ".local/share/pixmaps")
+os.makedirs(pixmaps_dir, exist_ok=True)
+for name in ["antigravity.png", "antigravity-1.png", "antigravity-ide.png", "antigravity-acc2.png"]:
+    src_f = os.path.join(LOCAL_ICONS, name)
+    if os.path.isfile(src_f):
+        try: shutil.copy2(src_f, os.path.join(pixmaps_dir, name))
+        except Exception: pass
 
 # Rebuild icon caches
 subprocess.run(["gtk-update-icon-cache", "-f", "-t", os.path.join(LOCAL_ICONS, "hicolor")], check=False)

@@ -212,7 +212,12 @@ def apply_icon_to_windows():
     cls_acc2 = b'antigravity-2\0antigravity-2\0'
     cls_ide = b'antigravity-ide\0antigravity-ide\0'
 
-    res = subprocess.run(['xwininfo', '-root', '-tree'], capture_output=True, text=True)
+    if not shutil.which("xwininfo"):
+        return
+    try:
+        res = subprocess.run(['xwininfo', '-root', '-tree'], capture_output=True, text=True)
+    except Exception:
+        return
     for line in res.stdout.splitlines():
         m = re.search(r'(0x[0-9a-fA-F]+)\s+"([^"]*)":\s+\("([^"]+)"\s+"([^"]+)"\)', line)
         if not m: continue
@@ -258,11 +263,11 @@ def apply_icon_to_windows():
         is_ide = False
         is_acc2 = False
 
-        if "antigravity ide" in title.lower() or "antigravity-ide" in c1_low or ("antigravity-ide" in win_cmd) or ("/opt/antigravity/" in win_cmd):
+        if "antigravity ide" in title.lower() or "antigravity-ide" in c1_low or ("antigravity-ide" in win_cmd) or ("/opt/antigravity/" in win_cmd) or ("/opt/antigravity-ide/" in win_cmd):
             is_ide = True
         elif "account 2" in title.lower() or "antigravity-2" in c1_low or "account2" in c1_low or ("antigravity-profile2" in win_cmd):
             is_acc2 = True
-        elif ("antigravity-1" in c1_low) or ("/opt/antigravity2/" in win_cmd) or ("antigravity" in win_cmd and not is_ide and not is_acc2):
+        elif ("antigravity-1" in c1_low) or ("antigravity" in c1_low) or ("/opt/antigravity2/" in win_cmd) or ("/opt/antigravity-x64/" in win_cmd) or ("antigravity" in win_cmd and not is_ide and not is_acc2):
             pass
         else:
             continue

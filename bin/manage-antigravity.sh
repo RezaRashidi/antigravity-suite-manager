@@ -42,9 +42,12 @@ LOCAL_ICONS="${REAL_HOME}/.local/share/icons"
 ICONS_CONF_DIR="${REAL_HOME}/.config/antigravity"
 ICONS_CONF="${ICONS_CONF_DIR}/icons.conf"
 ACC1_ICON_THEME="black"
+ACC1_EMBLEM_COLOR="original"
 ACC2_ICON_THEME="black"
+ACC2_EMBLEM_COLOR="violet"
 ACC2_RECOLOR="true"
 IDE_ICON_THEME="white"
+IDE_EMBLEM_COLOR="original"
 CLI_ICON_GIVEN=false
 
 if [ -f "$ICONS_CONF" ]; then
@@ -133,6 +136,7 @@ auto_detect_installations() {
         fi
     fi
 }
+auto_detect_installations
 
 detect_installations() {
     local SCRIPT_DIR
@@ -695,6 +699,16 @@ install_antigravity_ide() {
 setup_account_1() {
     log_info "Configuring Account 1 (Primary)..."
 
+    auto_detect_installations
+    if [ -z "$APP_INSTALL_DIR" ] || [ ! -f "${APP_INSTALL_DIR}/antigravity" ]; then
+        for cand in "$APP_INSTALL_DIR" "/opt/Antigravity-x64" "/opt/antigravity2" "/opt/antigravity"; do
+            if [ -n "$cand" ] && [ -f "${cand}/antigravity" ]; then
+                APP_INSTALL_DIR="$cand"
+                break
+            fi
+        done
+    fi
+
     # Generate and deploy icons according to configuration
     apply_icons_config
 
@@ -705,6 +719,11 @@ setup_account_1() {
         touch "${REAL_HOME}/.gemini/cache/antigravity-keyring-unavailable"
     else
         rm -f "${REAL_HOME}/.gemini/cache/antigravity-keyring-unavailable" 2>/dev/null || true
+    fi
+
+    local wm_class="antigravity"
+    if [ -d "$PROFILE2_DIR" ] || [ -f "${LOCAL_BIN}/antigravity-acc2" ]; then
+        wm_class="antigravity-1"
     fi
 
     cat <<EOF > "${LOCAL_BIN}/antigravity-1"
@@ -734,7 +753,7 @@ if [ -f "${APP_INSTALL_DIR}/chrome-sandbox" ]; then
     fi
 fi
 
-exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}${pass_store_flag}--class="antigravity-1" --name="antigravity-1" "\$@"
+exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}${pass_store_flag}--class="${wm_class}" --name="${wm_class}" "\$@"
 EOF
     chmod +x "${LOCAL_BIN}/antigravity-1"
     ln -sfn "${LOCAL_BIN}/antigravity-1" "${LOCAL_BIN}/antigravity"
@@ -747,9 +766,9 @@ Comment=Antigravity AI Platform - Account 1
 Exec=${LOCAL_BIN}/antigravity-1 %U
 Terminal=false
 Type=Application
-Icon=${LOCAL_ICONS}/antigravity-1.png
+Icon=antigravity-1
 Categories=Development;IDE;
-StartupWMClass=antigravity-1
+StartupWMClass=${wm_class}
 MimeType=x-scheme-handler/antigravity;
 StartupNotify=true
 EOF
@@ -893,6 +912,16 @@ EOF
 setup_ide_shortcuts() {
     log_info "Configuring Antigravity IDE shortcuts..."
 
+    auto_detect_installations
+    if [ -z "$IDE_INSTALL_DIR" ] || [ ! -f "${IDE_INSTALL_DIR}/antigravity-ide" ]; then
+        for cand in "$IDE_INSTALL_DIR" "/opt/antigravity-ide" "/opt/antigravity" "/opt/antigravity2"; do
+            if [ -n "$cand" ] && [ -f "${cand}/antigravity-ide" ]; then
+                IDE_INSTALL_DIR="$cand"
+                break
+            fi
+        done
+    fi
+
     # Generate and deploy icons according to configuration
     apply_icons_config
 
@@ -935,13 +964,22 @@ Comment=Google Antigravity AI IDE
 Exec=${LOCAL_BIN}/antigravity-ide %U
 Terminal=false
 Type=Application
-Icon=${LOCAL_ICONS}/antigravity-ide.png
+Icon=antigravity-ide
 Categories=TextEditor;Development;IDE;
 StartupWMClass=antigravity-ide
 MimeType=x-scheme-handler/antigravity-ide;
 StartupNotify=true
 EOF
     chmod +x "${LOCAL_APPS}/antigravity-ide.desktop"
+
+    if [ ! -f "${LOCAL_ICONS}/antigravity-ide.png" ]; then
+        if [ -f "${LOCAL_ICONS}/antigravity-master-white.png" ]; then
+            cp -f "${LOCAL_ICONS}/antigravity-master-white.png" "${LOCAL_ICONS}/antigravity-ide.png" 2>/dev/null || true
+        elif [ -f "${LOCAL_ICONS}/antigravity-master-black.png" ]; then
+            cp -f "${LOCAL_ICONS}/antigravity-master-black.png" "${LOCAL_ICONS}/antigravity-ide.png" 2>/dev/null || true
+        fi
+    fi
+
     update-desktop-database "${LOCAL_APPS}" 2>/dev/null || true
     xdg-mime default antigravity-ide.desktop x-scheme-handler/antigravity-ide 2>/dev/null || true
 
@@ -983,7 +1021,7 @@ EOF
     done
 
     # Symlink master GEMINI.md, MCP tool schemas, custom skills, rules, and plugins across IDE instances
-    for ide_root in "${SHARED_GEMINI_DIR}" "${REAL_HOME}/.gemide" "${REAL_HOME}/.gemini-ide"; do
+    for ide_root in "${REAL_HOME}/.gemide" "${REAL_HOME}/.gemini-ide"; do
         if [ -d "$ide_root" ]; then
             # Link root GEMINI.md and shared global configs
             [ -f "${SHARED_GEMINI_DIR}/GEMINI.md" ] && ln -sfn "${SHARED_GEMINI_DIR}/GEMINI.md" "$ide_root/GEMINI.md"
@@ -1666,17 +1704,18 @@ save_icons_config() {
     mkdir -p "$ICONS_CONF_DIR"
     cat <<EOF > "$ICONS_CONF"
 # Antigravity Suite Icon Configuration
-# Options for themes: "black" or "white"
-# Options for recolor: "true" or "false"
 ACC1_ICON_THEME="${ACC1_ICON_THEME}"
+ACC1_EMBLEM_COLOR="${ACC1_EMBLEM_COLOR}"
 ACC2_ICON_THEME="${ACC2_ICON_THEME}"
+ACC2_EMBLEM_COLOR="${ACC2_EMBLEM_COLOR}"
 ACC2_RECOLOR="${ACC2_RECOLOR}"
 IDE_ICON_THEME="${IDE_ICON_THEME}"
+IDE_EMBLEM_COLOR="${IDE_EMBLEM_COLOR}"
 EOF
 }
 
 apply_icons_config() {
-    log_info "Configuring Suite Icons: App1=${ACC1_ICON_THEME}, App2=${ACC2_ICON_THEME} (Recolor: ${ACC2_RECOLOR}), IDE=${IDE_ICON_THEME}..."
+    log_info "Configuring Suite Icons: App1=${ACC1_ICON_THEME} (${ACC1_EMBLEM_COLOR}), App2=${ACC2_ICON_THEME} (${ACC2_EMBLEM_COLOR}), IDE=${IDE_ICON_THEME} (${IDE_EMBLEM_COLOR})..."
     save_icons_config
 
     local gen_py="${LOCAL_BIN}/antigravity-generate-icons.py"
@@ -1736,9 +1775,12 @@ apply_icons_config() {
     if [ -f "$gen_py" ]; then
         python3 "$gen_py" \
             --acc1 "${ACC1_ICON_THEME}" \
+            --acc1-color "${ACC1_EMBLEM_COLOR}" \
             --acc2 "${ACC2_ICON_THEME}" \
+            --acc2-color "${ACC2_EMBLEM_COLOR}" \
             --acc2-recolor "${ACC2_RECOLOR}" \
             --ide "${IDE_ICON_THEME}" \
+            --ide-color "${IDE_EMBLEM_COLOR}" \
             --save-config
     fi
 }
@@ -1748,35 +1790,94 @@ configure_icons_interactive() {
     echo -e "${CYAN}        Configure Antigravity Suite Icons            ${NC}"
     echo -e "${CYAN}=====================================================${NC}"
     echo -e "Current Configuration:"
-    echo -e "  • Antigravity 1 Base Theme:     ${BOLD}${ACC1_ICON_THEME}${NC}"
-    echo -e "  • Antigravity 2 Base Theme:     ${BOLD}${ACC2_ICON_THEME}${NC}"
-    echo -e "  • Antigravity 2 Recolor Glow:  ${BOLD}${ACC2_RECOLOR}${NC} (Violet/Magenta)"
-    echo -e "  • Antigravity IDE Theme:        ${BOLD}${IDE_ICON_THEME}${NC}"
+    echo -e "  • Antigravity 1:    Background: ${BOLD}${ACC1_ICON_THEME}${NC} | Emblem: ${BOLD}${ACC1_EMBLEM_COLOR}${NC}"
+    echo -e "  • Antigravity IDE:  Background: ${BOLD}${IDE_ICON_THEME}${NC} | Emblem: ${BOLD}${IDE_EMBLEM_COLOR}${NC}"
+    if [ -d "$PROFILE2_DIR" ] || [ -f "${LOCAL_BIN}/antigravity-acc2" ]; then
+        echo -e "  • Antigravity 2:    Background: ${BOLD}${ACC2_ICON_THEME}${NC} | Emblem: ${BOLD}${ACC2_EMBLEM_COLOR}${NC}"
+    fi
     echo -e "${CYAN}-----------------------------------------------------${NC}"
 
-    read -rp "1) Select Antigravity 1 icon [1: Black (default), 2: White]: " c1
-    case "$c1" in
+    echo -e "\n${BOLD}[1] Configure Antigravity (Account 1):${NC}"
+    read -rp "  Background Color [1: Black (default), 2: White]: " bg1
+    case "$bg1" in
         2|white) ACC1_ICON_THEME="white" ;;
         *) ACC1_ICON_THEME="black" ;;
     esac
 
-    read -rp "2) Select Antigravity 2 icon [1: Black (default), 2: White]: " c2
-    case "$c2" in
-        2|white) ACC2_ICON_THEME="white" ;;
-        *) ACC2_ICON_THEME="black" ;;
+    echo -e "  Emblem Colors:"
+    echo -e "    [1] Original Google Multi-Color (default)"
+    echo -e "    [2] Violet / Magenta"
+    echo -e "    [3] Royal Blue / Cyan"
+    echo -e "    [4] Emerald Green"
+    echo -e "    [5] Amber / Gold"
+    echo -e "    [6] Ruby Red"
+    echo -e "    [7] Monochrome Silver"
+    read -rp "  Select Emblem Color [1-7, Default: 1]: " col1
+    case "$col1" in
+        2|violet|purple) ACC1_EMBLEM_COLOR="violet" ;;
+        3|blue|cyan) ACC1_EMBLEM_COLOR="blue" ;;
+        4|green|emerald) ACC1_EMBLEM_COLOR="green" ;;
+        5|amber|gold|orange) ACC1_EMBLEM_COLOR="amber" ;;
+        6|red|ruby) ACC1_EMBLEM_COLOR="red" ;;
+        7|silver|monochrome|grey) ACC1_EMBLEM_COLOR="monochrome" ;;
+        *) ACC1_EMBLEM_COLOR="original" ;;
     esac
 
-    read -rp "3) Enable color recolor for Antigravity 2? [1: Yes (Violet Glow, default), 2: No (Keep original)]: " cr
-    case "$cr" in
-        2|no|false) ACC2_RECOLOR="false" ;;
-        *) ACC2_RECOLOR="true" ;;
-    esac
-
-    read -rp "4) Select Antigravity IDE icon [1: White (default), 2: Black]: " ci
-    case "$ci" in
+    echo -e "\n${BOLD}[2] Configure Antigravity IDE:${NC}"
+    read -rp "  Background Color [1: White (default), 2: Black]: " bgi
+    case "$bgi" in
         2|black) IDE_ICON_THEME="black" ;;
         *) IDE_ICON_THEME="white" ;;
     esac
+
+    echo -e "  Emblem Colors:"
+    echo -e "    [1] Original Google Multi-Color (default)"
+    echo -e "    [2] Royal Blue / Cyan"
+    echo -e "    [3] Violet / Magenta"
+    echo -e "    [4] Emerald Green"
+    echo -e "    [5] Amber / Gold"
+    echo -e "    [6] Ruby Red"
+    echo -e "    [7] Monochrome Silver"
+    read -rp "  Select Emblem Color [1-7, Default: 1]: " coli
+    case "$coli" in
+        2|blue|cyan) IDE_EMBLEM_COLOR="blue" ;;
+        3|violet|purple) IDE_EMBLEM_COLOR="violet" ;;
+        4|green|emerald) IDE_EMBLEM_COLOR="green" ;;
+        5|amber|gold|orange) IDE_EMBLEM_COLOR="amber" ;;
+        6|red|ruby) IDE_EMBLEM_COLOR="red" ;;
+        7|silver|monochrome|grey) IDE_EMBLEM_COLOR="monochrome" ;;
+        *) IDE_EMBLEM_COLOR="original" ;;
+    esac
+
+    if [ -d "$PROFILE2_DIR" ] || [ -f "${LOCAL_BIN}/antigravity-acc2" ]; then
+        echo -e "\n${BOLD}[3] Configure Antigravity (Account 2):${NC}"
+        read -rp "  Background Color [1: Black (default), 2: White]: " bg2
+        case "$bg2" in
+            2|white) ACC2_ICON_THEME="white" ;;
+            *) ACC2_ICON_THEME="black" ;;
+        esac
+
+        echo -e "  Emblem Colors:"
+        echo -e "    [1] Violet / Magenta (default)"
+        echo -e "    [2] Original Google Multi-Color"
+        echo -e "    [3] Royal Blue / Cyan"
+        echo -e "    [4] Emerald Green"
+        echo -e "    [5] Amber / Gold"
+        echo -e "    [6] Ruby Red"
+        echo -e "    [7] Monochrome Silver"
+        read -rp "  Select Emblem Color [1-7, Default: 1]: " col2
+        case "$col2" in
+            2|original) ACC2_EMBLEM_COLOR="original" ;;
+            3|blue|cyan) ACC2_EMBLEM_COLOR="blue" ;;
+            4|green|emerald) ACC2_EMBLEM_COLOR="green" ;;
+            5|amber|gold|orange) ACC2_EMBLEM_COLOR="amber" ;;
+            6|red|ruby) ACC2_EMBLEM_COLOR="red" ;;
+            7|silver|monochrome|grey) ACC2_EMBLEM_COLOR="monochrome" ;;
+            *) ACC2_EMBLEM_COLOR="violet" ;;
+        esac
+        ACC2_RECOLOR="true"
+        [ "$ACC2_EMBLEM_COLOR" = "original" ] && ACC2_RECOLOR="false"
+    fi
 
     apply_icons_config
 }

@@ -316,9 +316,12 @@ step_5_configure_icons() {
         cat <<EOF > "${TARGET_CONF}/icons.conf"
 # Antigravity Suite Icon Configuration
 ACC1_ICON_THEME="black"
+ACC1_EMBLEM_COLOR="original"
 ACC2_ICON_THEME="black"
+ACC2_EMBLEM_COLOR="violet"
 ACC2_RECOLOR="true"
 IDE_ICON_THEME="white"
+IDE_EMBLEM_COLOR="original"
 EOF
     fi
 
