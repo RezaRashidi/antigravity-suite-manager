@@ -98,6 +98,9 @@ black_candidates = [
     os.path.join(LOCAL_ICONS, "antigravity-master-black.png"),
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "antigravity-master-black.png"),
     os.path.join(REAL_HOME, ".antigravity-suite-manager", "assets", "antigravity-master-black.png"),
+    "/opt/Antigravity-x64/resources/icon.png",
+    "/opt/antigravity2/resources/icon.png",
+    "/opt/antigravity/resources/icon.png",
     "/usr/share/icons/antigravity.png",
     "/opt/Antigravity-x64/resources/app/resources/linux/code.png",
     "/opt/antigravity/resources/app/resources/linux/code.png",
@@ -122,6 +125,8 @@ white_candidates = [
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "antigravity-master-white.png"),
     os.path.join(REAL_HOME, ".antigravity-suite-manager", "assets", "antigravity-master-white.png"),
     "/opt/antigravity-ide/resources/app/resources/linux/code.png",
+    "/opt/antigravity/resources/app/resources/linux/code.png",
+    "/opt/antigravity2/resources/app/resources/linux/code.png",
 ]
 MASTER_WHITE = None
 for c in white_candidates:

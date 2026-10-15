@@ -754,6 +754,15 @@ MimeType=x-scheme-handler/antigravity;
 StartupNotify=true
 EOF
     chmod +x "${LOCAL_APPS}/antigravity-1.desktop"
+    # Guarantee antigravity-1.png exists on disk
+    if [ ! -f "${LOCAL_ICONS}/antigravity-1.png" ]; then
+        if [ -f "${LOCAL_ICONS}/antigravity-master-black.png" ]; then
+            cp -f "${LOCAL_ICONS}/antigravity-master-black.png" "${LOCAL_ICONS}/antigravity-1.png" 2>/dev/null || true
+        elif [ -f "${APP_INSTALL_DIR}/resources/icon.png" ]; then
+            cp -f "${APP_INSTALL_DIR}/resources/icon.png" "${LOCAL_ICONS}/antigravity-1.png" 2>/dev/null || true
+        fi
+    fi
+
     rm -f "${LOCAL_APPS}/antigravity.desktop" 2>/dev/null || true
     update-desktop-database "${LOCAL_APPS}" 2>/dev/null || true
     xdg-mime default antigravity-1.desktop x-scheme-handler/antigravity 2>/dev/null || true
@@ -1622,7 +1631,9 @@ update_all() {
 
     install_binary "Antigravity-App" "$APP_URL" "$TARGET_APP_VER" "$APP_INSTALL_DIR"
     setup_account_1
-    setup_account_2
+    if [ -d "$PROFILE2_DIR" ] || [ -f "${LOCAL_BIN}/antigravity-acc2" ]; then
+        setup_account_2
+    fi
 
     install_binary "Antigravity-IDE" "$IDE_URL" "$TARGET_IDE_VER" "$IDE_INSTALL_DIR"
     setup_ide_shortcuts
@@ -1692,24 +1703,35 @@ apply_icons_config() {
     mkdir -p "$LOCAL_ICONS"
     for master_b in "${LOCAL_ICONS}/antigravity-master-black.png" \
                     "${REAL_HOME}/.antigravity-suite-manager/assets/antigravity-master-black.png" \
-                    "$(dirname "$(dirname "$gen_py")")/assets/antigravity-master-black.png"; do
+                    "$(dirname "$(dirname "$gen_py")")/assets/antigravity-master-black.png" \
+                    "${APP_INSTALL_DIR}/resources/icon.png" \
+                    "/opt/Antigravity-x64/resources/icon.png" \
+                    "/opt/antigravity2/resources/icon.png" \
+                    "/opt/antigravity/resources/icon.png"; do
         if [ -f "$master_b" ]; then
             cp -f "$master_b" "${LOCAL_ICONS}/antigravity-master-black.png" 2>/dev/null || true
-            [ ! -f "${LOCAL_ICONS}/antigravity-1.png" ] && cp -f "$master_b" "${LOCAL_ICONS}/antigravity-1.png"
-            [ ! -f "${LOCAL_ICONS}/antigravity.png" ] && cp -f "$master_b" "${LOCAL_ICONS}/antigravity.png"
+            cp -f "$master_b" "${LOCAL_ICONS}/antigravity-1.png" 2>/dev/null || true
+            cp -f "$master_b" "${LOCAL_ICONS}/antigravity.png" 2>/dev/null || true
             break
         fi
     done
 
     for master_w in "${LOCAL_ICONS}/antigravity-master-white.png" \
                     "${REAL_HOME}/.antigravity-suite-manager/assets/antigravity-master-white.png" \
-                    "$(dirname "$(dirname "$gen_py")")/assets/antigravity-master-white.png"; do
+                    "$(dirname "$(dirname "$gen_py")")/assets/antigravity-master-white.png" \
+                    "${IDE_INSTALL_DIR}/resources/app/resources/linux/code.png" \
+                    "/opt/antigravity-ide/resources/app/resources/linux/code.png" \
+                    "/opt/antigravity/resources/app/resources/linux/code.png"; do
         if [ -f "$master_w" ]; then
             cp -f "$master_w" "${LOCAL_ICONS}/antigravity-master-white.png" 2>/dev/null || true
-            [ ! -f "${LOCAL_ICONS}/antigravity-ide.png" ] && cp -f "$master_w" "${LOCAL_ICONS}/antigravity-ide.png"
+            cp -f "$master_w" "${LOCAL_ICONS}/antigravity-ide.png" 2>/dev/null || true
             break
         fi
     done
+
+    if [ ! -f "${LOCAL_ICONS}/antigravity-ide.png" ] && [ -f "${LOCAL_ICONS}/antigravity-master-black.png" ]; then
+        cp -f "${LOCAL_ICONS}/antigravity-master-black.png" "${LOCAL_ICONS}/antigravity-ide.png" 2>/dev/null || true
+    fi
 
     if [ -f "$gen_py" ]; then
         python3 "$gen_py" \
@@ -1856,7 +1878,9 @@ configure_paths() {
         regen_ans="${regen_ans:-Y}"
         if [[ "$regen_ans" =~ ^[Yy]$ ]]; then
             setup_account_1
-            setup_account_2
+            if [ -d "$PROFILE2_DIR" ] || [ -f "${LOCAL_BIN}/antigravity-acc2" ]; then
+                setup_account_2
+            fi
             setup_ide_shortcuts
             log_success "Updated desktop launchers with new installation paths."
         fi

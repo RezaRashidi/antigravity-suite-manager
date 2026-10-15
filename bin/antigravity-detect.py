@@ -752,6 +752,8 @@ def configure_single_clone(clone):
         print("  [5] Relocate / Rename Profile Directory")
         if not is_acc1:
             print("  [6] Delete / Remove this Clone")
+        else:
+            print("  [6] Create Secondary Account Profile (Account 2)")
         print("  [0] Done with this clone (Return to Control Center)")
         print(f"{CYAN}----------------------------------------------------------------------------------------{NC}")
 
@@ -847,7 +849,12 @@ def configure_single_clone(clone):
                     subprocess.run(["bash", manage_sh, "app1"], check=False)
                 elif is_ide1:
                     subprocess.run(["bash", manage_sh, "ide-shortcuts"], check=False)
-                print(f"{GREEN}[SUCCESS] Regenerated desktop launcher and icons.{NC}")
+            dup_dt = os.path.join(local_apps, "antigravity.desktop")
+            if os.path.islink(dup_dt) or (os.path.isfile(dup_dt) and os.path.isfile(os.path.join(local_apps, "antigravity-1.desktop"))):
+                try: os.remove(dup_dt)
+                except Exception: pass
+            subprocess.run(["update-desktop-database", local_apps], check=False, stderr=subprocess.DEVNULL)
+            print(f"{GREEN}[SUCCESS] Regenerated desktop launcher and icons.{NC}")
         elif choice == "5":
             if is_acc1:
                 print(f"{YELLOW}[NOTICE] Account 1 profile (~/.gemini) cannot be relocated.{NC}")
@@ -865,21 +872,29 @@ def configure_single_clone(clone):
                         f.write(l_content)
                 clone['profile_dir'] = new_p
                 print(f"{GREEN}[SUCCESS] Profile directory moved to {new_p} and launcher updated.{NC}")
-        elif choice == "6" and not is_acc1:
-            c_confirm = input(f"Are you sure you want to delete clone '{clone['name']}'? [y/N]: ").strip().lower()
-            if c_confirm in ["y", "yes"]:
-                if os.path.isfile(launcher_f):
-                    try: os.remove(launcher_f)
-                    except Exception: pass
-                if os.path.isfile(clone['desktop']):
-                    try: os.remove(clone['desktop'])
-                    except Exception: pass
-                d_prof = input(f"Also delete profile directory '{p_dir}' and its settings? [y/N]: ").strip().lower()
-                if d_prof in ["y", "yes"]:
-                    shutil.rmtree(p_dir, ignore_errors=True)
-                subprocess.run(["update-desktop-database", local_apps], check=False, stderr=subprocess.DEVNULL)
-                print(f"{GREEN}[SUCCESS] Clone '{clone['name']}' removed.{NC}")
-                break
+        elif choice == "6":
+            if is_acc1:
+                c_ans = input("Create secondary isolated account profile (Account 2)? [y/N]: ").strip().lower()
+                if c_ans in ["y", "yes"]:
+                    if os.path.isfile(manage_sh):
+                        subprocess.run(["bash", manage_sh, "app2"], check=False)
+                        print(f"{GREEN}[SUCCESS] Account 2 created with isolated profile and launcher.{NC}")
+                        break
+            else:
+                c_confirm = input(f"Are you sure you want to delete clone '{clone['name']}'? [y/N]: ").strip().lower()
+                if c_confirm in ["y", "yes"]:
+                    if os.path.isfile(launcher_f):
+                        try: os.remove(launcher_f)
+                        except Exception: pass
+                    if os.path.isfile(clone['desktop']):
+                        try: os.remove(clone['desktop'])
+                        except Exception: pass
+                    d_prof = input(f"Also delete profile directory '{p_dir}' and its settings? [y/N]: ").strip().lower()
+                    if d_prof in ["y", "yes"]:
+                        shutil.rmtree(p_dir, ignore_errors=True)
+                    subprocess.run(["update-desktop-database", local_apps], check=False, stderr=subprocess.DEVNULL)
+                    print(f"{GREEN}[SUCCESS] Clone '{clone['name']}' removed.{NC}")
+                    break
 
 def get_unified_instances():
     engines = scan_installations()

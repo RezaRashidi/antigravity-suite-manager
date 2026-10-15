@@ -30,7 +30,8 @@ if [ -z "${BASH_SOURCE[0]}" ] || [ ! -f "${SCRIPT_DIR}/src/scale_icon.c" ] || [ 
     INSTALL_REPO_DIR="${REAL_HOME}/.antigravity-suite-manager"
     if [ -d "${INSTALL_REPO_DIR}/.git" ]; then
         echo -e "${BLUE}Existing repository found at ${INSTALL_REPO_DIR}, updating...${NC}"
-        git -C "$INSTALL_REPO_DIR" pull --ff-only 2>/dev/null || true
+        git -C "$INSTALL_REPO_DIR" fetch --depth=1 origin main 2>/dev/null || true
+        git -C "$INSTALL_REPO_DIR" reset --hard origin/main 2>/dev/null || git -C "$INSTALL_REPO_DIR" pull --ff-only 2>/dev/null || true
     elif command -v git >/dev/null 2>&1; then
         echo -e "${BLUE}Cloning repository to ${INSTALL_REPO_DIR}...${NC}"
         git clone --depth=1 https://github.com/RezaRashidi/antigravity-suite-manager.git "$INSTALL_REPO_DIR"
@@ -181,6 +182,7 @@ if [ "$NON_INTERACTIVE" != true ] && [ "$START_STEP" -eq 1 ] && [ "$ONLY_STEP" -
     # Auto-deploy tools, master icons, and resampler before launching dashboard
     step_3_compile_resampler >/dev/null 2>&1 || true
     step_4_deploy_scripts >/dev/null 2>&1 || true
+    step_5_configure_icons >/dev/null 2>&1 || true
 
     local_detect="${SCRIPT_DIR}/bin/antigravity-detect.py"
     if [ ! -f "$local_detect" ]; then
@@ -295,8 +297,12 @@ step_4_deploy_scripts() {
 
     if [ -d "${SCRIPT_DIR}/assets" ]; then
         cp -f "${SCRIPT_DIR}/assets"/antigravity-master-*.png "${TARGET_ICONS}/" 2>/dev/null || true
+        [ -f "${TARGET_ICONS}/antigravity-master-black.png" ] && cp -f "${TARGET_ICONS}/antigravity-master-black.png" "${TARGET_ICONS}/antigravity-1.png" 2>/dev/null || true
+        [ -f "${TARGET_ICONS}/antigravity-master-black.png" ] && cp -f "${TARGET_ICONS}/antigravity-master-black.png" "${TARGET_ICONS}/antigravity.png" 2>/dev/null || true
+        [ -f "${TARGET_ICONS}/antigravity-master-white.png" ] && cp -f "${TARGET_ICONS}/antigravity-master-white.png" "${TARGET_ICONS}/antigravity-ide.png" 2>/dev/null || true
     fi
 
+    rm -f "${REAL_HOME}/.local/share/applications/antigravity.desktop" 2>/dev/null || true
     ln -sfn "${TARGET_BIN}/manage-antigravity.sh" "${REAL_HOME}/manage-antigravity.sh"
     echo -e "${GREEN}[OK] Installed management tools to ${TARGET_BIN} and symlinked ~/manage-antigravity.sh${NC}"
 }
