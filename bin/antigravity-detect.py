@@ -281,7 +281,7 @@ def update_launcher_binary(launcher_path, new_binary):
     except Exception:
         return False
 
-def scan_clones():
+def scan_clones(curr_app="", curr_ide=""):
     clones = []
     local_bin = os.path.join(REAL_HOME, '.local', 'bin')
     local_apps = os.path.join(REAL_HOME, '.local', 'share', 'applications')
@@ -289,21 +289,24 @@ def scan_clones():
     # 1. Primary App (Account 1 - Default)
     acc1_profile = os.path.join(REAL_HOME, '.gemini')
     acc1_launcher = os.path.join(local_bin, 'antigravity-1')
+    acc1_desktop = os.path.join(local_apps, 'antigravity-1.desktop')
     acc1_running = subprocess.run(['pgrep', '-f', 'user-data-dir=.*Antigravity$'], capture_output=True).returncode == 0
     acc1_cache = os.path.join(acc1_profile, 'cache', 'antigravity-keyring-unavailable')
-    clones.append({
-        'id': 'app1',
-        'name': 'Antigravity (Account 1 - Default)',
-        'type': 'App',
-        'role': 'Primary Account',
-        'profile_dir': acc1_profile,
-        'launcher': acc1_launcher if os.path.isfile(acc1_launcher) else 'Default binary',
-        'desktop': os.path.join(local_apps, 'antigravity-1.desktop'),
-        'wm_class': 'antigravity-1',
-        'history_mode': 'Master Shared Pool',
-        'keyring_mode': 'Normal (File Storage)' if os.path.isfile(acc1_cache) else 'GNOME Keyring',
-        'status': 'Running' if acc1_running else 'Stopped'
-    })
+    # Only register app1 if launcher exists, desktop exists, or the engine directory actually exists
+    if os.path.isfile(acc1_launcher) or os.path.isfile(acc1_desktop) or (curr_app and os.path.isdir(curr_app)):
+        clones.append({
+            'id': 'app1',
+            'name': 'Antigravity (Account 1 - Default)',
+            'type': 'App',
+            'role': 'Primary Account',
+            'profile_dir': acc1_profile,
+            'launcher': acc1_launcher if os.path.isfile(acc1_launcher) else (curr_app if os.path.isdir(curr_app) else 'Default binary'),
+            'desktop': acc1_desktop,
+            'wm_class': 'antigravity-1',
+            'history_mode': 'Master Shared Pool',
+            'keyring_mode': 'Normal (File Storage)' if os.path.isfile(acc1_cache) else 'GNOME Keyring',
+            'status': 'Running' if acc1_running else 'Stopped'
+        })
 
     # 2. Account 2 (Cloned)
     acc2_profile = os.path.join(REAL_HOME, '.antigravity-profile2')
@@ -350,22 +353,25 @@ def scan_clones():
     # 4. Primary IDE
     ide_profile = os.path.join(REAL_HOME, '.gemini', 'antigravity-ide')
     ide_launcher = os.path.join(local_bin, 'antigravity-ide')
+    ide_desktop = os.path.join(local_apps, 'antigravity-ide.desktop')
     ide_running = subprocess.run(['pgrep', '-f', 'antigravity-ide'], capture_output=True).returncode == 0
     ide_shared = os.path.islink(os.path.join(ide_profile, 'conversations'))
     ide_cache = os.path.join(REAL_HOME, '.gemini', 'cache', 'antigravity-keyring-unavailable')
-    clones.append({
-        'id': 'ide1',
-        'name': 'Antigravity IDE (Primary)',
-        'type': 'IDE',
-        'role': 'Primary IDE',
-        'profile_dir': ide_profile,
-        'launcher': ide_launcher if os.path.isfile(ide_launcher) else 'Default binary',
-        'desktop': os.path.join(local_apps, 'antigravity-ide.desktop'),
-        'wm_class': 'antigravity-ide',
-        'history_mode': 'Shared 3-Way Sync' if ide_shared else 'Isolated Private',
-        'keyring_mode': 'Normal (File Storage)' if os.path.isfile(ide_cache) else 'GNOME Keyring',
-        'status': 'Running' if ide_running else 'Stopped'
-    })
+    # Only register ide1 if launcher exists, desktop exists, or the engine directory actually exists
+    if os.path.isfile(ide_launcher) or os.path.isfile(ide_desktop) or (curr_ide and os.path.isdir(curr_ide)):
+        clones.append({
+            'id': 'ide1',
+            'name': 'Antigravity IDE (Primary)',
+            'type': 'IDE',
+            'role': 'Primary IDE',
+            'profile_dir': ide_profile,
+            'launcher': ide_launcher if os.path.isfile(ide_launcher) else (curr_ide if os.path.isdir(curr_ide) else 'Default binary'),
+            'desktop': ide_desktop,
+            'wm_class': 'antigravity-ide',
+            'history_mode': 'Shared 3-Way Sync' if ide_shared else 'Isolated Private',
+            'keyring_mode': 'Normal (File Storage)' if os.path.isfile(ide_cache) else 'GNOME Keyring',
+            'status': 'Running' if ide_running else 'Stopped'
+        })
 
     # 5. Custom IDE Clones (~/.antigravity-ide-profile-*)
     for p in sorted(glob.glob(os.path.join(REAL_HOME, '.antigravity-ide-profile-*'))):
@@ -392,8 +398,8 @@ def scan_clones():
     return clones
 
 def load_paths_config(detected_app="", detected_ide=""):
-    app_dir = detected_app if detected_app else "/opt/antigravity2"
-    ide_dir = detected_ide if detected_ide else "/opt/antigravity"
+    app_dir = ""
+    ide_dir = ""
     custom_paths = []
     if os.path.isfile(PATHS_CONF):
         try:
@@ -413,7 +419,35 @@ def load_paths_config(detected_app="", detected_ide=""):
                         custom_paths = [p.strip() for p in v.split(":") if p.strip()]
         except Exception:
             pass
-    return app_dir, ide_dir, custom_paths
+
+    # If configured path doesn't exist on disk, or wasn't set, auto-discover from installed engines
+    if (not app_dir or not os.path.isdir(app_dir)) or (not ide_dir or not os.path.isdir(ide_dir)):
+        if not detected_app or not detected_ide:
+            for inst in scan_installations():
+                if ('App' in inst['type'] or 'Manager' in inst['type']) and not detected_app:
+                    detected_app = inst['path']
+                elif 'IDE' in inst['type'] and not detected_ide:
+                    detected_ide = inst['path']
+
+    if app_dir and os.path.isdir(app_dir):
+        final_app = app_dir
+    elif detected_app and os.path.isdir(detected_app):
+        final_app = detected_app
+    elif app_dir:
+        final_app = app_dir
+    else:
+        final_app = "/opt/antigravity2"
+
+    if ide_dir and os.path.isdir(ide_dir):
+        final_ide = ide_dir
+    elif detected_ide and os.path.isdir(detected_ide):
+        final_ide = detected_ide
+    elif ide_dir:
+        final_ide = ide_dir
+    else:
+        final_ide = "/opt/antigravity"
+
+    return final_app, final_ide, custom_paths
 
 def save_paths_config(app_dir, ide_dir, custom_paths=None):
     os.makedirs(CONF_DIR, exist_ok=True)
@@ -848,16 +882,30 @@ def configure_single_clone(clone):
                 break
 
 def get_unified_instances():
-    curr_app, curr_ide, custom_paths = load_paths_config()
     engines = scan_installations()
-    clones = scan_clones()
+    engines_by_path = {os.path.realpath(eng['path']): eng for eng in engines}
+
+    first_app = ""
+    first_ide = ""
+    for eng in engines:
+        if ('App' in eng['type'] or 'Manager' in eng['type']) and not first_app:
+            first_app = eng['path']
+        elif 'IDE' in eng['type'] and not first_ide:
+            first_ide = eng['path']
+
+    curr_app, curr_ide, custom_paths = load_paths_config(first_app, first_ide)
+    if (not curr_app or not os.path.isdir(curr_app)) and first_app:
+        curr_app = first_app
+    if (not curr_ide or not os.path.isdir(curr_ide)) and first_ide:
+        curr_ide = first_ide
+
+    clones = scan_clones(curr_app, curr_ide)
 
     unified = []
-    engines_by_path = {os.path.realpath(eng['path']): eng for eng in engines}
 
     for c in clones:
         launcher_f = c['launcher']
-        linked_bin = get_launcher_binary(launcher_f) if os.path.isfile(launcher_f) else ""
+        linked_bin = get_launcher_binary(launcher_f) if (launcher_f and os.path.isfile(launcher_f)) else ""
         eng = None
         if linked_bin and os.path.isfile(linked_bin):
             eng_dir = os.path.realpath(os.path.dirname(linked_bin))
@@ -882,6 +930,10 @@ def get_unified_instances():
         eng_path = eng['path'] if eng else (curr_ide if 'IDE' in c['type'] else curr_app)
         eng_ver = eng['version'] if eng else "Unknown"
 
+        # Exclude phantom clones where engine does not exist on disk AND launcher does not exist
+        if not eng and not os.path.isfile(launcher_f) and not os.path.isdir(eng_path):
+            continue
+
         unified.append({
             'kind': 'instance',
             'clone': c,
@@ -896,7 +948,7 @@ def get_unified_instances():
             'status': c['status']
         })
 
-    used_engine_paths = {os.path.realpath(u['engine_path']) for u in unified if u.get('engine_path')}
+    used_engine_paths = {os.path.realpath(u['engine_path']) for u in unified if u.get('engine_path') and os.path.isdir(u.get('engine_path'))}
     for eng in engines:
         real_ep = os.path.realpath(eng['path'])
         if real_ep not in used_engine_paths:
@@ -1399,7 +1451,6 @@ if __name__ == '__main__':
         app_ver = ""
         ide_path = ""
         ide_ver = ""
-        conf_app, conf_ide, custom_paths = load_paths_config()
         for i in installs:
             if not app_path and ('App' in i['type'] or 'Manager' in i['type']):
                 app_path = i['path']
@@ -1407,8 +1458,9 @@ if __name__ == '__main__':
             elif not ide_path and 'IDE' in i['type']:
                 ide_path = i['path']
                 ide_ver = i['version']
-        final_app = conf_app if conf_app else (app_path or "/opt/antigravity2")
-        final_ide = conf_ide if conf_ide else (ide_path or "/opt/antigravity")
+        conf_app, conf_ide, custom_paths = load_paths_config(app_path, ide_path)
+        final_app = conf_app if (conf_app and os.path.isdir(conf_app)) else (app_path or "/opt/antigravity2")
+        final_ide = conf_ide if (conf_ide and os.path.isdir(conf_ide)) else (ide_path or "/opt/antigravity")
         print(f'ANTIGRAVITY_DETECTED_APP="{final_app}"')
         print(f'ANTIGRAVITY_DETECTED_APP_VER="{app_ver}"')
         print(f'ANTIGRAVITY_DETECTED_IDE="{final_ide}"')
