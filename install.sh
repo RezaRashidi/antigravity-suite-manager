@@ -178,6 +178,10 @@ fi
 
 # Interactive mode: Launch Control Center Dashboard if no flags were given
 if [ "$NON_INTERACTIVE" != true ] && [ "$START_STEP" -eq 1 ] && [ "$ONLY_STEP" -eq 0 ] && [ "$STEP_BY_STEP" != true ]; then
+    # Auto-deploy tools, master icons, and resampler before launching dashboard
+    step_3_compile_resampler >/dev/null 2>&1 || true
+    step_4_deploy_scripts >/dev/null 2>&1 || true
+
     local_detect="${SCRIPT_DIR}/bin/antigravity-detect.py"
     if [ ! -f "$local_detect" ]; then
         local_detect="${TARGET_BIN}/antigravity-detect.py"

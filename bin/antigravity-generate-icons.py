@@ -78,23 +78,69 @@ if args.save_config:
         f.write(f'IDE_ICON_THEME="{ide_theme}"\n')
     print(f"[INFO] Configuration saved to {CONFIG_FILE}")
 
+# Auto-compile scale_icon if not present
+if not os.path.isfile(SCALE_BIN) or not os.access(SCALE_BIN, os.X_OK):
+    src_candidates = [
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "scale_icon.c"),
+        os.path.join(REAL_HOME, ".antigravity-suite-manager", "src", "scale_icon.c"),
+    ]
+    for sc in src_candidates:
+        if os.path.isfile(sc) and shutil.which("gcc"):
+            os.makedirs(os.path.dirname(SCALE_BIN), exist_ok=True)
+            subprocess.run(["gcc", "-O3", sc, "-lm", "-o", SCALE_BIN], check=False)
+            if os.path.isfile(SCALE_BIN):
+                try: os.chmod(SCALE_BIN, 0o755)
+                except Exception: pass
+                break
+
 # Master source candidates
-MASTER_BLACK = os.path.join(LOCAL_ICONS, "antigravity-master-black.png")
-if not os.path.isfile(MASTER_BLACK):
-    for c in ["/usr/share/icons/antigravity.png", "/opt/antigravity/resources/app/resources/linux/code.png"]:
-        if os.path.isfile(c):
-            MASTER_BLACK = c
-            break
+black_candidates = [
+    os.path.join(LOCAL_ICONS, "antigravity-master-black.png"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "antigravity-master-black.png"),
+    os.path.join(REAL_HOME, ".antigravity-suite-manager", "assets", "antigravity-master-black.png"),
+    "/usr/share/icons/antigravity.png",
+    "/opt/Antigravity-x64/resources/app/resources/linux/code.png",
+    "/opt/antigravity/resources/app/resources/linux/code.png",
+    "/opt/antigravity2/resources/app/resources/linux/code.png",
+]
+MASTER_BLACK = None
+for c in black_candidates:
+    if os.path.isfile(c):
+        MASTER_BLACK = c
+        break
 
-MASTER_WHITE = os.path.join(LOCAL_ICONS, "antigravity-master-white.png")
-if not os.path.isfile(MASTER_WHITE):
-    MASTER_WHITE = os.path.join(LOCAL_ICONS, "antigravity-ide-master.png")
+if MASTER_BLACK and MASTER_BLACK != os.path.join(LOCAL_ICONS, "antigravity-master-black.png"):
+    try:
+        os.makedirs(LOCAL_ICONS, exist_ok=True)
+        shutil.copy2(MASTER_BLACK, os.path.join(LOCAL_ICONS, "antigravity-master-black.png"))
+    except Exception:
+        pass
 
-if not os.path.isfile(MASTER_BLACK):
+white_candidates = [
+    os.path.join(LOCAL_ICONS, "antigravity-master-white.png"),
+    os.path.join(LOCAL_ICONS, "antigravity-ide-master.png"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "antigravity-master-white.png"),
+    os.path.join(REAL_HOME, ".antigravity-suite-manager", "assets", "antigravity-master-white.png"),
+    "/opt/antigravity-ide/resources/app/resources/linux/code.png",
+]
+MASTER_WHITE = None
+for c in white_candidates:
+    if os.path.isfile(c):
+        MASTER_WHITE = c
+        break
+
+if MASTER_WHITE and MASTER_WHITE != os.path.join(LOCAL_ICONS, "antigravity-master-white.png"):
+    try:
+        os.makedirs(LOCAL_ICONS, exist_ok=True)
+        shutil.copy2(MASTER_WHITE, os.path.join(LOCAL_ICONS, "antigravity-master-white.png"))
+    except Exception:
+        pass
+
+if not MASTER_BLACK:
     print("[ERROR] Master black icon not found.")
     sys.exit(1)
 
-if not os.path.isfile(MASTER_WHITE):
+if not MASTER_WHITE:
     print("[WARN] Master white icon not found. Falling back to black master.")
     MASTER_WHITE = MASTER_BLACK
 
@@ -271,16 +317,26 @@ for name, (raw_path, data) in raw_map.items():
     with open(raw_path, "wb") as f:
         f.write(data)
 
+has_scaler = os.path.isfile(SCALE_BIN) and os.access(SCALE_BIN, os.X_OK)
+
 for sz in sizes:
     theme_dir = os.path.join(LOCAL_ICONS, "hicolor", f"{sz}x{sz}", "apps")
     os.makedirs(theme_dir, exist_ok=True)
     
-    for name, (in_raw, _) in raw_map.items():
-        out_raw = f"/tmp/scaled_{sz}_{name}.raw"
-        subprocess.run([SCALE_BIN, in_raw, "1024", "1024", out_raw, str(sz), str(sz)], check=True)
-        with open(out_raw, "rb") as rf:
-            s_data = rf.read()
-        write_png(sz, sz, s_data, os.path.join(theme_dir, name))
+    for name, (in_raw, rgba_data) in raw_map.items():
+        dst_png = os.path.join(theme_dir, name)
+        if has_scaler:
+            out_raw = f"/tmp/scaled_{sz}_{name}.raw"
+            try:
+                subprocess.run([SCALE_BIN, in_raw, "1024", "1024", out_raw, str(sz), str(sz)], check=True)
+                if os.path.isfile(out_raw):
+                    with open(out_raw, "rb") as rf:
+                        s_data = rf.read()
+                    write_png(sz, sz, s_data, dst_png)
+                    continue
+            except Exception:
+                pass
+        write_png(1024, 1024, rgba_data, dst_png)
 
 print("[SUCCESS] Multi-resolution hicolor themes (16 to 512) generated.")
 

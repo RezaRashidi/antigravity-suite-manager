@@ -512,7 +512,12 @@ fix_permissions() {
             log_warn "${target_dir}/resources requires user write access."
             sudo chown -R "$REAL_USER:$REAL_USER" "$target_dir"
             sudo chmod -R u+rwX "$target_dir"
-            if [ -f "$target_dir/chrome-sandbox" ]; then
+        fi
+        if [ -f "$target_dir/chrome-sandbox" ]; then
+            local sb_stat
+            sb_stat=$(stat -c "%u:%a" "$target_dir/chrome-sandbox" 2>/dev/null || true)
+            if [ "$sb_stat" != "0:4755" ]; then
+                log_info "Configuring SUID root permissions (4755) for ${target_dir}/chrome-sandbox..."
                 sudo chown root:root "$target_dir/chrome-sandbox" 2>/dev/null || true
                 sudo chmod 4755 "$target_dir/chrome-sandbox" 2>/dev/null || true
             fi
@@ -713,7 +718,21 @@ cd "\${REAL_HOME}" || cd /tmp
 python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
 python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
 disown
-exec "${APP_INSTALL_DIR}/antigravity" ${pass_store_flag}--class="antigravity-1" --name="antigravity-1" "\$@"
+
+# SUID sandbox verification guard: prevent fatal crash if chrome-sandbox lacks 4755 root permissions
+SANDBOX_FLAG=""
+if [ -f "${APP_INSTALL_DIR}/chrome-sandbox" ]; then
+    sb_stat=\$(stat -c "%u:%a" "${APP_INSTALL_DIR}/chrome-sandbox" 2>/dev/null || true)
+    if [ "\$sb_stat" != "0:4755" ]; then
+        if sudo -n chown root:root "${APP_INSTALL_DIR}/chrome-sandbox" 2>/dev/null && sudo -n chmod 4755 "${APP_INSTALL_DIR}/chrome-sandbox" 2>/dev/null; then
+            :
+        else
+            SANDBOX_FLAG="--no-sandbox "
+        fi
+    fi
+fi
+
+exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}${pass_store_flag}--class="antigravity-1" --name="antigravity-1" "\$@"
 EOF
     chmod +x "${LOCAL_BIN}/antigravity-1"
     ln -sfn "${LOCAL_BIN}/antigravity-1" "${LOCAL_BIN}/antigravity"
@@ -814,8 +833,21 @@ python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
 python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
 disown
 
+# SUID sandbox verification guard: prevent fatal crash if chrome-sandbox lacks 4755 root permissions
+SANDBOX_FLAG=""
+if [ -f "${APP_INSTALL_DIR}/chrome-sandbox" ]; then
+    sb_stat=\$(stat -c "%u:%a" "${APP_INSTALL_DIR}/chrome-sandbox" 2>/dev/null || true)
+    if [ "\$sb_stat" != "0:4755" ]; then
+        if sudo -n chown root:root "${APP_INSTALL_DIR}/chrome-sandbox" 2>/dev/null && sudo -n chmod 4755 "${APP_INSTALL_DIR}/chrome-sandbox" 2>/dev/null; then
+            :
+        else
+            SANDBOX_FLAG="--no-sandbox "
+        fi
+    fi
+fi
+
 # 4. Launch isolated Account 2 instance
-exec "${APP_INSTALL_DIR}/antigravity" ${pass_store_flag}--class="antigravity-2" --name="antigravity-2" "\$@"
+exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}${pass_store_flag}--class="antigravity-2" --name="antigravity-2" "\$@"
 EOF
     chmod +x "${LOCAL_BIN}/antigravity-acc2"
 
@@ -866,7 +898,21 @@ export SSH_AUTH_SOCK=""
 python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
 python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
 disown
-exec "${IDE_INSTALL_DIR}/antigravity-ide" ${ide_pass_store}--class="antigravity-ide" --name="antigravity-ide" "\$@"
+
+# SUID sandbox verification guard: prevent fatal crash if chrome-sandbox lacks 4755 root permissions
+SANDBOX_FLAG=""
+if [ -f "${IDE_INSTALL_DIR}/chrome-sandbox" ]; then
+    sb_stat=\$(stat -c "%u:%a" "${IDE_INSTALL_DIR}/chrome-sandbox" 2>/dev/null || true)
+    if [ "\$sb_stat" != "0:4755" ]; then
+        if sudo -n chown root:root "${IDE_INSTALL_DIR}/chrome-sandbox" 2>/dev/null && sudo -n chmod 4755 "${IDE_INSTALL_DIR}/chrome-sandbox" 2>/dev/null; then
+            :
+        else
+            SANDBOX_FLAG="--no-sandbox "
+        fi
+    fi
+fi
+
+exec "${IDE_INSTALL_DIR}/antigravity-ide" \${SANDBOX_FLAG}${ide_pass_store}--class="antigravity-ide" --name="antigravity-ide" "\$@"
 EOF
     chmod +x "${LOCAL_BIN}/antigravity-ide"
 
