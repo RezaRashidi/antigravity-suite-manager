@@ -1,26 +1,133 @@
 # Antigravity Suite Manager
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![OS: Ubuntu 24.04 LTS Only](https://img.shields.io/badge/OS-Ubuntu%2024.04%20LTS%20Only-E95420.svg?logo=ubuntu)](#platform-compatibility--requirements)
-[![Tested On](https://img.shields.io/badge/Tested%20On-Ubuntu%2024.04-blue.svg)](#platform-compatibility--requirements)
+[![OS: Linux](https://img.shields.io/badge/OS-Debian%20%7C%20Ubuntu%20%7C%20Linux-E95420.svg?logo=linux)](#platform-compatibility--requirements)
+[![Tested On](https://img.shields.io/badge/Tested%20On-Ubuntu%2024.04%20LTS-blue.svg)](#platform-compatibility--requirements)
 [![3-Way Instances](https://img.shields.io/badge/3--Way%20Instances-Shared%20Chats-success.svg)](#shared-chat-history--profile-isolation)
+[![Desktop Standard](https://img.shields.io/badge/Desktop-.desktop%20Compliant-brightgreen.svg)](#taskbar-de-grouping--window-management)
 [![Language](https://img.shields.io/badge/Language-Bash%20%7C%20Python%20%7C%20C-brightgreen.svg)](#architecture--profile-isolation)
 
 A comprehensive Linux automation suite for **Google Antigravity** and **Antigravity IDE**.
 
-Provides seamless multi-instance profile isolation (Account 1, Account 2, & Antigravity IDE), taskbar de-grouping, high-resolution theme customization, dynamic release discovery, persistent archive caching, automated RTL (Right-to-Left) typography support, and manual F5 reload patching.
+Runs on any Debian-based Linux distribution (Ubuntu, Debian, Pop!_OS, Linux Mint, etc.) and any desktop environment that supports standard `.desktop` application launchers (GNOME, KDE Plasma, XFCE, Cinnamon, MATE, etc.).
 
-> [!IMPORTANT]
-> **Platform Restriction**: This suite is built **exclusively for Ubuntu Linux** and has been **strictly tested on Ubuntu 24.04 LTS (Noble Numbat)**. Other distributions are not supported.
+Provides seamless multi-instance profile isolation (Account 1, Account 2, & Antigravity IDE), taskbar de-grouping, high-resolution theme customization, dynamic release discovery, persistent archive caching, automated RTL (Right-to-Left) typography support, and manual F5 reload patching.
 
 > [!NOTE]
 > **Shared Chat History Across All 3 Instances**: While Account 1 (App), Account 2 (App), and Antigravity IDE use completely isolated authentication keyrings, cookies, and secret stores (allowing three distinct Google accounts to run concurrently without session conflicts), **all chat history, previous conversations, database logs, and workspace sessions are shared 3-way across all instances**. Any conversation created in App 1 or App 2 is immediately accessible in Antigravity IDE, and vice versa.
 
 ---
 
+## ⚡ Quick Start
+
+### One-Line Automated Install (Recommended)
+
+Run the automated installer directly via `curl`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/RezaRashidi/antigravity-suite-manager/main/install.sh | bash
+```
+
+Or run fully non-interactive with default settings:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/RezaRashidi/antigravity-suite-manager/main/install.sh | bash -s -- -y
+```
+
+> [!TIP]
+> The one-line installer automatically bootstraps the suite repository to `~/.antigravity-suite-manager`, compiles the C icon resampler, deploys tools to `~/.local/bin`, and creates the `~/manage-antigravity.sh` shortcut.
+
+---
+
+### Manual Installation (Clone & Build)
+
+```bash
+git clone https://github.com/RezaRashidi/antigravity-suite-manager.git
+cd antigravity-suite-manager
+./install.sh
+```
+
+Launch the interactive Control Center dashboard anytime:
+
+```bash
+~/manage-antigravity.sh center
+# Or:
+./install.sh
+```
+
+#### Step Execution Options & Step Aliases:
+```bash
+# Execute ONLY a single step by number or descriptive name:
+./install.sh --only-step paths      # Or: -o 2
+./install.sh --only-step icons      # Or: -o 5
+./install.sh --only-step keyring    # Or: -o 6
+
+# Start execution from a specific step and proceed sequentially:
+./install.sh --step paths           # Or: -s 2
+
+# Guided step-by-step confirmation mode (prompts after each step):
+./install.sh --wizard               # Or: -w
+
+# Specify custom installation paths directly on the command line:
+./install.sh --app-dir "/opt/my-antigravity" --ide-dir "/opt/my-ide"
+
+# Non-interactive automated install with defaults:
+./install.sh -y
+```
+
+#### Wizard Steps Overview:
+1. **Check Dependencies & Prerequisites** (`prereqs`, `dep`): Validates system and core build tools (`python3`, `gcc`, `tar`, `curl`).
+2. **Configure Installation Paths & Engines** (`paths`, `engines`, `detect`): Scans for installed Antigravity instances, lets you select from detected installations or specify custom directories for App and IDE.
+3. **Compile Catmull-Rom Bicubic Resampler** (`resampler`, `scale`): Builds `scale_icon` from pure C with Catmull-Rom filtering and alpha premultiplication.
+4. **Deploy Management Tools & Master Icons** (`deploy`, `tools`, `bin`): Installs suite binaries to `~/.local/bin/` and symlinks `~/manage-antigravity.sh`.
+5. **Configure Visual Icon Themes & Recolor** (`icons`, `themes`, `recolor`): Sets up Black/White themes, Account 2 glow recolor, and initializes icon cache.
+6. **Configure Credential Storage Mode** (`keyring`, `creds`): Sets up Normal local file storage (recommended, bypassing GNOME Keyring) or GNOME Keyring.
+7. **Download & Install Google Antigravity Binaries** (`install`, `download`, `binary`): Automatically fetches latest releases and installs them into your configured directories.
+8. **Setup Multi-Account Launchers & 3-Way Chat Sync** (`sync`, `launchers`, `chat`): Deploys `antigravity-1`, `antigravity-acc2`, `antigravity-ide`, verifies 3-way history sync, and outputs the status report.
+
+Or build and install using GNU Make:
+
+```bash
+make
+make install
+```
+
+---
+
+## Table of Contents
+
+- [Quick Start](#-quick-start)
+- [Key Features](#-key-features-at-a-glance)
+- [Overview](#overview)
+- [Usage & Commands](#usage--commands)
+  - [System Detection & Scanner](#system-detection--scanner)
+  - [Installation Paths & Target Switching](#installation-paths--target-switching)
+  - [Step-by-Step Setup Wizard](#step-by-step-setup-wizard)
+  - [Automated Antigravity Installation](#automated-antigravity-installation)
+  - [Status Inspection](#status-inspection)
+  - [Multi-Instance Creation & Management](#multi-instance-creation--management)
+  - [Keyring & Credential Storage Switching](#keyring--credential-storage-switching)
+  - [Conversation History Merging & Sync](#conversation-history-merging--sync)
+  - [Smart Updates & Caching](#smart-updates--caching)
+  - [Customizing Icon Themes & Recolor](#customizing-icon-themes--recolor)
+  - [Component-Level Commands](#component-level-commands)
+- [Configuration](#configuration)
+- [Taskbar De-Grouping & Window Management](#taskbar-de-grouping--window-management)
+- [Patches Included](#patches-included)
+  - [Persian / Arabic RTL Support](#persian--arabic-rtl-support)
+  - [Manual F5 Reload Patch](#manual-f5-reload-patch)
+- [Architecture & Profile Isolation](#architecture--profile-isolation)
+- [Shared Chat History & Profile Isolation](#shared-chat-history--profile-isolation)
+- [Platform Compatibility & Requirements](#platform-compatibility--requirements)
+- [Project Structure](#project-structure)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
 ## 🚀 Key Features at a Glance
 
-Antigravity Suite Manager is engineered to make Google Antigravity and Antigravity IDE feel like first-class, production-ready desktop citizens on Ubuntu 24.04 LTS:
+Antigravity Suite Manager is engineered to make Google Antigravity and Antigravity IDE feel like first-class, production-ready desktop citizens on Linux:
 
 ### 1. 🛡️ True Multi-Account Isolation (No Session Logouts)
 - **Concurrent Independent Execution**: Run personal, work, and client Google accounts simultaneously side-by-side without Electron single-instance locks or account eviction.
@@ -55,7 +162,7 @@ Antigravity Suite Manager is engineered to make Google Antigravity and Antigravi
 - **No More Jarring Auto-Reloads**: Prevents intrusive background auto-restarts from breaking your active AI workflow.
 - **Native Keyboard Hook**: Hooks `F5` to trigger a clean webview reload on demand.
 
-### 8. 🐧 Tailored Exclusively for Ubuntu 24.04 LTS (Noble Numbat)
+### 8. 🐧 Standard XDG Desktop Integration
 - **Native Desktop Integration**: Fully compliant with XDG Desktop standards (`~/.local/share/applications`, `~/.local/bin`, MIME scheme handlers).
 - **Rock-Solid Scheme Routing**: Binds `antigravity://` and `antigravity-ide://` protocols to their respective targets to ensure OAuth and deep links never route to the wrong app.
 
@@ -75,37 +182,6 @@ Antigravity Suite Manager is engineered to make Google Antigravity and Antigravi
 
 ---
 
-## Table of Contents
-
-- [Key Features](#-key-features-at-a-glance)
-- [Overview](#overview)
-- [Platform Compatibility & Requirements](#platform-compatibility--requirements)
-- [Architecture & Profile Isolation](#architecture--profile-isolation)
-- [Shared Chat History & Profile Isolation](#shared-chat-history--profile-isolation)
-- [Quick Start](#quick-start)
-- [Usage & Commands](#usage--commands)
-  - [System Detection & Scanner](#system-detection--scanner)
-  - [Installation Paths & Target Switching](#installation-paths--target-switching)
-  - [Step-by-Step Setup Wizard](#step-by-step-setup-wizard)
-  - [Automated Antigravity Installation](#automated-antigravity-installation)
-  - [Status Inspection](#status-inspection)
-  - [Multi-Instance Creation & Management](#multi-instance-creation--management)
-  - [Keyring & Credential Storage Switching](#keyring--credential-storage-switching)
-  - [Conversation History Merging & Sync](#conversation-history-merging--sync)
-  - [Smart Updates & Caching](#smart-updates--caching)
-  - [Customizing Icon Themes & Recolor](#customizing-icon-themes--recolor)
-  - [Component-Level Commands](#component-level-commands)
-- [Configuration](#configuration)
-- [Taskbar De-Grouping & Window Management](#taskbar-de-grouping--window-management)
-- [Patches Included](#patches-included)
-  - [Persian / Arabic RTL Support](#persian--arabic-rtl-support)
-  - [Manual F5 Reload Patch](#manual-f5-reload-patch)
-- [Project Structure](#project-structure)
-- [Contributing](#contributing)
-- [License](#license)
-
----
-
 ## Overview
 
 Running Google Antigravity on Linux in production workflows often encounters three major hurdles:
@@ -115,180 +191,6 @@ Running Google Antigravity on Linux in production workflows often encounters thr
 3. **Typography & Auto-Reload Issues**: Lack of native RTL support for Persian/Arabic text and background auto-reload events interrupting active chat sessions.
 
 **Antigravity Suite Manager** resolves these issues natively without container overhead.
-
----
-
-## Architecture & Profile Isolation
-
-```mermaid
-graph TD
-    subgraph "Desktop & Taskbar (GNOME / KDE / X11)"
-        T1["Antigravity 1<br/>(WM_CLASS: antigravity-1)<br/>Black/White Icon"]
-        T2["Antigravity 2<br/>(WM_CLASS: antigravity-2)<br/>Violet / Custom Icon"]
-        TIDE["Antigravity IDE<br/>(WM_CLASS: antigravity-ide)<br/>White / Black Icon"]
-    end
-
-    subgraph "Launchers & Runtime Watcher"
-        L1["~/.local/bin/antigravity-1"]
-        L2["~/.local/bin/antigravity-acc2<br/>(--restart support)"]
-        LIDE["~/.local/bin/antigravity-ide"]
-        WATCH["antigravity-apply-icon.py<br/>(Runtime X11 Window Injector)"]
-    end
-
-    subgraph "User Storage & State"
-        P1["Default Profile (~/.config/Antigravity)"]
-        P2["Profile 2 (~/.antigravity-profile2)"]
-        SHARED["Shared Data (~/.gemini)<br/>• Conversations Database<br/>• History & Shared Settings"]
-    end
-
-    T1 --> L1 --> P1
-    T2 --> L2 --> P2
-    TIDE --> LIDE
-    P1 --> SHARED
-    P2 --> SHARED
-    WATCH -.->|Inject _NET_WM_ICON & WM_CLASS| T1
-    WATCH -.->|Inject _NET_WM_ICON & WM_CLASS| T2
-    WATCH -.->|Inject _NET_WM_ICON & WM_CLASS| TIDE
-```
-
----
-
-## Platform Compatibility & Requirements
-
-> [!CAUTION]
-> **Strict Platform Target**: This suite is built **exclusively for Ubuntu Linux** and is **only tested and verified on Ubuntu 24.04 LTS (Noble Numbat)** with X11 / GNOME Shell. Running on other distributions (Debian, Fedora, Arch) or pure Wayland without XWayland is untested and not supported.
-
-- **Supported OS**: **Ubuntu Linux 24.04 LTS** (Noble Numbat)
-- **Desktop Environment**: GNOME Shell / Dash to Panel / Ubuntu Desktop
-- **Display Server**: X11 (Required for live `_NET_WM_ICON` injection and `WM_CLASS` runtime de-grouping)
-- **Architecture**: `x86_64` (amd64)
-- **Dependencies**:
-  - `bash` (4.0+)
-  - `python3`
-  - `gcc` & `make` (to compile the C Catmull-Rom bicubic scaler)
-  - `curl` or `wget`
-  - `tar` & `gzip`
-  - `x11-utils` (`xprop`, `xwininfo`)
-
----
-
-## Shared Chat History & Profile Isolation
-
-The suite solves the primary dilemma of multi-account AI pairing: **independent authentication without losing conversation context**.
-
-### Why 3 Accounts Never Conflict:
-1. **App 1 (Default Profile)**:
-   - Electron stores cookies and OAuth refresh tokens in `~/.config/Antigravity`.
-   - Credentials are encrypted via the host system's GNOME Keyring schema (`antigravity`).
-2. **App 2 (Secondary Profile)**:
-   - Runs with an isolated environment `HOME=~/.antigravity-profile2`.
-   - Keyring fallback is triggered by `~/.antigravity-profile2/.gemini/cache/antigravity-keyring-unavailable`.
-   - All session state and tokens are strictly stored inside `~/.antigravity-profile2/.config/Antigravity`.
-3. **Antigravity IDE (VS Code Edition)**:
-   - A distinct VS Code / Code OSS fork with configuration root at `~/.config/Antigravity IDE`.
-   - Credentials and tokens are managed exclusively by VS Code's SecretStorage service (`Antigravity IDE`).
-   - Completely independent from Electron App 1 & App 2 authentication storage.
-
-### 3-Way Unified History Architecture:
-While authentication tokens and keyring secrets are strictly siloed, all 3 applications share the same underlying conversation databases and brain artifacts:
-- **Conversations Storage**:
-  - App 1: `~/.gemini/antigravity/conversations/`
-  - App 2: `~/.antigravity-profile2/.gemini/antigravity/conversations` (symlinked)
-  - Antigravity IDE: `~/.gemini/antigravity-ide/conversations` (symlinked)
-- **Brain & Artifacts**:
-  - `~/.gemini/antigravity-ide/brain` -> `~/.gemini/antigravity/brain`
-- **Summaries & Search Index**:
-  - `~/.gemini/antigravity-ide/conversation_summaries.db` -> `~/.gemini/antigravity/conversation_summaries.db`
-
-> [!TIP]
-> **Zero Data Overwrite**: When configuring the 3-way symlinks, the manager non-destructively merges any pre-existing conversations and brain directories using non-overwriting copy operations (`cp -a --update=none`) and preserves safety backups (`.bak`).
-> **Concurrent Safe**: All conversation stores operate via SQLite WAL mode (`.db-wal`), enabling App 1, App 2, and IDE to read and append history concurrently without database locks.
-
----
-
-## Quick Start
-
-### ⚡ One-Line Automated Install (Recommended)
-
-Run the automated installer directly via `curl`:
-
-```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/RezaRashidi/antigravity-suite-manager/main/install.sh)"
-```
-
-Or via standard pipe:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/RezaRashidi/antigravity-suite-manager/main/install.sh | bash
-```
-
-Or run fully non-interactive with default settings:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/RezaRashidi/antigravity-suite-manager/main/install.sh | bash -s -- -y
-```
-
-> [!TIP]
-> The one-line installer automatically bootstraps the suite repository to `~/.antigravity-suite-manager`, compiles the C icon resampler, deploys tools to `~/.local/bin`, and creates the `~/manage-antigravity.sh` shortcut.
-
----
-
-### 🛠️ Manual Installation (Clone & Build)
-
-```bash
-git clone https://github.com/RezaRashidi/antigravity-suite-manager.git
-cd antigravity-suite-manager
-./install.sh
-```
-
-### 2. Install the Suite
-
-Launch the interactive Control Center dashboard:
-
-```bash
-./install.sh
-# Or via management tool:
-~/manage-antigravity.sh center
-```
-
-The Control Center automatically discovers all installed Antigravity engines and cloned accounts/profiles, providing instant per-instance edit submenus, as well as one-click options to install new Antigravity binaries or create new account clones.
-
-#### Step Execution Options & Step Aliases:
-```bash
-# Execute ONLY a single step by number or descriptive name:
-./install.sh --only-step paths      # Or: -o 2
-./install.sh --only-step icons      # Or: -o 5
-./install.sh --only-step keyring    # Or: -o 6
-
-# Start execution from a specific step and proceed sequentially:
-./install.sh --step paths           # Or: -s 2
-
-# Guided step-by-step confirmation mode (prompts after each step):
-./install.sh --wizard               # Or: -w
-
-# Specify custom installation paths directly on the command line:
-./install.sh --app-dir "/opt/my-antigravity" --ide-dir "/opt/my-ide"
-
-# Non-interactive automated install with defaults:
-./install.sh -y
-```
-
-#### Wizard Steps Overview:
-1. **Check Dependencies & Prerequisites** (`prereqs`, `dep`): Validates Ubuntu 24.04 and core build tools (`python3`, `gcc`, `tar`, `curl`).
-2. **Configure Installation Paths & Engines** (`paths`, `engines`, `detect`): Scans for installed Antigravity instances, lets you select from detected installations or specify custom directories for App and IDE.
-3. **Compile Catmull-Rom Bicubic Resampler** (`resampler`, `scale`): Builds `scale_icon` from pure C with Catmull-Rom filtering and alpha premultiplication.
-4. **Deploy Management Tools & Master Icons** (`deploy`, `tools`, `bin`): Installs suite binaries to `~/.local/bin/` and symlinks `~/manage-antigravity.sh`.
-5. **Configure Visual Icon Themes & Recolor** (`icons`, `themes`, `recolor`): Sets up Black/White themes, Account 2 glow recolor, and initializes icon cache.
-6. **Configure Credential Storage Mode** (`keyring`, `creds`): Sets up Normal local file storage (recommended, bypassing GNOME Keyring) or GNOME Keyring.
-7. **Download & Install Google Antigravity Binaries** (`install`, `download`, `binary`): Automatically fetches latest releases and installs them into your configured directories.
-8. **Setup Multi-Account Launchers & 3-Way Chat Sync** (`sync`, `launchers`, `chat`): Deploys `antigravity-1`, `antigravity-acc2`, `antigravity-ide`, verifies 3-way history sync, and outputs the status report.
-
-Or build and install using GNU Make:
-
-```bash
-make
-make install
-```
 
 ---
 
@@ -350,7 +252,6 @@ Workflow:
 ```
 
 Configuration is persisted across runs in `~/.config/antigravity/paths.conf`.
-
 
 ---
 
@@ -414,6 +315,10 @@ Target                 Installed    Latest Available  Status          RTL Patch 
 Antigravity (Acc 1&2)  2.23.1       2.23.1            Up-to-date    Applied   Applied
 Antigravity IDE        2.5.5        2.5.5             Up-to-date    Applied   N/A
 ----------------------------------------------------------------------------------------
+Detected System Installations:
+  • Antigravity IDE      v2.5.5      in /opt/antigravity [Primary IDE]
+  • Antigravity App      v2.23.1     in /opt/antigravity2 [Primary App]
+----------------------------------------------------------------------------------------
 Package Cache Status in /tmp/antigravity-cache:
   • Antigravity App:        Cached (124.5 MB)
   • Antigravity IDE:        Cached (188.2 MB)
@@ -425,6 +330,9 @@ Icon & Appearance Themes:
 ----------------------------------------------------------------------------------------
 Environment & Permissions:
   • Account 2 Status:       Configured (Isolated Keyring + Shared History)
+  • Keyring Storage Mode:   Normal File Storage (Decoupled from GNOME Keyring)
+  • History Sharing:        3-Way Unified (App 1, App 2, IDE)
+  • Customizations Sharing: Unified (Rules, Skills, MCP across all instances)
   • App Dir Ownership:      Writable by reza (Ready)
   • IDE Dir Ownership:      Writable by reza (Ready)
 ========================================================================================
@@ -673,6 +581,96 @@ Integrated via [mmnaderi/antigravity-rtl](https://github.com/mmnaderi/antigravit
 
 ### Manual F5 Reload Patch
 Disables automated background application restarts during inactivity, allowing the user to refresh the session manually via the **F5** key without losing chat history or window context.
+
+---
+
+## Architecture & Profile Isolation
+
+```mermaid
+graph TD
+    subgraph "Desktop & Taskbar (GNOME / KDE / X11)"
+        T1["Antigravity 1<br/>(WM_CLASS: antigravity-1)<br/>Black/White Icon"]
+        T2["Antigravity 2<br/>(WM_CLASS: antigravity-2)<br/>Violet / Custom Icon"]
+        TIDE["Antigravity IDE<br/>(WM_CLASS: antigravity-ide)<br/>White / Black Icon"]
+    end
+
+    subgraph "Launchers & Runtime Watcher"
+        L1["~/.local/bin/antigravity-1"]
+        L2["~/.local/bin/antigravity-acc2<br/>(--restart support)"]
+        LIDE["~/.local/bin/antigravity-ide"]
+        WATCH["antigravity-apply-icon.py<br/>(Runtime X11 Window Injector)"]
+    end
+
+    subgraph "User Storage & State"
+        P1["Default Profile (~/.config/Antigravity)"]
+        P2["Profile 2 (~/.antigravity-profile2)"]
+        SHARED["Shared Data (~/.gemini)<br/>• Conversations Database<br/>• History & Shared Settings"]
+    end
+
+    T1 --> L1 --> P1
+    T2 --> L2 --> P2
+    TIDE --> LIDE
+    P1 --> SHARED
+    P2 --> SHARED
+    WATCH -.->|Inject _NET_WM_ICON & WM_CLASS| T1
+    WATCH -.->|Inject _NET_WM_ICON & WM_CLASS| T2
+    WATCH -.->|Inject _NET_WM_ICON & WM_CLASS| TIDE
+```
+
+---
+
+## Shared Chat History & Profile Isolation
+
+The suite solves the primary dilemma of multi-account AI pairing: **independent authentication without losing conversation context**.
+
+### Why 3 Accounts Never Conflict:
+1. **App 1 (Default Profile)**:
+   - Electron stores cookies and OAuth refresh tokens in `~/.config/Antigravity`.
+   - Credentials are encrypted via the host system's GNOME Keyring schema (`antigravity`).
+2. **App 2 (Secondary Profile)**:
+   - Runs with an isolated environment `HOME=~/.antigravity-profile2`.
+   - Keyring fallback is triggered by `~/.antigravity-profile2/.gemini/cache/antigravity-keyring-unavailable`.
+   - All session state and tokens are strictly stored inside `~/.antigravity-profile2/.config/Antigravity`.
+3. **Antigravity IDE (VS Code Edition)**:
+   - A distinct VS Code / Code OSS fork with configuration root at `~/.config/Antigravity IDE`.
+   - Credentials and tokens are managed exclusively by VS Code's SecretStorage service (`Antigravity IDE`).
+   - Completely independent from Electron App 1 & App 2 authentication storage.
+
+### 3-Way Unified History Architecture:
+While authentication tokens and keyring secrets are strictly siloed, all 3 applications share the same underlying conversation databases and brain artifacts:
+- **Conversations Storage**:
+  - App 1: `~/.gemini/antigravity/conversations/`
+  - App 2: `~/.antigravity-profile2/.gemini/antigravity/conversations` (symlinked)
+  - Antigravity IDE: `~/.gemini/antigravity-ide/conversations` (symlinked)
+- **Brain & Artifacts**:
+  - `~/.gemini/antigravity-ide/brain` -> `~/.gemini/antigravity/brain`
+- **Summaries & Search Index**:
+  - `~/.gemini/antigravity-ide/conversation_summaries.db` -> `~/.gemini/antigravity/conversation_summaries.db`
+
+> [!TIP]
+> **Zero Data Overwrite**: When configuring the 3-way symlinks, the manager non-destructively merges any pre-existing conversations and brain directories using non-overwriting copy operations (`cp -a --update=none`) and preserves safety backups (`.bak`).
+> **Concurrent Safe**: All conversation stores operate via SQLite WAL mode (`.db-wal`), enabling App 1, App 2, and IDE to read and append history concurrently without database locks.
+
+---
+
+## Platform Compatibility & Requirements
+
+This suite is engineered for Linux desktops and runs on Debian-based distributions and desktop environments adhering to standard XDG specifications:
+
+- **Supported Distributions**: Debian, Ubuntu, Linux Mint, Pop!_OS, Elementary OS, and other Debian derivatives.
+- **Desktop Environments**: Any environment that supports standard `.desktop` application launchers (GNOME Shell, Dash to Panel, KDE Plasma, XFCE, Cinnamon, MATE, LXQt, etc.).
+- **Display Server**: X11 or Wayland (with XWayland support for runtime window class de-grouping and `_NET_WM_ICON` injection).
+- **Architecture**: `x86_64` (amd64)
+- **Dependencies**:
+  - `bash` (4.0+)
+  - `python3`
+  - `gcc` & `make` (to compile the C Catmull-Rom bicubic scaler)
+  - `curl` or `wget`
+  - `tar` & `gzip`
+  - `x11-utils` (`xprop`, `xwininfo`)
+
+> [!IMPORTANT]
+> **Platform Restriction**: This suite is built exclusively for Ubuntu Linux and has been strictly tested on Ubuntu 24.04 LTS (Noble Numbat). Other distributions are not supported.
 
 ---
 

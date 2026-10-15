@@ -203,10 +203,8 @@ step_1_prerequisites() {
     echo -e "\n${BLUE}[Step 1/8] $(get_step_name 1)...${NC}"
     if [ -f /etc/os-release ]; then
         . /etc/os-release
-        if [ "$ID" != "ubuntu" ]; then
-            echo -e "${YELLOW}[WARNING] This suite is designed exclusively for Ubuntu Linux. Detected: ${NAME:-Unknown}${NC}"
-        elif [ "$VERSION_ID" != "24.04" ]; then
-            echo -e "${YELLOW}[WARNING] This suite is strictly tested on Ubuntu 24.04 LTS. Detected version: ${VERSION_ID}${NC}"
+        if [[ "$ID" != "ubuntu" && "$ID_LIKE" != *"debian"* && "$ID_LIKE" != *"ubuntu"* && "$ID" != "debian" ]]; then
+            echo -e "${YELLOW}[INFO] Detected distribution: ${NAME:-Linux}. Designed for Debian-based systems with .desktop support.${NC}"
         fi
     fi
 
@@ -231,16 +229,28 @@ step_1_prerequisites() {
 step_2_configure_paths() {
     echo -e "\n${BLUE}[Step 2/8] $(get_step_name 2)...${NC}"
     local DETECT_SCRIPT="${SCRIPT_DIR}/bin/antigravity-detect.py"
+    if [ ! -f "$DETECT_SCRIPT" ] && [ -n "$INSTALL_REPO_DIR" ]; then
+        DETECT_SCRIPT="${INSTALL_REPO_DIR}/bin/antigravity-detect.py"
+    fi
     if [ ! -f "$DETECT_SCRIPT" ]; then
         DETECT_SCRIPT="${TARGET_BIN}/antigravity-detect.py"
     fi
 
-    if [ -n "$CLI_APP_DIR" ] || [ -n "$CLI_IDE_DIR" ]; then
-        python3 "$DETECT_SCRIPT" --set-app-dir "${CLI_APP_DIR:-$APP_INSTALL_DIR}" --set-ide-dir "${CLI_IDE_DIR:-$IDE_INSTALL_DIR}"
-    elif [ "$NON_INTERACTIVE" = true ]; then
-        python3 "$DETECT_SCRIPT" --set-defaults-if-missing
+    if [ -f "$DETECT_SCRIPT" ]; then
+        if [ -n "$CLI_APP_DIR" ] || [ -n "$CLI_IDE_DIR" ]; then
+            python3 "$DETECT_SCRIPT" --set-app-dir "${CLI_APP_DIR:-$APP_INSTALL_DIR}" --set-ide-dir "${CLI_IDE_DIR:-$IDE_INSTALL_DIR}"
+        elif [ "$NON_INTERACTIVE" = true ]; then
+            python3 "$DETECT_SCRIPT" --set-defaults-if-missing
+        else
+            python3 "$DETECT_SCRIPT" --configure-paths
+        fi
     else
-        python3 "$DETECT_SCRIPT" --configure-paths
+        mkdir -p "$TARGET_CONF"
+        cat <<EOF > "$PATHS_CONF"
+# Antigravity Suite Installation Paths Configuration
+APP_INSTALL_DIR="${APP_INSTALL_DIR:-/opt/antigravity2}"
+IDE_INSTALL_DIR="${IDE_INSTALL_DIR:-/opt/antigravity}"
+EOF
     fi
 
     if [ -f "$PATHS_CONF" ]; then
