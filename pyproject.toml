@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "antigravity-suite-manager"
+version = "2.4.0"
+description = "Antigravity Suite Manager - Linux Multi-Instance Isolation & Real-Time Sync Daemon"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "Reza Rashidi" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: System :: Systems Administration",
+]
+
+[project.scripts]
+antigravity-merge-history = "antigravity.cli.merge:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["antigravity*"]

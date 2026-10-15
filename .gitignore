@@ -4,6 +4,11 @@ bin/scale_icon
 *.raw
 __pycache__/
 *.pyc
+.pytest_cache/
+.hypothesis/
+*.egg-info/
+build/
+dist/
 
 # Logs and runtime caches
 *.log
