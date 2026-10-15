@@ -3,9 +3,10 @@ name: antigravity-suite-internals
 description: >-
   Authoritative technical reference and operational guide for Google Antigravity Hub, Antigravity IDE (VS Code edition),
   and multi-instance suite management. Covers internal runtime architecture, Go language server RPC protocols, DBus/GNOME
-  Keyring decoupling, binary patching, database schemas (state.vscdb, SQLite conversation_summaries, Protobuf indexes),
-  token authentication lifecycles, and Google One AI Pro quota mechanics. Use when diagnosing Antigravity IDE/Hub issues,
-  isolating user profiles, managing credentials, debugging language server RPCs, or configuring multi-account setups.
+  Keyring decoupling, binary patching, database schemas (state.vscdb, SQLite conversation_summaries, Protobuf step_payload
+  wire formats), transcript log reconstitution, empty message/title bubble diagnostics, multi-home deep heuristic discovery,
+  and Google One AI Pro quota mechanics. Use when diagnosing Antigravity IDE/Hub issues, recovering conversations, isolating
+  user profiles, managing credentials, debugging language server RPCs, or configuring multi-account setups.
 ---
 
 # Antigravity Suite Architecture, Internals & Isolation Guide
@@ -186,6 +187,12 @@ CREATE TABLE `conversation_summaries` (
 ```
 
 > [!CRITICAL]
+> **Dual-Path Location Bug & Resolution**:
+> - The Antigravity language server expects `conversation_summaries.db` strictly at the **gemini root** (`~/.gemini/antigravity/conversation_summaries.db`), NOT inside the `conversations/` subfolder.
+> - If placed in `conversations/conversation_summaries.db`, the IDE sidebar completely fails to index or list conversations.
+> - The synchronization suite auto-discovers any `conversation_summaries.db` in subdirectories or profile folders, ingests its records into master, backs up the original to `.bak_<timestamp>`, and replaces it with a symlink to master.
+
+> [!CRITICAL]
 > **Read/Unread "New" ("تازه") Badge Mechanics**:
 > - Antigravity UI sidebar marks any conversation as **"New" / "Unread" ("تازه")** if `last_user_input_step_index == -1` while `step_count > 0` or if Field 16 in `CascadeTrajectorySummary` is omitted.
 > - To mark conversations as read and prevent spurious "New" badges across all chats:
@@ -193,10 +200,70 @@ CREATE TABLE `conversation_summaries` (
 >   2. Set `last_user_input_step_index = idx` (or `max(0, step_count - 1)`).
 >   3. Preserve the native `raw_summary` binary protobuf blob instead of overwriting it with synthetic stubs.
 
-### 3. `agyhub_summaries_proto.pb` (Protobuf Format)
+### 3. Individual Conversation Databases (`<uuid>.db`)
+Each conversation is persisted as a dedicated SQLite database containing the complete trajectory steps, execution states, and tracking metadata:
+```sql
+CREATE TABLE `trajectory_meta` (`trajectory_id` TEXT, `cascade_id` TEXT, `trajectory_type` INTEGER, `source` INTEGER, PRIMARY KEY (`trajectory_id`));
+CREATE TABLE `steps` (
+    `idx` INTEGER, `step_type` INTEGER NOT NULL DEFAULT 0, `status` INTEGER NOT NULL DEFAULT 0,
+    `has_subtrajectory` NUMERIC NOT NULL DEFAULT false, `metadata` BLOB, `error_details` BLOB,
+    `permissions` BLOB, `task_details` BLOB, `render_info` BLOB, `step_payload` BLOB,
+    `step_format` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (`idx`)
+);
+CREATE TABLE `gen_metadata` (`idx` INTEGER, `data` BLOB, `size` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (`idx`));
+CREATE TABLE `executor_metadata` (`idx` INTEGER, `data` BLOB, PRIMARY KEY (`idx`));
+CREATE TABLE `parent_references` (`idx` INTEGER, `data` BLOB, PRIMARY KEY (`idx`));
+CREATE TABLE `trajectory_metadata_blob` (`id` TEXT DEFAULT "main", `data` BLOB, PRIMARY KEY (`id`));
+CREATE TABLE `battle_mode_infos` (`idx` INTEGER, `data` BLOB, PRIMARY KEY (`idx`));
+```
+
+### 4. Protobuf `step_payload` Wire Architecture
+The IDE frontend and language server decode chat messages from the binary Protobuf blob inside `step_payload` (and `metadata`):
+
+```mermaid
+graph TD
+    Payload["step_payload (Protobuf)"]
+    Payload --> Tag1["Tag 1 (Varint): step_type (14=User, 15=Assistant, 132=Tool)"]
+    Payload --> Tag4["Tag 4 (Varint): status (3=DONE, 4=ERROR)"]
+    Payload --> Tag5["Tag 5 (Bytes): TrajectoryMetadata (conv_id, cascade_id)"]
+    Payload --> TagPayload{"Step Specific Body"}
+    
+    TagPayload -->|"step_type == 14"| Tag19["Tag 19 (UserInput)"]
+    Tag19 --> Tag19_2["Subfield 2: Raw User Prompt Text"]
+    Tag19 --> Tag19_3["Subfield 3: UserInputChunk (Tag 1 = Clean Title Text)"]
+
+    TagPayload -->|"step_type == 15"| Tag20["Tag 20 (ModelResponse)"]
+    Tag20 --> Tag20_1["Subfield 1: Markdown Response Body"]
+    Tag20 --> Tag20_3["Subfield 3: Thinking / Chain-of-Thought"]
+    Tag20 --> Tag20_6["Subfield 6: Agent ID ('antigravity-agent')"]
+    Tag20 --> Tag20_7["Subfield 7: ToolCall Proto (call_id, function, args)"]
+    Tag20 --> Tag20_8["Subfield 8: Markdown Response Body"]
+    Tag20 --> Tag20_12["Subfield 12: Varint 2"]
+
+    TagPayload -->|"step_type == 132"| Tag140["Tag 140 (ToolExecution)"]
+    Tag140 --> Tag140_1["Subfield 1: Tool Parameters / Summary"]
+    Tag140 --> Tag140_2["Subfield 2: Command stdout / Result Content"]
+```
+
+> [!WARNING]
+> **Empty Messages & Blank Bubble Headers Cause**:
+> - **Blank Assistant Messages**: The IDE UI extracts assistant replies exclusively from **Tag 20, Subfield 1 & 8**. If assistant text is erroneously placed in Tag 19, the UI finds no Tag 20 and renders a completely blank/empty chat bubble.
+> - **Blank User Message Titles**: The IDE UI extracts the user step heading/bubble title from **Tag 19, Subfield 3** (`UserInputChunk` containing Tag 1 string). If Subfield 3 is omitted, the user step header renders empty.
+> - **Blank Tool Execution**: Tool output stdout must be encoded into **Tag 140, Subfield 2**.
+> - **The `metadata` Column**: The `metadata` column in `steps` must store the exact byte string of Tag 5 (conv_id tracking proto) for IDE SQL readers.
+
+### 5. Transcript Reconstitution & Incomplete Database Detection
+When restoring conversations from transcript logs:
+1. **Prioritize `transcript_full.jsonl`**: Standard `transcript.jsonl` truncates large messages (flagged by `"truncated_fields": ["content", "thinking"]`). Always ingest `transcript_full.jsonl` first.
+2. **Auto-Detection of Incomplete Payloads (`is_synthesized_db_incomplete`)**:
+   - Inspects `steps` table for Step 15 rows: checks for wire tag `b"\xa2\x01"` (Tag 20, wire type 2). If absent, assistant messages are blank.
+   - Inspects `steps` table for Step 14 rows: checks for wire tag `b"\x1a"` (Tag 19, Subfield 3, wire type 2). If absent, user title bubbles are blank.
+   - When incomplete, the merger automatically re-synthesizes the SQLite database from the transcript log.
+
+### 6. `agyhub_summaries_proto.pb` (Protobuf Format)
 Fast binary index used by the Electron UI sidebar to render conversation titles without scanning SQLite or JSON directories. Updated directly by `antigravity-merge-history.py`.
 
-### 4. `state.vscdb` (VS Code Global State SQLite)
+### 7. `state.vscdb` (VS Code Global State SQLite)
 Located at `~/.config/Antigravity IDE/User/globalStorage/state.vscdb`:
 - **Table**: `ItemTable (key TEXT PRIMARY KEY, value TEXT)`
 - **Key Entries**:
@@ -316,8 +383,47 @@ To guarantee all MCP servers, custom skills, rules, and plugins are shared betwe
 
 ## 7. Real-Time Synchronization Daemon (`antigravity-merge-history.py`)
 
-Runs as a systemd user service (`antigravity-sync.service`):
-- Uses Linux `inotify` / `watchdog` to monitor write events on `conversations/` across all instances.
+Runs as a systemd user service (`antigravity-sync.service`) or on-demand CLI command:
+- Uses polling and mtime debounce (0.5s) to monitor write events on databases, tokens, and storage files across all instances.
 - Re-indexes conversation titles into SQLite `conversation_summaries.db`.
-- Serializes and writes binary `agyhub_summaries_proto.pb` for instantaneous Hub UI updates without app restarts.
-- Resolves title synchronization discrepancies between App and IDE transparently.
+- Serializes and writes binary `agyhub_summaries_proto.pb` and `jetbox_summaries.pb` for instantaneous Hub UI updates without app restarts.
+- Broadcasts Base64 `antigravityUnifiedStateSync.trajectorySummaries` to all IDE `state.vscdb` targets.
+
+### 7.1 Multi-Home & Deep Targeted Heuristic Discovery Algorithm
+To discover conversations across any system where Antigravity was manually installed, customized, or backed up:
+1. **Multi-Home Resolution**: Aggregates `REAL_HOME`, `~`, and `~<user>` into candidate roots.
+2. **Standard & Desktop Launcher Roots**: Parses `--user-data-dir`, `--profile-directory`, and `GEMINI_DIR` from all `.desktop` files in `/usr/share/applications` and `~/.local/share/applications`.
+3. **Deep Targeted Scan (Depth Limit 5)**:
+   - Recursively walks `.gemini*`, `.antigravity*`, `.config/*antigravity*`, and `.local/share/*antigravity*`.
+   - **Brain Stores**: Detected when `transcript.jsonl` or `transcript_full.jsonl` is found; identifies the grandparent folder as a conversation brain store.
+   - **Conversation Stores**: Detected when any UUID `.db` (`^[0-9a-fA-F-]{36}\.db$`) is found.
+   - Detects backup stores like `brain.bak`, `conversations.bak`, and `backups/history/`.
+
+### 7.2 Symlink Pipeline & Safe Backup Protocol
+When uniting history across multiple instances without data loss:
+1. **Step 1 & 2 (Copy Ingest)**: Any new `.db` or brain items in candidate stores are copied into the master pool (`~/.gemini/antigravity/`).
+2. **Transcript Backfill**: If a conversation brain directory already exists in master but lacks `.system_generated/logs/transcript*.jsonl`, the logs are automatically backfilled from candidate folders.
+3. **Step 7 (Atomic Link & Backup)**: For each target profile (`antigravity-ide`, `antigravity-cli`, `antigravity-acp`, custom profiles):
+   - If `conversations`, `brain`, `annotations`, or `conversation_summaries.db` is an existing regular directory/file (from a manual installation), it is safely renamed to `<name>.bak_<timestamp>`.
+   - An atomic symlink is created pointing to the master store.
+   - This ensures manual installations join the unified pool without overwriting existing data.
+
+### 7.3 Authentic H1 Document Title Extraction Pipeline
+To prevent generic titles (`"Conversation"`, `"Untitled Conversation"`) or non-ASCII truncation:
+1. **Annotations First**: Checks `annotations/<conv_id>.pbtxt` across all profile roots for user-renamed titles.
+2. **Markdown Artifact H1 Heading**: Scans the conversation's brain folder for markdown artifacts (`*.md`). Parses the first H1 header (`# Server Configuration And Deployment Strategy`) as the genuine human-readable title.
+3. **Prompt Fallback**: If no artifact H1 exists, extracts clean text from `<USER_REQUEST>` prompt tags (up to 80 chars).
+
+### 7.4 Operational CLI Reference
+
+| Command | Purpose |
+| :--- | :--- |
+| `python3 ~/.local/bin/antigravity-merge-history.py` | Standard full sync across all profiles and stores. |
+| `python3 ~/.local/bin/antigravity-merge-history.py --rebuild` | **Force re-synthesizes all SQLite databases from transcripts** with complete Protobuf payloads. |
+| `python3 ~/.local/bin/antigravity-merge-history.py --watch` | Runs in persistent daemon mode with automatic change detection. |
+| `python3 ~/.local/bin/antigravity-merge-history.py --quiet` | Runs silently for background launchers and systemd. |
+
+> [!TIP]
+> **Post-Sync IDE UI Refresh**:
+> After running `--rebuild` or a manual merge, reload the Antigravity IDE window to refresh the webview cache:
+> Press `Ctrl+Shift+P` -> select `Developer: Reload Window`.
