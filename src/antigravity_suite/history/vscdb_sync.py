@@ -17,7 +17,11 @@ from typing import Dict, List, Optional, Tuple
 from antigravity_suite.history.sqlite_store import get_actual_steps_count
 from antigravity_suite.proto.cascade import build_cascade_summary, get_last_user_step_index, parse_cascade_summary
 from antigravity_suite.proto.trajectory import parse_trajectory_metadata_blob
-from antigravity_suite.proto.vscdb import build_summaries_state, build_unified_state_sync
+from antigravity_suite.proto.vscdb import (
+    build_summaries_state,
+    build_unified_state_sync,
+    update_sidebar_workspaces_state,
+)
 from antigravity_suite.proto.wire import extract_entries_from_proto, extract_pure_binary_summary
 
 
@@ -156,9 +160,19 @@ def write_vscdb_unified_state(
     all_summaries: Dict[str, bytes],
 ) -> None:
     """
-    Serializes and writes antigravityUnifiedStateSync and trajectorySummaries
-    to ItemTable in all target state.vscdb files preserving existing metadata.
+    Serializes and writes antigravityUnifiedStateSync, trajectorySummaries,
+    and sidebarWorkspaces to ItemTable in all target state.vscdb files.
     """
+    active_workspaces = set()
+    for raw in all_summaries.values():
+        try:
+            parsed = parse_cascade_summary(raw)
+            ws = parsed.get("workspace_uri")
+            if ws and str(ws).startswith("file://") and not any(k in str(ws) for k in [".gemini", ".config/Antigravity", "AppData"]):
+                active_workspaces.add(str(ws))
+        except Exception:
+            pass
+
     for vscdb_p in candidate_vscdbs:
         if not vscdb_p.is_file():
             continue
@@ -182,6 +196,18 @@ def write_vscdb_unified_state(
                 "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('antigravityUnifiedStateSync', ?);",
                 (outer_b64,),
             )
+
+            # Ensure sidebarWorkspaces includes all active workspaces (including lede, Odirect, etc.)
+            old_ws_row = v_cur.execute(
+                "SELECT value FROM ItemTable WHERE key = 'antigravityUnifiedStateSync.sidebarWorkspaces';"
+            ).fetchone()
+            old_ws_b64 = old_ws_row[0] if old_ws_row else None
+            new_ws_b64 = update_sidebar_workspaces_state(old_ws_b64, sorted(list(active_workspaces)))
+            v_cur.execute(
+                "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('antigravityUnifiedStateSync.sidebarWorkspaces', ?);",
+                (new_ws_b64,),
+            )
+
             v_con.commit()
         except Exception:
             pass

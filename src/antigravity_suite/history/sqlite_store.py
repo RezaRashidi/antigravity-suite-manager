@@ -100,9 +100,9 @@ def load_existing_summaries(
 
         existing: Dict[str, Tuple[Any, ...]] = {}
         for r in cur.execute(
-            "SELECT conversation_id, title, preview, step_count, last_modified_time, raw_summary, last_user_input_time, last_user_input_step_index FROM conversation_summaries;"
+            "SELECT conversation_id, title, preview, step_count, last_modified_time, raw_summary, last_user_input_time, last_user_input_step_index, workspace_uris, project_id FROM conversation_summaries;"
         ).fetchall():
-            existing[r[0]] = (r[1], r[2], r[3], r[4], r[5], r[6], r[7])
+            existing[r[0]] = (r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9])
         return existing
     except Exception:
         return {}

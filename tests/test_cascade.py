@@ -142,6 +142,89 @@ class TestCascadeAndTrajectory(unittest.TestCase):
         finally:
             shutil.rmtree(temp_dir)
 
+    def test_build_summaries_state_wire_format(self):
+        import base64
+        from antigravity_suite.proto.vscdb import build_summaries_state
+        from antigravity_suite.proto.wire import read_varint
+
+        fake_raw = build_cascade_summary("test-uuid-1", "Test Title", "Test Preview", 3)
+        sums = {"test-uuid-1": fake_raw}
+        topic_b64 = build_summaries_state(sums)
+        self.assertIsInstance(topic_b64, str)
+
+        raw = base64.b64decode(topic_b64)
+        pos = 0
+        decoded_map = {}
+        while pos < len(raw):
+            tw, pos = read_varint(raw, pos)
+            tag = tw >> 3
+            self.assertEqual(tag, 1)  # Topic.data is repeated Tag 1
+            length, pos = read_varint(raw, pos)
+            entry_bytes = raw[pos : pos + length]
+            pos += length
+
+            epos = 0
+            k, v = None, None
+            while epos < len(entry_bytes):
+                etw, epos = read_varint(entry_bytes, epos)
+                etag = etw >> 3
+                elen, epos = read_varint(entry_bytes, epos)
+                eval_ = entry_bytes[epos : epos + elen]
+                epos += elen
+                if etag == 1:
+                    k = eval_.decode("utf-8")
+                elif etag == 2:
+                    # Row message: Tag 1 is string value (base64)
+                    rpos = 0
+                    while rpos < len(eval_):
+                        rtw, rpos = read_varint(eval_, rpos)
+                        rtag = rtw >> 3
+                        rlen, rpos = read_varint(eval_, rpos)
+                        rval = eval_[rpos : rpos + rlen]
+                        rpos += rlen
+                        if rtag == 1:
+                            v = rval.decode("utf-8")
+            if k and v:
+                decoded_map[k] = v
+
+        self.assertIn("test-uuid-1", decoded_map)
+        inner_bin = base64.b64decode(decoded_map["test-uuid-1"])
+        self.assertEqual(inner_bin, fake_raw)
+
+    def test_update_sidebar_workspaces_state(self):
+        from antigravity_suite.proto.vscdb import (
+            parse_sidebar_workspaces,
+            update_sidebar_workspaces_state,
+        )
+
+        initial = update_sidebar_workspaces_state(None, ["file:///home/reza/PhpstormProjects/Odirect"])
+        parsed1 = parse_sidebar_workspaces(initial)
+        self.assertIn("file:///home/reza/PhpstormProjects/Odirect", parsed1)
+
+        updated = update_sidebar_workspaces_state(initial, [
+            "file:///home/reza/PhpstormProjects/Odirect",
+            "file:///home/reza/Music/lede",
+        ])
+        parsed2 = parse_sidebar_workspaces(updated)
+        self.assertIn("file:///home/reza/PhpstormProjects/Odirect", parsed2)
+        self.assertIn("file:///home/reza/Music/lede", parsed2)
+
+    def test_normalize_workspace_uri(self):
+        from antigravity_suite.history.merger import normalize_workspace_uri
+
+        self.assertEqual(
+            normalize_workspace_uri("file:///home/reza/PhpstormProjects/Odirect/instasi-backend"),
+            "file:///home/reza/PhpstormProjects/Odirect",
+        )
+        self.assertEqual(
+            normalize_workspace_uri("file:///home/reza/Music/lede/src"),
+            "file:///home/reza/Music/lede",
+        )
+        self.assertEqual(
+            normalize_workspace_uri('["file:///home/reza/PhpstormProjects/Odirect/memory-bank"]'),
+            "file:///home/reza/PhpstormProjects/Odirect",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

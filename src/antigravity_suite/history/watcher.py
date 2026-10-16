@@ -63,12 +63,14 @@ def watch_mode(
         for d in conv_dirs:
             if not os.path.isdir(d):
                 continue
-            for pattern in ["*.db", "*.pb", "conversation_summaries.db", "conversation_summaries.db-wal"]:
-                for f in glob.glob(os.path.join(d, pattern)):
-                    try:
-                        snapshot[f] = os.path.getmtime(f)
-                    except Exception:
-                        pass
+            for f in glob.glob(os.path.join(d, "*.db")):
+                basename = os.path.basename(f)
+                if basename.startswith("conversation_summaries"):
+                    continue
+                try:
+                    snapshot[f] = os.path.getmtime(f)
+                except Exception:
+                    pass
         for b in brain_dirs:
             if not os.path.isdir(b):
                 continue

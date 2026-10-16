@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime
 import glob
+import json
 import os
 import re
 import shutil
@@ -193,6 +194,39 @@ def collect_all_conversation_ids(
     return all_conv_ids
 
 
+def normalize_workspace_uri(uri: Optional[str]) -> Optional[str]:
+    """Normalizes subfolder workspace paths to their respective root workspace URIs."""
+    if not uri:
+        return None
+    uri_str = str(uri).strip()
+    if uri_str.startswith("["):
+        try:
+            arr = json.loads(uri_str)
+            if arr:
+                uri_str = arr[0]
+        except Exception:
+            pass
+    if not uri_str.startswith("file://"):
+        return uri_str
+
+    known_roots = [
+        "file:///home/reza/PhpstormProjects/Odirect",
+        "file:///home/reza/Music/lede",
+        "file:///home/reza/PhpstormProjects/k6",
+        "file:///home/reza/Library/nokia_modem",
+        "file:///home/reza/Music/irankhodro",
+        "file:///home/reza/Downloads/cloudflare",
+        "file:///home/reza/Downloads/dragonfly-ansible-main",
+        "file:///home/reza/Downloads/minio-ansible-main",
+        "file:///home/reza/.config/mihomo-party/profiles",
+        "file:///home/reza/.antigravity-suite-manager",
+    ]
+    for root in known_roots:
+        if uri_str == root or uri_str.startswith(root + "/") or uri_str.startswith(root + "\\"):
+            return root
+    return uri_str
+
+
 def resolve_conversation_item(
     conv_id: str,
     effective_master: Path,
@@ -269,17 +303,23 @@ def resolve_conversation_item(
     final_title = anno_title or curr_title or raw_title
     final_prev = curr_prev or raw_summary
 
+    # Strip @[...] context mentions or resolve clean prompt title
+    ext_t, ext_p = extract_conv_text(db_file, transcript_file)
+    if ext_t:
+        if not final_title or final_title.strip() in ["", "Conversation", "Untitled Conversation"] or "@[" in final_title:
+            final_title = ext_t
+            final_prev = ext_p or final_prev
+        elif ext_t.startswith(final_title) and len(ext_t) > len(final_title):
+            final_title = ext_t
+            final_prev = ext_p or final_prev
+    elif "@[" in final_title:
+        final_title = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", final_title).strip()
+
     if not final_title or final_title.strip() in ["", "Conversation", "Untitled Conversation"]:
         if curr_prev and curr_prev.strip() not in ["", "Conversation", "Untitled Conversation"]:
             final_title = curr_prev.strip().split("\n")[0][:80]
         elif raw_summary and raw_summary.strip() not in ["", "Conversation", "Untitled Conversation"]:
             final_title = raw_summary.strip().split("\n")[0][:80]
-
-    if not final_title or final_title.strip() in ["", "Conversation", "Untitled Conversation"]:
-        ext_t, ext_p = extract_conv_text(db_file, transcript_file)
-        if ext_t:
-            final_title = ext_t
-            final_prev = ext_p or final_prev
 
     if not final_title:
         final_title = "Conversation"
@@ -287,17 +327,25 @@ def resolve_conversation_item(
         final_prev = final_title
 
     target_step_cnt = max(actual_steps, curr_step_cnt, 1)
-    ws_uri = db_ws_uri or parsed_raw.get("workspace_uri")
-    proj_id = db_proj_id or parsed_raw.get("project_id")
+    existing_ws = existing_rows[conv_id][7] if conv_id in existing_rows and len(existing_rows[conv_id]) > 7 else None
+    existing_proj = existing_rows[conv_id][8] if conv_id in existing_rows and len(existing_rows[conv_id]) > 8 else None
+
+    raw_ws = db_ws_uri or parsed_raw.get("workspace_uri") or existing_ws
+    ws_uri = normalize_workspace_uri(raw_ws)
+    proj_id = db_proj_id or parsed_raw.get("project_id") or existing_proj
 
     curr_raw_title = parsed_raw.get("title") or parsed_raw.get("summary")
+    has_dirty_title = bool("@[" in (curr_raw_title or "") or "@[" in (curr_title or "") or "@[" in final_title)
     needs_title_rebuild = bool(
         final_title
         and (
             not curr_raw_title
             or curr_raw_title in ["Conversation", "Untitled Conversation"]
+            or has_dirty_title
+            or curr_raw_title != final_title
         )
     )
+    needs_ws_rebuild = bool(ws_uri and ws_uri != parsed_raw.get("workspace_uri"))
     has_bad_timestamps = bool(
         curr_raw
         and (
@@ -322,6 +370,7 @@ def resolve_conversation_item(
         and not is_corrupt_raw
         and not needs_steps_rebuild
         and not is_not_in_sqlite
+        and not needs_ws_rebuild
     ):
         all_summaries[conv_id] = curr_raw
         if curr_title != final_title or curr_prev != final_prev:
@@ -333,7 +382,14 @@ def resolve_conversation_item(
         return
 
     # Reconstruct authentic summary if needed, or reuse valid existing binary
-    if curr_raw and len(curr_raw) > 20 and not needs_title_rebuild and not is_corrupt_raw and not needs_steps_rebuild:
+    if (
+        curr_raw
+        and len(curr_raw) > 20
+        and not needs_title_rebuild
+        and not is_corrupt_raw
+        and not needs_steps_rebuild
+        and not needs_ws_rebuild
+    ):
         raw_to_store = curr_raw
         user_step = (
             parsed_raw.get("last_user_step")
@@ -361,6 +417,10 @@ def resolve_conversation_item(
 
     all_summaries[conv_id] = raw_to_store
 
+    ws_str = ""
+    if ws_uri:
+        ws_str = ws_uri if str(ws_uri).startswith("[") else json.dumps([str(ws_uri)])
+
     summary_model = ConversationSummary(
         conversation_id=conv_id,
         title=final_title,
@@ -370,10 +430,11 @@ def resolve_conversation_item(
         last_user_input_time=final_user_input_iso,
         last_user_input_step_index=user_step,
         raw_summary=raw_to_store,
-        workspace_uris=ws_uri or "",
+        workspace_uris=ws_str,
         project_id=proj_id or "",
     )
     upsert_summary(con, summary_model)
+    sync_annotation_file(effective_master, conv_id, final_title)
     if is_not_in_sqlite:
         stats.summaries_backfilled += 1
     else:

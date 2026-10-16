@@ -12,8 +12,11 @@ from antigravity_suite.proto.trajectory import (
     parse_trajectory_metadata_blob,
 )
 from antigravity_suite.proto.vscdb import (
+    build_sidebar_workspace_bytes,
     build_summaries_state,
     build_unified_state_sync,
+    parse_sidebar_workspaces,
+    update_sidebar_workspaces_state,
 )
 from antigravity_suite.proto.wire import (
     encode_annotations_field,
@@ -42,4 +45,7 @@ __all__ = [
     "parse_trajectory_metadata_blob",
     "build_summaries_state",
     "build_unified_state_sync",
+    "build_sidebar_workspace_bytes",
+    "parse_sidebar_workspaces",
+    "update_sidebar_workspaces_state",
 ]

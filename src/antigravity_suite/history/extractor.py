@@ -73,6 +73,8 @@ def get_annotation_title(gemini_dir: Union[str, Path], conv_id: str) -> Optional
             if m:
                 clean_title = decode_pbtxt_string(m.group(1))
                 if clean_title and clean_title not in ["Conversation", "Untitled Conversation"]:
+                    if "@[" in clean_title:
+                        return None
                     return clean_title
         except Exception:
             pass
@@ -254,7 +256,14 @@ def extract_conv_text(
     # 2. Prompt Fallback: if no authentic H1 title could be derived from artifacts
     preview = latest_user_prompt or first_user_prompt or ""
     if not title and first_user_prompt:
-        lines = [line.strip() for line in first_user_prompt.split("\n") if line.strip()]
+        clean_first = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", first_user_prompt).strip()
+        lines = [line.strip() for line in clean_first.split("\n") if line.strip()]
+        if not lines and latest_user_prompt:
+            clean_latest = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", latest_user_prompt).strip()
+            lines = [line.strip() for line in clean_latest.split("\n") if line.strip()]
+        if not lines:
+            lines = [line.strip() for line in first_user_prompt.split("\n") if line.strip()]
+
         if lines:
             t_cand = lines[0]
             if len(t_cand) > 80:

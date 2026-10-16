@@ -85,6 +85,21 @@ class TestExtractor(unittest.TestCase):
             self.assertEqual(title, "User prompt message #1")
             self.assertEqual(preview, "User prompt message #10")
 
+    def test_extract_conv_text_strips_context_mentions(self):
+        import tempfile, os
+        from antigravity_suite.history.extractor import extract_conv_text
+
+        with tempfile.TemporaryDirectory() as td:
+            logs_dir = os.path.join(td, ".system_generated", "logs")
+            os.makedirs(logs_dir, exist_ok=True)
+            transcript_file = os.path.join(logs_dir, "transcript.jsonl")
+            with open(transcript_file, "w", encoding="utf-8") as f:
+                f.write('{"source":"USER_EXPLICIT","type":"USER_INPUT","content":"<USER_REQUEST>@[/home/reza/Downloads/minio-ansible-main/group_vars/all.yml:L2-L13]\\nبه سرور قدیمی دسترسی دارم\\nچطوری پیدا کنم</USER_REQUEST>"}\n')
+
+            title, preview = extract_conv_text("", transcript_file)
+            self.assertEqual(title, "به سرور قدیمی دسترسی دارم")
+            self.assertIn("به سرور قدیمی دسترسی دارم", preview)
+
 
 if __name__ == "__main__":
     unittest.main()
