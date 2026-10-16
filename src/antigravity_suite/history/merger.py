@@ -104,6 +104,24 @@ def get_transcript_timestamps(
         return None, None, None
 
 
+def _clean_iso_ts(ts_val: Any) -> Optional[str]:
+    """Validates and formats an ISO timestamp string. Rejects timestamps <= 1000000000 or year 1."""
+    if not ts_val:
+        return None
+    try:
+        s_str = str(ts_val).strip()
+        clean = s_str.replace("Z", "+00:00")
+        clean = re.sub(r"(\.\d{6})\d+", r"\1", clean)
+        dt = datetime.datetime.fromisoformat(clean)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        if dt.timestamp() <= 1000000000:
+            return None
+        return dt.strftime("%Y-%m-%d %H:%M:%S.000000+00:00")
+    except Exception:
+        return None
+
+
 def setup_master_directories(effective_master: Path) -> Tuple[Path, Path, Path, Path, Path]:
     """
     Creates and configures canonical directory paths and maintains symlinks for SQLite DB.
@@ -205,6 +223,9 @@ def resolve_conversation_item(
     else:
         file_mtime = time.time()
 
+    if file_mtime <= 1000000000:
+        file_mtime = time.time()
+
     file_mtime_iso = datetime.datetime.fromtimestamp(file_mtime, tz=datetime.timezone.utc).strftime(
         "%Y-%m-%d %H:%M:%S.000000+00:00"
     )
@@ -213,9 +234,9 @@ def resolve_conversation_item(
     transcript_file = master_brain_dir / conv_id / ".system_generated" / "logs" / "transcript.jsonl"
     t_created, t_user_input, t_modified = get_transcript_timestamps(transcript_file)
 
-    sql_mtime = existing_rows[conv_id][3] if conv_id in existing_rows and existing_rows[conv_id][3] else None
+    sql_mtime = _clean_iso_ts(existing_rows[conv_id][3]) if conv_id in existing_rows and existing_rows[conv_id][3] else None
     sql_user_input = (
-        existing_rows[conv_id][5]
+        _clean_iso_ts(existing_rows[conv_id][5])
         if conv_id in existing_rows and len(existing_rows[conv_id]) > 5 and existing_rows[conv_id][5]
         else None
     )
@@ -225,9 +246,13 @@ def resolve_conversation_item(
         else -1
     )
 
-    final_modified_iso = t_modified or sql_mtime or file_mtime_iso
-    final_user_input_iso = t_user_input or sql_user_input or final_modified_iso
-    final_created_iso = t_created or final_user_input_iso or final_modified_iso
+    t_clean_created = _clean_iso_ts(t_created)
+    t_clean_user_input = _clean_iso_ts(t_user_input)
+    t_clean_modified = _clean_iso_ts(t_modified)
+
+    final_modified_iso = t_clean_modified or sql_mtime or file_mtime_iso
+    final_user_input_iso = t_clean_user_input or sql_user_input or final_modified_iso
+    final_created_iso = t_clean_created or final_user_input_iso or final_modified_iso
 
     anno_title = get_annotation_title(effective_master, conv_id)
     db_ws_uri, db_proj_id = get_db_trajectory_meta(db_file) if has_db else (None, None)
@@ -379,7 +404,7 @@ def synchronize_master_summaries(
     for c_id, row in existing_rows.items():
         if row[4]:
             raw = extract_pure_binary_summary(row[4])
-            if raw and len(raw) > 20 and b"\x80\x92\xb8\xc3\x98\xfe\xff\xff\xff\x01" not in raw:
+            if raw and len(raw) > 20:
                 all_summaries[c_id] = raw
 
     # Ingest master protobuf binary summaries if available
@@ -388,7 +413,7 @@ def synchronize_master_summaries(
             with open(master_proto, "rb") as f:
                 proto_data = f.read()
             for c_uuid, raw in extract_entries_from_proto(proto_data).items():
-                if raw and len(raw) > 20 and b"\x80\x92\xb8\xc3\x98\xfe\xff\xff\xff\x01" not in raw:
+                if raw and len(raw) > 20:
                     all_summaries[c_uuid] = raw
         except Exception:
             pass
