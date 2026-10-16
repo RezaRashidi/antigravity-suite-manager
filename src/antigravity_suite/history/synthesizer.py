@@ -13,11 +13,42 @@ import os
 import re
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from antigravity_suite.config import DEFAULT_CONFIG, get_user_home
 from antigravity_suite.proto.trajectory import build_trajectory_metadata_blob
 from antigravity_suite.proto.wire import encode_tag_bytes, encode_tag_uint, read_varint
+
+
+def _has_tag_in_proto(data: bytes, target_tag: int, target_wire: int = 2) -> bool:
+    """Checks whether a valid protobuf tag exists at the top level of serialized bytes."""
+    if not data:
+        return False
+    pos = 0
+    d_len = len(data)
+    while pos < d_len:
+        try:
+            tag_wire, pos = read_varint(data, pos)
+            wire_type = tag_wire & 7
+            tag_num = tag_wire >> 3
+            if wire_type == 0:
+                _, pos = read_varint(data, pos)
+            elif wire_type == 1:
+                pos += 8
+            elif wire_type == 5:
+                pos += 4
+            elif wire_type == 2:
+                length, pos = read_varint(data, pos)
+                if pos + length > d_len:
+                    break
+                if tag_num == target_tag and wire_type == target_wire and length > 0:
+                    return True
+                pos += length
+            else:
+                break
+        except Exception:
+            break
+    return False
 
 
 def is_synthesized_db_incomplete(db_path: Union[str, Path]) -> bool:
@@ -45,23 +76,28 @@ def is_synthesized_db_incomplete(db_path: Union[str, Path]) -> bool:
         if rich_authentic_types:
             return False
 
-        # For synthesized databases (only 14, 15, 132), check if assistant text is present
+        # Step 14 check: ensure user prompt bubble and Tag 3 chunk are present
+        cur.execute("SELECT step_payload FROM steps WHERE step_type = 14 LIMIT 5;")
+        s14_rows = cur.fetchall()
+        if s14_rows:
+            has_valid_user = any(row[0] and bool(parse_step14_user_prompt(row[0])) for row in s14_rows)
+            if not has_valid_user:
+                return True
+
+        # Step 15 check: assistant text in Tag 20
         cur.execute("SELECT step_payload FROM steps WHERE step_type = 15 LIMIT 5;")
         s15_rows = cur.fetchall()
         if s15_rows:
-            # Wire format for tag 20 wire type 2: (20 << 3) | 2 = 162 = 0xa2, 0x01
-            has_tag20 = any(row[0] and b"\xa2\x01" in row[0] for row in s15_rows)
+            has_tag20 = any(row[0] and _has_tag_in_proto(row[0], 20, 2) for row in s15_rows)
             if not has_tag20:
                 return True
 
-        # Check step 132: verify tool execution metadata is present
+        # Step 132 check: verify tool execution metadata (Tag 4) and tool payload (Tag 140)
         cur.execute("SELECT metadata, step_payload FROM steps WHERE step_type = 132 LIMIT 5;")
         s132_rows = cur.fetchall()
         if s132_rows:
-            # Tag 4 in metadata: (4 << 3) | 2 = 0x22
-            has_tool_meta = any(row[0] and len(row[0]) > 20 and b"\x22" in row[0] for row in s132_rows)
-            # Tag 140 in payload: (140 << 3) | 2 = 1122 = 0xe2, 0x08
-            has_tool_payload = any(row[1] and b"\xe2\x08" in row[1] for row in s132_rows)
+            has_tool_meta = any(row[0] and _has_tag_in_proto(row[0], 4, 2) for row in s132_rows)
+            has_tool_payload = any(row[1] and _has_tag_in_proto(row[1], 140, 2) for row in s132_rows)
             if not (has_tool_meta and has_tool_payload):
                 return True
 

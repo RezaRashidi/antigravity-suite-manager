@@ -33,6 +33,33 @@ class TestExtractor(unittest.TestCase):
         self.assertEqual(decoded, "Test سلام")
 
 
+    def test_decode_pbtxt_string_double_backslash(self):
+        # Double backslash followed by n (e.g. Windows path or LaTeX) must preserve literal \n
+        text = r"C:\\new_folder\\test.txt"
+        decoded = decode_pbtxt_string(text)
+        self.assertEqual(decoded, r"C:\new_folder\test.txt")
+
+    def test_extract_conv_text_markdown_artifact_priority(self):
+        import tempfile, os
+        from antigravity_suite.history.extractor import extract_conv_text
+
+        with tempfile.TemporaryDirectory() as td:
+            brain_dir = os.path.join(td, "brain", "test-uuid")
+            logs_dir = os.path.join(brain_dir, ".system_generated", "logs")
+            os.makedirs(logs_dir, exist_ok=True)
+            transcript_file = os.path.join(logs_dir, "transcript.jsonl")
+            with open(transcript_file, "w", encoding="utf-8") as f:
+                f.write('{"source":"USER_EXPLICIT","type":"USER_INPUT","content":"<USER_REQUEST>Raw user prompt text</USER_REQUEST>"}\n')
+
+            # Create task.md with H1 header
+            task_file = os.path.join(brain_dir, "task.md")
+            with open(task_file, "w", encoding="utf-8") as f:
+                f.write("# Building Authentication Microservice\nSome content\n")
+
+            title, preview = extract_conv_text("", transcript_file)
+            self.assertEqual(title, "Building Authentication Microservice")
+            self.assertEqual(preview, "Raw user prompt text")
+
     def test_extract_conv_text_sqlite_latest_prompt(self):
         import tempfile, sqlite3
         from antigravity_suite.history.extractor import extract_conv_text

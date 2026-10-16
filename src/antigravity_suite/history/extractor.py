@@ -43,16 +43,19 @@ def decode_pbtxt_string(s: str) -> str:
                 lambda m: m.group(0).encode("utf-8").decode("unicode_escape"),
                 res,
             )
-            c_escapes = {
-                "\\n": "\n",
-                "\\r": "\r",
-                "\\t": "\t",
-                '\\"': '"',
-                "\\'": "'",
-                "\\\\": "\\",
-            }
-            for esc, char in c_escapes.items():
-                res = res.replace(esc, char)
+            def _unescape_c(m: re.Match) -> str:
+                esc_map = {
+                    "n": "\n",
+                    "r": "\r",
+                    "t": "\t",
+                    '"': '"',
+                    "'": "'",
+                    "\\": "\\",
+                }
+                char = m.group(1)
+                return esc_map.get(char, m.group(0))
+
+            res = re.sub(r'\\([nrt"\'\\])', _unescape_c, res)
         except Exception:
             pass
 
@@ -195,10 +198,62 @@ def extract_conv_text(
                 except Exception:
                     pass
 
-    # 1. Derive title from user prompt if available
+    # Brain folder resolution (from transcript or sqlite db path)
+    generic_blacklist = {
+        "task", "tasks", "implementation plan", "overview", "walkthrough",
+        "architecture", "notes", "summary", "checklist", "test results",
+        "verification", "instructions", "scratchpad", "conversation", "untitled conversation"
+    }
+
+    brain_folder = ""
+    if t_str:
+        cand_bf = os.path.dirname(os.path.dirname(os.path.dirname(t_str)))
+        if os.path.isdir(cand_bf):
+            brain_folder = cand_bf
+    if not brain_folder and db_str:
+        p_db = Path(db_str)
+        cand_bf = str(p_db.parent.parent / "brain" / p_db.stem)
+        if os.path.isdir(cand_bf):
+            brain_folder = cand_bf
+
+    # 1. Authentic H1 Document Title Extraction Pipeline (SKILL.md 7.3)
     title = ""
+    if brain_folder and os.path.isdir(brain_folder):
+        for art_name in ["task.md", "implementation_plan.md", "architecture.md"]:
+            art_file = os.path.join(brain_folder, art_name)
+            if os.path.isfile(art_file):
+                try:
+                    with open(art_file, "r", encoding="utf-8", errors="ignore") as af:
+                        for l in af:
+                            l_clean = l.strip()
+                            if l_clean.startswith("# ") and len(l_clean) > 3:
+                                art_title = l_clean[2:].strip()
+                                if art_title and art_title.lower() not in generic_blacklist:
+                                    title = art_title
+                                    break
+                except Exception:
+                    pass
+            if title:
+                break
+        if not title:
+            for af_path in glob.glob(os.path.join(brain_folder, "*.md")):
+                try:
+                    with open(af_path, "r", encoding="utf-8", errors="ignore") as af:
+                        for l in af:
+                            l_clean = l.strip()
+                            if l_clean.startswith("# ") and len(l_clean) > 3:
+                                art_title = l_clean[2:].strip()
+                                if art_title and art_title.lower() not in generic_blacklist:
+                                    title = art_title
+                                    break
+                except Exception:
+                    pass
+                if title:
+                    break
+
+    # 2. Prompt Fallback: if no authentic H1 title could be derived from artifacts
     preview = latest_user_prompt or first_user_prompt or ""
-    if first_user_prompt:
+    if not title and first_user_prompt:
         lines = [line.strip() for line in first_user_prompt.split("\n") if line.strip()]
         if lines:
             t_cand = lines[0]
@@ -207,41 +262,7 @@ def extract_conv_text(
             if t_cand and t_cand.lower() not in ["hi", "hello", "hey", "conversation", "untitled conversation"]:
                 title = t_cand
 
-    # 2. Fallback to markdown artifacts ONLY if no title could be derived from user prompt
-    if not title and t_str:
-        generic_blacklist = {
-            "task", "tasks", "implementation plan", "overview", "walkthrough",
-            "architecture", "notes", "summary", "checklist", "test results",
-            "verification", "instructions", "scratchpad", "conversation", "untitled conversation"
-        }
-        brain_folder = os.path.dirname(os.path.dirname(os.path.dirname(t_str)))
-        if os.path.isdir(brain_folder):
-            for art_name in ["task.md", "implementation_plan.md", "architecture.md"]:
-                art_file = os.path.join(brain_folder, art_name)
-                if os.path.isfile(art_file):
-                    try:
-                        with open(art_file, "r", encoding="utf-8", errors="ignore") as af:
-                            for l in af:
-                                l_clean = l.strip()
-                                if l_clean.startswith("# ") and len(l_clean) > 3:
-                                    art_title = l_clean[2:].strip()
-                                    if art_title and art_title.lower() not in generic_blacklist:
-                                        title = art_title
-                                        return title, preview or title
-                    except Exception:
-                        pass
-            if not title:
-                for af_path in glob.glob(os.path.join(brain_folder, "*.md")):
-                    try:
-                        with open(af_path, "r", encoding="utf-8", errors="ignore") as af:
-                            for l in af:
-                                l_clean = l.strip()
-                                if l_clean.startswith("# ") and len(l_clean) > 3:
-                                    art_title = l_clean[2:].strip()
-                                    if art_title and art_title.lower() not in generic_blacklist:
-                                        title = art_title
-                                        return title, preview or title
-                    except Exception:
-                        pass
+    if not preview and title:
+        preview = title
 
     return title, preview

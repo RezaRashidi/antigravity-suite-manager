@@ -216,7 +216,7 @@ def resolve_conversation_item(
             or curr_raw_title in ["Conversation", "Untitled Conversation"]
         )
     )
-    is_corrupt_raw = bool(curr_raw and any(ord(c) < 32 and c not in "\n\r\t" for c in (raw_summary or "")))
+    is_corrupt_raw = bool(curr_raw and any(ord(c) < 32 and c not in "\n\r\t\x1b\x0c" for c in (raw_summary or "")))
     needs_steps_rebuild = bool(actual_steps > curr_step_cnt)
     is_not_in_sqlite = bool(conv_id not in existing_rows)
 
@@ -241,7 +241,11 @@ def resolve_conversation_item(
     # Reconstruct authentic summary if needed, or reuse valid existing binary
     if curr_raw and len(curr_raw) > 20 and not needs_title_rebuild and not is_corrupt_raw and not needs_steps_rebuild:
         raw_to_store = curr_raw
-        user_step = parsed_raw.get("last_user_step") or get_last_user_step_index(db_file, target_step_cnt)
+        user_step = (
+            parsed_raw.get("last_user_step")
+            if parsed_raw.get("last_user_step") is not None
+            else get_last_user_step_index(db_file, target_step_cnt)
+        )
     else:
         user_step = get_last_user_step_index(db_file, target_step_cnt)
         raw_to_store = build_cascade_summary(
@@ -381,7 +385,12 @@ def merge_histories(
     effective_master = (
         Path(master_gemini).resolve()
         if master_gemini
-        else Path(os.environ.get("ANTIGRAVITY_APP_DIR", home / ".gemini" / "antigravity")).resolve()
+        else Path(
+            os.environ.get(
+                "ANTIGRAVITY_DATA_DIR",
+                os.environ.get("ANTIGRAVITY_HISTORY_DIR", home / ".gemini" / "antigravity")
+            )
+        ).resolve()
     )
 
     # 1. Setup master directories & symlinks

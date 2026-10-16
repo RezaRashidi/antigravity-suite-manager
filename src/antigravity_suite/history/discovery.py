@@ -85,16 +85,18 @@ def discover_all_history_sources(
         search_roots.add(os.path.join(h, ".gemide"))
         search_roots.add(os.path.join(h, ".config", "Antigravity"))
         search_roots.add(os.path.join(h, ".config", "Antigravity IDE"))
-        search_roots.add(os.path.join(h, ".config", "antigravity"))
         search_roots.add(os.path.join(h, ".config", "antigravity-ide"))
         search_roots.add(os.path.join(h, ".config", "Google", "Antigravity"))
         search_roots.add(os.path.join(h, ".local", "share", "antigravity"))
         search_roots.add(os.path.join(h, ".local", "share", "Antigravity"))
         for p in glob.glob(os.path.join(h, ".antigravity*")):
-            if "suite-manager" not in os.path.basename(p):
+            bname = os.path.basename(p)
+            if "suite-manager" not in bname and ".bak" not in bname and ".removed" not in bname:
                 search_roots.add(p)
         for p in glob.glob(os.path.join(h, ".gemini*")):
-            search_roots.add(p)
+            bname = os.path.basename(p)
+            if ".bak" not in bname and ".removed" not in bname:
+                search_roots.add(p)
 
     # 4. Inspect desktop launchers for custom data directories
     desktop_locations = [
@@ -149,7 +151,16 @@ def discover_all_history_sources(
                 if rel != "." and len(rel.split(os.sep)) > 5:
                     dirs.clear()
                     continue
-                if "suite-manager" in root or ".git" in root or "node_modules" in root:
+                # Prune out backup, version control, and temporary directories
+                dirs[:] = [
+                    d for d in dirs
+                    if not any(
+                        x in d.lower()
+                        for x in [".bak", ".removed", "_bak", "backup", "backups", "suite-manager", ".git", "node_modules", "cache"]
+                    )
+                ]
+                root_lower = root.lower()
+                if any(x in root_lower for x in [".bak", ".removed", "_bak", "backup", "backups", "suite-manager", ".git", "node_modules"]):
                     dirs.clear()
                     continue
 

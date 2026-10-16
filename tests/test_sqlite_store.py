@@ -109,6 +109,58 @@ class TestSqliteStore(unittest.TestCase):
             self.assertEqual(row[2], 2)
             self.assertIn(uid, summaries)
 
+    def test_ensure_summaries_schema_creates_indexes(self):
+        """Tests that ensure_summaries_schema creates the authentic indexes."""
+        with tempfile.NamedTemporaryFile(suffix=".db") as f:
+            conn = sqlite3.connect(f.name)
+            ensure_summaries_schema(conn)
+            indexes = [r[1] for r in conn.execute("PRAGMA index_list(conversation_summaries);").fetchall()]
+            conn.close()
+            self.assertIn("idx_conversation_summaries_last_user_input_time", indexes)
+            self.assertIn("idx_conversation_summaries_last_modified_time", indexes)
+
+    def test_pool_merger_step_precedence(self):
+        """Tests that a conversation with more steps is never overwritten by a truncated copy with newer mtime."""
+        import os, time
+        from antigravity_suite.history.pool_merger import merge_raw_db_pools
+
+        with tempfile.TemporaryDirectory() as td:
+            master_dir = Path(td) / "master"
+            pool_dir = Path(td) / "pool"
+            master_dir.mkdir()
+            pool_dir.mkdir()
+
+            conv_name = "test-conv-uuid.db"
+            master_db = master_dir / conv_name
+            pool_db = pool_dir / conv_name
+
+            # Master has 10 steps
+            m_conn = sqlite3.connect(str(master_db))
+            m_conn.execute("CREATE TABLE steps (idx integer, step_type integer, step_payload blob, PRIMARY KEY(idx));")
+            for i in range(10):
+                m_conn.execute("INSERT INTO steps VALUES (?, 14, X'');", (i,))
+            m_conn.commit()
+            m_conn.close()
+
+            # Pool has 2 steps, but newer timestamp (+100s)
+            p_conn = sqlite3.connect(str(pool_db))
+            p_conn.execute("CREATE TABLE steps (idx integer, step_type integer, step_payload blob, PRIMARY KEY(idx));")
+            for i in range(2):
+                p_conn.execute("INSERT INTO steps VALUES (?, 14, X'');", (i,))
+            p_conn.commit()
+            p_conn.close()
+            future_mtime = time.time() + 100.0
+            os.utime(str(pool_db), (future_mtime, future_mtime))
+
+            # Run merge
+            merge_raw_db_pools([str(pool_dir)], master_dir)
+
+            # Master must still have 10 steps!
+            chk_conn = sqlite3.connect(str(master_db))
+            steps_cnt = chk_conn.execute("SELECT count(*) FROM steps;").fetchone()[0]
+            chk_conn.close()
+            self.assertEqual(steps_cnt, 10)
+
 
 if __name__ == "__main__":
     unittest.main()

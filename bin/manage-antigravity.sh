@@ -768,9 +768,6 @@ set -e
 export REAL_HOME="${REAL_HOME}"
 export HOME="\${REAL_HOME}"
 export XDG_CONFIG_HOME="\${REAL_HOME}/.config"
-export DBUS_SESSION_BUS_ADDRESS=""
-export GNOME_KEYRING_CONTROL=""
-export SSH_AUTH_SOCK=""
 export ANTIGRAVITY_DESKTOP_NAME="${desktop_name}"
 export ANTIGRAVITY_APP_NAME="${wm_class}"
 export ANTIGRAVITY_ICON_PATH="${LOCAL_ICONS}/${icon_name}.png"
@@ -791,6 +788,11 @@ if [ -f "${APP_INSTALL_DIR}/chrome-sandbox" ]; then
             SANDBOX_FLAG="--no-sandbox "
         fi
     fi
+fi
+
+if [ -f "\${REAL_HOME}/.gemini/cache/antigravity-keyring-unavailable" ]; then
+    export DBUS_SESSION_BUS_ADDRESS=""
+    export GNOME_KEYRING_CONTROL=""
 fi
 
 exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}${pass_store_flag}--user-data-dir="\${REAL_HOME}/.config/Antigravity" --class="${wm_class}" --name="${wm_class}" "\$@"
@@ -892,9 +894,6 @@ export REAL_HOME="${REAL_HOME}"
 export PROFILE2="${PROFILE2_DIR}"
 export HOME="\${PROFILE2}"
 export XDG_CONFIG_HOME="\${PROFILE2}/.config"
-export DBUS_SESSION_BUS_ADDRESS=""
-export GNOME_KEYRING_CONTROL=""
-export SSH_AUTH_SOCK=""
 
 export ANTIGRAVITY_DESKTOP_NAME="antigravity-2.desktop"
 export ANTIGRAVITY_APP_NAME="antigravity-2"
@@ -937,6 +936,11 @@ if [ -f "${APP_INSTALL_DIR}/chrome-sandbox" ]; then
             SANDBOX_FLAG="--no-sandbox "
         fi
     fi
+fi
+
+if [ -f "\${PROFILE2}/.gemini/cache/antigravity-keyring-unavailable" ]; then
+    export DBUS_SESSION_BUS_ADDRESS=""
+    export GNOME_KEYRING_CONTROL=""
 fi
 
 # 4. Launch isolated Account 2 instance
@@ -999,9 +1003,6 @@ setup_ide_shortcuts() {
 
     cat <<EOF > "${LOCAL_BIN}/antigravity-ide"
 #!/usr/bin/env bash
-export DBUS_SESSION_BUS_ADDRESS=""
-export GNOME_KEYRING_CONTROL=""
-export SSH_AUTH_SOCK=""
 python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
 python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
 disown
@@ -1017,6 +1018,11 @@ if [ -f "${IDE_INSTALL_DIR}/chrome-sandbox" ]; then
             SANDBOX_FLAG="--no-sandbox "
         fi
     fi
+fi
+
+if [ -f "${REAL_HOME}/.gemini/cache/antigravity-keyring-unavailable" ]; then
+    export DBUS_SESSION_BUS_ADDRESS=""
+    export GNOME_KEYRING_CONTROL=""
 fi
 
 exec "${IDE_INSTALL_DIR}/antigravity-ide" \${SANDBOX_FLAG}${ide_pass_store}--class="antigravity-ide" --name="antigravity-ide" "\$@"
@@ -1314,9 +1320,6 @@ export REAL_HOME="${REAL_HOME}"
 export PROFILE="${profile_dir}"
 export HOME="\${PROFILE}"
 export XDG_CONFIG_HOME="\${PROFILE}/.config"
-export DBUS_SESSION_BUS_ADDRESS=""
-export GNOME_KEYRING_CONTROL=""
-export SSH_AUTH_SOCK=""
 
 export ANTIGRAVITY_DESKTOP_NAME="${wm_class}.desktop"
 export ANTIGRAVITY_APP_NAME="${wm_class}"
@@ -1353,6 +1356,11 @@ if [ -f "${APP_INSTALL_DIR}/chrome-sandbox" ]; then
             SANDBOX_FLAG="--no-sandbox "
         fi
     fi
+fi
+
+if [ -f "\${PROFILE}/.gemini/cache/antigravity-keyring-unavailable" ]; then
+    export DBUS_SESSION_BUS_ADDRESS=""
+    export GNOME_KEYRING_CONTROL=""
 fi
 
 exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}--password-store=basic --user-data-dir="\${PROFILE}/.config/Antigravity" --class="${wm_class}" --name="${wm_class}" "\$@"
@@ -1415,9 +1423,6 @@ set -e
 export REAL_HOME="${REAL_HOME}"
 export PROFILE="${profile_dir}"
 export HOME="\${PROFILE}"
-export DBUS_SESSION_BUS_ADDRESS=""
-export GNOME_KEYRING_CONTROL=""
-export SSH_AUTH_SOCK=""
 
 python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
 python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
@@ -1434,6 +1439,11 @@ if [ -f "${IDE_INSTALL_DIR}/chrome-sandbox" ]; then
             SANDBOX_FLAG="--no-sandbox "
         fi
     fi
+fi
+
+if [ -f "\${PROFILE}/.gemini/cache/antigravity-keyring-unavailable" ]; then
+    export DBUS_SESSION_BUS_ADDRESS=""
+    export GNOME_KEYRING_CONTROL=""
 fi
 
 exec "${IDE_INSTALL_DIR}/antigravity-ide" \${SANDBOX_FLAG}--user-data-dir "\${PROFILE}/.config/Antigravity IDE" --class="${wm_class}" --name="${wm_class}" "\$@"
@@ -1494,7 +1504,21 @@ print(f"------------------------------------------------------------------------
 instances = []
 
 # 1. Primary App 1
-p1_running = subprocess.run(["pgrep", "-f", "user-data-dir=.*Antigravity$"], capture_output=True).returncode == 0
+p1_running = subprocess.run(["pgrep", "-f", f"user-data-dir={real_home}/.config/Antigravity"], capture_output=True).returncode == 0
+if not p1_running:
+    try:
+        pids = subprocess.run(["pgrep", "-f", "Antigravity"], capture_output=True, text=True).stdout.strip().split()
+        for pid in pids:
+            try:
+                with open(f"/proc/{pid}/cmdline", "r", errors="ignore") as f:
+                    cmd = f.read()
+                    if "user-data-dir=" in cmd and "/.config/Antigravity" in cmd and ".antigravity-profile" not in cmd:
+                        p1_running = True
+                        break
+            except Exception:
+                pass
+    except Exception:
+        pass
 instances.append(("Antigravity (Acc 1)", "App", "Primary (Shared)", "antigravity-1", f"{G}Running{NC}" if p1_running else "Stopped", "~/.local/bin/antigravity-1"))
 
 # 2. Account 2

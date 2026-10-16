@@ -33,7 +33,12 @@ def watch_mode(
     effective_master = (
         Path(master_gemini).resolve()
         if master_gemini
-        else Path(os.environ.get("ANTIGRAVITY_APP_DIR", home / ".gemini" / "antigravity")).resolve()
+        else Path(
+            os.environ.get(
+                "ANTIGRAVITY_DATA_DIR",
+                os.environ.get("ANTIGRAVITY_HISTORY_DIR", home / ".gemini" / "antigravity")
+            )
+        ).resolve()
     )
 
     running = True

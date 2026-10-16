@@ -124,8 +124,9 @@ def build_cascade_summary(
     sub_15 += encode_tag_bytes(7, ts_bytes)
     out += encode_tag_bytes(15, bytes(sub_15))
 
-    # Tag 16: last_user_input_step_index (varint)
-    out += encode_tag_uint(16, max(0, last_user_step))
+    # Tag 16: annotations submessage (Subtag 4 = last_user_step, Subtag 5 = step_count)
+    ann_bytes = encode_annotations_field(max(1, step_count), max(0, last_user_step))
+    out += encode_tag_bytes(16, ann_bytes)
 
     # Tag 19: workspace_uris
     if isinstance(workspace_uri, list):

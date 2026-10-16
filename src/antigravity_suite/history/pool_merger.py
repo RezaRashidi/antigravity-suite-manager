@@ -12,15 +12,17 @@ import os
 import re
 import shutil
 from pathlib import Path
-from typing import List
+from typing import List, Union
 
-from antigravity_suite.history.sqlite_store import get_actual_steps_count
+from antigravity_suite.history.sqlite_store import copy_sqlite_db_safely, get_actual_steps_count
 
 
 def merge_raw_db_pools(conv_pools: List[str], master_conv_dir: Path) -> int:
     """
     Merges raw .db and .pb files from external conversation pools into master_conv_dir.
-    Updates files if destination is missing, has fewer steps, smaller size, or is older.
+    Updates files if destination is missing, has fewer steps, or is older.
+    Strictly prioritizes step counts for SQLite databases to prevent truncated copies
+    from overwriting complete conversations.
     Returns:
         Number of databases successfully merged or updated.
     """
@@ -41,19 +43,36 @@ def merge_raw_db_pools(conv_pools: List[str], master_conv_dir: Path) -> int:
                 needs_copy = True
             elif target_file.stat().st_size == 0 and os.path.getsize(src_file) > 0:
                 needs_copy = True
-            elif os.path.getsize(src_file) > target_file.stat().st_size:
-                needs_copy = True
-            elif os.path.getmtime(src_file) > (target_file.stat().st_mtime + 2.0):
-                needs_copy = True
-            elif base.endswith(".db") and get_actual_steps_count(src_file) > get_actual_steps_count(target_file):
-                needs_copy = True
+            elif base.endswith(".db"):
+                # STRICT STEP PRECEDENCE (Bug 2 & 10):
+                # A truncated database must NEVER overwrite a complete database
+                src_steps = get_actual_steps_count(src_file)
+                tgt_steps = get_actual_steps_count(target_file)
+                if src_steps > tgt_steps:
+                    needs_copy = True
+                elif src_steps < tgt_steps:
+                    needs_copy = False
+                else:
+                    # Same number of steps: update only if source is genuinely newer
+                    if os.path.getmtime(src_file) > (target_file.stat().st_mtime + 2.0):
+                        needs_copy = True
+            else:
+                # Non-sqlite files (.pb)
+                if os.path.getsize(src_file) > target_file.stat().st_size:
+                    needs_copy = True
+                elif os.path.getmtime(src_file) > (target_file.stat().st_mtime + 2.0):
+                    needs_copy = True
 
             if needs_copy:
-                try:
-                    shutil.copy2(src_file, target_file)
-                    db_files_merged += 1
-                except Exception:
-                    pass
+                if base.endswith(".db"):
+                    if copy_sqlite_db_safely(src_file, target_file):
+                        db_files_merged += 1
+                else:
+                    try:
+                        shutil.copy2(src_file, target_file)
+                        db_files_merged += 1
+                    except Exception:
+                        pass
     return db_files_merged
 
 

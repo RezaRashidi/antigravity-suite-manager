@@ -14,7 +14,7 @@ import sqlite3
 from pathlib import Path
 from typing import List
 
-from antigravity_suite.history.sqlite_store import get_actual_steps_count
+from antigravity_suite.history.sqlite_store import copy_sqlite_db_safely, get_actual_steps_count
 
 
 def replicate_to_ide_profiles(
@@ -59,14 +59,20 @@ def replicate_to_ide_profiles(
                         except Exception:
                             pass
 
-            # 2. Maintain conversation_summaries.db inside conversations/ subfolder
+            # 2. Maintain conversation_summaries.db inside conversations/ subfolder (Bug 16)
+            # Must strictly symlink to avoid dual-path database desync
             t_sum_db = os.path.join(tgt_conv_dir, "conversation_summaries.db")
             if not os.path.islink(t_sum_db) and not (
                 os.path.exists(t_sum_db) and os.path.samefile(str(master_sum_db), t_sum_db)
             ):
                 dest_c = None
                 try:
-                    if os.path.exists(tgt_root_sum_db) and not os.path.exists(t_sum_db):
+                    if os.path.exists(tgt_root_sum_db):
+                        if os.path.exists(t_sum_db):
+                            try:
+                                os.remove(t_sum_db)
+                            except Exception:
+                                pass
                         try:
                             os.symlink("../conversation_summaries.db", t_sum_db)
                         except Exception:
@@ -84,7 +90,7 @@ def replicate_to_ide_profiles(
                         except Exception:
                             pass
 
-            # 3. Replicate trajectory .db files
+            # 3. Replicate trajectory .db files with strict step precedence
             if not os.path.islink(tgt_conv_dir) and not os.path.samefile(str(master_conv_dir), tgt_conv_dir):
                 for db_src in glob.glob(os.path.join(str(master_conv_dir), "*.db")):
                     base_name = os.path.basename(db_src)
@@ -94,18 +100,19 @@ def replicate_to_ide_profiles(
                     needs_copy = False
                     if not os.path.exists(tgt_db) or os.path.getsize(tgt_db) == 0:
                         needs_copy = True
-                    elif os.path.getsize(db_src) > os.path.getsize(tgt_db):
-                        needs_copy = True
-                    elif os.path.getmtime(db_src) > (os.path.getmtime(tgt_db) + 2.0):
-                        needs_copy = True
-                    elif base_name.endswith(".db") and get_actual_steps_count(db_src) > get_actual_steps_count(tgt_db):
-                        needs_copy = True
+                    else:
+                        src_steps = get_actual_steps_count(db_src)
+                        tgt_steps = get_actual_steps_count(tgt_db)
+                        if src_steps > tgt_steps:
+                            needs_copy = True
+                        elif src_steps < tgt_steps:
+                            needs_copy = False
+                        else:
+                            if os.path.getmtime(db_src) > (os.path.getmtime(tgt_db) + 2.0):
+                                needs_copy = True
 
                     if needs_copy:
-                        try:
-                            shutil.copy2(db_src, tgt_db)
-                        except Exception:
-                            pass
+                        copy_sqlite_db_safely(db_src, tgt_db)
 
             # 4. Replicate agyhub_summaries_proto.pb
             t_proto = os.path.join(target_d, "agyhub_summaries_proto.pb")

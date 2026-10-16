@@ -156,6 +156,33 @@ class TestHistoryBackupManager(unittest.TestCase):
         HistoryBackupManager.prune_backups(backup_root, max_keep=3)
         self.assertEqual(len(list(backup_root.iterdir())), 3)
 
+    def test_discovery_ignores_backup_directories(self):
+        """Tests that discover_all_history_sources ignores backups and .bak directories."""
+        from antigravity_suite.history.discovery import discover_all_history_sources
+
+        # Create a backup directory containing a conversation db
+        backup_conv = self.home / ".config" / "antigravity" / "backups" / "history" / "conversations"
+        backup_conv.mkdir(parents=True)
+        with open(backup_conv / "12345678-1234-1234-1234-123456789abc.db", "wb") as f:
+            f.write(b"fake_db")
+
+        # Create a .bak directory containing a conversation db
+        bak_dir = self.home / ".gemini.bak_12345" / "conversations"
+        bak_dir.mkdir(parents=True)
+        with open(bak_dir / "23456789-2345-2345-2345-23456789abcd.db", "wb") as f:
+            f.write(b"fake_db")
+
+        conv_pools, brain_pools, _ = discover_all_history_sources(user_home=self.home)
+
+        # Assert neither backup directory is included in discovered pools
+        for pool in conv_pools:
+            self.assertNotIn("backups", pool.lower())
+            self.assertNotIn(".bak", pool.lower())
+
+        for pool in brain_pools:
+            self.assertNotIn("backups", pool.lower())
+            self.assertNotIn(".bak", pool.lower())
+
 
 if __name__ == "__main__":
     unittest.main()

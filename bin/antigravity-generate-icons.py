@@ -397,6 +397,7 @@ rgba_ide = recolor_emblem(1024, 1024, base_ide, is_white_bg=(ide_theme == "white
 write_png(1024, 1024, rgba_acc1, os.path.join(LOCAL_ICONS, "antigravity.png"))
 write_png(1024, 1024, rgba_acc1, os.path.join(LOCAL_ICONS, "antigravity-1.png"))
 write_png(1024, 1024, rgba_acc2, os.path.join(LOCAL_ICONS, "antigravity-acc2.png"))
+write_png(1024, 1024, rgba_acc2, os.path.join(LOCAL_ICONS, "antigravity-acc2-tray.png"))
 write_png(1024, 1024, rgba_ide, os.path.join(LOCAL_ICONS, "antigravity-ide.png"))
 
 print("[SUCCESS] Master 1024x1024 icons written.")
@@ -406,6 +407,7 @@ with tempfile.TemporaryDirectory() as tmp_dir:
         "antigravity.png": (os.path.join(tmp_dir, "raw_acc1_1024.raw"), rgba_acc1),
         "antigravity-1.png": (os.path.join(tmp_dir, "raw_acc1_1024.raw"), rgba_acc1),
         "antigravity-acc2.png": (os.path.join(tmp_dir, "raw_acc2_1024.raw"), rgba_acc2),
+        "antigravity-acc2-tray.png": (os.path.join(tmp_dir, "raw_acc2_1024.raw"), rgba_acc2),
         "antigravity-ide.png": (os.path.join(tmp_dir, "raw_ide_1024.raw"), rgba_ide),
     }
 

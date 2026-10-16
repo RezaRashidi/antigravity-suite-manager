@@ -104,6 +104,17 @@ class TestProtobufWire(unittest.TestCase):
         self.assertIn(uuid_str, entries)
         self.assertEqual(entries[uuid_str], inner_summary)
 
+    def test_extract_entries_arbitrary_key_length(self):
+        # Test non-36-char key (e.g. length 14: conv-custom-99)
+        key_str = "conv-custom-99"
+        summary_payload = b"\x0a\x05Title\x10\x02"
+        entry = encode_tag_bytes(1, key_str.encode("utf-8")) + encode_tag_bytes(2, summary_payload)
+        proto_data = encode_tag_bytes(1, bytes(entry))
+
+        entries = extract_entries_from_proto(proto_data)
+        self.assertIn(key_str, entries)
+        self.assertEqual(entries[key_str], summary_payload)
+
 
 if __name__ == "__main__":
     unittest.main()

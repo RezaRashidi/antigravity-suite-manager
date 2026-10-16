@@ -88,6 +88,18 @@ def refresh_ide_oauth_token(
             pass
 
     if not client_id or not client_secret:
+        # Fallback to primary ~/.gemini/oauth_credentials.json
+        primary_oauth = os.path.join(home, ".gemini", "oauth_credentials.json")
+        if os.path.isfile(primary_oauth):
+            try:
+                with open(primary_oauth, "r", encoding="utf-8") as f:
+                    c_data = json.load(f)
+                    client_id = client_id or c_data.get("client_id")
+                    client_secret = client_secret or c_data.get("client_secret")
+            except Exception:
+                pass
+
+    if not client_id or not client_secret:
         return False
 
     token_url = "https://oauth2.googleapis.com/token"

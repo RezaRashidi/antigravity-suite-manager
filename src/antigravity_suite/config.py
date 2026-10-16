@@ -42,23 +42,40 @@ class SuiteConfig:
         eff_master = (
             self.master_app_dir.resolve()
             if self.master_app_dir is not None and str(self.master_app_dir) not in ("", ".")
-            else Path(os.environ.get("ANTIGRAVITY_APP_DIR", eff_gemini / "antigravity")).resolve()
+            else Path(
+                os.environ.get(
+                    "ANTIGRAVITY_DATA_DIR",
+                    os.environ.get("ANTIGRAVITY_HISTORY_DIR", eff_gemini / "antigravity")
+                )
+            ).resolve()
         )
         object.__setattr__(self, "master_app_dir", eff_master)
 
         if not self.ide_dirs:
+            import glob
             candidate_ides = [
                 self.user_home / ".gemide",
                 self.user_home / ".gemini-ide",
                 eff_gemini,
+                self.user_home / ".antigravity-profile2" / ".gemini",
             ]
+            for p_glob in [
+                self.user_home / ".antigravity-profile-app-*" / ".gemini",
+                self.user_home / ".antigravity-ide-profile-*" / ".gemini",
+            ]:
+                for match in glob.glob(str(p_glob)):
+                    candidate_ides.append(Path(match))
+
             seen_ides = set()
             valid_ides = []
             for p in candidate_ides:
-                resolved = p.resolve()
-                if resolved.exists() and str(resolved) not in seen_ides:
-                    seen_ides.add(str(resolved))
-                    valid_ides.append(resolved)
+                try:
+                    resolved = p.resolve()
+                    if resolved.exists() and str(resolved) not in seen_ides:
+                        seen_ides.add(str(resolved))
+                        valid_ides.append(resolved)
+                except Exception:
+                    pass
             if not valid_ides:
                 valid_ides = [eff_gemini]
             object.__setattr__(self, "ide_dirs", valid_ides)

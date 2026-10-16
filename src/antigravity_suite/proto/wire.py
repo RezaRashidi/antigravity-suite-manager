@@ -175,17 +175,42 @@ def extract_entries_from_proto(data: bytes) -> Dict[str, bytes]:
             except Exception:
                 pass
 
-        # 2. Check if tag 1 is a map entry (contains UUID in subtag 1)
+        # 2. Check if tag 1 is a map entry
         if tag_num == 1:
-            if len(entry_data) > 38 and entry_data[0] == 0x0A and entry_data[1] == 0x24:
-                uuid = entry_data[2:38].decode("ascii", "ignore")
-                val_chunk = entry_data[38:]
-                if len(val_chunk) > 2 and val_chunk[0] in (0x12, 0x1A):
-                    vlen, vpos = read_varint(val_chunk, 1)
-                    raw_val = val_chunk[vpos : vpos + vlen]
-                    pure = extract_pure_binary_summary(raw_val)
-                    if pure:
-                        entries[uuid] = pure
+            epos = 0
+            elen = len(entry_data)
+            entry_key = None
+            entry_val = None
+            while epos < elen:
+                try:
+                    etag_wire, epos = read_varint(entry_data, epos)
+                    ewire_type = etag_wire & 7
+                    etag_num = etag_wire >> 3
+                    if ewire_type == 0:
+                        _, epos = read_varint(entry_data, epos)
+                    elif ewire_type == 1:
+                        epos += 8
+                    elif ewire_type == 5:
+                        epos += 4
+                    elif ewire_type == 2:
+                        flen, epos = read_varint(entry_data, epos)
+                        if epos + flen > elen:
+                            break
+                        field_bytes = entry_data[epos : epos + flen]
+                        epos += flen
+                        if etag_num == 1:
+                            entry_key = field_bytes.decode("ascii", "ignore")
+                        elif etag_num in (2, 3):
+                            entry_val = field_bytes
+                    else:
+                        break
+                except Exception:
+                    break
+
+            if entry_key and entry_val:
+                pure = extract_pure_binary_summary(entry_val)
+                if pure:
+                    entries[entry_key] = pure
             else:
                 # Could be an outer container wrapping entries (e.g. in antigravityUnifiedStateSync)
                 sub_entries = extract_entries_from_proto(entry_data)

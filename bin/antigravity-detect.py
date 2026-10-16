@@ -14,6 +14,7 @@ import re
 import argparse
 import subprocess
 import shutil
+import datetime
 
 GREEN = '\033[1;32m'
 YELLOW = '\033[1;33m'
@@ -26,6 +27,50 @@ BOLD = '\033[1m'
 REAL_HOME = os.path.expanduser("~")
 CONF_DIR = os.path.join(REAL_HOME, ".config", "antigravity")
 PATHS_CONF = os.path.join(CONF_DIR, "paths.conf")
+
+def is_acc1_running(real_home=None):
+    home = real_home or REAL_HOME
+    target = f"user-data-dir={home}/.config/Antigravity"
+    res = subprocess.run(["pgrep", "-f", re.escape(target)], capture_output=True)
+    if res.returncode == 0:
+        return True
+    try:
+        pids = subprocess.run(["pgrep", "-f", "Antigravity"], capture_output=True, text=True).stdout.strip().split()
+        for pid in pids:
+            try:
+                with open(f"/proc/{pid}/cmdline", "r", errors="ignore") as f:
+                    cmd = f.read()
+                    if f"user-data-dir={home}/.config/Antigravity" in cmd:
+                        return True
+                    if "user-data-dir=" in cmd and "/.config/Antigravity" in cmd and ".antigravity-profile" not in cmd:
+                        return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return False
+
+def update_launcher_profile_path(launcher_f, is_acc2, old_p, new_p):
+    if not os.path.isfile(launcher_f):
+        return
+    with open(launcher_f, "r", encoding="utf-8") as f:
+        l_content = f.read()
+    if is_acc2:
+        l_content = re.sub(r'export PROFILE2="[^"]+"', f'export PROFILE2="{new_p}"', l_content)
+        l_content = re.sub(r'export PROFILE="[^"]+"', f'export PROFILE2="{new_p}"', l_content)
+    else:
+        l_content = re.sub(r'export PROFILE="[^"]+"', f'export PROFILE="{new_p}"', l_content)
+
+    old_base = os.path.basename(old_p)
+    new_base = os.path.basename(new_p)
+    if old_base and new_base and old_base != new_base:
+        l_content = l_content.replace(old_base, new_base)
+    if old_p in l_content:
+        l_content = l_content.replace(old_p, new_p)
+
+    with open(launcher_f, "w", encoding="utf-8") as f:
+        f.write(l_content)
+
 
 def inspect_app_dir(d):
     # Strictly exclude unofficial third-party apps like Antigravity Manager
@@ -319,7 +364,7 @@ def scan_clones(curr_app="", curr_ide=""):
         elif os.path.isfile(os.path.join(local_apps, 'antigravity-1.desktop')):
             acc1_desktop = os.path.join(local_apps, 'antigravity-1.desktop')
 
-    acc1_running = subprocess.run(['pgrep', '-f', 'user-data-dir=.*Antigravity$'], capture_output=True).returncode == 0
+    acc1_running = is_acc1_running(REAL_HOME)
     acc1_cache = os.path.join(acc1_profile, 'cache', 'antigravity-keyring-unavailable')
 
     app1_name = 'Antigravity' if not has_other_app_accounts else 'Antigravity (Account 1 - Default)'
@@ -909,7 +954,7 @@ def configure_single_clone(clone):
         # Check process
         running = False
         if is_acc1:
-            running = subprocess.run(["pgrep", "-f", "user-data-dir=.*Antigravity$"], capture_output=True).returncode == 0
+            running = is_acc1_running(REAL_HOME)
         elif is_acc2:
             running = subprocess.run(["pgrep", "-f", "antigravity-profile2.*Antigravity"], capture_output=True).returncode == 0
         elif is_ide1:
@@ -1049,11 +1094,7 @@ def configure_single_clone(clone):
                 os.makedirs(os.path.dirname(new_p), exist_ok=True)
                 shutil.move(p_dir, new_p)
                 if os.path.isfile(launcher_f):
-                    with open(launcher_f, "r", encoding="utf-8") as f:
-                        l_content = f.read()
-                    l_content = re.sub(r'export PROFILE[2]?="[^"]+"', f'export PROFILE="{new_p}"', l_content)
-                    with open(launcher_f, "w", encoding="utf-8") as f:
-                        f.write(l_content)
+                    update_launcher_profile_path(launcher_f, is_acc2, p_dir, new_p)
                 clone['profile_dir'] = new_p
                 print(f"{GREEN}[SUCCESS] Profile directory moved to {new_p} and launcher updated.{NC}")
         elif choice == "6":
@@ -1243,7 +1284,7 @@ def configure_unified_instance(u_item, curr_app, curr_ide, custom_paths):
         running = False
         if c:
             if is_acc1:
-                running = subprocess.run(["pgrep", "-f", "user-data-dir=.*Antigravity$"], capture_output=True).returncode == 0
+                running = is_acc1_running(REAL_HOME)
             elif is_acc2:
                 running = subprocess.run(["pgrep", "-f", "antigravity-profile2.*Antigravity"], capture_output=True).returncode == 0
             elif is_ide1:
@@ -1410,11 +1451,7 @@ def configure_unified_instance(u_item, curr_app, curr_ide, custom_paths):
                     os.makedirs(os.path.dirname(new_p), exist_ok=True)
                     shutil.move(p_dir, new_p)
                     if os.path.isfile(launcher_f):
-                        with open(launcher_f, "r", encoding="utf-8") as f:
-                            l_content = f.read()
-                        l_content = re.sub(r'export PROFILE[2]?="[^"]+"', f'export PROFILE="{new_p}"', l_content)
-                        with open(launcher_f, "w", encoding="utf-8") as f:
-                            f.write(l_content)
+                        update_launcher_profile_path(launcher_f, is_acc2, p_dir, new_p)
                     c['profile_dir'] = new_p
                     print(f"{GREEN}[SUCCESS] Profile directory moved to {new_p} and launcher updated.{NC}")
             elif choice == "6":

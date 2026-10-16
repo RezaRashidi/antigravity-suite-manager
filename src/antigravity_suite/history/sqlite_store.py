@@ -40,7 +40,44 @@ def ensure_summaries_schema(conn: sqlite3.Connection) -> None:
         raw_summary blob,
         group_id text NOT NULL DEFAULT ""
     );""")
+    cur.execute("""CREATE INDEX IF NOT EXISTS idx_conversation_summaries_last_user_input_time
+        ON conversation_summaries (last_user_input_time);""")
+    cur.execute("""CREATE INDEX IF NOT EXISTS idx_conversation_summaries_last_modified_time
+        ON conversation_summaries (last_modified_time);""")
     conn.commit()
+
+
+def copy_sqlite_db_safely(src_path: Union[str, Path], dst_path: Union[str, Path]) -> bool:
+    """Safely copies a SQLite database using the SQLite backup API, flushing WAL pages."""
+    src_str = str(src_path)
+    dst_str = str(dst_path)
+    try:
+        with sqlite3.connect(f"file:{src_str}?mode=ro", uri=True, timeout=10.0) as s_conn:
+            with sqlite3.connect(dst_str, timeout=10.0) as d_conn:
+                s_conn.backup(d_conn)
+        try:
+            st = os.stat(src_str)
+            os.utime(dst_str, (st.st_atime, st.st_mtime))
+        except Exception:
+            pass
+        return True
+    except Exception:
+        try:
+            import shutil
+            shutil.copy2(src_str, dst_str)
+            for sidecar in ["-wal", "-shm"]:
+                side_src = src_str + sidecar
+                side_dst = dst_str + sidecar
+                if os.path.exists(side_src):
+                    shutil.copy2(side_src, side_dst)
+                elif os.path.exists(side_dst):
+                    try:
+                        os.remove(side_dst)
+                    except Exception:
+                        pass
+            return True
+        except Exception:
+            return False
 
 
 def load_existing_summaries(

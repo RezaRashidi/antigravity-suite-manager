@@ -27,8 +27,12 @@ IDE_ICON_PATH = os.path.join(REAL_HOME, ".local/share/icons/antigravity-ide.png"
 ACC2_TRAY_PATH = os.path.join(REAL_HOME, ".local/share/icons/antigravity-acc2-tray.png")
 
 def sync_tray_cache():
-    if not os.path.isfile(ACC2_TRAY_PATH):
-        return
+    effective_tray = ACC2_TRAY_PATH
+    if not os.path.isfile(effective_tray):
+        if os.path.isfile(ACC2_ICON_PATH):
+            effective_tray = ACC2_ICON_PATH
+        else:
+            return
     
     # 1. Find running Account 2 processes
     acc2_processes = []
@@ -78,7 +82,7 @@ def sync_tray_cache():
         if best_acc2_diff <= 20.0 and best_acc2_diff < best_other_diff:
             for icon_file in glob.glob(os.path.join(d, "status_icon_*.png")):
                 try:
-                    shutil.copyfile(ACC2_TRAY_PATH, icon_file)
+                    shutil.copyfile(effective_tray, icon_file)
                 except Exception:
                     pass
 
