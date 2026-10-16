@@ -302,13 +302,15 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             with open(os.path.join(mock_conv, "snap1.db"), "w") as f: f.write("old snap1")
             with open(os.path.join(mock_conv, "zombie.db"), "w") as f: f.write("zombie conversation")
 
+            from unittest.mock import patch
             orig_master = migration.MASTER_GEMINI
             orig_gemini = migration.GEMINI_DIR
             try:
                 migration.MASTER_GEMINI = mock_master
                 migration.GEMINI_DIR = td
-                res = migration.restore_backup(backup_file)
-                self.assertTrue(res)
+                with patch.object(migration, "trigger_history_merge"), patch.object(migration, "create_safety_backup"):
+                    res = migration.restore_backup(backup_file)
+                    self.assertTrue(res)
 
                 # zombie.db must be purged
                 self.assertFalse(os.path.exists(os.path.join(mock_conv, "zombie.db")))

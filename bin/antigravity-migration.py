@@ -95,6 +95,8 @@ def get_db_step_count(db_path):
 # ==============================================================================
 def create_safety_backup(category="history", label="pre_change"):
     """Creates a local timestamped safety snapshot before any state modification."""
+    if not MASTER_GEMINI or "/tmp" in os.path.realpath(str(MASTER_GEMINI)):
+        return None
     cat_dir = os.path.join(BACKUPS_DIR, category)
     os.makedirs(cat_dir, exist_ok=True)
     ts = get_timestamp()
@@ -587,6 +589,9 @@ def export_all(output_path=None):
 # ==============================================================================
 def trigger_history_merge():
     """Runs antigravity-merge-history.py to update indexes and IDE state."""
+    if not MASTER_GEMINI or "/tmp" in os.path.realpath(str(MASTER_GEMINI)):
+        return
+
     merge_script = os.path.join(LOCAL_BIN, "antigravity-merge-history.py")
     if not os.path.isfile(merge_script):
         # Fallback to repo bin
