@@ -15,7 +15,7 @@ import shutil
 import sqlite3
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
 
 from antigravity_suite.auth.token import refresh_ide_oauth_token
 from antigravity_suite.config import DEFAULT_CONFIG, SuiteConfig, get_user_home
@@ -108,8 +108,9 @@ def setup_master_directories(effective_master: Path) -> Tuple[Path, Path, Path, 
 def collect_all_conversation_ids(
     master_conv_dir: Path,
     existing_rows: Dict[str, Tuple],
+    extra_ids: Optional[Iterable[str]] = None,
 ) -> Set[str]:
-    """Scans databases, protobufs, and existing table rows for 36-char UUIDs."""
+    """Scans databases, protobufs, in-memory protobuf entries, and existing table rows for 36-char UUIDs."""
     all_conv_ids: Set[str] = set()
     uuid_pattern = re.compile(r"^[0-9a-fA-F-]{36}$")
 
@@ -126,6 +127,11 @@ def collect_all_conversation_ids(
     for cid in existing_rows.keys():
         if uuid_pattern.match(cid):
             all_conv_ids.add(cid)
+
+    if extra_ids:
+        for cid in extra_ids:
+            if uuid_pattern.match(cid):
+                all_conv_ids.add(cid)
 
     return all_conv_ids
 
@@ -232,19 +238,24 @@ def resolve_conversation_item(
             stats.conversations_updated += 1
         return
 
-    # Reconstruct authentic summary
-    user_step = get_last_user_step_index(db_file, target_step_cnt)
-    new_bin = build_cascade_summary(
-        conv_id,
-        final_title,
-        final_prev,
-        target_step_cnt,
-        file_mtime_iso,
-        last_user_step=user_step,
-        workspace_uri=ws_uri,
-        project_id=proj_id,
-    )
-    all_summaries[conv_id] = new_bin
+    # Reconstruct authentic summary if needed, or reuse valid existing binary
+    if curr_raw and len(curr_raw) > 20 and not needs_title_rebuild and not is_corrupt_raw and not needs_steps_rebuild:
+        raw_to_store = curr_raw
+        user_step = parsed_raw.get("last_user_step") or get_last_user_step_index(db_file, target_step_cnt)
+    else:
+        user_step = get_last_user_step_index(db_file, target_step_cnt)
+        raw_to_store = build_cascade_summary(
+            conv_id,
+            final_title,
+            final_prev,
+            target_step_cnt,
+            file_mtime_iso,
+            last_user_step=user_step,
+            workspace_uri=ws_uri,
+            project_id=proj_id,
+        )
+
+    all_summaries[conv_id] = raw_to_store
 
     summary_model = ConversationSummary(
         conversation_id=conv_id,
@@ -253,7 +264,7 @@ def resolve_conversation_item(
         step_count=target_step_cnt,
         last_modified_time=file_mtime_iso,
         last_user_input_step_index=user_step,
-        raw_summary=new_bin,
+        raw_summary=raw_to_store,
         workspace_uris=ws_uri or "",
         project_id=proj_id or "",
     )
@@ -302,7 +313,11 @@ def synchronize_master_summaries(
         except Exception:
             pass
 
-    all_conv_ids = collect_all_conversation_ids(master_conv_dir, existing_rows)
+    all_conv_ids = collect_all_conversation_ids(
+        master_conv_dir=master_conv_dir,
+        existing_rows=existing_rows,
+        extra_ids=all_summaries.keys(),
+    )
 
     for conv_id in sorted(all_conv_ids):
         resolve_conversation_item(

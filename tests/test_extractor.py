@@ -2,7 +2,14 @@
 Unit Tests for Extractor and Title Decoding (including Persian/Unicode).
 """
 
+import sys
 import unittest
+from pathlib import Path
+
+_SRC_DIR = str(Path(__file__).resolve().parent.parent / "src")
+if _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
+
 from antigravity_suite.history.extractor import decode_pbtxt_string, get_annotation_title
 
 

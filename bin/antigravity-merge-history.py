@@ -21,6 +21,8 @@ _CANDIDATES = [
     _CURRENT_DIR.parent / "src",
     _USER_HOME / ".antigravity-suite-manager" / "src",
     _USER_HOME / "PhpstormProjects" / "antigravity-suite-manager" / "src",
+    _USER_HOME.parent / ".antigravity-suite-manager" / "src",
+    _USER_HOME.parent / "PhpstormProjects" / "antigravity-suite-manager" / "src",
     Path.cwd() / "src",
 ]
 
