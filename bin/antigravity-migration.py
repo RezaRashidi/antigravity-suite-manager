@@ -57,6 +57,25 @@ def format_size(bytes_val):
         bytes_val /= 1024.0
     return f"{bytes_val:.1f} TB"
 
+def safe_extract_tar(tar, path):
+    """Safely extracts tar files preventing path traversal and handling Python 3.12+ filter."""
+    try:
+        tar.extractall(path=path, filter="data")
+    except TypeError:
+        tar.extractall(path=path)
+
+def get_db_step_count(db_path):
+    """Safely queries SQLite database step count for precedence comparison."""
+    if not os.path.isfile(db_path):
+        return -1
+    try:
+        import sqlite3
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as con:
+            row = con.execute("SELECT count(*) FROM steps").fetchone()
+            return int(row[0]) if row and row[0] is not None else 0
+    except Exception:
+        return -1
+
 # ==============================================================================
 # Safety Backup & Snapshot Functions
 # ==============================================================================
@@ -156,12 +175,15 @@ def restore_backup(backup_path):
     import tempfile
     with tempfile.TemporaryDirectory() as tmpdir:
         with tarfile.open(backup_path, "r:gz") as tar:
-            tar.extractall(path=tmpdir)
+            safe_extract_tar(tar, path=tmpdir)
 
-        # Restore History
+        # Restore History (support both history/ subfolder and root-level export)
         hist_dir = os.path.join(tmpdir, "history")
+        if not os.path.isdir(hist_dir) and (os.path.isdir(os.path.join(tmpdir, "conversations")) or glob.glob(os.path.join(tmpdir, "*summaries*"))):
+            hist_dir = tmpdir
+
         if os.path.isdir(hist_dir):
-            log_info("Restoring conversation history and brain artifacts...")
+            log_info("Restoring conversation history, annotations, and brain artifacts...")
             src_conv = os.path.join(hist_dir, "conversations")
             dst_conv = os.path.join(MASTER_GEMINI, "conversations")
             os.makedirs(dst_conv, exist_ok=True)
@@ -180,14 +202,32 @@ def restore_backup(backup_path):
                     else:
                         shutil.copy2(b_item, b_dst)
 
+            src_anno = os.path.join(hist_dir, "annotations")
+            dst_anno = os.path.join(MASTER_GEMINI, "annotations")
+            os.makedirs(dst_anno, exist_ok=True)
+            if os.path.isdir(src_anno):
+                for a_item in glob.glob(os.path.join(src_anno, "*")):
+                    shutil.copy2(a_item, os.path.join(dst_anno, os.path.basename(a_item)))
+
+            # Prevent SQLite WAL/SHM corruption: remove existing WAL/SHM if not in backup
+            for ext in ["-wal", "-shm"]:
+                wal_path = os.path.join(MASTER_GEMINI, f"conversation_summaries.db{ext}")
+                backup_wal = os.path.join(hist_dir, f"conversation_summaries.db{ext}")
+                if os.path.exists(wal_path) and not os.path.exists(backup_wal):
+                    try: os.remove(wal_path)
+                    except Exception: pass
+
             for sum_f in glob.glob(os.path.join(hist_dir, "*summaries*")):
                 shutil.copy2(sum_f, os.path.join(MASTER_GEMINI, os.path.basename(sum_f)))
 
             # Re-index history
             trigger_history_merge()
 
-        # Restore Suite
+        # Restore Suite (support both suite/ subfolder and root-level export)
         suite_dir = os.path.join(tmpdir, "suite")
+        if not os.path.isdir(suite_dir) and (os.path.isfile(os.path.join(tmpdir, "GEMINI.md")) or os.path.isdir(os.path.join(tmpdir, "config"))):
+            suite_dir = tmpdir
+
         if os.path.isdir(suite_dir):
             log_info("Restoring suite configurations, rules, skills, and accounts...")
             src_gemini_md = os.path.join(suite_dir, "GEMINI.md")
@@ -355,6 +395,7 @@ def export_suite(output_path=None):
 
             token_targets = [
                 (os.path.join(GEMINI_DIR, "jetski-standalone-oauth-token"), "gemini-token"),
+                (os.path.join(REAL_HOME, ".antigravity-profile2", ".gemini", "jetski-standalone-oauth-token"), "acc2-token"),
                 (os.path.join(REAL_HOME, ".gemini-ide", "jetski-standalone-oauth-token"), "gemini-ide-token"),
                 (os.path.join(REAL_HOME, ".gemide", "jetski-standalone-oauth-token"), "gemide-token"),
             ]
@@ -461,7 +502,7 @@ def import_history(archive_path):
     import tempfile
     with tempfile.TemporaryDirectory() as tmpdir:
         with tarfile.open(archive_path, "r:gz") as tar:
-            tar.extractall(path=tmpdir)
+            safe_extract_tar(tar, path=tmpdir)
 
         # Look for conversations folder
         src_conv = os.path.join(tmpdir, "conversations")
@@ -472,14 +513,20 @@ def import_history(archive_path):
             for db in glob.glob(os.path.join(src_conv, "*.db")):
                 fname = os.path.basename(db)
                 dst = os.path.join(master_conv, fname)
+                should_copy = False
                 if not os.path.exists(dst):
+                    should_copy = True
+                else:
+                    db_steps = get_db_step_count(db)
+                    dst_steps = get_db_step_count(dst)
+                    if db_steps > dst_steps:
+                        should_copy = True
+                    elif db_steps == dst_steps and os.path.getmtime(db) > os.path.getmtime(dst):
+                        should_copy = True
+
+                if should_copy:
                     shutil.copy2(db, dst)
                     imported_dbs += 1
-                else:
-                    # Compare mtimes, preserve whichever is newer
-                    if os.path.getmtime(db) > os.path.getmtime(dst):
-                        shutil.copy2(db, dst)
-                        imported_dbs += 1
 
         # Look for brain folder
         src_brain = os.path.join(tmpdir, "brain")
@@ -490,11 +537,11 @@ def import_history(archive_path):
             for b_item in glob.glob(os.path.join(src_brain, "*")):
                 b_name = os.path.basename(b_item)
                 dst_b = os.path.join(master_brain, b_name)
-                if not os.path.exists(dst_b):
-                    if os.path.isdir(b_item):
-                        shutil.copytree(b_item, dst_b)
-                    else:
-                        shutil.copy2(b_item, dst_b)
+                if os.path.isdir(b_item):
+                    shutil.copytree(b_item, dst_b, dirs_exist_ok=True)
+                    imported_brains += 1
+                else:
+                    shutil.copy2(b_item, dst_b)
                     imported_brains += 1
 
         # Look for annotations folder
@@ -567,7 +614,7 @@ def import_suite(archive_path):
     import tempfile
     with tempfile.TemporaryDirectory() as tmpdir:
         with tarfile.open(archive_path, "r:gz") as tar:
-            tar.extractall(path=tmpdir)
+            safe_extract_tar(tar, path=tmpdir)
 
         # 1. Global Rules (GEMINI.md)
         gemini_md_src = os.path.join(tmpdir, "GEMINI.md")
@@ -588,6 +635,11 @@ def import_suite(archive_path):
             cfg_src = os.path.join(tmpdir, "suite", "config")
 
         if os.path.isdir(cfg_src):
+            # Restore config.json if present
+            inc_cfg_json = os.path.join(cfg_src, "config.json")
+            if os.path.isfile(inc_cfg_json):
+                shutil.copy2(inc_cfg_json, os.path.join(CONFIG_DIR, "config.json"))
+
             # Intelligent merge for mcp_config.json
             inc_mcp_cfg = os.path.join(cfg_src, "mcp_config.json")
             merge_mcp_configs(os.path.join(CONFIG_DIR, "mcp_config.json"), inc_mcp_cfg)
@@ -662,8 +714,7 @@ def import_suite(archive_path):
         if os.path.isdir(confs_src):
             for cf in glob.glob(os.path.join(confs_src, "*.conf")):
                 c_dst = os.path.join(ANTIGRAVITY_CONF_DIR, os.path.basename(cf))
-                if not os.path.exists(c_dst):
-                    shutil.copy2(cf, c_dst)
+                shutil.copy2(cf, c_dst)
 
         # 6. OAuth Tokens
         tokens_src = os.path.join(tmpdir, "tokens")
@@ -673,6 +724,7 @@ def import_suite(archive_path):
             token_restore_map = [
                 ("gemini-token", os.path.join(GEMINI_DIR, "jetski-standalone-oauth-token")),
                 (".gemini-token", os.path.join(GEMINI_DIR, "jetski-standalone-oauth-token")),
+                ("acc2-token", os.path.join(REAL_HOME, ".antigravity-profile2", ".gemini", "jetski-standalone-oauth-token")),
                 ("gemini-ide-token", os.path.join(REAL_HOME, ".gemini-ide", "jetski-standalone-oauth-token")),
                 (".gemini-ide-token", os.path.join(REAL_HOME, ".gemini-ide", "jetski-standalone-oauth-token")),
                 ("gemide-token", os.path.join(REAL_HOME, ".gemide", "jetski-standalone-oauth-token")),
@@ -682,13 +734,12 @@ def import_suite(archive_path):
                 token_src_file = os.path.join(tokens_src, src_name)
                 if os.path.isfile(token_src_file):
                     os.makedirs(os.path.dirname(dst_path), exist_ok=True)
-                    if not os.path.exists(dst_path):
-                        shutil.copy2(token_src_file, dst_path)
-                        try:
-                            os.chmod(dst_path, 0o600)
-                        except Exception:
-                            pass
-                        log_success(f"Restored OAuth token to {dst_path}")
+                    shutil.copy2(token_src_file, dst_path)
+                    try:
+                        os.chmod(dst_path, 0o600)
+                    except Exception:
+                        pass
+                    log_success(f"Restored OAuth token to {dst_path}")
 
     log_success("Suite configuration import completed successfully!")
     print(f"  • Imported Skills:   {imported_skills}")

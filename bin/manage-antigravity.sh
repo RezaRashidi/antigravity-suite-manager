@@ -20,6 +20,9 @@ set -eo pipefail
 CACHE_DIR="${ANTIGRAVITY_CACHE_DIR:-/tmp/antigravity-cache}"
 APP_INSTALL_DIR="${ANTIGRAVITY_APP_DIR:-}"
 IDE_INSTALL_DIR="${ANTIGRAVITY_IDE_DIR:-}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLI_APP_DIR_SPECIFIED=false
+CLI_IDE_DIR_SPECIFIED=false
 
 if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
     REAL_USER="$SUDO_USER"
@@ -103,14 +106,17 @@ mkdir -p "$LOCAL_BIN" "$LOCAL_APPS" "$LOCAL_ICONS" "$SHARED_CONV_DIR" "$SHARED_C
 # 0. System Installation Auto-Detection
 # ------------------------------------------------------------------------------
 auto_detect_installations() {
-    local SCRIPT_DIR
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     local DETECT_SCRIPT=""
     if [ -f "${SCRIPT_DIR}/antigravity-detect.py" ]; then
         DETECT_SCRIPT="${SCRIPT_DIR}/antigravity-detect.py"
+    elif [ -f "${SCRIPT_DIR}/bin/antigravity-detect.py" ]; then
+        DETECT_SCRIPT="${SCRIPT_DIR}/bin/antigravity-detect.py"
     elif [ -f "${LOCAL_BIN}/antigravity-detect.py" ]; then
         DETECT_SCRIPT="${LOCAL_BIN}/antigravity-detect.py"
     fi
+
+    local prev_app_dir="$APP_INSTALL_DIR"
+    local prev_ide_dir="$IDE_INSTALL_DIR"
 
     if [ -n "$DETECT_SCRIPT" ]; then
         local env_vars
@@ -120,7 +126,9 @@ auto_detect_installations() {
         fi
     fi
 
-    if [ -z "$APP_INSTALL_DIR" ] || [ ! -f "${APP_INSTALL_DIR}/antigravity" ]; then
+    if [ "$CLI_APP_DIR_SPECIFIED" = "true" ] && [ -n "$prev_app_dir" ]; then
+        APP_INSTALL_DIR="$prev_app_dir"
+    elif [ -z "$APP_INSTALL_DIR" ] || [ ! -f "${APP_INSTALL_DIR}/antigravity" ]; then
         if [ -n "$ANTIGRAVITY_DETECTED_APP" ] && [ -f "${ANTIGRAVITY_DETECTED_APP}/antigravity" ]; then
             APP_INSTALL_DIR="$ANTIGRAVITY_DETECTED_APP"
         else
@@ -134,7 +142,9 @@ auto_detect_installations() {
         fi
     fi
 
-    if [ -z "$IDE_INSTALL_DIR" ] || [ ! -f "${IDE_INSTALL_DIR}/antigravity-ide" ]; then
+    if [ "$CLI_IDE_DIR_SPECIFIED" = "true" ] && [ -n "$prev_ide_dir" ]; then
+        IDE_INSTALL_DIR="$prev_ide_dir"
+    elif [ -z "$IDE_INSTALL_DIR" ] || [ ! -f "${IDE_INSTALL_DIR}/antigravity-ide" ]; then
         if [ -n "$ANTIGRAVITY_DETECTED_IDE" ] && [ -f "${ANTIGRAVITY_DETECTED_IDE}/antigravity-ide" ]; then
             IDE_INSTALL_DIR="$ANTIGRAVITY_DETECTED_IDE"
         else
@@ -356,8 +366,14 @@ def check_keyring_storage():
             pass
     app1_norm = (app1_cache or app1_flag)
 
+    app2_exists = os.path.isdir(PROFILE2_DIR)
     app2_cache = os.path.isfile(os.path.join(PROFILE2_DIR, ".gemini", "cache", "antigravity-keyring-unavailable"))
     app2_norm = app2_cache
+
+    if not app2_exists:
+        if app1_norm:
+            return f"{G}Normal File Storage (Decoupled from GNOME Keyring){NC}"
+        return f"{Y}GNOME Keyring (Secret Service){NC}"
 
     if app1_norm and app2_norm:
         return f"{G}Normal File Storage (Decoupled from GNOME Keyring){NC}"
@@ -858,6 +874,7 @@ setup_account_2() {
     fi
     APP_INSTALL_DIR="${APP_INSTALL_DIR:-/opt/Antigravity-x64}"
 
+    mkdir -p "$PROFILE2_DIR/.gemini"
     local pass_store_flag=""
     if [ "$KEYRING_MODE_APP2" = "normal" ]; then
         pass_store_flag="--password-store=basic "
@@ -997,8 +1014,12 @@ setup_ide_shortcuts() {
     apply_icons_config || true
 
     local ide_pass_store=""
+    mkdir -p "${REAL_HOME}/.gemide/cache"
     if [ "$KEYRING_MODE_IDE" = "normal" ]; then
         ide_pass_store="--password-store=basic "
+        touch "${REAL_HOME}/.gemide/cache/antigravity-keyring-unavailable"
+    else
+        rm -f "${REAL_HOME}/.gemide/cache/antigravity-keyring-unavailable" 2>/dev/null || true
     fi
 
     cat <<EOF > "${LOCAL_BIN}/antigravity-ide"
@@ -1020,7 +1041,7 @@ if [ -f "${IDE_INSTALL_DIR}/chrome-sandbox" ]; then
     fi
 fi
 
-if [ -f "${REAL_HOME}/.gemini/cache/antigravity-keyring-unavailable" ]; then
+if [ -f "${REAL_HOME}/.gemide/cache/antigravity-keyring-unavailable" ]; then
     export DBUS_SESSION_BUS_ADDRESS=""
     export GNOME_KEYRING_CONTROL=""
 fi
@@ -1107,6 +1128,7 @@ EOF
     fi
 
     # Symlink master GEMINI.md, MCP tool schemas, custom skills, rules, and plugins across IDE instances
+    mkdir -p "${REAL_HOME}/.gemide"
     for ide_root in "${REAL_HOME}/.gemide" "${REAL_HOME}/.gemini-ide"; do
         if [ -d "$ide_root" ]; then
             # Link root GEMINI.md and shared global configs
@@ -1180,6 +1202,8 @@ merge_history() {
     log_info "Synchronizing and backfilling conversation history across all profiles..."
     if [ -f "${LOCAL_BIN}/antigravity-merge-history.py" ]; then
         python3 "${LOCAL_BIN}/antigravity-merge-history.py" --master "$SHARED_CONV_DIR"
+    elif [ -f "${SCRIPT_DIR}/antigravity-merge-history.py" ]; then
+        python3 "${SCRIPT_DIR}/antigravity-merge-history.py" --master "$SHARED_CONV_DIR"
     elif [ -f "${SCRIPT_DIR}/bin/antigravity-merge-history.py" ]; then
         python3 "${SCRIPT_DIR}/bin/antigravity-merge-history.py" --master "$SHARED_CONV_DIR"
     else
@@ -1390,12 +1414,18 @@ EOF
         launcher="${LOCAL_BIN}/antigravity-ide-${iid}"
         desktop="${LOCAL_APPS}/antigravity-ide-${iid}.desktop"
 
-        mkdir -p "${profile_dir}/.gemini"
+        mkdir -p "${profile_dir}/.gemini/antigravity-ide"
+        mkdir -p "${profile_dir}/.gemide/cache"
         mkdir -p "${profile_dir}/.local/share"
         ln -sfn "$LOCAL_APPS" "${profile_dir}/.local/share/applications"
         ln -sfn "$LOCAL_ICONS" "${profile_dir}/.local/share/icons"
+        [ -f "${SHARED_GEMINI_DIR}/GEMINI.md" ] && ln -sfn "${SHARED_GEMINI_DIR}/GEMINI.md" "${profile_dir}/.gemini/GEMINI.md"
+        [ -d "${SHARED_CONFIG_DIR}" ] && ln -sfn "${SHARED_CONFIG_DIR}" "${profile_dir}/.gemini/config"
+        ln -sfn "${profile_dir}/.gemini/GEMINI.md" "${profile_dir}/.gemide/GEMINI.md" 2>/dev/null || true
+        ln -sfn "${profile_dir}/.gemini/config" "${profile_dir}/.gemide/config" 2>/dev/null || true
 
-        mkdir -p "${profile_dir}/.gemini/antigravity-ide"
+        touch "${profile_dir}/.gemide/cache/antigravity-keyring-unavailable"
+
         if [ "$imode" = "shared" ]; then
             log_info "Configuring shared conversation history with master pool..."
             ln -sfn "$SHARED_CONV_DIR/conversations" "${profile_dir}/.gemini/antigravity-ide/conversations"
@@ -1422,7 +1452,7 @@ EOF
 set -e
 export REAL_HOME="${REAL_HOME}"
 export PROFILE="${profile_dir}"
-export HOME="\${PROFILE}"
+export HOME="${REAL_HOME}"
 
 python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
 python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
@@ -1441,12 +1471,12 @@ if [ -f "${IDE_INSTALL_DIR}/chrome-sandbox" ]; then
     fi
 fi
 
-if [ -f "\${PROFILE}/.gemini/cache/antigravity-keyring-unavailable" ]; then
+if [ -f "\${PROFILE}/.gemide/cache/antigravity-keyring-unavailable" ] || [ -f "\${PROFILE}/.gemini/cache/antigravity-keyring-unavailable" ]; then
     export DBUS_SESSION_BUS_ADDRESS=""
     export GNOME_KEYRING_CONTROL=""
 fi
 
-exec "${IDE_INSTALL_DIR}/antigravity-ide" \${SANDBOX_FLAG}--user-data-dir "\${PROFILE}/.config/Antigravity IDE" --class="${wm_class}" --name="${wm_class}" "\$@"
+exec "${IDE_INSTALL_DIR}/antigravity-ide" \${SANDBOX_FLAG}--password-store=basic --user-data-dir "\${PROFILE}/.config/Antigravity IDE" --class="${wm_class}" --name="${wm_class}" "\$@"
 EOF
         chmod +x "$launcher"
 
@@ -1598,6 +1628,8 @@ set_history_mode() {
     # Automated restorable backup before altering history mode
     if [ -f "${LOCAL_BIN}/antigravity-migration.py" ]; then
         python3 "${LOCAL_BIN}/antigravity-migration.py" create-backup --category history --label "pre_set_history_${itype}_${iid}" >/dev/null 2>&1 || true
+    elif [ -f "${SCRIPT_DIR}/antigravity-migration.py" ]; then
+        python3 "${SCRIPT_DIR}/antigravity-migration.py" create-backup --category history --label "pre_set_history_${itype}_${iid}" >/dev/null 2>&1 || true
     elif [ -f "${SCRIPT_DIR}/bin/antigravity-migration.py" ]; then
         python3 "${SCRIPT_DIR}/bin/antigravity-migration.py" create-backup --category history --label "pre_set_history_${itype}_${iid}" >/dev/null 2>&1 || true
     fi
@@ -1673,6 +1705,8 @@ set_history_mode() {
 get_migration_script() {
     if [ -f "${LOCAL_BIN}/antigravity-migration.py" ]; then
         echo "${LOCAL_BIN}/antigravity-migration.py"
+    elif [ -f "${SCRIPT_DIR}/antigravity-migration.py" ]; then
+        echo "${SCRIPT_DIR}/antigravity-migration.py"
     elif [ -f "${SCRIPT_DIR}/bin/antigravity-migration.py" ]; then
         echo "${SCRIPT_DIR}/bin/antigravity-migration.py"
     else
@@ -1760,15 +1794,29 @@ remove_instance() {
     local desktop=""
 
     if [ "$itype" = "app" ]; then
-        wm_class="antigravity-app-${iid}"
-        profile_dir="${REAL_HOME}/.antigravity-profile-app-${iid}"
-        launcher="${LOCAL_BIN}/antigravity-app-${iid}"
-        desktop="${LOCAL_APPS}/antigravity-app-${iid}.desktop"
+        if [ "$iid" = "2" ] || [ "$iid" = "acc2" ]; then
+            wm_class="antigravity-2"
+            profile_dir="${PROFILE2_DIR}"
+            launcher="${LOCAL_BIN}/antigravity-acc2"
+            desktop="${LOCAL_APPS}/antigravity-2.desktop"
+        else
+            wm_class="antigravity-app-${iid}"
+            profile_dir="${REAL_HOME}/.antigravity-profile-app-${iid}"
+            launcher="${LOCAL_BIN}/antigravity-app-${iid}"
+            desktop="${LOCAL_APPS}/antigravity-app-${iid}.desktop"
+        fi
     elif [ "$itype" = "ide" ]; then
-        wm_class="antigravity-ide-${iid}"
-        profile_dir="${REAL_HOME}/.antigravity-ide-profile-${iid}"
-        launcher="${LOCAL_BIN}/antigravity-ide-${iid}"
-        desktop="${LOCAL_APPS}/antigravity-ide-${iid}.desktop"
+        if [ "$iid" = "1" ] || [ "$iid" = "default" ]; then
+            wm_class="antigravity-ide"
+            profile_dir="${REAL_HOME}/.gemini/antigravity-ide"
+            launcher="${LOCAL_BIN}/antigravity-ide"
+            desktop="${LOCAL_APPS}/antigravity-ide.desktop"
+        else
+            wm_class="antigravity-ide-${iid}"
+            profile_dir="${REAL_HOME}/.antigravity-ide-profile-${iid}"
+            launcher="${LOCAL_BIN}/antigravity-ide-${iid}"
+            desktop="${LOCAL_APPS}/antigravity-ide-${iid}.desktop"
+        fi
     fi
 
     log_warn "Removing instance ${itype^^} '${iid}'..."
@@ -2624,10 +2672,12 @@ while [ $# -gt 0 ]; do
             ;;
         --app-dir)
             APP_INSTALL_DIR="$2"
+            CLI_APP_DIR_SPECIFIED=true
             shift 2
             ;;
         --ide-dir)
             IDE_INSTALL_DIR="$2"
+            CLI_IDE_DIR_SPECIFIED=true
             shift 2
             ;;
         --cache-dir)

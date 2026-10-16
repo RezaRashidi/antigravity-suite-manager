@@ -78,7 +78,11 @@ args = parser.parse_args()
 acc1_theme = args.acc1.lower()
 acc1_color = args.acc1_color.lower()
 acc2_theme = args.acc2.lower()
-acc2_color = args.acc2_color.lower() if args.acc2_color else ("violet" if args.acc2_recolor.lower() in ["true", "1", "yes"] else "original")
+acc2_color_passed = any(arg.startswith("--acc2-color") for arg in sys.argv)
+if not acc2_color_passed and args.acc2_recolor.lower() in ["false", "0", "no"]:
+    acc2_color = "original"
+else:
+    acc2_color = args.acc2_color.lower() if args.acc2_color else ("violet" if args.acc2_recolor.lower() in ["true", "1", "yes"] else "original")
 acc2_recolor = "true" if acc2_color != "original" else "false"
 ide_theme = args.ide.lower()
 ide_color = args.ide_color.lower()
@@ -187,7 +191,9 @@ def reconstruct_png(png_path):
         bpp = 4
     elif color_type == 2:
         bpp = 3
-    elif color_type == 0:
+    elif color_type == 4:
+        bpp = 2
+    elif color_type in (0, 3):
         bpp = 1
     else:
         bpp = 4
@@ -231,6 +237,16 @@ def reconstruct_png(png_path):
             rgba[i * 4 + 1] = recon[i * 3 + 1]
             rgba[i * 4 + 2] = recon[i * 3 + 2]
             rgba[i * 4 + 3] = 255
+        recon = rgba
+    elif bpp == 2:
+        rgba = bytearray(w * h * 4)
+        for i in range(w * h):
+            v = recon[i * 2]
+            a = recon[i * 2 + 1]
+            rgba[i * 4] = v
+            rgba[i * 4 + 1] = v
+            rgba[i * 4 + 2] = v
+            rgba[i * 4 + 3] = a
         recon = rgba
     elif bpp == 1:
         rgba = bytearray(w * h * 4)
@@ -338,6 +354,22 @@ def recolor_emblem(w, h, data_in, is_white_bg=False, color="original", custom_hu
 # Load Master Black & White
 w_blk, h_blk, rgba_black = reconstruct_png(MASTER_BLACK)
 w_wht, h_wht, rgba_white = reconstruct_png(MASTER_WHITE)
+
+if rgba_black and (w_blk, h_blk) != (1024, 1024):
+    rgba_black = resample_raw(rgba_black, w_blk, h_blk, 1024, 1024)
+    w_blk, h_blk = 1024, 1024
+
+if rgba_white and (w_wht, h_wht) != (1024, 1024):
+    rgba_white = resample_raw(rgba_white, w_wht, h_wht, 1024, 1024)
+    w_wht, h_wht = 1024, 1024
+
+if not rgba_black and rgba_white:
+    rgba_black = bytearray(rgba_white)
+    w_blk, h_blk = w_wht, h_wht
+elif not rgba_white and rgba_black:
+    rgba_white = bytearray(rgba_black)
+    w_wht, h_wht = w_blk, h_blk
+
 sizes = [512, 256, 128, 64, 48, 32, 24, 16]
 
 # Handle single custom instance generation

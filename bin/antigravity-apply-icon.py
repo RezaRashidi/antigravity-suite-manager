@@ -79,7 +79,7 @@ def sync_tray_cache():
         best_acc2_diff = min(abs(dir_ctime - t) for _, t in acc2_processes) if acc2_processes else float("inf")
         best_other_diff = min((abs(dir_ctime - t) for _, t in other_procs), default=float("inf"))
 
-        if best_acc2_diff <= 20.0 and best_acc2_diff < best_other_diff:
+        if best_acc2_diff < best_other_diff or not other_procs:
             for icon_file in glob.glob(os.path.join(d, "status_icon_*.png")):
                 try:
                     shutil.copyfile(effective_tray, icon_file)
@@ -108,7 +108,9 @@ def reconstruct_png(png_path):
             bpp = 4
         elif color_type == 2:
             bpp = 3
-        elif color_type == 0:
+        elif color_type == 4:
+            bpp = 2
+        elif color_type in (0, 3):
             bpp = 1
         else:
             bpp = 4
@@ -145,6 +147,16 @@ def reconstruct_png(png_path):
                 rgba[i * 4 + 1] = recon[i * 3 + 1]
                 rgba[i * 4 + 2] = recon[i * 3 + 2]
                 rgba[i * 4 + 3] = 255
+            recon = rgba
+        elif bpp == 2:
+            rgba = bytearray(w * h * 4)
+            for i in range(w * h):
+                v = recon[i * 2]
+                a = recon[i * 2 + 1]
+                rgba[i * 4] = v
+                rgba[i * 4 + 1] = v
+                rgba[i * 4 + 2] = v
+                rgba[i * 4 + 3] = a
             recon = rgba
         elif bpp == 1:
             rgba = bytearray(w * h * 4)
@@ -199,8 +211,23 @@ def png_to_cardinal_array(png_path):
     return all_data
 
 def focus_window(target_account="2"):
+    d = None
+    x11 = None
     try:
         x11 = ctypes.CDLL('libX11.so.6')
+        x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        x11.XOpenDisplay.restype = ctypes.c_void_p
+        x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+        x11.XDefaultRootWindow.restype = ctypes.c_ulong
+        x11.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+        x11.XInternAtom.restype = ctypes.c_ulong
+        x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+        x11.XCloseDisplay.restype = ctypes.c_int
+        x11.XFlush.argtypes = [ctypes.c_void_p]
+        x11.XFlush.restype = ctypes.c_int
+        x11.XSendEvent.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_long, ctypes.c_void_p]
+        x11.XSendEvent.restype = ctypes.c_int
+
         d = x11.XOpenDisplay(None)
         if not d: return False
         root = x11.XDefaultRootWindow(d)
@@ -221,10 +248,10 @@ def focus_window(target_account="2"):
             elif target_account == "ide" and ('"antigravity-ide"' in stdout_lower):
                 target_wid = int(wid, 16)
                 break
-            elif (f"antigravity-{target_account}" in stdout_lower or 
-                  f"antigravity-app-{target_account}" in stdout_lower or 
-                  f"antigravity-ide-{target_account}" in stdout_lower or
-                  target_account in stdout_lower):
+            elif (f'"antigravity-{target_account}"' in stdout_lower or 
+                  f'"antigravity-app-{target_account}"' in stdout_lower or 
+                  f'"antigravity-ide-{target_account}"' in stdout_lower or
+                  f'"{target_account}"' in stdout_lower):
                 target_wid = int(wid, 16)
                 break
         
@@ -255,6 +282,12 @@ def focus_window(target_account="2"):
         return True
     except Exception:
         return False
+    finally:
+        if d and x11:
+            try:
+                x11.XCloseDisplay(d)
+            except Exception:
+                pass
 
 icon_cache = {}
 def get_icon_data(png_path):
@@ -270,110 +303,124 @@ def get_icon_data(png_path):
 def apply_icon_to_windows():
     sync_tray_cache()
 
+    display = None
+    x11 = None
     try:
         x11 = ctypes.CDLL('libX11.so.6')
+        x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        x11.XOpenDisplay.restype = ctypes.c_void_p
+        x11.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+        x11.XInternAtom.restype = ctypes.c_ulong
+        x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+        x11.XCloseDisplay.restype = ctypes.c_int
+        x11.XFlush.argtypes = [ctypes.c_void_p]
+        x11.XFlush.restype = ctypes.c_int
+        x11.XChangeProperty.argtypes = [
+            ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong,
+            ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_int
+        ]
+        x11.XChangeProperty.restype = ctypes.c_int
+
         display = x11.XOpenDisplay(None)
         if not display: return
-    except Exception:
-        return
 
-    x11.XChangeProperty.argtypes = [
-        ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong,
-        ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_int
-    ]
-    x11.XChangeProperty.restype = ctypes.c_int
+        atom_icon = x11.XInternAtom(display, b'_NET_WM_ICON', False)
+        atom_cardinal = x11.XInternAtom(display, b'CARDINAL', False)
+        atom_class = x11.XInternAtom(display, b'WM_CLASS', False)
+        atom_string = x11.XInternAtom(display, b'STRING', False)
 
-    atom_icon = x11.XInternAtom(display, b'_NET_WM_ICON', False)
-    atom_cardinal = x11.XInternAtom(display, b'CARDINAL', False)
-    atom_class = x11.XInternAtom(display, b'WM_CLASS', False)
-    atom_string = x11.XInternAtom(display, b'STRING', False)
+        has_other_apps = os.path.isdir(os.path.join(REAL_HOME, ".antigravity-profile2")) or \
+                         os.path.isfile(os.path.join(REAL_HOME, ".local/bin/antigravity-acc2")) or \
+                         bool(glob.glob(os.path.join(REAL_HOME, ".antigravity-profile-app-*")))
 
-    has_other_apps = os.path.isdir(os.path.join(REAL_HOME, ".antigravity-profile2")) or \
-                     os.path.isfile(os.path.join(REAL_HOME, ".local/bin/antigravity-acc2")) or \
-                     bool(glob.glob(os.path.join(REAL_HOME, ".antigravity-profile-app-*")))
+        cls_acc1 = b'antigravity-1\0antigravity-1\0' if has_other_apps else b'antigravity\0antigravity\0'
+        cls_acc2 = b'antigravity-2\0antigravity-2\0'
+        cls_ide = b'antigravity-ide\0antigravity-ide\0'
 
-    cls_acc1 = b'antigravity-1\0antigravity-1\0' if has_other_apps else b'antigravity\0antigravity\0'
-    cls_acc2 = b'antigravity-2\0antigravity-2\0'
-    cls_ide = b'antigravity-ide\0antigravity-ide\0'
+        if not shutil.which("xwininfo"):
+            return
+        try:
+            res = subprocess.run(['xwininfo', '-root', '-tree'], capture_output=True, text=True)
+        except Exception:
+            return
+        for line in res.stdout.splitlines():
+            m = re.search(r'(0x[0-9a-fA-F]+)\s+"([^"]*)":\s+\("([^"]*)"\s+"([^"]*)"\)', line)
+            if not m: continue
+            wid_str, title, c1, c2 = m.groups()
+            c1_low, c2_low = c1.lower(), c2.lower()
 
-    if not shutil.which("xwininfo"):
-        return
-    try:
-        res = subprocess.run(['xwininfo', '-root', '-tree'], capture_output=True, text=True)
-    except Exception:
-        return
-    for line in res.stdout.splitlines():
-        m = re.search(r'(0x[0-9a-fA-F]+)\s+"([^"]*)":\s+\("([^"]+)"\s+"([^"]+)"\)', line)
-        if not m: continue
-        wid_str, title, c1, c2 = m.groups()
-        c1_low, c2_low = c1.lower(), c2.lower()
-
-        # STRICT GUARD: Exclude browsers and non-antigravity applications immediately
-        if any(b in c1_low or b in c2_low for b in ['chrome', 'chromium', 'firefox', 'brave', 'edge', 'opera', 'gedit', 'datagrip', 'gjs']):
-            continue
-
-        wid = int(wid_str, 16)
-        res_pid = subprocess.run(['xprop', '-id', hex(wid), '_NET_WM_PID'], capture_output=True, text=True)
-        pid_match = re.search(r'=\s*(\d+)', res_pid.stdout)
-        win_pid = int(pid_match.group(1)) if pid_match else None
-        
-        win_cmd = ""
-        if win_pid:
-            try:
-                with open(f"/proc/{win_pid}/cmdline", "rb") as cf:
-                    win_cmd = cf.read().decode("utf-8", errors="ignore").lower()
-            except Exception:
-                pass
-
-        if win_cmd and any(b in win_cmd for b in ['google/chrome', 'chromium', 'firefox', 'brave']):
-            continue
-
-        # Window MUST be genuine Antigravity process or have Antigravity WM_CLASS
-        is_ag = ('antigravity' in c1_low) or ('antigravity' in c2_low) or ('antigravity' in win_cmd)
-        if not is_ag:
-            continue
-
-        # Check if custom instance matching ~/.local/share/icons/{c1}.png exists
-        custom_icon_path = os.path.join(REAL_HOME, ".local/share/icons", f"{c1}.png")
-        if os.path.isfile(custom_icon_path) and c1 not in ("antigravity", "antigravity-1", "antigravity-acc2", "antigravity-ide"):
-            c_arr, length = get_icon_data(custom_icon_path)
-            if c_arr:
-                cls_custom = f"{c1}\0{c1}\0".encode("utf-8")
-                x11.XChangeProperty(display, wid, atom_icon, atom_cardinal, 32, 0, ctypes.cast(c_arr, ctypes.c_void_p), length)
-                x11.XChangeProperty(display, wid, atom_class, atom_string, 8, 0, cls_custom, len(cls_custom))
-                x11.XFlush(display)
+            # STRICT GUARD: Exclude browsers and non-antigravity applications immediately
+            if any(b in c1_low or b in c2_low for b in ['chrome', 'chromium', 'firefox', 'brave', 'edge', 'opera', 'gedit', 'datagrip', 'gjs']):
                 continue
 
-        is_ide = False
-        is_acc2 = False
+            wid = int(wid_str, 16)
+            res_pid = subprocess.run(['xprop', '-id', hex(wid), '_NET_WM_PID'], capture_output=True, text=True)
+            pid_match = re.search(r'=\s*(\d+)', res_pid.stdout)
+            win_pid = int(pid_match.group(1)) if pid_match else None
+            
+            win_cmd = ""
+            if win_pid:
+                try:
+                    with open(f"/proc/{win_pid}/cmdline", "rb") as cf:
+                        win_cmd = cf.read().decode("utf-8", errors="ignore").lower()
+                except Exception:
+                    pass
 
-        if "antigravity ide" in title.lower() or "antigravity-ide" in c1_low or ("antigravity-ide" in win_cmd) or ("/opt/antigravity/" in win_cmd) or ("/opt/antigravity-ide/" in win_cmd):
-            is_ide = True
-        elif "account 2" in title.lower() or "antigravity-2" in c1_low or "account2" in c1_low or ("antigravity-profile2" in win_cmd):
-            is_acc2 = True
-        elif ("antigravity-1" in c1_low) or ("antigravity" in c1_low) or ("/opt/antigravity2/" in win_cmd) or ("/opt/antigravity-x64/" in win_cmd) or ("antigravity" in win_cmd and not is_ide and not is_acc2):
-            pass
-        else:
-            continue
+            if win_cmd and any(b in win_cmd for b in ['google/chrome', 'chromium', 'firefox', 'brave']):
+                continue
 
-        if is_ide:
-            c_arr, length = get_icon_data(IDE_ICON_PATH)
-            if c_arr:
-                x11.XChangeProperty(display, wid, atom_icon, atom_cardinal, 32, 0, ctypes.cast(c_arr, ctypes.c_void_p), length)
-                x11.XChangeProperty(display, wid, atom_class, atom_string, 8, 0, cls_ide, len(cls_ide))
-                x11.XFlush(display)
-        elif is_acc2:
-            c_arr, length = get_icon_data(ACC2_ICON_PATH)
-            if c_arr:
-                x11.XChangeProperty(display, wid, atom_icon, atom_cardinal, 32, 0, ctypes.cast(c_arr, ctypes.c_void_p), length)
-                x11.XChangeProperty(display, wid, atom_class, atom_string, 8, 0, cls_acc2, len(cls_acc2))
-                x11.XFlush(display)
-        elif not is_acc2 and not is_ide:
-            c_arr, length = get_icon_data(ACC1_ICON_PATH)
-            if c_arr:
-                x11.XChangeProperty(display, wid, atom_icon, atom_cardinal, 32, 0, ctypes.cast(c_arr, ctypes.c_void_p), length)
-                x11.XChangeProperty(display, wid, atom_class, atom_string, 8, 0, cls_acc1, len(cls_acc1))
-                x11.XFlush(display)
+            # Window MUST be genuine Antigravity process or have Antigravity WM_CLASS
+            is_ag = ('antigravity' in c1_low) or ('antigravity' in c2_low) or ('antigravity' in win_cmd)
+            if not is_ag:
+                continue
+
+            # Check if custom instance matching ~/.local/share/icons/{c1}.png exists
+            custom_icon_path = os.path.join(REAL_HOME, ".local/share/icons", f"{c1}.png")
+            if os.path.isfile(custom_icon_path) and c1 not in ("antigravity", "antigravity-1", "antigravity-acc2", "antigravity-ide"):
+                c_arr, length = get_icon_data(custom_icon_path)
+                if c_arr:
+                    cls_custom = f"{c1}\0{c1}\0".encode("utf-8")
+                    x11.XChangeProperty(display, wid, atom_icon, atom_cardinal, 32, 0, ctypes.cast(c_arr, ctypes.c_void_p), length)
+                    x11.XChangeProperty(display, wid, atom_class, atom_string, 8, 0, cls_custom, len(cls_custom))
+                    x11.XFlush(display)
+                    continue
+
+            is_ide = False
+            is_acc2 = False
+
+            if "antigravity ide" in title.lower() or "antigravity-ide" in c1_low or ("antigravity-ide" in win_cmd) or ("/opt/antigravity-ide/" in win_cmd) or ("/antigravity-ide" in win_cmd):
+                is_ide = True
+            elif "account 2" in title.lower() or "antigravity-2" in c1_low or "account2" in c1_low or ("antigravity-profile2" in win_cmd):
+                is_acc2 = True
+            elif ("antigravity-1" in c1_low) or ("antigravity" in c1_low) or ("/opt/antigravity2/" in win_cmd) or ("/opt/antigravity-x64/" in win_cmd) or ("antigravity" in win_cmd and not is_ide and not is_acc2):
+                pass
+            else:
+                continue
+
+            if is_ide:
+                c_arr, length = get_icon_data(IDE_ICON_PATH)
+                if c_arr:
+                    x11.XChangeProperty(display, wid, atom_icon, atom_cardinal, 32, 0, ctypes.cast(c_arr, ctypes.c_void_p), length)
+                    x11.XChangeProperty(display, wid, atom_class, atom_string, 8, 0, cls_ide, len(cls_ide))
+                    x11.XFlush(display)
+            elif is_acc2:
+                c_arr, length = get_icon_data(ACC2_ICON_PATH)
+                if c_arr:
+                    x11.XChangeProperty(display, wid, atom_icon, atom_cardinal, 32, 0, ctypes.cast(c_arr, ctypes.c_void_p), length)
+                    x11.XChangeProperty(display, wid, atom_class, atom_string, 8, 0, cls_acc2, len(cls_acc2))
+                    x11.XFlush(display)
+            elif not is_acc2 and not is_ide:
+                c_arr, length = get_icon_data(ACC1_ICON_PATH)
+                if c_arr:
+                    x11.XChangeProperty(display, wid, atom_icon, atom_cardinal, 32, 0, ctypes.cast(c_arr, ctypes.c_void_p), length)
+                    x11.XChangeProperty(display, wid, atom_class, atom_string, 8, 0, cls_acc1, len(cls_acc1))
+                    x11.XFlush(display)
+    finally:
+        if display and x11:
+            try:
+                x11.XCloseDisplay(display)
+            except Exception:
+                pass
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--focus":

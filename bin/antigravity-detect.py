@@ -15,6 +15,7 @@ import argparse
 import subprocess
 import shutil
 import datetime
+import shlex
 
 GREEN = '\033[1;32m'
 YELLOW = '\033[1;33m'
@@ -24,7 +25,18 @@ RED = '\033[1;31m'
 NC = '\033[0m'
 BOLD = '\033[1m'
 
-REAL_HOME = os.path.expanduser("~")
+REAL_USER = os.environ.get("SUDO_USER") or os.environ.get("USER") or os.environ.get("LOGNAME")
+REAL_HOME = os.environ.get("REAL_HOME")
+if not REAL_HOME:
+    if REAL_USER and REAL_USER != "root":
+        try:
+            import pwd
+            REAL_HOME = pwd.getpwnam(REAL_USER).pw_dir
+        except Exception:
+            REAL_HOME = os.path.expanduser("~")
+    else:
+        REAL_HOME = os.path.expanduser("~")
+
 CONF_DIR = os.path.join(REAL_HOME, ".config", "antigravity")
 PATHS_CONF = os.path.join(CONF_DIR, "paths.conf")
 
@@ -233,7 +245,8 @@ def scan_installations():
                     with open(df, 'r', encoding='utf-8', errors='ignore') as f:
                         for line in f:
                             if line.startswith('Exec='):
-                                cmd = line.split('=', 1)[1].strip().split()[0]
+                                tokens = shlex.split(line.split('=', 1)[1].strip())
+                                cmd = tokens[0] if tokens else ""
                                 if os.path.isfile(cmd):
                                     rp = os.path.realpath(cmd)
                                     d = os.path.dirname(rp)
@@ -435,7 +448,9 @@ def scan_clones(curr_app="", curr_ide=""):
     ide_desktop = os.path.join(local_apps, 'antigravity-ide.desktop')
     ide_running = subprocess.run(['pgrep', '-f', 'antigravity-ide'], capture_output=True).returncode == 0
     ide_shared = os.path.islink(os.path.join(ide_profile, 'conversations'))
-    ide_cache = os.path.join(REAL_HOME, '.gemini', 'cache', 'antigravity-keyring-unavailable')
+    ide_cache = os.path.join(REAL_HOME, '.gemide', 'cache', 'antigravity-keyring-unavailable')
+    if not os.path.isfile(ide_cache):
+        ide_cache = os.path.join(REAL_HOME, '.gemini', 'antigravity-ide', 'cache', 'antigravity-keyring-unavailable')
     # Only register ide1 if launcher exists, desktop exists, or the engine directory actually exists
     if os.path.isfile(ide_launcher) or os.path.isfile(ide_desktop) or (curr_ide and os.path.isdir(curr_ide)):
         clones.append({
@@ -458,7 +473,8 @@ def scan_clones(curr_app="", curr_ide=""):
             continue
         cname = os.path.basename(p).replace('.antigravity-ide-profile-', '')
         c_running = subprocess.run(['pgrep', '-f', f'{os.path.basename(p)}'], capture_output=True).returncode == 0
-        c_shared = os.path.islink(os.path.join(p, '.gemini', 'antigravity-ide'))
+        c_shared = os.path.islink(os.path.join(p, '.gemini', 'antigravity-ide', 'conversations')) or \
+                   os.path.islink(os.path.join(p, '.gemini', 'antigravity-ide'))
         c_cache = os.path.join(p, '.gemini', 'cache', 'antigravity-keyring-unavailable')
         clones.append({
             'id': f'ide-{cname}',
@@ -642,7 +658,7 @@ def configure_single_installation(item, curr_app, curr_ide, custom_paths):
                     m_ans = input(f"Would you like to copy existing installation files from {old_p} to {new_p}? [Y/n]: ").strip().lower()
                     if m_ans not in ["n", "no"]:
                         print(f"Copying files from {old_p} to {new_p}...")
-                        subprocess.run(f"cp -a '{old_p}/.' '{new_p}/'", shell=True, check=False)
+                        subprocess.run(["cp", "-a", f"{old_p}/.", f"{new_p}/"], check=False)
                 item['path'] = new_p
                 exe_name = os.path.basename(item['executable']) if item['executable'] else ('antigravity-ide' if 'IDE' in item['type'] else 'antigravity')
                 item['executable'] = os.path.join(new_p, exe_name)
@@ -773,6 +789,18 @@ def configure_paths_interactive(installs):
         else:
             print(f"{RED}[ERROR] Invalid selection '{choice}'.{NC}")
 
+def get_db_step_count(db_path):
+    """Safely queries SQLite database step count for precedence comparison."""
+    if not os.path.isfile(db_path):
+        return -1
+    try:
+        import sqlite3
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as con:
+            row = con.execute("SELECT count(*) FROM steps").fetchone()
+            return int(row[0]) if row and row[0] is not None else 0
+    except Exception:
+        return -1
+
 def safe_toggle_history_mode(is_ide, is_acc1, is_shared, p_dir, local_bin, REAL_HOME, name=""):
     """Safely toggles between Shared and Isolated history with automated backup and zero data loss."""
     if is_acc1:
@@ -799,8 +827,10 @@ def safe_toggle_history_mode(is_ide, is_acc1, is_shared, p_dir, local_bin, REAL_
     ts = int(datetime.datetime.now().timestamp())
 
     if is_ide:
-        ide_conv = os.path.join(p_dir, "conversations")
-        ide_brain = os.path.join(p_dir, "brain")
+        ide_root = os.path.join(p_dir, ".gemini", "antigravity-ide") if not p_dir.endswith("antigravity-ide") else p_dir
+        os.makedirs(ide_root, exist_ok=True)
+        ide_conv = os.path.join(ide_root, "conversations")
+        ide_brain = os.path.join(ide_root, "brain")
 
         if is_shared:
             # Switching from Shared -> Isolated
@@ -817,6 +847,16 @@ def safe_toggle_history_mode(is_ide, is_acc1, is_shared, p_dir, local_bin, REAL_
                 os.unlink(ide_brain)
             os.makedirs(ide_brain, exist_ok=True)
 
+            # Unlink shared summaries and make local copies so isolated IDE does not write to shared pool
+            for sum_name in ["conversation_summaries.db", "conversation_summaries.db-wal", "conversation_summaries.db-shm", "agyhub_summaries_proto.pb"]:
+                s_path = os.path.join(ide_root, sum_name)
+                if os.path.islink(s_path):
+                    try: os.unlink(s_path)
+                    except Exception: pass
+            for sum_f in glob.glob(os.path.join(shared_pool, "*summaries*")):
+                try: shutil.copy2(sum_f, os.path.join(ide_root, os.path.basename(sum_f)))
+                except Exception: pass
+
             print(f"{GREEN}[SUCCESS] Antigravity IDE history set to Isolated Private.{NC}")
             print(f"  • Existing {copied} conversations cloned locally to {ide_conv}.")
         else:
@@ -825,7 +865,17 @@ def safe_toggle_history_mode(is_ide, is_acc1, is_shared, p_dir, local_bin, REAL_
             if os.path.isdir(ide_conv) and not os.path.islink(ide_conv):
                 for db in glob.glob(os.path.join(ide_conv, "*.db")):
                     dst = os.path.join(shared_pool, "conversations", os.path.basename(db))
+                    should_copy = False
                     if not os.path.exists(dst):
+                        should_copy = True
+                    else:
+                        c_steps = get_db_step_count(db)
+                        dst_steps = get_db_step_count(dst)
+                        if c_steps > dst_steps:
+                            should_copy = True
+                        elif c_steps == dst_steps and os.path.getmtime(db) > os.path.getmtime(dst):
+                            should_copy = True
+                    if should_copy:
                         shutil.copy2(db, dst)
                         copied += 1
                 try:
@@ -836,11 +886,10 @@ def safe_toggle_history_mode(is_ide, is_acc1, is_shared, p_dir, local_bin, REAL_
             if os.path.isdir(ide_brain) and not os.path.islink(ide_brain):
                 for b in glob.glob(os.path.join(ide_brain, "*")):
                     dst_b = os.path.join(shared_pool, "brain", os.path.basename(b))
-                    if not os.path.exists(dst_b):
-                        if os.path.isdir(b):
-                            shutil.copytree(b, dst_b)
-                        else:
-                            shutil.copy2(b, dst_b)
+                    if os.path.isdir(b):
+                        shutil.copytree(b, dst_b, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(b, dst_b)
                 try:
                     os.rename(ide_brain, f"{ide_brain}.bak_{ts}")
                 except Exception:
@@ -850,13 +899,16 @@ def safe_toggle_history_mode(is_ide, is_acc1, is_shared, p_dir, local_bin, REAL_
                 os.symlink(os.path.join(shared_pool, "conversations"), ide_conv)
             if not os.path.islink(ide_brain):
                 os.symlink(os.path.join(shared_pool, "brain"), ide_brain)
-            sum_link = os.path.join(p_dir, "conversation_summaries.db")
-            if not os.path.islink(sum_link):
-                if os.path.isfile(sum_link):
-                    try: os.rename(sum_link, f"{sum_link}.bak_{ts}")
-                    except Exception: pass
-                if os.path.isfile(os.path.join(shared_pool, "conversation_summaries.db")):
-                    os.symlink(os.path.join(shared_pool, "conversation_summaries.db"), sum_link)
+            
+            for sum_name in ["conversation_summaries.db", "agyhub_summaries_proto.pb"]:
+                sum_link = os.path.join(ide_root, sum_name)
+                if not os.path.islink(sum_link):
+                    if os.path.isfile(sum_link):
+                        try: os.rename(sum_link, f"{sum_link}.bak_{ts}")
+                        except Exception: pass
+                    master_sum = os.path.join(shared_pool, sum_name)
+                    if os.path.isfile(master_sum):
+                        os.symlink(master_sum, sum_link)
 
             if os.path.isfile(merge_script):
                 subprocess.run([sys.executable, merge_script, "--master", shared_pool, "--quiet"], check=False)
@@ -893,18 +945,27 @@ def safe_toggle_history_mode(is_ide, is_acc1, is_shared, p_dir, local_bin, REAL_
                 if os.path.isdir(c_conv):
                     for db in glob.glob(os.path.join(c_conv, "*.db")):
                         dst = os.path.join(shared_pool, "conversations", os.path.basename(db))
+                        should_copy = False
                         if not os.path.exists(dst):
+                            should_copy = True
+                        else:
+                            c_steps = get_db_step_count(db)
+                            dst_steps = get_db_step_count(dst)
+                            if c_steps > dst_steps:
+                                should_copy = True
+                            elif c_steps == dst_steps and os.path.getmtime(db) > os.path.getmtime(dst):
+                                should_copy = True
+                        if should_copy:
                             shutil.copy2(db, dst)
                             copied += 1
                 c_brain = os.path.join(target_link, "brain")
                 if os.path.isdir(c_brain):
                     for b in glob.glob(os.path.join(c_brain, "*")):
                         dst_b = os.path.join(shared_pool, "brain", os.path.basename(b))
-                        if not os.path.exists(dst_b):
-                            if os.path.isdir(b):
-                                shutil.copytree(b, dst_b)
-                            else:
-                                shutil.copy2(b, dst_b)
+                        if os.path.isdir(b):
+                            shutil.copytree(b, dst_b, dirs_exist_ok=True)
+                        else:
+                            shutil.copy2(b, dst_b)
                 try:
                     os.rename(target_link, f"{target_link}.bak_{ts}")
                 except Exception:
@@ -1010,17 +1071,36 @@ def configure_single_clone(clone):
         if choice in ["0", "", "q", "exit"]:
             break
         elif choice == "1":
-            safe_toggle_history_mode(is_ide1, is_acc1, is_shared, p_dir, local_bin, REAL_HOME, name=cid)
+            is_target_ide = is_ide1 or ('ide' in cid) or ('IDE' in clone.get('type', ''))
+            safe_toggle_history_mode(is_target_ide, is_acc1, is_shared, p_dir, local_bin, REAL_HOME, name=cid)
         elif choice == "2":
-            os.makedirs(os.path.dirname(cache_f), exist_ok=True)
-            if is_normal_keyring:
-                try: os.remove(cache_f)
-                except Exception: pass
-                print(f"{GREEN}[SUCCESS] Switched credential mode to GNOME Keyring.{NC}")
+            keyring_tool = os.path.join(local_bin, "antigravity-keyring.py")
+            if not os.path.isfile(keyring_tool):
+                keyring_tool = os.path.join(os.path.dirname(os.path.abspath(__file__)), "antigravity-keyring.py")
+            new_mode = "gnome" if is_normal_keyring else "normal"
+            if is_acc1:
+                subprocess.run([sys.executable, keyring_tool, "set", "app1", new_mode], check=False)
+            elif cid == "app2":
+                subprocess.run([sys.executable, keyring_tool, "set", "app2", new_mode], check=False)
+            elif 'ide' in cid:
+                subprocess.run([sys.executable, keyring_tool, "set", "ide", new_mode], check=False)
             else:
-                with open(cache_f, "w") as f:
-                    f.write("# Keyring bypassed\n")
-                print(f"{GREEN}[SUCCESS] Switched credential mode to Normal File Storage (Keyring bypassed).{NC}")
+                os.makedirs(os.path.dirname(cache_f), exist_ok=True)
+                if is_normal_keyring:
+                    try: os.remove(cache_f)
+                    except Exception: pass
+                    if launcher_f and os.path.isfile(launcher_f):
+                        with open(launcher_f, "r") as lf: content = lf.read()
+                        content = content.replace("--password-store=basic ", "").replace("--password-store=basic", "")
+                        with open(launcher_f, "w") as lf: lf.write(content)
+                else:
+                    with open(cache_f, "w") as f: f.write("# Keyring bypassed\n")
+                    if launcher_f and os.path.isfile(launcher_f):
+                        with open(launcher_f, "r") as lf: content = lf.read()
+                        if "--password-store=basic" not in content and "exec " in content:
+                            content = content.replace("exec ", "exec --password-store=basic ")
+                            with open(launcher_f, "w") as lf: lf.write(content)
+            print(f"{GREEN}[SUCCESS] Switched credential mode to {new_mode.upper()}.{NC}")
         elif choice == "3":
             if not os.path.isfile(launcher_f):
                 print(f"{RED}[ERROR] Launcher script {launcher_f} does not exist.{NC}")
@@ -1376,18 +1456,38 @@ def configure_unified_instance(u_item, curr_app, curr_ide, custom_paths):
             break
 
         if c:
+            is_target_ide = is_ide1 or ('ide' in cid) or ('IDE' in u_item.get('type', ''))
             if choice == "1":
-                safe_toggle_history_mode(is_ide1, is_acc1, is_shared, p_dir, local_bin, REAL_HOME, name=cid)
+                safe_toggle_history_mode(is_target_ide, is_acc1, is_shared, p_dir, local_bin, REAL_HOME, name=cid)
             elif choice == "2":
-                os.makedirs(os.path.dirname(cache_f), exist_ok=True)
-                if is_normal_keyring:
-                    try: os.remove(cache_f)
-                    except Exception: pass
-                    print(f"{GREEN}[SUCCESS] Switched credential mode to GNOME Keyring.{NC}")
+                keyring_tool = os.path.join(local_bin, "antigravity-keyring.py")
+                if not os.path.isfile(keyring_tool):
+                    keyring_tool = os.path.join(os.path.dirname(os.path.abspath(__file__)), "antigravity-keyring.py")
+                new_mode = "gnome" if is_normal_keyring else "normal"
+                if is_acc1:
+                    subprocess.run([sys.executable, keyring_tool, "set", "app1", new_mode], check=False)
+                elif cid == "app2":
+                    subprocess.run([sys.executable, keyring_tool, "set", "app2", new_mode], check=False)
+                elif is_target_ide:
+                    subprocess.run([sys.executable, keyring_tool, "set", "ide", new_mode], check=False)
                 else:
-                    with open(cache_f, "w") as f:
-                        f.write("# Keyring bypassed\n")
-                    print(f"{GREEN}[SUCCESS] Switched credential mode to Normal File Storage (Keyring bypassed).{NC}")
+                    os.makedirs(os.path.dirname(cache_f), exist_ok=True)
+                    if is_normal_keyring:
+                        try: os.remove(cache_f)
+                        except Exception: pass
+                        if launcher_f and os.path.isfile(launcher_f):
+                            with open(launcher_f, "r") as lf: content = lf.read()
+                            content = content.replace("--password-store=basic ", "").replace("--password-store=basic", "")
+                            with open(launcher_f, "w") as lf: lf.write(content)
+                        print(f"{GREEN}[SUCCESS] Switched credential mode to GNOME Keyring.{NC}")
+                    else:
+                        with open(cache_f, "w") as f: f.write("# Keyring bypassed\n")
+                        if launcher_f and os.path.isfile(launcher_f):
+                            with open(launcher_f, "r") as lf: content = lf.read()
+                            if "--password-store=basic" not in content and "exec " in content:
+                                content = content.replace("exec ", "exec --password-store=basic ", 1)
+                                with open(launcher_f, "w") as lf: lf.write(content)
+                        print(f"{GREEN}[SUCCESS] Switched credential mode to Normal File Storage (Keyring bypassed).{NC}")
             elif choice == "3":
                 if not os.path.isfile(launcher_f):
                     print(f"{RED}[ERROR] Launcher script {launcher_f} does not exist.{NC}")
@@ -1501,7 +1601,7 @@ def configure_unified_instance(u_item, curr_app, curr_ide, custom_paths):
                         m_ans = input(f"Copy existing installation files from {old_p} to {new_p}? [Y/n]: ").strip().lower()
                         if m_ans not in ["n", "no"]:
                             print(f"Copying files from {old_p} to {new_p}...")
-                            subprocess.run(f"cp -a '{old_p}/.' '{new_p}/'", shell=True, check=False)
+                            subprocess.run(["cp", "-a", f"{old_p}/.", f"{new_p}/"], check=False)
                     if is_primary_app: curr_app = new_p
                     if is_primary_ide: curr_ide = new_p
                     if old_p in custom_paths: custom_paths.remove(old_p)
@@ -1551,7 +1651,7 @@ def configure_unified_instance(u_item, curr_app, curr_ide, custom_paths):
                 if new_p and new_p != old_p:
                     new_p = os.path.realpath(os.path.expanduser(new_p))
                     if not os.path.isdir(new_p): os.makedirs(new_p, exist_ok=True)
-                    subprocess.run(f"cp -a '{old_p}/.' '{new_p}/'", shell=True, check=False)
+                    subprocess.run(["cp", "-a", f"{old_p}/.", f"{new_p}/"], check=False)
                     if is_primary_app: curr_app = new_p
                     if is_primary_ide: curr_ide = new_p
                     if old_p in custom_paths: custom_paths.remove(old_p)

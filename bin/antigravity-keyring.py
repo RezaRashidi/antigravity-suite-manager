@@ -21,7 +21,18 @@ RED = '\033[1;31m'
 NC = '\033[0m'
 BOLD = '\033[1m'
 
-REAL_HOME = os.path.expanduser("~")
+REAL_USER = os.environ.get("SUDO_USER") or os.environ.get("USER") or os.environ.get("LOGNAME")
+REAL_HOME = os.environ.get("REAL_HOME")
+if not REAL_HOME:
+    if REAL_USER and REAL_USER != "root":
+        try:
+            import pwd
+            REAL_HOME = pwd.getpwnam(REAL_USER).pw_dir
+        except Exception:
+            REAL_HOME = os.path.expanduser("~")
+    else:
+        REAL_HOME = os.path.expanduser("~")
+
 CONF_DIR = os.path.join(REAL_HOME, ".config", "antigravity")
 KEYRING_CONF = os.path.join(CONF_DIR, "keyring.conf")
 LOCAL_BIN = os.path.join(REAL_HOME, ".local", "bin")
@@ -224,6 +235,23 @@ def apply_mode_for_app2(mode):
 def apply_mode_for_ide(mode):
     launcher = os.path.join(LOCAL_BIN, "antigravity-ide")
     update_launcher_password_store(launcher, mode)
+    ide_cache_files = [
+        os.path.join(REAL_HOME, ".gemide", "cache", "antigravity-keyring-unavailable"),
+        os.path.join(REAL_HOME, ".gemini", "antigravity-ide", "cache", "antigravity-keyring-unavailable"),
+    ]
+    if mode == "normal":
+        for cf in ide_cache_files:
+            try:
+                os.makedirs(os.path.dirname(cf), exist_ok=True)
+                with open(cf, "a"):
+                    os.utime(cf, None)
+            except Exception:
+                pass
+    else:
+        for cf in ide_cache_files:
+            if os.path.isfile(cf):
+                try: os.remove(cf)
+                except Exception: pass
 
 def inspect_status():
     cfg = load_config()
@@ -259,7 +287,11 @@ def inspect_status():
     if os.path.isfile(ide_l):
         with open(ide_l, "r", errors="ignore") as f:
             ide_flag = "--password-store=basic" in f.read()
-    ide_state = f"{GREEN}Normal (Plain File / No Keyring){NC}" if ide_flag else f"{YELLOW}GNOME Keyring (Secret Service){NC}"
+    ide_cache = any(os.path.isfile(cf) for cf in [
+        os.path.join(REAL_HOME, ".gemide", "cache", "antigravity-keyring-unavailable"),
+        os.path.join(REAL_HOME, ".gemini", "antigravity-ide", "cache", "antigravity-keyring-unavailable"),
+    ])
+    ide_state = f"{GREEN}Normal (Plain File / No Keyring){NC}" if (ide_cache or ide_flag) else f"{YELLOW}GNOME Keyring (Secret Service){NC}"
 
     print(f"{BOLD}{BLUE}Instance               Active Storage Mode                Local Token File    Flag (--password-store=basic){NC}")
     print(f"----------------------------------------------------------------------------------------")

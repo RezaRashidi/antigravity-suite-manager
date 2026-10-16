@@ -282,8 +282,18 @@ step_4_deploy_scripts() {
         fi
     done
 
-    # Register antigravity_suite package in user site-packages
-    python3 -c "import site, os; sp = site.getusersitepackages(); os.makedirs(sp, exist_ok=True); open(os.path.join(sp, 'antigravity_suite.pth'), 'w').write('${SCRIPT_DIR}/src\n')" 2>/dev/null || true
+    # Register antigravity_suite package in user and system site-packages
+    local py_ver
+    py_ver=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo "3")
+    local user_sp="${REAL_HOME}/.local/lib/python${py_ver}/site-packages"
+    mkdir -p "$user_sp" 2>/dev/null || true
+    echo "${SCRIPT_DIR}/src" > "${user_sp}/antigravity_suite.pth" 2>/dev/null || true
+    chown -R "${REAL_USER}:${REAL_USER}" "${REAL_HOME}/.local/lib" 2>/dev/null || true
+    local sys_sp
+    sys_sp=$(python3 -c 'import site; print(site.getsitepackages()[0])' 2>/dev/null || true)
+    if [ -n "$sys_sp" ] && [ -w "$sys_sp" ]; then
+        echo "${SCRIPT_DIR}/src" > "${sys_sp}/antigravity_suite.pth" 2>/dev/null || true
+    fi
 
     if [ -d "${SCRIPT_DIR}/assets" ]; then
         cp -f "${SCRIPT_DIR}/assets"/antigravity-master-*.png "${TARGET_ICONS}/" 2>/dev/null || true
@@ -355,8 +365,10 @@ EOF
         fi
     else
         source "${TARGET_CONF}/keyring.conf" 2>/dev/null || true
-        python3 "${TARGET_BIN}/antigravity-keyring.py" set all "${KEYRING_MODE_APP1:-normal}" >/dev/null 2>&1 || true
-        echo -e "${GREEN}[OK] Credential storage configured (${KEYRING_MODE_APP1:-normal}).${NC}"
+        python3 "${TARGET_BIN}/antigravity-keyring.py" set app1 "${KEYRING_MODE_APP1:-normal}" >/dev/null 2>&1 || true
+        python3 "${TARGET_BIN}/antigravity-keyring.py" set app2 "${KEYRING_MODE_APP2:-normal}" >/dev/null 2>&1 || true
+        python3 "${TARGET_BIN}/antigravity-keyring.py" set ide "${KEYRING_MODE_IDE:-normal}" >/dev/null 2>&1 || true
+        echo -e "${GREEN}[OK] Credential storage configured (App1: ${KEYRING_MODE_APP1:-normal}, App2: ${KEYRING_MODE_APP2:-normal}, IDE: ${KEYRING_MODE_IDE:-normal}).${NC}"
     fi
 }
 
@@ -422,10 +434,10 @@ step_8_setup_launchers_and_sync() {
     "${TARGET_BIN}/manage-antigravity.sh" app1 >/dev/null 2>&1 || true
     if [ -d "${REAL_HOME}/.antigravity-profile2" ] || [ -f "${TARGET_BIN}/antigravity-acc2" ]; then
         "${TARGET_BIN}/manage-antigravity.sh" app2 >/dev/null 2>&1 || true
+        rm -f "${REAL_HOME}/.local/share/applications/antigravity.desktop" 2>/dev/null || true
     fi
     "${TARGET_BIN}/manage-antigravity.sh" ide-shortcuts >/dev/null 2>&1 || true
     "${TARGET_BIN}/manage-antigravity.sh" merge-history >/dev/null 2>&1 || true
-    rm -f "${REAL_HOME}/.local/share/applications/antigravity.desktop" 2>/dev/null || true
 
     echo -e "${GREEN}[OK] Launchers configured.${NC}"
     echo -e "${GREEN}[OK] Unified Chat History synchronized.${NC}"
