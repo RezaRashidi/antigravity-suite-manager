@@ -29,16 +29,22 @@ def get_last_user_step_index(db_path: Union[str, Path], step_count: int = 0) -> 
     Setting this field in CascadeTrajectorySummary prevents spurious 'New' badges.
     """
     if os.path.isfile(db_path):
+        conn = None
         try:
             conn = sqlite3.connect(db_path, timeout=15.0)
             cur = conn.cursor()
             cur.execute("SELECT idx FROM steps WHERE step_type = 14 ORDER BY idx DESC LIMIT 1;")
             row = cur.fetchone()
-            conn.close()
             if row is not None and row[0] is not None:
                 return int(row[0])
         except Exception:
             pass
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
     return max(0, step_count - 1) if step_count > 0 else 0
 
 

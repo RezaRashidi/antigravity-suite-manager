@@ -171,21 +171,29 @@ def extract_conv_text(
     # Inspect SQLite database if transcript was not enough
     db_str = str(db_path) if db_path else ""
     if not first_user_prompt and os.path.isfile(db_str):
+        conn = None
         try:
             conn = sqlite3.connect(db_str, timeout=15.0)
             cur = conn.cursor()
-            cur.execute("SELECT step_payload FROM steps WHERE step_type = 14 ORDER BY idx ASC LIMIT 5;")
-            rows = cur.fetchall()
-            for r in rows:
-                if r[0]:
-                    parsed = parse_step14_user_prompt(r[0])
-                    if parsed:
-                        if not first_user_prompt:
-                            first_user_prompt = parsed
-                        latest_user_prompt = parsed
-            conn.close()
+            # First prompt for title
+            cur.execute("SELECT step_payload FROM steps WHERE step_type = 14 ORDER BY idx ASC LIMIT 1;")
+            f_row = cur.fetchone()
+            if f_row and f_row[0]:
+                first_user_prompt = parse_step14_user_prompt(f_row[0]) or ""
+
+            # Latest prompt for preview
+            cur.execute("SELECT step_payload FROM steps WHERE step_type = 14 ORDER BY idx DESC LIMIT 1;")
+            l_row = cur.fetchone()
+            if l_row and l_row[0]:
+                latest_user_prompt = parse_step14_user_prompt(l_row[0]) or ""
         except Exception:
             pass
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     # 1. Derive title from user prompt if available
     title = ""

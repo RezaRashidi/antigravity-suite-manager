@@ -67,11 +67,15 @@ def watch_mode(
         for b in brain_dirs:
             if not os.path.isdir(b):
                 continue
-            for f in glob.glob(os.path.join(b, "*", ".system_generated", "logs", "transcript*.jsonl")):
-                try:
-                    snapshot[f] = os.path.getmtime(f)
-                except Exception:
-                    pass
+            for pattern in [
+                os.path.join(b, "*", ".system_generated", "logs", "*.jsonl"),
+                os.path.join(b, "*", "*.md"),
+            ]:
+                for f in glob.glob(pattern):
+                    try:
+                        snapshot[f] = os.path.getmtime(f)
+                    except Exception:
+                        pass
         return snapshot
 
     conv_pools, brain_pools, _ = discover_all_history_sources(user_home=home)

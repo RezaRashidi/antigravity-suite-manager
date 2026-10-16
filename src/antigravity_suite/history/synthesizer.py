@@ -29,13 +29,13 @@ def is_synthesized_db_incomplete(db_path: Union[str, Path]) -> bool:
     db_p = str(db_path)
     if not os.path.isfile(db_p) or os.path.getsize(db_p) == 0:
         return True
+    conn = None
     try:
         conn = sqlite3.connect(db_p, timeout=15.0)
         cur = conn.cursor()
         cur.execute("SELECT count(*) FROM steps;")
         total_steps = cur.fetchone()[0]
         if total_steps == 0:
-            conn.close()
             return True
 
         # Check step types: if authentic rich step types exist, protect completely!
@@ -43,7 +43,6 @@ def is_synthesized_db_incomplete(db_path: Union[str, Path]) -> bool:
         step_types = {r[0] for r in cur.fetchall()}
         rich_authentic_types = step_types - {0, 14, 15, 132}
         if rich_authentic_types:
-            conn.close()
             return False
 
         # For synthesized databases (only 14, 15, 132), check if assistant text is present
@@ -53,7 +52,6 @@ def is_synthesized_db_incomplete(db_path: Union[str, Path]) -> bool:
             # Wire format for tag 20 wire type 2: (20 << 3) | 2 = 162 = 0xa2, 0x01
             has_tag20 = any(row[0] and b"\xa2\x01" in row[0] for row in s15_rows)
             if not has_tag20:
-                conn.close()
                 return True
 
         # Check step 132: verify tool execution metadata is present
@@ -65,13 +63,17 @@ def is_synthesized_db_incomplete(db_path: Union[str, Path]) -> bool:
             # Tag 140 in payload: (140 << 3) | 2 = 1122 = 0xe2, 0x08
             has_tool_payload = any(row[1] and b"\xe2\x08" in row[1] for row in s132_rows)
             if not (has_tool_meta and has_tool_payload):
-                conn.close()
                 return True
 
-        conn.close()
         return False
     except Exception:
         return True
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def parse_step14_user_prompt(payload: bytes) -> str:
@@ -252,9 +254,9 @@ def synthesize_db_from_transcript(
                     entry = json.loads(line)
                 except Exception:
                     continue
-                src = entry.get("source", "")
-                typ = entry.get("type", "")
-                st_str = entry.get("status", "DONE")
+                src = str(entry.get("source", "")).upper()
+                typ = str(entry.get("type", "")).upper()
+                st_str = str(entry.get("status", "DONE")).upper()
                 content = entry.get("content", "")
                 thinking = entry.get("thinking", "")
                 tool_calls = entry.get("tool_calls", [])
@@ -264,7 +266,7 @@ def synthesize_db_from_transcript(
                     continue
 
                 is_tool = (
-                    typ.upper() in tool_types
+                    typ in tool_types
                     or bool(entry.get("tool_action") or entry.get("tool_summary"))
                     or src in ["TOOL", "SYSTEM_TOOL"]
                 )
@@ -377,7 +379,7 @@ def synthesize_db_from_transcript(
                         for k, v in tc_args.items():
                             pair = bytearray()
                             pair += encode_tag_bytes(1, str(k).encode("utf-8", errors="ignore"))
-                            val_str = json.dumps(v) if isinstance(v, (dict, list)) else str(v).strip("\"")
+                            val_str = json.dumps(v) if isinstance(v, (dict, list)) else str(v)
                             pair += encode_tag_bytes(2, val_str.encode("utf-8", errors="ignore"))
                             t_bytes += encode_tag_bytes(1, bytes(pair))
                     if content:
@@ -397,10 +399,14 @@ def synthesize_db_from_transcript(
                 steps_rows,
             )
             conn.commit()
-            conn.close()
             return True
         else:
-            conn.close()
             return False
     except Exception:
         return False
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass

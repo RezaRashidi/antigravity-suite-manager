@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 from antigravity_suite.auth.token import refresh_ide_oauth_token
-from antigravity_suite.config import DEFAULT_CONFIG, get_user_home
+from antigravity_suite.config import DEFAULT_CONFIG, SuiteConfig, get_user_home
 from antigravity_suite.history.discovery import discover_all_history_sources
 from antigravity_suite.history.extractor import (
     extract_conv_text,
@@ -59,15 +59,23 @@ def get_db_trajectory_meta(db_path: Path) -> Tuple[Optional[str], Optional[str]]
     """Reads workspace_uri and project_id from trajectory_metadata_blob if present."""
     if not db_path.is_file():
         return None, None
+    conn = None
     try:
         conn = sqlite3.connect(str(db_path), timeout=15.0)
         row = conn.cursor().execute("SELECT data FROM trajectory_metadata_blob WHERE id = 'main';").fetchone()
-        conn.close()
         if row and row[0]:
             meta = parse_trajectory_metadata_blob(row[0])
-            return meta.get("workspace_uri"), meta.get("project_id")
+            uris = meta.get("workspace_uris", [])
+            w_uri = uris[0] if uris else meta.get("workspace_uri")
+            return w_uri, meta.get("project_id")
     except Exception:
         pass
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
     return None, None
 
 
@@ -152,6 +160,8 @@ def merge_histories(
                 needs_copy = True
             elif os.path.getmtime(src_file) > (target_file.stat().st_mtime + 2.0):
                 needs_copy = True
+            elif base.endswith(".db") and get_actual_steps_count(src_file) > get_actual_steps_count(target_file):
+                needs_copy = True
 
             if needs_copy:
                 try:
@@ -161,7 +171,6 @@ def merge_histories(
                     pass
 
     # 3. Merge brain folders & Reconstruct missing databases from transcripts
-    reconstructed_uuids: Set[str] = set()
     for b_pool in brain_pools:
         if os.path.realpath(b_pool) != str(master_brain_dir):
             for b_item in glob.glob(os.path.join(b_pool, "*")):
@@ -177,27 +186,47 @@ def merge_histories(
                         stats.brain_folders_merged += 1
                     except Exception:
                         pass
+                else:
+                    # Update newer or larger files (transcripts, artifacts) in existing folder
+                    for root, _, files in os.walk(b_item):
+                        rel = os.path.relpath(root, b_item)
+                        target_dir = target_brain_item / rel
+                        target_dir.mkdir(parents=True, exist_ok=True)
+                        for f in files:
+                            src_f = os.path.join(root, f)
+                            dst_f = target_dir / f
+                            if not dst_f.exists() or os.path.getsize(src_f) > dst_f.stat().st_size or os.path.getmtime(src_f) > (dst_f.stat().st_mtime + 2.0):
+                                try:
+                                    shutil.copy2(src_f, dst_f)
+                                except Exception:
+                                    pass
 
-        # Reconstruct missing databases from transcript logs
+    # Reconstruct missing or incomplete databases from transcript logs
+    # Gather candidate transcripts across all pools, selecting the largest for each c_uuid
+    candidate_transcripts: Dict[str, str] = {}
+    all_brain_pools = [str(master_brain_dir)] + [p for p in brain_pools if os.path.realpath(p) != str(master_brain_dir)]
+    for b_pool in all_brain_pools:
+        if not os.path.isdir(b_pool):
+            continue
         for b_item in glob.glob(os.path.join(b_pool, "*")):
             if not os.path.isdir(b_item):
                 continue
             c_uuid = os.path.basename(b_item)
             if not re.match(r"^[0-9a-fA-F-]{36}$", c_uuid):
                 continue
-            if c_uuid in reconstructed_uuids:
-                continue
-
-            target_db = master_conv_dir / f"{c_uuid}.db"
             tf = os.path.join(b_item, ".system_generated", "logs", "transcript_full.jsonl")
             if not os.path.isfile(tf):
                 tf = os.path.join(b_item, ".system_generated", "logs", "transcript.jsonl")
-
             if os.path.isfile(tf):
-                if not target_db.exists() or is_synthesized_db_incomplete(target_db) or force_rebuild:
-                    if synthesize_db_from_transcript(c_uuid, target_db, tf):
-                        stats.databases_reconstructed += 1
-                        reconstructed_uuids.add(c_uuid)
+                prev = candidate_transcripts.get(c_uuid)
+                if not prev or os.path.getsize(tf) > os.path.getsize(prev):
+                    candidate_transcripts[c_uuid] = tf
+
+    for c_uuid, tf in candidate_transcripts.items():
+        target_db = master_conv_dir / f"{c_uuid}.db"
+        if not target_db.exists() or is_synthesized_db_incomplete(target_db) or force_rebuild:
+            if synthesize_db_from_transcript(c_uuid, target_db, tf):
+                stats.databases_reconstructed += 1
 
     # 4. Read and Synchronize conversation_summaries.db
     all_summaries: Dict[str, bytes] = {}
@@ -363,20 +392,29 @@ def merge_histories(
     con.commit()
 
     # 5. Read titles from VS Code state.vscdb
-    candidate_vscdbs = [
-        home / ".config" / "Antigravity IDE" / "User" / "globalStorage" / "state.vscdb",
-        home / ".config" / "Antigravity" / "User" / "globalStorage" / "state.vscdb",
-        home / ".config" / "antigravity-ide" / "User" / "globalStorage" / "state.vscdb",
-    ]
+    candidate_vscdbs_set = set()
+    for h in [home, Path(os.path.expanduser("~"))]:
+        h_str = str(h)
+        for pattern in [
+            os.path.join(h_str, ".config", "*", "User", "globalStorage", "state.vscdb"),
+            os.path.join(h_str, ".config", "Google", "*", "User", "globalStorage", "state.vscdb"),
+            os.path.join(h_str, ".antigravity*", ".config", "*", "User", "globalStorage", "state.vscdb"),
+        ]:
+            for vpath in glob.glob(pattern):
+                if any(k in vpath.lower() for k in ["antigravity", "gemini"]):
+                    candidate_vscdbs_set.add(Path(vpath).resolve())
     for cand in ide_candidates:
         cand_vsc = Path(cand) / "User" / "globalStorage" / "state.vscdb"
-        if cand_vsc.is_file() and cand_vsc not in candidate_vscdbs:
-            candidate_vscdbs.append(cand_vsc)
+        if cand_vsc.is_file():
+            candidate_vscdbs_set.add(cand_vsc.resolve())
+
+    candidate_vscdbs = sorted(list(candidate_vscdbs_set))
 
     ide_ingested_total = 0
     for vscdb_p in candidate_vscdbs:
         if not vscdb_p.is_file():
             continue
+        v_con = None
         try:
             v_con = sqlite3.connect(str(vscdb_p), timeout=15.0)
             v_cur = v_con.cursor()
@@ -419,10 +457,15 @@ def merge_histories(
                                     (ide_title, new_bin, u_id),
                                 )
                                 ide_ingested_total += 1
-            v_con.close()
             con.commit()
         except Exception:
             pass
+        finally:
+            if v_con:
+                try:
+                    v_con.close()
+                except Exception:
+                    pass
 
     stats.ide_state_ingested = ide_ingested_total
 
@@ -448,6 +491,7 @@ def merge_histories(
     for vscdb_p in candidate_vscdbs:
         if not vscdb_p.is_file():
             continue
+        v_con = None
         try:
             v_con = sqlite3.connect(str(vscdb_p), timeout=15.0)
             v_cur = v_con.cursor()
@@ -468,9 +512,14 @@ def merge_histories(
                 (outer_b64,),
             )
             v_con.commit()
-            v_con.close()
         except Exception:
             pass
+        finally:
+            if v_con:
+                try:
+                    v_con.close()
+                except Exception:
+                    pass
 
     # Flush SQLite WAL to disk so replicated files have complete state
     try:
@@ -497,17 +546,24 @@ def merge_histories(
             if not os.path.islink(tgt_root_sum_db) and not (
                 os.path.exists(tgt_root_sum_db) and os.path.samefile(str(master_sum_db), tgt_root_sum_db)
             ):
+                dest_c = None
                 try:
                     dest_c = sqlite3.connect(tgt_root_sum_db, timeout=15.0)
                     con.backup(dest_c)
-                    dest_c.close()
                 except Exception:
                     pass
+                finally:
+                    if dest_c:
+                        try:
+                            dest_c.close()
+                        except Exception:
+                            pass
 
             t_sum_db = os.path.join(tgt_conv_dir, "conversation_summaries.db")
             if not os.path.islink(t_sum_db) and not (
                 os.path.exists(t_sum_db) and os.path.samefile(str(master_sum_db), t_sum_db)
             ):
+                dest_c = None
                 try:
                     # Prefer relative symlink to root conversation_summaries.db if possible
                     if os.path.exists(tgt_root_sum_db) and not os.path.exists(t_sum_db):
@@ -516,13 +572,17 @@ def merge_histories(
                         except Exception:
                             dest_c = sqlite3.connect(t_sum_db, timeout=15.0)
                             con.backup(dest_c)
-                            dest_c.close()
                     else:
                         dest_c = sqlite3.connect(t_sum_db, timeout=15.0)
                         con.backup(dest_c)
-                        dest_c.close()
                 except Exception:
                     pass
+                finally:
+                    if dest_c:
+                        try:
+                            dest_c.close()
+                        except Exception:
+                            pass
 
             if not os.path.islink(tgt_conv_dir) and not os.path.samefile(str(master_conv_dir), tgt_conv_dir):
                 for db_src in glob.glob(os.path.join(str(master_conv_dir), "*.db")):
@@ -536,6 +596,8 @@ def merge_histories(
                     elif os.path.getsize(db_src) > os.path.getsize(tgt_db):
                         needs_copy = True
                     elif os.path.getmtime(db_src) > (os.path.getmtime(tgt_db) + 2.0):
+                        needs_copy = True
+                    elif base_name.endswith(".db") and get_actual_steps_count(db_src) > get_actual_steps_count(tgt_db):
                         needs_copy = True
 
                     if needs_copy:
@@ -567,10 +629,12 @@ def merge_histories(
         con.commit()
     except Exception:
         pass
-    con.close()
+    finally:
+        con.close()
 
     # 10. Automatically refresh IDE OAuth token if expired
-    for ide_dir in DEFAULT_CONFIG.ide_dirs:
+    cfg = SuiteConfig(user_home=home)
+    for ide_dir in cfg.ide_dirs:
         refresh_ide_oauth_token(ide_dir, home)
 
     return stats

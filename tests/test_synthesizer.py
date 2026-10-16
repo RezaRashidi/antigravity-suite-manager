@@ -103,6 +103,34 @@ class TestSynthesizer(unittest.TestCase):
 
             conn.close()
 
+    def test_tool_arguments_quotes_preserved(self):
+        import tempfile, json, sqlite3
+        from pathlib import Path
+        from antigravity_suite.history.synthesizer import synthesize_db_from_transcript
+
+        conv_id = "test-quotes-preservation-1234"
+        lines = [
+            {"source": "USER_EXPLICIT", "type": "USER_INPUT", "content": "Please grep for this string"},
+            {"source": "MODEL", "type": "PLANNER_RESPONSE", "content": "Running grep", "tool_calls": [{"id": "call_1", "name": "grep_search", "args": {"query": "\"exact_phrase\""}}]},
+            {"source": "TOOL", "type": "GREP_SEARCH", "content": "results"},
+        ]
+        with tempfile.TemporaryDirectory() as td:
+            tf_path = Path(td) / "transcript.jsonl"
+            with open(tf_path, "w") as f:
+                for item in lines:
+                    f.write(json.dumps(item) + "\n")
+
+            db_path = Path(td) / f"{conv_id}.db"
+            success = synthesize_db_from_transcript(conv_id, db_path, tf_path)
+            self.assertTrue(success)
+
+            conn = sqlite3.connect(db_path)
+            row = conn.cursor().execute("SELECT step_payload FROM steps WHERE step_type = 132;").fetchone()
+            conn.close()
+            self.assertIsNotNone(row)
+            # Tag 140 contains the key-value pairs; verify \"exact_phrase\" is preserved intact!
+            self.assertIn(b"\"exact_phrase\"", row[0])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -26,5 +26,28 @@ class TestExtractor(unittest.TestCase):
         self.assertEqual(decoded, "Test سلام")
 
 
+    def test_extract_conv_text_sqlite_latest_prompt(self):
+        import tempfile, sqlite3
+        from antigravity_suite.history.extractor import extract_conv_text
+        from antigravity_suite.proto.wire import encode_tag_bytes
+
+        with tempfile.NamedTemporaryFile(suffix=".db") as f:
+            conn = sqlite3.connect(f.name)
+            cur = conn.cursor()
+            cur.execute("CREATE TABLE steps (idx integer, step_type integer, step_payload blob, PRIMARY KEY(idx));")
+            # Insert 10 user prompts
+            for i in range(1, 11):
+                prompt = f"User prompt message #{i}"
+                sub = encode_tag_bytes(2, prompt.encode("utf-8"))
+                payload = encode_tag_bytes(19, bytes(sub))
+                cur.execute("INSERT INTO steps VALUES (?, 14, ?)", (i, payload))
+            conn.commit()
+            conn.close()
+
+            title, preview = extract_conv_text(f.name, "")
+            self.assertEqual(title, "User prompt message #1")
+            self.assertEqual(preview, "User prompt message #10")
+
+
 if __name__ == "__main__":
     unittest.main()
