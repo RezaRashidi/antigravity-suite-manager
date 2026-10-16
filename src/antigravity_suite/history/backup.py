@@ -79,8 +79,13 @@ class HistoryBackupManager:
                     s_con.backup(d_con)
                     backed_up_files.append("conversation_summaries.db")
                 except Exception:
-                    # Fallback to copy2 if SQLite backup fails
+                    # Fallback to copy2 if SQLite backup fails: copy .db and WAL/SHM files
                     shutil.copy2(master_db, dest_db)
+                    for sidecar in ("-wal", "-shm"):
+                        sc_src = master_db.parent / (master_db.name + sidecar)
+                        if sc_src.is_file():
+                            shutil.copy2(sc_src, snapshot_dir / sc_src.name)
+                            backed_up_files.append(sc_src.name)
                     backed_up_files.append("conversation_summaries.db")
                 finally:
                     if d_con:
@@ -226,6 +231,10 @@ class HistoryBackupManager:
                     d_con.commit()
                 except Exception:
                     shutil.copy2(src_db, dest_db)
+                    for sidecar in ("-wal", "-shm"):
+                        sc_src = candidate_dir / (src_db.name + sidecar)
+                        if sc_src.is_file():
+                            shutil.copy2(sc_src, target_master / sc_src.name)
                 finally:
                     if d_con:
                         try:

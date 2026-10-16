@@ -353,13 +353,14 @@ def export_suite(output_path=None):
                 if os.path.isdir(accs_dir):
                     tar.add(accs_dir, arcname="accounts", recursive=True)
 
-            for token_path in [
-                os.path.join(GEMINI_DIR, "jetski-standalone-oauth-token"),
-                os.path.join(REAL_HOME, ".gemini-ide", "jetski-standalone-oauth-token"),
-                os.path.join(REAL_HOME, ".gemide", "jetski-standalone-oauth-token"),
-            ]:
+            token_targets = [
+                (os.path.join(GEMINI_DIR, "jetski-standalone-oauth-token"), "gemini-token"),
+                (os.path.join(REAL_HOME, ".gemini-ide", "jetski-standalone-oauth-token"), "gemini-ide-token"),
+                (os.path.join(REAL_HOME, ".gemide", "jetski-standalone-oauth-token"), "gemide-token"),
+            ]
+            for token_path, token_arc in token_targets:
                 if os.path.isfile(token_path):
-                    tar.add(token_path, arcname=os.path.join("tokens", os.path.basename(os.path.dirname(token_path)) + "-token"))
+                    tar.add(token_path, arcname=os.path.join("tokens", token_arc))
 
     size_str = format_size(os.path.getsize(output_path))
     log_success(f"Suite configurations export package created successfully!")
@@ -402,16 +403,19 @@ def export_all(output_path=None):
 
         with tarfile.open(output_path, "w:gz") as final_tar:
             final_tar.add(manifest_p, arcname="manifest.json")
+            added_names = {"manifest.json"}
             with tarfile.open(hist_tar, "r:gz") as h_tar:
                 for member in h_tar.getmembers():
-                    if member.name != "manifest.json":
+                    if member.name not in added_names:
                         f = h_tar.extractfile(member) if member.isreg() else None
                         final_tar.addfile(member, f)
+                        added_names.add(member.name)
             with tarfile.open(suite_tar, "r:gz") as s_tar:
                 for member in s_tar.getmembers():
-                    if member.name != "manifest.json":
+                    if member.name not in added_names:
                         f = s_tar.extractfile(member) if member.isreg() else None
                         final_tar.addfile(member, f)
+                        added_names.add(member.name)
 
     size_str = format_size(os.path.getsize(output_path))
     log_success(f"Full migration bundle created: {BOLD}{output_path}{NC} ({size_str})")
@@ -660,6 +664,31 @@ def import_suite(archive_path):
                 c_dst = os.path.join(ANTIGRAVITY_CONF_DIR, os.path.basename(cf))
                 if not os.path.exists(c_dst):
                     shutil.copy2(cf, c_dst)
+
+        # 6. OAuth Tokens
+        tokens_src = os.path.join(tmpdir, "tokens")
+        if not os.path.isdir(tokens_src):
+            tokens_src = os.path.join(tmpdir, "suite", "tokens")
+        if os.path.isdir(tokens_src):
+            token_restore_map = [
+                ("gemini-token", os.path.join(GEMINI_DIR, "jetski-standalone-oauth-token")),
+                (".gemini-token", os.path.join(GEMINI_DIR, "jetski-standalone-oauth-token")),
+                ("gemini-ide-token", os.path.join(REAL_HOME, ".gemini-ide", "jetski-standalone-oauth-token")),
+                (".gemini-ide-token", os.path.join(REAL_HOME, ".gemini-ide", "jetski-standalone-oauth-token")),
+                ("gemide-token", os.path.join(REAL_HOME, ".gemide", "jetski-standalone-oauth-token")),
+                (".gemide-token", os.path.join(REAL_HOME, ".gemide", "jetski-standalone-oauth-token")),
+            ]
+            for src_name, dst_path in token_restore_map:
+                token_src_file = os.path.join(tokens_src, src_name)
+                if os.path.isfile(token_src_file):
+                    os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+                    if not os.path.exists(dst_path):
+                        shutil.copy2(token_src_file, dst_path)
+                        try:
+                            os.chmod(dst_path, 0o600)
+                        except Exception:
+                            pass
+                        log_success(f"Restored OAuth token to {dst_path}")
 
     log_success("Suite configuration import completed successfully!")
     print(f"  • Imported Skills:   {imported_skills}")

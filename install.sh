@@ -188,30 +188,6 @@ IDE_INSTALL_DIR="${IDE_INSTALL_DIR}"
 EOF
 fi
 
-# Interactive mode: Launch Control Center Dashboard if no flags were given
-if [ "$NON_INTERACTIVE" != true ] && [ "$START_STEP" -eq 1 ] && [ "$ONLY_STEP" -eq 0 ] && [ "$STEP_BY_STEP" != true ]; then
-    # Auto-deploy tools, master icons, and resampler before launching dashboard
-    step_3_compile_resampler >/dev/null 2>&1 || true
-    step_4_deploy_scripts >/dev/null 2>&1 || true
-    step_5_configure_icons >/dev/null 2>&1 || true
-
-    local_detect="${SCRIPT_DIR}/bin/antigravity-detect.py"
-    if [ ! -f "$local_detect" ]; then
-        local_detect="${TARGET_BIN}/antigravity-detect.py"
-    fi
-    if [ -f "$local_detect" ]; then
-        set +e
-        python3 "$local_detect" --control-center
-        code=$?
-        set -e
-        if [ "$code" -eq 10 ]; then
-            STEP_BY_STEP=true
-            START_STEP=1
-        else
-            exit 0
-        fi
-    fi
-fi
 
 # ==============================================================================
 # Step 1: Check Platform & Prerequisites
@@ -481,6 +457,31 @@ run_step() {
         *) return 0 ;;
     esac
 }
+
+# Interactive mode: Launch Control Center Dashboard if no flags were given
+if [ "$NON_INTERACTIVE" != true ] && [ "$START_STEP" -eq 1 ] && [ "$ONLY_STEP" -eq 0 ] && [ "$STEP_BY_STEP" != true ]; then
+    # Auto-deploy tools, master icons, and resampler before launching dashboard
+    step_3_compile_resampler >/dev/null 2>&1 || true
+    step_4_deploy_scripts >/dev/null 2>&1 || true
+    step_5_configure_icons >/dev/null 2>&1 || true
+
+    local_detect="${SCRIPT_DIR}/bin/antigravity-detect.py"
+    if [ ! -f "$local_detect" ]; then
+        local_detect="${TARGET_BIN}/antigravity-detect.py"
+    fi
+    if [ -f "$local_detect" ]; then
+        set +e
+        python3 "$local_detect" --control-center
+        code=$?
+        set -e
+        if [ "$code" -eq 10 ]; then
+            STEP_BY_STEP=true
+            START_STEP=1
+        else
+            exit 0
+        fi
+    fi
+fi
 
 # Single Step Execution
 if [ "$ONLY_STEP" -ge 1 ] && [ "$ONLY_STEP" -le 8 ]; then

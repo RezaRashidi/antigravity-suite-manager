@@ -762,11 +762,15 @@ setup_account_1() {
 
     log_info "Configuring ${app_title} (${desktop_name})..."
 
-    cat <<EOF > "${LOCAL_BIN}/antigravity-1"
+cat <<EOF > "${LOCAL_BIN}/antigravity-1"
 #!/usr/bin/env bash
 set -e
 export REAL_HOME="${REAL_HOME}"
 export HOME="\${REAL_HOME}"
+export XDG_CONFIG_HOME="\${REAL_HOME}/.config"
+export DBUS_SESSION_BUS_ADDRESS=""
+export GNOME_KEYRING_CONTROL=""
+export SSH_AUTH_SOCK=""
 export ANTIGRAVITY_DESKTOP_NAME="${desktop_name}"
 export ANTIGRAVITY_APP_NAME="${wm_class}"
 export ANTIGRAVITY_ICON_PATH="${LOCAL_ICONS}/${icon_name}.png"
@@ -789,7 +793,7 @@ if [ -f "${APP_INSTALL_DIR}/chrome-sandbox" ]; then
     fi
 fi
 
-exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}${pass_store_flag}--class="${wm_class}" --name="${wm_class}" "\$@"
+exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}${pass_store_flag}--user-data-dir="\${REAL_HOME}/.config/Antigravity" --class="${wm_class}" --name="${wm_class}" "\$@"
 EOF
     chmod +x "${LOCAL_BIN}/antigravity-1"
     ln -sfn "${LOCAL_BIN}/antigravity-1" "${LOCAL_BIN}/antigravity"
@@ -887,12 +891,13 @@ set -e
 export REAL_HOME="${REAL_HOME}"
 export PROFILE2="${PROFILE2_DIR}"
 export HOME="\${PROFILE2}"
-
-mkdir -p "\${PROFILE2}/.gemini/cache"
-touch "\${PROFILE2}/.gemini/cache/antigravity-keyring-unavailable"
+export XDG_CONFIG_HOME="\${PROFILE2}/.config"
+export DBUS_SESSION_BUS_ADDRESS=""
+export GNOME_KEYRING_CONTROL=""
+export SSH_AUTH_SOCK=""
 
 export ANTIGRAVITY_DESKTOP_NAME="antigravity-2.desktop"
-export ANTIGRAVITY_APP_NAME="antigravity-2-account2"
+export ANTIGRAVITY_APP_NAME="antigravity-2"
 export ANTIGRAVITY_ICON_PATH="${LOCAL_ICONS}/antigravity-acc2.png"
 export ANTIGRAVITY_TRAY_ICON_PATH="${LOCAL_ICONS}/antigravity-acc2-tray.png"
 export ANTIGRAVITY_WINDOW_TITLE="Account 2"
@@ -935,7 +940,7 @@ if [ -f "${APP_INSTALL_DIR}/chrome-sandbox" ]; then
 fi
 
 # 4. Launch isolated Account 2 instance
-exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}${pass_store_flag}--class="antigravity-2" --name="antigravity-2" "\$@"
+exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}${pass_store_flag}--user-data-dir="\${PROFILE2}/.config/Antigravity" --class="antigravity-2" --name="antigravity-2" "\$@"
 EOF
     chmod +x "${LOCAL_BIN}/antigravity-acc2"
 
@@ -1115,6 +1120,12 @@ EOF
             mkdir -p "$target_ide_app"
             ln -sfn "$SHARED_CONV_DIR/mcp" "$target_ide_app/mcp"
             ln -sfn "$SHARED_CONV_DIR/plugin_data" "$target_ide_app/plugin_data"
+            ln -sfn "$SHARED_CONV_DIR/conversations" "$target_ide_app/conversations"
+            ln -sfn "$SHARED_CONV_DIR/brain" "$target_ide_app/brain"
+            ln -sfn "$SHARED_CONV_DIR/conversation_summaries.db" "$target_ide_app/conversation_summaries.db"
+            [ -f "$SHARED_CONV_DIR/agyhub_summaries_proto.pb" ] && ln -sfn "$SHARED_CONV_DIR/agyhub_summaries_proto.pb" "$target_ide_app/agyhub_summaries_proto.pb"
+            ln -sfn "$SHARED_CONV_DIR/conversation_summaries.db" "$ide_root/conversation_summaries.db"
+            [ -f "$SHARED_CONV_DIR/agyhub_summaries_proto.pb" ] && ln -sfn "$SHARED_CONV_DIR/agyhub_summaries_proto.pb" "$ide_root/agyhub_summaries_proto.pb"
 
             # Clean up redundant legacy GEMINI.md symlinks to prevent duplicate rule registration
             rm -f "$target_ide_app/GEMINI.md" "$ide_root/config/GEMINI.md"
@@ -1302,9 +1313,10 @@ set -e
 export REAL_HOME="${REAL_HOME}"
 export PROFILE="${profile_dir}"
 export HOME="\${PROFILE}"
-
-mkdir -p "\${PROFILE}/.gemini/cache"
-touch "\${PROFILE}/.gemini/cache/antigravity-keyring-unavailable"
+export XDG_CONFIG_HOME="\${PROFILE}/.config"
+export DBUS_SESSION_BUS_ADDRESS=""
+export GNOME_KEYRING_CONTROL=""
+export SSH_AUTH_SOCK=""
 
 export ANTIGRAVITY_DESKTOP_NAME="${wm_class}.desktop"
 export ANTIGRAVITY_APP_NAME="${wm_class}"
@@ -1343,7 +1355,7 @@ if [ -f "${APP_INSTALL_DIR}/chrome-sandbox" ]; then
     fi
 fi
 
-exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}--password-store=basic --class="${wm_class}" --name="${wm_class}" "\$@"
+exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}--password-store=basic --user-data-dir="\${PROFILE}/.config/Antigravity" --class="${wm_class}" --name="${wm_class}" "\$@"
 EOF
         chmod +x "$launcher"
 
@@ -1375,15 +1387,15 @@ EOF
         ln -sfn "$LOCAL_APPS" "${profile_dir}/.local/share/applications"
         ln -sfn "$LOCAL_ICONS" "${profile_dir}/.local/share/icons"
 
+        mkdir -p "${profile_dir}/.gemini/antigravity-ide"
         if [ "$imode" = "shared" ]; then
             log_info "Configuring shared conversation history with master pool..."
-            rm -rf "${profile_dir}/.gemini/antigravity-ide"
-            ln -sfn "$SHARED_CONV_DIR" "${profile_dir}/.gemini/antigravity-ide"
+            ln -sfn "$SHARED_CONV_DIR/conversations" "${profile_dir}/.gemini/antigravity-ide/conversations"
+            ln -sfn "$SHARED_CONV_DIR/brain" "${profile_dir}/.gemini/antigravity-ide/brain"
+            ln -sfn "$SHARED_CONV_DIR/conversation_summaries.db" "${profile_dir}/.gemini/antigravity-ide/conversation_summaries.db"
+            [ -f "$SHARED_CONV_DIR/agyhub_summaries_proto.pb" ] && ln -sfn "$SHARED_CONV_DIR/agyhub_summaries_proto.pb" "${profile_dir}/.gemini/antigravity-ide/agyhub_summaries_proto.pb"
         else
             log_info "Configuring isolated private conversation history..."
-            if [ -L "${profile_dir}/.gemini/antigravity-ide" ]; then
-                rm -f "${profile_dir}/.gemini/antigravity-ide"
-            fi
             mkdir -p "${profile_dir}/.gemini/antigravity-ide/conversations"
             mkdir -p "${profile_dir}/.gemini/antigravity-ide/brain"
         fi
@@ -1602,10 +1614,16 @@ set_history_mode() {
     elif [ "$target_mode" = "isolated" ]; then
         log_info "Switching ${itype} '${iid}' to ISOLATED history..."
         if [ "$itype" = "ide" ]; then
+            if [ -L "$profile_gemini" ]; then
+                rm -f "$profile_gemini"
+                mkdir -p "$profile_gemini"
+            fi
             local ide_conv="${profile_gemini}/conversations"
             local ide_brain="${profile_gemini}/brain"
             [ -L "$ide_conv" ] && rm -f "$ide_conv"
             [ -L "$ide_brain" ] && rm -f "$ide_brain"
+            [ -L "${profile_gemini}/conversation_summaries.db" ] && rm -f "${profile_gemini}/conversation_summaries.db"
+            [ -L "${profile_gemini}/agyhub_summaries_proto.pb" ] && rm -f "${profile_gemini}/agyhub_summaries_proto.pb"
             mkdir -p "$ide_conv" "$ide_brain"
             # Clone existing conversations so chats do not vanish
             cp -n "${SHARED_CONV_DIR}/conversations"/*.db "$ide_conv/" 2>/dev/null || true

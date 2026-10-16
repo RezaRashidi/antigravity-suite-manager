@@ -147,7 +147,7 @@ if (fs.existsSync(utilsPath)) {
 
     // 4.2 Preserve [Account 2] prefix across page-title-updated events
     if (!utilsCode.includes('const prefix = process.env.ANTIGRAVITY_WINDOW_TITLE')) {
-        const titleUpdateRegex = /win\.on\('page-title-updated',\s*\([^)]*\)\s*=>\s*\{[\s\S]*?win\.setTitle\([^)]*\);\s*\}\s*\}\);/;
+        const titleUpdateRegex = /win\.on\('page-title-updated',\s*\([^)]*\)\s*=>\s*\{[\s\S]*?win\.setTitle\([^)]*\);[\s\S]*?\}\);/;
         const titleUpdateReplacement = `win.on('page-title-updated', (event, title) => {
         const maxLength = 25;
         const truncated = title.length > maxLength ? title.substring(0, maxLength) + '...' : title;
@@ -158,25 +158,32 @@ if (fs.existsSync(utilsPath)) {
         if (titleUpdateRegex.test(utilsCode)) {
             utilsCode = utilsCode.replace(titleUpdateRegex, titleUpdateReplacement);
             console.log('[Patch] dist/utils.js patched with sticky custom window title.');
+        } else {
+            console.error('[Patch ERROR] dist/utils.js page-title-updated pattern not found!');
         }
     }
 
     // 4.3 Native X11 WM_CLASS assignment on BrowserWindow creation
-    if (!utilsCode.includes('WM_CLASS "${wmClass}"')) {
+    if (!utilsCode.includes('xprop -id ${xid} -f WM_CLASS 8s')) {
         const overlayTarget = '(0, loadingOverlay_1.attachLoadingOverlay)(win, foregroundColor, backgroundColor);';
         const overlayReplacement = overlayTarget + `
-    if (process.env.ANTIGRAVITY_DESKTOP_NAME) {
+    if (process.env.ANTIGRAVITY_APP_NAME || process.env.ANTIGRAVITY_DESKTOP_NAME) {
         try {
-            const xid = win.getNativeWindowHandle().readUInt32LE(0);
-            if (xid) {
-                const wmClass = process.env.ANTIGRAVITY_DESKTOP_NAME.replace(/\\.desktop$/i, '');
-                require('child_process').exec(\`xprop -id \${xid} -f WM_CLASS 8s -set WM_CLASS "\${wmClass}" "\${wmClass}"\`);
+            const handle = win.getNativeWindowHandle();
+            if (handle && handle.length >= 4) {
+                const xid = handle.readUInt32LE(0);
+                if (xid) {
+                    const wmClass = (process.env.ANTIGRAVITY_APP_NAME || process.env.ANTIGRAVITY_DESKTOP_NAME).replace(/\\.desktop$/i, '');
+                    require('child_process').exec(\`xprop -id \${xid} -f WM_CLASS 8s -set WM_CLASS "\${wmClass}"\`);
+                }
             }
         } catch (_) {}
     }`;
         if (utilsCode.includes(overlayTarget)) {
             utilsCode = utilsCode.replace(overlayTarget, overlayReplacement);
             console.log('[Patch] dist/utils.js patched with native WM_CLASS setting.');
+        } else {
+            console.error('[Patch ERROR] dist/utils.js attachLoadingOverlay pattern not found!');
         }
     }
 

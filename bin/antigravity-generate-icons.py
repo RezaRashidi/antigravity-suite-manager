@@ -17,6 +17,7 @@ import colorsys
 import shutil
 import subprocess
 import argparse
+import tempfile
 
 REAL_HOME = os.environ.get("REAL_HOME", os.path.expanduser("~"))
 LOCAL_ICONS = os.path.join(REAL_HOME, ".local/share/icons")
@@ -181,8 +182,15 @@ def reconstruct_png(png_path):
     raw = zlib.decompress(bytes(idat))
     with open(png_path, "rb") as f:
         f.seek(16)
-        w, h = struct.unpack(">II", f.read(8))
-    bpp = 4
+        w, h, bit_depth, color_type = struct.unpack(">IIBB", f.read(10))
+    if color_type == 6:
+        bpp = 4
+    elif color_type == 2:
+        bpp = 3
+    elif color_type == 0:
+        bpp = 1
+    else:
+        bpp = 4
     stride = 1 + w * bpp
     recon = bytearray(w * h * bpp)
     
@@ -215,6 +223,24 @@ def reconstruct_png(png_path):
             else: val = filt_x
             recon_row[x] = val
         recon[y * w * bpp : (y + 1) * w * bpp] = recon_row
+
+    if bpp == 3:
+        rgba = bytearray(w * h * 4)
+        for i in range(w * h):
+            rgba[i * 4] = recon[i * 3]
+            rgba[i * 4 + 1] = recon[i * 3 + 1]
+            rgba[i * 4 + 2] = recon[i * 3 + 2]
+            rgba[i * 4 + 3] = 255
+        recon = rgba
+    elif bpp == 1:
+        rgba = bytearray(w * h * 4)
+        for i in range(w * h):
+            v = recon[i]
+            rgba[i * 4] = v
+            rgba[i * 4 + 1] = v
+            rgba[i * 4 + 2] = v
+            rgba[i * 4 + 3] = 255
+        recon = rgba
     return w, h, recon
 
 def write_png(w, h, rgba_data, out_path):
@@ -253,8 +279,8 @@ def resample_raw(src_data, src_w, src_h, dst_w, dst_h):
             dst[dst_idx:dst_idx+4] = src_data[src_idx:src_idx+4]
     return dst
 
-def recolor_emblem(w, h, data_in, is_white_bg=False, color="original"):
-    if not color or color == "original":
+def recolor_emblem(w, h, data_in, is_white_bg=False, color="original", custom_hue=None):
+    if custom_hue is None and (not color or color == "original"):
         return bytearray(data_in)
     
     color_map = {
@@ -265,8 +291,11 @@ def recolor_emblem(w, h, data_in, is_white_bg=False, color="original"):
         "red": 0.90, "ruby": 0.90,
     }
     
-    is_monochrome = color in ("monochrome", "silver", "grey", "gray")
-    hue_shift = color_map.get(color, 0.52)
+    is_monochrome = (color in ("monochrome", "silver", "grey", "gray")) and (custom_hue is None)
+    if custom_hue is not None:
+        hue_shift = float(custom_hue)
+    else:
+        hue_shift = color_map.get(color, 0.52)
     
     out = bytearray(len(data_in))
     for i in range(0, len(data_in), 4):
@@ -317,32 +346,33 @@ if args.custom_instance:
     inst_theme = args.custom_theme.lower()
     base_inst = rgba_white if inst_theme == "white" else rgba_black
     if args.custom_hue is not None:
-        rgba_inst = recolor_emblem(1024, 1024, base_inst, is_white_bg=(inst_theme == "white"), color="violet")
+        rgba_inst = recolor_emblem(1024, 1024, base_inst, is_white_bg=(inst_theme == "white"), custom_hue=args.custom_hue)
     else:
         rgba_inst = bytearray(base_inst)
     
     icon_filename = f"{inst_name}.png"
     write_png(1024, 1024, rgba_inst, os.path.join(LOCAL_ICONS, icon_filename))
     
-    raw_path = f"/tmp/raw_{inst_name}_1024.raw"
-    with open(raw_path, "wb") as f:
-        f.write(rgba_inst)
-    for sz in sizes:
-        theme_dir = os.path.join(LOCAL_ICONS, "hicolor", f"{sz}x{sz}", "apps")
-        os.makedirs(theme_dir, exist_ok=True)
-        out_raw = f"/tmp/scaled_{sz}_{icon_filename}.raw"
-        s_data = None
-        if os.path.isfile(SCALE_BIN) and os.access(SCALE_BIN, os.X_OK):
-            try:
-                subprocess.run([SCALE_BIN, raw_path, "1024", "1024", out_raw, str(sz), str(sz)], check=True)
-                if os.path.isfile(out_raw):
-                    with open(out_raw, "rb") as rf:
-                        s_data = rf.read()
-            except Exception:
-                pass
-        if not s_data:
-            s_data = resample_raw(rgba_inst, 1024, 1024, sz, sz)
-        write_png(sz, sz, s_data, os.path.join(theme_dir, icon_filename))
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        raw_path = os.path.join(tmp_dir, f"raw_{inst_name}_1024.raw")
+        with open(raw_path, "wb") as f:
+            f.write(rgba_inst)
+        for sz in sizes:
+            theme_dir = os.path.join(LOCAL_ICONS, "hicolor", f"{sz}x{sz}", "apps")
+            os.makedirs(theme_dir, exist_ok=True)
+            out_raw = os.path.join(tmp_dir, f"scaled_{sz}_{icon_filename}.raw")
+            s_data = None
+            if os.path.isfile(SCALE_BIN) and os.access(SCALE_BIN, os.X_OK):
+                try:
+                    subprocess.run([SCALE_BIN, raw_path, "1024", "1024", out_raw, str(sz), str(sz)], check=True)
+                    if os.path.isfile(out_raw):
+                        with open(out_raw, "rb") as rf:
+                            s_data = rf.read()
+                except Exception:
+                    pass
+            if not s_data:
+                s_data = resample_raw(rgba_inst, 1024, 1024, sz, sz)
+            write_png(sz, sz, s_data, os.path.join(theme_dir, icon_filename))
     
     subprocess.run(["gtk-update-icon-cache", "-f", "-t", os.path.join(LOCAL_ICONS, "hicolor")], check=False)
     subprocess.run(["update-desktop-database", LOCAL_APPS], check=False)
@@ -371,38 +401,40 @@ write_png(1024, 1024, rgba_ide, os.path.join(LOCAL_ICONS, "antigravity-ide.png")
 
 print("[SUCCESS] Master 1024x1024 icons written.")
 
-raw_map = {
-    "antigravity.png": ("/tmp/raw_acc1_1024.raw", rgba_acc1),
-    "antigravity-1.png": ("/tmp/raw_acc1_1024.raw", rgba_acc1),
-    "antigravity-acc2.png": ("/tmp/raw_acc2_1024.raw", rgba_acc2),
-    "antigravity-ide.png": ("/tmp/raw_ide_1024.raw", rgba_ide),
-}
+with tempfile.TemporaryDirectory() as tmp_dir:
+    raw_map = {
+        "antigravity.png": (os.path.join(tmp_dir, "raw_acc1_1024.raw"), rgba_acc1),
+        "antigravity-1.png": (os.path.join(tmp_dir, "raw_acc1_1024.raw"), rgba_acc1),
+        "antigravity-acc2.png": (os.path.join(tmp_dir, "raw_acc2_1024.raw"), rgba_acc2),
+        "antigravity-ide.png": (os.path.join(tmp_dir, "raw_ide_1024.raw"), rgba_ide),
+    }
 
-for name, (raw_path, data) in raw_map.items():
-    with open(raw_path, "wb") as f:
-        f.write(data)
+    for name, (raw_path, data) in raw_map.items():
+        if not os.path.exists(raw_path):
+            with open(raw_path, "wb") as f:
+                f.write(data)
 
-has_scaler = os.path.isfile(SCALE_BIN) and os.access(SCALE_BIN, os.X_OK)
+    has_scaler = os.path.isfile(SCALE_BIN) and os.access(SCALE_BIN, os.X_OK)
 
-for sz in sizes:
-    theme_dir = os.path.join(LOCAL_ICONS, "hicolor", f"{sz}x{sz}", "apps")
-    os.makedirs(theme_dir, exist_ok=True)
-    
-    for name, (in_raw, rgba_data) in raw_map.items():
-        dst_png = os.path.join(theme_dir, name)
-        s_data = None
-        if has_scaler:
-            out_raw = f"/tmp/scaled_{sz}_{name}.raw"
-            try:
-                subprocess.run([SCALE_BIN, in_raw, "1024", "1024", out_raw, str(sz), str(sz)], check=True)
-                if os.path.isfile(out_raw):
-                    with open(out_raw, "rb") as rf:
-                        s_data = rf.read()
-            except Exception:
-                pass
-        if not s_data:
-            s_data = resample_raw(rgba_data, 1024, 1024, sz, sz)
-        write_png(sz, sz, s_data, dst_png)
+    for sz in sizes:
+        theme_dir = os.path.join(LOCAL_ICONS, "hicolor", f"{sz}x{sz}", "apps")
+        os.makedirs(theme_dir, exist_ok=True)
+        
+        for name, (in_raw, rgba_data) in raw_map.items():
+            dst_png = os.path.join(theme_dir, name)
+            s_data = None
+            if has_scaler:
+                out_raw = os.path.join(tmp_dir, f"scaled_{sz}_{name}.raw")
+                try:
+                    subprocess.run([SCALE_BIN, in_raw, "1024", "1024", out_raw, str(sz), str(sz)], check=True)
+                    if os.path.isfile(out_raw):
+                        with open(out_raw, "rb") as rf:
+                            s_data = rf.read()
+                except Exception:
+                    pass
+            if not s_data:
+                s_data = resample_raw(rgba_data, 1024, 1024, sz, sz)
+            write_png(sz, sz, s_data, dst_png)
 
 print("[SUCCESS] Multi-resolution hicolor themes (16 to 512) generated.")
 

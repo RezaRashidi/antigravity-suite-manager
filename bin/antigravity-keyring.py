@@ -11,6 +11,7 @@ import sys
 import json
 import argparse
 import subprocess
+import re
 
 GREEN = '\033[1;32m'
 YELLOW = '\033[1;33m'
@@ -166,10 +167,12 @@ def update_launcher_password_store(launcher_path, mode):
         if line.strip().startswith("exec "):
             if mode == "normal":
                 if "--password-store=basic" not in line:
-                    # insert right after exec "<path>"
-                    parts = line.split(" ", 2)
-                    if len(parts) >= 2:
-                        line = f'{parts[0]} {parts[1]} --password-store=basic {parts[2] if len(parts) > 2 else ""}'
+                    # insert right after exec "<path>" safely without splitting spaces in path
+                    m = re.match(r'^(\s*exec\s+("[^"]+"|\'[^\']+\'|\S+))(.*)$', line)
+                    if m:
+                        prefix = m.group(1)
+                        rest = m.group(3)
+                        line = f'{prefix} --password-store=basic{rest}'
             elif mode == "gnome":
                 line = line.replace("--password-store=basic ", "").replace("--password-store=basic", "")
         new_lines.append(line)

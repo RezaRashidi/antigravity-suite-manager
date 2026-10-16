@@ -29,11 +29,58 @@ ACC2_TRAY_PATH = os.path.join(REAL_HOME, ".local/share/icons/antigravity-acc2-tr
 def sync_tray_cache():
     if not os.path.isfile(ACC2_TRAY_PATH):
         return
-    for icon_file in glob.glob("/tmp/org.chromium.Chromium.*/status_icon_*.png"):
+    
+    # 1. Find running Account 2 processes
+    acc2_processes = []
+    for pid_str in os.listdir("/proc"):
+        if not pid_str.isdigit():
+            continue
         try:
-            shutil.copyfile(ACC2_TRAY_PATH, icon_file)
+            with open(f"/proc/{pid_str}/cmdline", "rb") as f:
+                cmd = f.read().decode("utf-8", errors="ignore").lower()
+                if "antigravity" in cmd and ("antigravity-profile2" in cmd or "antigravity-2" in cmd or "account2" in cmd):
+                    proc_time = os.path.getctime(f"/proc/{pid_str}")
+                    acc2_processes.append((int(pid_str), proc_time))
         except Exception:
             pass
+
+    if not acc2_processes:
+        return
+
+    # Collect start times of other Electron/Chromium/Antigravity processes
+    other_procs = []
+    for pid_str in os.listdir("/proc"):
+        if not pid_str.isdigit():
+            continue
+        pid = int(pid_str)
+        if any(pid == p[0] for p in acc2_processes):
+            continue
+        try:
+            with open(f"/proc/{pid_str}/cmdline", "rb") as f:
+                cmd = f.read().decode("utf-8", errors="ignore").lower()
+                if any(x in cmd for x in ["antigravity", "chromium", "chrome", "code", "slack", "discord", "electron"]):
+                    proc_time = os.path.getctime(f"/proc/{pid_str}")
+                    other_procs.append((pid, proc_time))
+        except Exception:
+            pass
+
+    for d in glob.glob("/tmp/org.chromium.Chromium.*"):
+        if not os.path.isdir(d):
+            continue
+        try:
+            dir_ctime = os.path.getctime(d)
+        except Exception:
+            continue
+
+        best_acc2_diff = min(abs(dir_ctime - t) for _, t in acc2_processes) if acc2_processes else float("inf")
+        best_other_diff = min((abs(dir_ctime - t) for _, t in other_procs), default=float("inf"))
+
+        if best_acc2_diff <= 20.0 and best_acc2_diff < best_other_diff:
+            for icon_file in glob.glob(os.path.join(d, "status_icon_*.png")):
+                try:
+                    shutil.copyfile(ACC2_TRAY_PATH, icon_file)
+                except Exception:
+                    pass
 
 def reconstruct_png(png_path):
     if not os.path.exists(png_path): return None, None, None
@@ -52,8 +99,15 @@ def reconstruct_png(png_path):
         raw = zlib.decompress(bytes(idat))
         with open(png_path, "rb") as f:
             f.seek(16)
-            w, h = struct.unpack(">II", f.read(8))
-        bpp = 4
+            w, h, bit_depth, color_type = struct.unpack(">IIBB", f.read(10))
+        if color_type == 6:
+            bpp = 4
+        elif color_type == 2:
+            bpp = 3
+        elif color_type == 0:
+            bpp = 1
+        else:
+            bpp = 4
         stride = 1 + w * bpp
         recon = bytearray(w * h * bpp)
         def paeth_predictor(a, b, c):
@@ -80,6 +134,23 @@ def reconstruct_png(png_path):
                 else: val = filt_x
                 recon_row[x] = val
             recon[y * w * bpp : (y + 1) * w * bpp] = recon_row
+        if bpp == 3:
+            rgba = bytearray(w * h * 4)
+            for i in range(w * h):
+                rgba[i * 4] = recon[i * 3]
+                rgba[i * 4 + 1] = recon[i * 3 + 1]
+                rgba[i * 4 + 2] = recon[i * 3 + 2]
+                rgba[i * 4 + 3] = 255
+            recon = rgba
+        elif bpp == 1:
+            rgba = bytearray(w * h * 4)
+            for i in range(w * h):
+                v = recon[i]
+                rgba[i * 4] = v
+                rgba[i * 4 + 1] = v
+                rgba[i * 4 + 2] = v
+                rgba[i * 4 + 3] = 255
+            recon = rgba
         return w, h, recon
     except Exception:
         return None, None, None
@@ -92,13 +163,16 @@ def png_to_cardinal_array(png_path):
     
     # Standard X11 _NET_WM_ICON sizes up to 256
     sizes = [16, 24, 32, 48, 64, 128, 256]
+    orig_w, orig_h, orig_data = None, None, None
     for target_size in sizes:
         sz_path = os.path.join(hicolor_dir, f"{target_size}x{target_size}", "apps", base_name)
         if os.path.isfile(sz_path):
             tw, th, data = reconstruct_png(sz_path)
         else:
-            w, h, orig_data = reconstruct_png(png_path)
+            if orig_data is None:
+                orig_w, orig_h, orig_data = reconstruct_png(png_path)
             if not orig_data: continue
+            w, h = orig_w, orig_h
             tw = th = target_size
             data = bytearray(tw * th * 4)
             step_x, step_y = w / tw, h / th
@@ -110,6 +184,8 @@ def png_to_cardinal_array(png_path):
                     d_idx = (ty * tw + tx) * 4
                     data[d_idx:d_idx+4] = orig_data[s_idx:s_idx+4]
         
+        if not data:
+            continue
         all_data.append(tw)
         all_data.append(th)
         for i in range(0, len(data), 4):

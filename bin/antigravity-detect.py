@@ -268,9 +268,9 @@ def get_launcher_binary(launcher_path):
             for line in f:
                 line = line.strip()
                 if line.startswith('exec '):
-                    parts = line.split()
-                    if len(parts) > 1:
-                        return parts[1].strip('"').strip("'")
+                    m = re.search(r'exec\s+("[^"]+"|\'[^\']+\'|\S+)', line)
+                    if m:
+                        return m.group(1).strip('"').strip("'")
     except Exception:
         pass
     return ""
@@ -281,7 +281,7 @@ def update_launcher_binary(launcher_path, new_binary):
     try:
         with open(launcher_path, 'r', encoding='utf-8') as f:
             content = f.read()
-        content = re.sub(r'exec\s+["\']?[^\s"\']+["\']?', f'exec "{new_binary}"', content, count=1)
+        content = re.sub(r'exec\s+("[^"]+"|\'[^\']+\'|\S+)', f'exec "{new_binary}"', content, count=1)
         with open(launcher_path, 'w', encoding='utf-8') as f:
             f.write(content)
         return True

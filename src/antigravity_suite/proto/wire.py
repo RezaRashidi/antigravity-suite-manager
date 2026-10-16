@@ -83,17 +83,36 @@ def encode_annotations_field(step_count: int, last_user_step: int = -1) -> bytes
     return bytes(sub)
 
 
+def _is_plausible_proto(b: bytes) -> bool:
+    if not b or len(b) < 4:
+        return False
+    wire_type = b[0] & 7
+    tag_num = b[0] >> 3
+    return wire_type in (0, 2) and 1 <= tag_num <= 30
+
+
 def extract_pure_binary_summary(raw: Any) -> Optional[bytes]:
     """
     Extracts raw protobuf binary summary from raw database value.
-    Unwraps google.protobuf.Value string_value base64 string if present.
+    Unwraps google.protobuf.Value string_value base64 string,
+    Tag 1 (0x0A) or Tag 3 (0x1A) base64 wrappers, or direct ASCII base64 strings.
     """
     if not raw or not isinstance(raw, (bytes, bytearray)):
         return None
 
     raw_bytes = bytes(raw)
-    # Check if raw is wrapped in google.protobuf.Value: tag 3 string_value (0x1A) + varint len + base64 string
-    if len(raw_bytes) >= 4 and raw_bytes[0] == 0x1A:
+
+    # 1. Direct Base64 ASCII string check (e.g. starts with 'Cj' or is valid base64)
+    if len(raw_bytes) >= 8 and re.match(rb"^[A-Za-z0-9+/=\s]+$", raw_bytes):
+        try:
+            decoded = base64.b64decode(raw_bytes)
+            if _is_plausible_proto(decoded):
+                return extract_pure_binary_summary(decoded)
+        except Exception:
+            pass
+
+    # 2. Check if wrapped in Tag 1 (0x0A) or Tag 3 (0x1A) containing Base64 string
+    if len(raw_bytes) >= 4 and raw_bytes[0] in (0x0A, 0x1A):
         pos = 1
         length, pos = read_varint(raw_bytes, pos)
         if pos + length == len(raw_bytes) and length >= 4:
@@ -101,7 +120,7 @@ def extract_pure_binary_summary(raw: Any) -> Optional[bytes]:
             if re.match(rb"^[A-Za-z0-9+/=\s]+$", candidate_b64):
                 try:
                     decoded = base64.b64decode(candidate_b64)
-                    if decoded:
+                    if _is_plausible_proto(decoded):
                         return extract_pure_binary_summary(decoded)
                 except Exception:
                     pass

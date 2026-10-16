@@ -45,9 +45,12 @@ class TestExtractor(unittest.TestCase):
             # Insert 10 user prompts
             for i in range(1, 11):
                 prompt = f"User prompt message #{i}"
-                sub = encode_tag_bytes(2, prompt.encode("utf-8"))
+                sub = bytearray()
+                sub += encode_tag_bytes(2, prompt.encode("utf-8"))
+                chunk = encode_tag_bytes(1, prompt.encode("utf-8"))
+                sub += encode_tag_bytes(3, bytes(chunk))
                 payload = encode_tag_bytes(19, bytes(sub))
-                cur.execute("INSERT INTO steps VALUES (?, 14, ?)", (i, payload))
+                cur.execute("INSERT INTO steps VALUES (?, 14, ?)", (i, bytes(payload)))
             conn.commit()
             conn.close()
 
