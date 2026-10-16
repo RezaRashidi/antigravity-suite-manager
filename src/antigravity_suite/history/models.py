@@ -55,6 +55,7 @@ class SyncStats:
     conversations_updated: int = 0
     ide_state_ingested: int = 0
     total_active_history: int = 0
+    backup_id: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {
@@ -67,4 +68,5 @@ class SyncStats:
             "conversations_updated": self.conversations_updated,
             "ide_state_ingested": self.ide_state_ingested,
             "total_active_history": self.total_active_history,
+            "backup_id": self.backup_id,
         }

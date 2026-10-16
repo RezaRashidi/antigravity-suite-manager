@@ -1,16 +1,14 @@
 """
 Unified History Synchronization and Merge Engine for Antigravity Suite.
 
-Synchronizes conversation databases, SQLite indexes, Protobuf binary indexes,
-and VS Code global storage state across Desktop App and IDE instances.
+Orchestrates multi-profile synchronization across Desktop App, IDE instances,
+SQLite indexes, Protobuf binary indexes, and VS Code global storage state.
 """
 
 from __future__ import annotations
 
-import base64
 import datetime
 import glob
-import json
 import os
 import re
 import shutil
@@ -21,32 +19,33 @@ from typing import Dict, List, Optional, Set, Tuple, Union
 
 from antigravity_suite.auth.token import refresh_ide_oauth_token
 from antigravity_suite.config import DEFAULT_CONFIG, SuiteConfig, get_user_home
+from antigravity_suite.history.backup import HistoryBackupManager
 from antigravity_suite.history.discovery import discover_all_history_sources
+from antigravity_suite.history.distribution import replicate_to_ide_profiles
 from antigravity_suite.history.extractor import (
     extract_conv_text,
     get_annotation_title,
     sync_annotation_file,
 )
 from antigravity_suite.history.models import ConversationSummary, SyncStats
+from antigravity_suite.history.pool_merger import merge_brain_folders, merge_raw_db_pools
+from antigravity_suite.history.reconstruction import reconstruct_missing_databases
 from antigravity_suite.history.sqlite_store import (
     ensure_summaries_schema,
     get_actual_steps_count,
     load_existing_summaries,
     upsert_summary,
 )
-from antigravity_suite.history.synthesizer import (
-    is_synthesized_db_incomplete,
-    synthesize_db_from_transcript,
+from antigravity_suite.history.vscdb_sync import (
+    discover_candidate_vscdbs,
+    get_db_trajectory_meta,
+    ingest_vscdb_summaries,
+    write_vscdb_unified_state,
 )
 from antigravity_suite.proto.cascade import (
     build_cascade_summary,
     get_last_user_step_index,
     parse_cascade_summary,
-)
-from antigravity_suite.proto.trajectory import parse_trajectory_metadata_blob
-from antigravity_suite.proto.vscdb import (
-    build_summaries_state,
-    build_unified_state_sync,
 )
 from antigravity_suite.proto.wire import (
     encode_tag_bytes,
@@ -54,50 +53,24 @@ from antigravity_suite.proto.wire import (
     extract_pure_binary_summary,
 )
 
-
-def get_db_trajectory_meta(db_path: Path) -> Tuple[Optional[str], Optional[str]]:
-    """Reads workspace_uri and project_id from trajectory_metadata_blob if present."""
-    if not db_path.is_file():
-        return None, None
-    conn = None
-    try:
-        conn = sqlite3.connect(str(db_path), timeout=15.0)
-        row = conn.cursor().execute("SELECT data FROM trajectory_metadata_blob WHERE id = 'main';").fetchone()
-        if row and row[0]:
-            meta = parse_trajectory_metadata_blob(row[0])
-            uris = meta.get("workspace_uris", [])
-            w_uri = uris[0] if uris else meta.get("workspace_uri")
-            return w_uri, meta.get("project_id")
-    except Exception:
-        pass
-    finally:
-        if conn:
-            try:
-                conn.close()
-            except Exception:
-                pass
-    return None, None
+# Re-export get_db_trajectory_meta for backward compatibility
+__all__ = [
+    "get_db_trajectory_meta",
+    "merge_histories",
+    "setup_master_directories",
+    "collect_all_conversation_ids",
+    "synchronize_master_summaries",
+    "serialize_master_proto",
+    "sync_annotation_files",
+]
 
 
-def merge_histories(
-    master_gemini: Optional[Union[str, Path]] = None,
-    source_dir: Optional[Union[str, Path]] = None,
-    target_dir: Optional[Union[str, Path]] = None,
-    quiet: bool = False,
-    force_rebuild: bool = False,
-    user_home: Optional[Union[str, Path]] = None,
-) -> SyncStats:
+def setup_master_directories(effective_master: Path) -> Tuple[Path, Path, Path, Path, Path]:
     """
-    Performs full 3-way synchronization between Antigravity Hub, Antigravity IDE,
-    and all isolated multi-account profiles.
+    Creates and configures canonical directory paths and maintains symlinks for SQLite DB.
+    Returns:
+        (master_conv_dir, master_brain_dir, master_sum_db, master_proto, master_anno)
     """
-    home = Path(user_home).resolve() if user_home else get_user_home()
-    effective_master = (
-        Path(master_gemini).resolve()
-        if master_gemini
-        else Path(os.environ.get("ANTIGRAVITY_APP_DIR", home / ".gemini" / "antigravity")).resolve()
-    )
-
     master_conv_dir = effective_master / "conversations"
     master_brain_dir = effective_master / "brain"
     master_sum_db = effective_master / "conversation_summaries.db"
@@ -109,7 +82,7 @@ def merge_histories(
     master_brain_dir.mkdir(parents=True, exist_ok=True)
     master_anno.mkdir(parents=True, exist_ok=True)
 
-    # Migrate and maintain symlink: master_conv_dir / conversation_summaries.db -> ../conversation_summaries.db
+    # Maintain symlink: master_conv_dir / conversation_summaries.db -> ../conversation_summaries.db
     if sub_sum_db.exists() and not sub_sum_db.is_symlink():
         if not master_sum_db.exists():
             try:
@@ -129,106 +102,182 @@ def merge_histories(
         except Exception:
             pass
 
-    stats = SyncStats()
+    return master_conv_dir, master_brain_dir, master_sum_db, master_proto, master_anno
 
-    # 1. Discover all history pools across the system
-    conv_pools, brain_pools, ide_candidates = discover_all_history_sources(
-        target_dir=target_dir,
-        user_home=home,
-        source_dir=source_dir,
+
+def collect_all_conversation_ids(
+    master_conv_dir: Path,
+    existing_rows: Dict[str, Tuple],
+) -> Set[str]:
+    """Scans databases, protobufs, and existing table rows for 36-char UUIDs."""
+    all_conv_ids: Set[str] = set()
+    uuid_pattern = re.compile(r"^[0-9a-fA-F-]{36}$")
+
+    for db_f in glob.glob(os.path.join(str(master_conv_dir), "*.db")):
+        cid = os.path.basename(db_f)[:-3]
+        if uuid_pattern.match(cid):
+            all_conv_ids.add(cid)
+
+    for pb_f in glob.glob(os.path.join(str(master_conv_dir), "*.pb")):
+        cid = os.path.basename(pb_f)[:-3]
+        if uuid_pattern.match(cid):
+            all_conv_ids.add(cid)
+
+    for cid in existing_rows.keys():
+        if uuid_pattern.match(cid):
+            all_conv_ids.add(cid)
+
+    return all_conv_ids
+
+
+def resolve_conversation_item(
+    conv_id: str,
+    effective_master: Path,
+    master_conv_dir: Path,
+    master_brain_dir: Path,
+    existing_rows: Dict[str, Tuple],
+    all_summaries: Dict[str, bytes],
+    cur: sqlite3.Cursor,
+    con: sqlite3.Connection,
+    stats: SyncStats,
+) -> None:
+    """Evaluates and synchronizes an individual conversation entry in SQLite."""
+    db_file = master_conv_dir / f"{conv_id}.db"
+    has_db = db_file.is_file()
+    pb_file = master_conv_dir / f"{conv_id}.pb"
+    has_pb = pb_file.is_file()
+
+    if has_db:
+        file_mtime = db_file.stat().st_mtime
+    elif has_pb:
+        file_mtime = pb_file.stat().st_mtime
+    elif conv_id in existing_rows and existing_rows[conv_id][3]:
+        try:
+            dt = datetime.datetime.fromisoformat(str(existing_rows[conv_id][3]).replace("Z", "+00:00"))
+            file_mtime = dt.timestamp()
+        except Exception:
+            file_mtime = time.time()
+    else:
+        file_mtime = time.time()
+
+    file_mtime_iso = datetime.datetime.fromtimestamp(file_mtime, tz=datetime.timezone.utc).strftime(
+        "%Y-%m-%d %H:%M:%S.000000+00:00"
     )
-    stats.conv_stores_scanned = len(conv_pools)
-    stats.brain_stores_scanned = len(brain_pools)
+    actual_steps = get_actual_steps_count(db_file) if has_db else (existing_rows[conv_id][2] if conv_id in existing_rows else 0)
 
-    # 2. Merge raw .db and .pb files into master pool
-    for pool in conv_pools:
-        if os.path.realpath(pool) == str(master_conv_dir):
-            continue
-        for src_file in glob.glob(os.path.join(pool, "*")):
-            base = os.path.basename(src_file)
-            if not (base.endswith(".db") or base.endswith(".pb")):
-                continue
-            if base == "conversation_summaries.db":
-                continue
-            target_file = master_conv_dir / base
-            needs_copy = False
-            if not target_file.exists():
-                needs_copy = True
-            elif target_file.stat().st_size == 0 and os.path.getsize(src_file) > 0:
-                needs_copy = True
-            elif os.path.getsize(src_file) > target_file.stat().st_size:
-                needs_copy = True
-            elif os.path.getmtime(src_file) > (target_file.stat().st_mtime + 2.0):
-                needs_copy = True
-            elif base.endswith(".db") and get_actual_steps_count(src_file) > get_actual_steps_count(target_file):
-                needs_copy = True
+    transcript_file = master_brain_dir / conv_id / ".system_generated" / "logs" / "transcript.jsonl"
+    anno_title = get_annotation_title(effective_master, conv_id)
+    db_ws_uri, db_proj_id = get_db_trajectory_meta(db_file) if has_db else (None, None)
 
-            if needs_copy:
-                try:
-                    shutil.copy2(src_file, target_file)
-                    stats.db_files_merged += 1
-                except Exception:
-                    pass
+    curr_raw = all_summaries.get(conv_id)
+    parsed_raw = parse_cascade_summary(curr_raw) if curr_raw else {}
+    raw_title = parsed_raw.get("title", "")
+    raw_summary = parsed_raw.get("summary", "")
 
-    # 3. Merge brain folders & Reconstruct missing databases from transcripts
-    for b_pool in brain_pools:
-        if os.path.realpath(b_pool) != str(master_brain_dir):
-            for b_item in glob.glob(os.path.join(b_pool, "*")):
-                if not os.path.isdir(b_item):
-                    continue
-                c_uuid = os.path.basename(b_item)
-                if not re.match(r"^[0-9a-fA-F-]{36}$", c_uuid):
-                    continue
-                target_brain_item = master_brain_dir / c_uuid
-                if not target_brain_item.exists():
-                    try:
-                        shutil.copytree(b_item, target_brain_item, symlinks=True)
-                        stats.brain_folders_merged += 1
-                    except Exception:
-                        pass
-                else:
-                    # Update newer or larger files (transcripts, artifacts) in existing folder
-                    for root, _, files in os.walk(b_item):
-                        rel = os.path.relpath(root, b_item)
-                        target_dir = target_brain_item / rel
-                        target_dir.mkdir(parents=True, exist_ok=True)
-                        for f in files:
-                            src_f = os.path.join(root, f)
-                            dst_f = target_dir / f
-                            if not dst_f.exists() or os.path.getsize(src_f) > dst_f.stat().st_size or os.path.getmtime(src_f) > (dst_f.stat().st_mtime + 2.0):
-                                try:
-                                    shutil.copy2(src_f, dst_f)
-                                except Exception:
-                                    pass
+    curr_title = existing_rows[conv_id][0] if conv_id in existing_rows else ""
+    curr_prev = existing_rows[conv_id][1] if conv_id in existing_rows else ""
+    curr_step_cnt = existing_rows[conv_id][2] if conv_id in existing_rows else parsed_raw.get("step_count", 0)
 
-    # Reconstruct missing or incomplete databases from transcript logs
-    # Gather candidate transcripts across all pools, selecting the largest for each c_uuid
-    candidate_transcripts: Dict[str, str] = {}
-    all_brain_pools = [str(master_brain_dir)] + [p for p in brain_pools if os.path.realpath(p) != str(master_brain_dir)]
-    for b_pool in all_brain_pools:
-        if not os.path.isdir(b_pool):
-            continue
-        for b_item in glob.glob(os.path.join(b_pool, "*")):
-            if not os.path.isdir(b_item):
-                continue
-            c_uuid = os.path.basename(b_item)
-            if not re.match(r"^[0-9a-fA-F-]{36}$", c_uuid):
-                continue
-            tf = os.path.join(b_item, ".system_generated", "logs", "transcript_full.jsonl")
-            if not os.path.isfile(tf):
-                tf = os.path.join(b_item, ".system_generated", "logs", "transcript.jsonl")
-            if os.path.isfile(tf):
-                prev = candidate_transcripts.get(c_uuid)
-                if not prev or os.path.getsize(tf) > os.path.getsize(prev):
-                    candidate_transcripts[c_uuid] = tf
+    final_title = anno_title or curr_title or raw_title
+    final_prev = curr_prev or raw_summary
 
-    for c_uuid, tf in candidate_transcripts.items():
-        target_db = master_conv_dir / f"{c_uuid}.db"
-        if not target_db.exists() or is_synthesized_db_incomplete(target_db) or force_rebuild:
-            if synthesize_db_from_transcript(c_uuid, target_db, tf):
-                stats.databases_reconstructed += 1
+    if not final_title or final_title.strip() in ["", "Conversation", "Untitled Conversation"]:
+        if curr_prev and curr_prev.strip() not in ["", "Conversation", "Untitled Conversation"]:
+            final_title = curr_prev.strip().split("\n")[0][:80]
+        elif raw_summary and raw_summary.strip() not in ["", "Conversation", "Untitled Conversation"]:
+            final_title = raw_summary.strip().split("\n")[0][:80]
 
-    # 4. Read and Synchronize conversation_summaries.db
+    if not final_title or final_title.strip() in ["", "Conversation", "Untitled Conversation"]:
+        ext_t, ext_p = extract_conv_text(db_file, transcript_file)
+        if ext_t:
+            final_title = ext_t
+            final_prev = ext_p or final_prev
+
+    if not final_title:
+        final_title = "Conversation"
+    if not final_prev:
+        final_prev = final_title
+
+    target_step_cnt = max(actual_steps, curr_step_cnt, 1)
+    ws_uri = db_ws_uri or parsed_raw.get("workspace_uri")
+    proj_id = db_proj_id or parsed_raw.get("project_id")
+
+    curr_raw_title = parsed_raw.get("title") or parsed_raw.get("summary")
+    needs_title_rebuild = bool(
+        final_title
+        and (
+            not curr_raw_title
+            or curr_raw_title in ["Conversation", "Untitled Conversation"]
+        )
+    )
+    is_corrupt_raw = bool(curr_raw and any(ord(c) < 32 and c not in "\n\r\t" for c in (raw_summary or "")))
+    needs_steps_rebuild = bool(actual_steps > curr_step_cnt)
+    is_not_in_sqlite = bool(conv_id not in existing_rows)
+
+    # If summary exists, is valid, is in SQLite, and doesn't need rebuild:
+    if (
+        curr_raw
+        and len(curr_raw) > 20
+        and not needs_title_rebuild
+        and not is_corrupt_raw
+        and not needs_steps_rebuild
+        and not is_not_in_sqlite
+    ):
+        all_summaries[conv_id] = curr_raw
+        if curr_title != final_title or curr_prev != final_prev:
+            cur.execute(
+                "UPDATE conversation_summaries SET title=?, preview=? WHERE conversation_id=?;",
+                (final_title, final_prev, conv_id),
+            )
+            stats.conversations_updated += 1
+        return
+
+    # Reconstruct authentic summary
+    user_step = get_last_user_step_index(db_file, target_step_cnt)
+    new_bin = build_cascade_summary(
+        conv_id,
+        final_title,
+        final_prev,
+        target_step_cnt,
+        file_mtime_iso,
+        last_user_step=user_step,
+        workspace_uri=ws_uri,
+        project_id=proj_id,
+    )
+    all_summaries[conv_id] = new_bin
+
+    summary_model = ConversationSummary(
+        conversation_id=conv_id,
+        title=final_title,
+        preview=final_prev,
+        step_count=target_step_cnt,
+        last_modified_time=file_mtime_iso,
+        last_user_input_step_index=user_step,
+        raw_summary=new_bin,
+        workspace_uris=ws_uri or "",
+        project_id=proj_id or "",
+    )
+    upsert_summary(con, summary_model)
+    if is_not_in_sqlite:
+        stats.summaries_backfilled += 1
+    else:
+        stats.conversations_updated += 1
+
+
+def synchronize_master_summaries(
+    effective_master: Path,
+    master_conv_dir: Path,
+    master_brain_dir: Path,
+    master_sum_db: Path,
+    master_proto: Path,
+    stats: SyncStats,
+) -> Tuple[sqlite3.Connection, Dict[str, bytes]]:
+    """
+    Connects to master SQLite database, ensures schema, ingests existing summaries,
+    evaluates all conversations, and writes back authentic records.
+    Returns:
+        (con, all_summaries)
+    """
     all_summaries: Dict[str, bytes] = {}
     con = sqlite3.connect(str(master_sum_db), timeout=15.0)
     ensure_summaries_schema(con)
@@ -253,223 +302,27 @@ def merge_histories(
         except Exception:
             pass
 
-    # Collect all conversation IDs across DBs, PBs, and existing rows
-    all_conv_ids: Set[str] = set()
-    for db_f in glob.glob(os.path.join(str(master_conv_dir), "*.db")):
-        cid = os.path.basename(db_f)[:-3]
-        if re.match(r"^[0-9a-fA-F-]{36}$", cid):
-            all_conv_ids.add(cid)
-    for pb_f in glob.glob(os.path.join(str(master_conv_dir), "*.pb")):
-        cid = os.path.basename(pb_f)[:-3]
-        if re.match(r"^[0-9a-fA-F-]{36}$", cid):
-            all_conv_ids.add(cid)
-    for cid in existing_rows.keys():
-        if re.match(r"^[0-9a-fA-F-]{36}$", cid):
-            all_conv_ids.add(cid)
+    all_conv_ids = collect_all_conversation_ids(master_conv_dir, existing_rows)
 
     for conv_id in sorted(all_conv_ids):
-        db_file = master_conv_dir / f"{conv_id}.db"
-        has_db = db_file.is_file()
-        pb_file = master_conv_dir / f"{conv_id}.pb"
-        has_pb = pb_file.is_file()
-
-        if has_db:
-            file_mtime = db_file.stat().st_mtime
-        elif has_pb:
-            file_mtime = pb_file.stat().st_mtime
-        elif conv_id in existing_rows and existing_rows[conv_id][3]:
-            try:
-                dt = datetime.datetime.fromisoformat(str(existing_rows[conv_id][3]).replace("Z", "+00:00"))
-                file_mtime = dt.timestamp()
-            except Exception:
-                file_mtime = time.time()
-        else:
-            file_mtime = time.time()
-
-        file_mtime_iso = datetime.datetime.fromtimestamp(file_mtime, tz=datetime.timezone.utc).strftime(
-            "%Y-%m-%d %H:%M:%S.000000+00:00"
+        resolve_conversation_item(
+            conv_id=conv_id,
+            effective_master=effective_master,
+            master_conv_dir=master_conv_dir,
+            master_brain_dir=master_brain_dir,
+            existing_rows=existing_rows,
+            all_summaries=all_summaries,
+            cur=cur,
+            con=con,
+            stats=stats,
         )
-        actual_steps = get_actual_steps_count(db_file) if has_db else (existing_rows[conv_id][2] if conv_id in existing_rows else 0)
-
-        transcript_file = master_brain_dir / conv_id / ".system_generated" / "logs" / "transcript.jsonl"
-        anno_title = get_annotation_title(effective_master, conv_id)
-        db_ws_uri, db_proj_id = get_db_trajectory_meta(db_file) if has_db else (None, None)
-
-        curr_raw = all_summaries.get(conv_id)
-        parsed_raw = parse_cascade_summary(curr_raw) if curr_raw else {}
-        raw_title = parsed_raw.get("title", "")
-        raw_summary = parsed_raw.get("summary", "")
-
-        curr_title = existing_rows[conv_id][0] if conv_id in existing_rows else ""
-        curr_prev = existing_rows[conv_id][1] if conv_id in existing_rows else ""
-        curr_step_cnt = existing_rows[conv_id][2] if conv_id in existing_rows else parsed_raw.get("step_count", 0)
-
-        final_title = anno_title or curr_title or raw_title
-        final_prev = curr_prev or raw_summary
-
-        if not final_title or final_title.strip() in ["", "Conversation", "Untitled Conversation"]:
-            if curr_prev and curr_prev.strip() not in ["", "Conversation", "Untitled Conversation"]:
-                final_title = curr_prev.strip().split("\n")[0][:80]
-            elif raw_summary and raw_summary.strip() not in ["", "Conversation", "Untitled Conversation"]:
-                final_title = raw_summary.strip().split("\n")[0][:80]
-
-        if not final_title or final_title.strip() in ["", "Conversation", "Untitled Conversation"]:
-            ext_t, ext_p = extract_conv_text(db_file, transcript_file)
-            if ext_t:
-                final_title = ext_t
-                final_prev = ext_p or final_prev
-
-        if not final_title:
-            final_title = "Conversation"
-        if not final_prev:
-            final_prev = final_title
-
-        target_step_cnt = max(actual_steps, curr_step_cnt, 1)
-        ws_uri = db_ws_uri or parsed_raw.get("workspace_uri")
-        proj_id = db_proj_id or parsed_raw.get("project_id")
-
-        curr_raw_title = parsed_raw.get("title") or parsed_raw.get("summary")
-        needs_title_rebuild = bool(
-            final_title
-            and (
-                not curr_raw_title
-                or curr_raw_title in ["Conversation", "Untitled Conversation"]
-            )
-        )
-        is_corrupt_raw = bool(curr_raw and any(ord(c) < 32 and c not in "\n\r\t" for c in (raw_summary or "")))
-        needs_steps_rebuild = bool(actual_steps > curr_step_cnt)
-        is_not_in_sqlite = bool(conv_id not in existing_rows)
-
-        # If summary exists, is valid, is in SQLite, and doesn't need rebuild:
-        if (
-            curr_raw
-            and len(curr_raw) > 20
-            and not needs_title_rebuild
-            and not is_corrupt_raw
-            and not needs_steps_rebuild
-            and not is_not_in_sqlite
-        ):
-            all_summaries[conv_id] = curr_raw
-            if curr_title != final_title or curr_prev != final_prev:
-                cur.execute(
-                    "UPDATE conversation_summaries SET title=?, preview=? WHERE conversation_id=?;",
-                    (final_title, final_prev, conv_id),
-                )
-                stats.conversations_updated += 1
-            continue
-
-        # Reconstruct authentic summary
-        user_step = get_last_user_step_index(db_file, target_step_cnt)
-        new_bin = build_cascade_summary(
-            conv_id,
-            final_title,
-            final_prev,
-            target_step_cnt,
-            file_mtime_iso,
-            last_user_step=user_step,
-            workspace_uri=ws_uri,
-            project_id=proj_id,
-        )
-        all_summaries[conv_id] = new_bin
-
-        summary_model = ConversationSummary(
-            conversation_id=conv_id,
-            title=final_title,
-            preview=final_prev,
-            step_count=target_step_cnt,
-            last_modified_time=file_mtime_iso,
-            last_user_input_step_index=user_step,
-            raw_summary=new_bin,
-            workspace_uris=ws_uri or "",
-            project_id=proj_id or "",
-        )
-        upsert_summary(con, summary_model)
-        if is_not_in_sqlite:
-            stats.summaries_backfilled += 1
-        else:
-            stats.conversations_updated += 1
 
     con.commit()
+    return con, all_summaries
 
-    # 5. Read titles from VS Code state.vscdb
-    candidate_vscdbs_set = set()
-    for h in [home, Path(os.path.expanduser("~"))]:
-        h_str = str(h)
-        for pattern in [
-            os.path.join(h_str, ".config", "*", "User", "globalStorage", "state.vscdb"),
-            os.path.join(h_str, ".config", "Google", "*", "User", "globalStorage", "state.vscdb"),
-            os.path.join(h_str, ".antigravity*", ".config", "*", "User", "globalStorage", "state.vscdb"),
-        ]:
-            for vpath in glob.glob(pattern):
-                if any(k in vpath.lower() for k in ["antigravity", "gemini"]):
-                    candidate_vscdbs_set.add(Path(vpath).resolve())
-    for cand in ide_candidates:
-        cand_vsc = Path(cand) / "User" / "globalStorage" / "state.vscdb"
-        if cand_vsc.is_file():
-            candidate_vscdbs_set.add(cand_vsc.resolve())
 
-    candidate_vscdbs = sorted(list(candidate_vscdbs_set))
-
-    ide_ingested_total = 0
-    for vscdb_p in candidate_vscdbs:
-        if not vscdb_p.is_file():
-            continue
-        v_con = None
-        try:
-            v_con = sqlite3.connect(str(vscdb_p), timeout=15.0)
-            v_cur = v_con.cursor()
-            rows = v_cur.execute(
-                "SELECT value FROM ItemTable WHERE key IN ('antigravityUnifiedStateSync.trajectorySummaries', 'antigravityUnifiedStateSync');"
-            ).fetchall()
-            for r in rows:
-                val = r[0]
-                if not val:
-                    continue
-                v_bin = base64.b64decode(val)
-                entries = extract_entries_from_proto(v_bin)
-                for u_id, p_bin in entries.items():
-                    raw = extract_pure_binary_summary(p_bin)
-                    if raw:
-                        parsed = parse_cascade_summary(raw)
-                        ide_title = parsed.get("title") or parsed.get("summary")
-                        if u_id in all_summaries:
-                            curr_parsed = parse_cascade_summary(all_summaries[u_id])
-                            curr_t = curr_parsed.get("title") or curr_parsed.get("summary")
-                            if ide_title and (
-                                not curr_t or curr_t in ["Conversation", "IDE Conversation", "Untitled Conversation"]
-                            ):
-                                db_p = master_conv_dir / f"{u_id}.db"
-                                db_ws_uri, db_proj_id = get_db_trajectory_meta(db_p)
-                                sc = max(get_actual_steps_count(db_p), curr_parsed.get("step_count", 0), curr_parsed.get(2, 0), 1)
-                                user_step = get_last_user_step_index(db_p, sc)
-                                new_bin = build_cascade_summary(
-                                    u_id,
-                                    ide_title,
-                                    ide_title,
-                                    sc,
-                                    last_user_step=user_step,
-                                    workspace_uri=db_ws_uri or curr_parsed.get("workspace_uri"),
-                                    project_id=db_proj_id or curr_parsed.get("project_id"),
-                                )
-                                all_summaries[u_id] = new_bin
-                                cur.execute(
-                                    "UPDATE conversation_summaries SET title=?, raw_summary=? WHERE conversation_id=?",
-                                    (ide_title, new_bin, u_id),
-                                )
-                                ide_ingested_total += 1
-            con.commit()
-        except Exception:
-            pass
-        finally:
-            if v_con:
-                try:
-                    v_con.close()
-                except Exception:
-                    pass
-
-    stats.ide_state_ingested = ide_ingested_total
-
-    # 6. Serialize and write agyhub_summaries_proto.pb
+def serialize_master_proto(master_proto: Path, all_summaries: Dict[str, bytes]) -> None:
+    """Serializes in-memory summaries dictionary to binary Protobuf file atomically."""
     try:
         entries_data = bytearray()
         for u_id, p_bin in sorted(all_summaries.items()):
@@ -487,152 +340,140 @@ def merge_histories(
     except Exception:
         pass
 
-    # 7. Update state.vscdb across all IDE profiles
-    for vscdb_p in candidate_vscdbs:
-        if not vscdb_p.is_file():
-            continue
-        v_con = None
-        try:
-            v_con = sqlite3.connect(str(vscdb_p), timeout=15.0)
-            v_cur = v_con.cursor()
-            old_sync_row = v_cur.execute(
-                "SELECT value FROM ItemTable WHERE key = 'antigravityUnifiedStateSync';"
-            ).fetchone()
-            old_sync_b64 = old_sync_row[0] if old_sync_row else None
 
-            val_wrap_b64 = build_summaries_state(all_summaries)
-            outer_b64 = build_unified_state_sync(all_summaries, existing_raw_b64=old_sync_b64)
-
-            v_cur.execute(
-                "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('antigravityUnifiedStateSync.trajectorySummaries', ?);",
-                (val_wrap_b64,),
-            )
-            v_cur.execute(
-                "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('antigravityUnifiedStateSync', ?);",
-                (outer_b64,),
-            )
-            v_con.commit()
-        except Exception:
-            pass
-        finally:
-            if v_con:
-                try:
-                    v_con.close()
-                except Exception:
-                    pass
-
-    # Flush SQLite WAL to disk so replicated files have complete state
-    try:
-        cur.execute("PRAGMA wal_checkpoint(TRUNCATE);")
-        con.commit()
-    except Exception:
-        pass
-
-    # 8. Replicate conversation_summaries.db and proto to target IDE profiles
-    target_ide_dirs = []
-    for td in sorted(set(ide_candidates)):
-        if os.path.isdir(td) and os.path.realpath(td) != str(effective_master):
-            if "suite-manager" in os.path.basename(td):
-                continue
-            target_ide_dirs.append(td)
-
-    for target_d in target_ide_dirs:
-        try:
-            tgt_conv_dir = os.path.join(target_d, "conversations")
-            os.makedirs(tgt_conv_dir, exist_ok=True)
-
-            # Replicate canonical conversation_summaries.db using SQLite backup API
-            tgt_root_sum_db = os.path.join(target_d, "conversation_summaries.db")
-            if not os.path.islink(tgt_root_sum_db) and not (
-                os.path.exists(tgt_root_sum_db) and os.path.samefile(str(master_sum_db), tgt_root_sum_db)
-            ):
-                dest_c = None
-                try:
-                    dest_c = sqlite3.connect(tgt_root_sum_db, timeout=15.0)
-                    con.backup(dest_c)
-                except Exception:
-                    pass
-                finally:
-                    if dest_c:
-                        try:
-                            dest_c.close()
-                        except Exception:
-                            pass
-
-            t_sum_db = os.path.join(tgt_conv_dir, "conversation_summaries.db")
-            if not os.path.islink(t_sum_db) and not (
-                os.path.exists(t_sum_db) and os.path.samefile(str(master_sum_db), t_sum_db)
-            ):
-                dest_c = None
-                try:
-                    # Prefer relative symlink to root conversation_summaries.db if possible
-                    if os.path.exists(tgt_root_sum_db) and not os.path.exists(t_sum_db):
-                        try:
-                            os.symlink("../conversation_summaries.db", t_sum_db)
-                        except Exception:
-                            dest_c = sqlite3.connect(t_sum_db, timeout=15.0)
-                            con.backup(dest_c)
-                    else:
-                        dest_c = sqlite3.connect(t_sum_db, timeout=15.0)
-                        con.backup(dest_c)
-                except Exception:
-                    pass
-                finally:
-                    if dest_c:
-                        try:
-                            dest_c.close()
-                        except Exception:
-                            pass
-
-            if not os.path.islink(tgt_conv_dir) and not os.path.samefile(str(master_conv_dir), tgt_conv_dir):
-                for db_src in glob.glob(os.path.join(str(master_conv_dir), "*.db")):
-                    base_name = os.path.basename(db_src)
-                    if base_name == "conversation_summaries.db":
-                        continue
-                    tgt_db = os.path.join(tgt_conv_dir, base_name)
-                    needs_copy = False
-                    if not os.path.exists(tgt_db) or os.path.getsize(tgt_db) == 0:
-                        needs_copy = True
-                    elif os.path.getsize(db_src) > os.path.getsize(tgt_db):
-                        needs_copy = True
-                    elif os.path.getmtime(db_src) > (os.path.getmtime(tgt_db) + 2.0):
-                        needs_copy = True
-                    elif base_name.endswith(".db") and get_actual_steps_count(db_src) > get_actual_steps_count(tgt_db):
-                        needs_copy = True
-
-                    if needs_copy:
-                        try:
-                            shutil.copy2(db_src, tgt_db)
-                        except Exception:
-                            pass
-
-            t_proto = os.path.join(target_d, "agyhub_summaries_proto.pb")
-            if master_proto.is_file():
-                if not os.path.islink(t_proto) and not (
-                    os.path.exists(t_proto) and os.path.samefile(str(master_proto), t_proto)
-                ):
-                    shutil.copy2(master_proto, t_proto)
-        except Exception:
-            pass
-
-    # 9. Synchronize annotations/<conv_id>.pbtxt files for Desktop App UI title rendering
+def sync_annotation_files(effective_master: Path, cur: sqlite3.Cursor) -> None:
+    """Synchronizes annotations/<conv_id>.pbtxt files for Desktop App UI rendering."""
     for c_id, c_title in cur.execute(
         "SELECT conversation_id, title FROM conversation_summaries WHERE length(title) > 0;"
     ).fetchall():
         sync_annotation_file(effective_master, c_id, c_title)
 
-    stats.total_active_history = cur.execute("SELECT count(*) FROM conversation_summaries;").fetchone()[0]
 
-    # Final WAL checkpoint before closing master connection
+def merge_histories(
+    master_gemini: Optional[Union[str, Path]] = None,
+    source_dir: Optional[Union[str, Path]] = None,
+    target_dir: Optional[Union[str, Path]] = None,
+    quiet: bool = False,
+    force_rebuild: bool = False,
+    user_home: Optional[Union[str, Path]] = None,
+    skip_backup: bool = False,
+) -> SyncStats:
+    """
+    Performs full 3-way synchronization between Antigravity Hub, Antigravity IDE,
+    and all isolated multi-account profiles with automated transactional backup.
+    """
+    home = Path(user_home).resolve() if user_home else get_user_home()
+    effective_master = (
+        Path(master_gemini).resolve()
+        if master_gemini
+        else Path(os.environ.get("ANTIGRAVITY_APP_DIR", home / ".gemini" / "antigravity")).resolve()
+    )
+
+    # 1. Setup master directories & symlinks
+    (
+        master_conv_dir,
+        master_brain_dir,
+        master_sum_db,
+        master_proto,
+        master_anno,
+    ) = setup_master_directories(effective_master)
+
+    stats = SyncStats()
+
+    # 2. Discover all history pools and candidate VSCDBs across the system
+    conv_pools, brain_pools, ide_candidates = discover_all_history_sources(
+        target_dir=target_dir,
+        user_home=home,
+        source_dir=source_dir,
+    )
+    candidate_vscdbs = discover_candidate_vscdbs(home, ide_candidates)
+    stats.conv_stores_scanned = len(conv_pools)
+    stats.brain_stores_scanned = len(brain_pools)
+
+    # 3. Create automated pre-merge backup snapshot before making any modifications
+    if not skip_backup:
+        backup_entry = HistoryBackupManager.create_pre_merge_backup(
+            effective_master=effective_master,
+            candidate_vscdbs=candidate_vscdbs,
+            user_home=home,
+            description="Pre-merge automatic backup",
+        )
+        if backup_entry:
+            stats.backup_id = backup_entry.backup_id
+
+    # 4. Merge raw .db and .pb pools into master
+    stats.db_files_merged = merge_raw_db_pools(conv_pools, master_conv_dir)
+
+    # 5. Merge brain folders into master
+    stats.brain_folders_merged = merge_brain_folders(brain_pools, master_brain_dir)
+
+    # 6. Reconstruct missing databases from transcript logs
+    stats.databases_reconstructed = reconstruct_missing_databases(
+        brain_pools=brain_pools,
+        master_brain_dir=master_brain_dir,
+        master_conv_dir=master_conv_dir,
+        force_rebuild=force_rebuild,
+    )
+
+    # 7. Read and synchronize conversation_summaries.db
+    con, all_summaries = synchronize_master_summaries(
+        effective_master=effective_master,
+        master_conv_dir=master_conv_dir,
+        master_brain_dir=master_brain_dir,
+        master_sum_db=master_sum_db,
+        master_proto=master_proto,
+        stats=stats,
+    )
+
     try:
-        cur.execute("PRAGMA wal_checkpoint(TRUNCATE);")
-        con.commit()
-    except Exception:
-        pass
+        cur = con.cursor()
+
+        # 8. Enrich summaries with authentic titles from VS Code state.vscdb
+        stats.ide_state_ingested = ingest_vscdb_summaries(
+            candidate_vscdbs=candidate_vscdbs,
+            all_summaries=all_summaries,
+            master_conv_dir=master_conv_dir,
+            con=con,
+        )
+
+        # 9. Serialize and write agyhub_summaries_proto.pb
+        serialize_master_proto(master_proto, all_summaries)
+
+        # 10. Update state.vscdb across all IDE profiles
+        write_vscdb_unified_state(candidate_vscdbs, all_summaries)
+
+        # Flush SQLite WAL to disk so replicated files have complete state
+        try:
+            cur.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+            con.commit()
+        except Exception:
+            pass
+
+        # 11. Replicate conversation_summaries.db and proto to target IDE profiles
+        replicate_to_ide_profiles(
+            target_ide_dirs=ide_candidates,
+            effective_master=effective_master,
+            master_sum_db=master_sum_db,
+            master_conv_dir=master_conv_dir,
+            master_proto=master_proto,
+            con=con,
+        )
+
+        # 12. Synchronize annotations/<conv_id>.pbtxt files for Desktop App UI title rendering
+        sync_annotation_files(effective_master, cur)
+
+        stats.total_active_history = cur.execute("SELECT count(*) FROM conversation_summaries;").fetchone()[0]
+
+        # Final WAL checkpoint
+        try:
+            cur.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+            con.commit()
+        except Exception:
+            pass
     finally:
         con.close()
 
-    # 10. Automatically refresh IDE OAuth token if expired
+    # 13. Automatically refresh IDE OAuth token if expired
     cfg = SuiteConfig(user_home=home)
     for ide_dir in cfg.ide_dirs:
         refresh_ide_oauth_token(ide_dir, home)

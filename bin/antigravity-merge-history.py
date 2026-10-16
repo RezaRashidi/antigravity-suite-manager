@@ -30,10 +30,18 @@ for _cand in _CANDIDATES:
 
 # Re-export all public API symbols for complete backwards compatibility
 from antigravity_suite.auth import refresh_ide_oauth_token
-from antigravity_suite.cli.merge import build_parser, main, print_report
+from antigravity_suite.cli.merge import (
+    build_parser,
+    handle_list_backups,
+    handle_restore_backup,
+    main,
+    print_report,
+)
 from antigravity_suite.config import DEFAULT_CONFIG, SuiteConfig, get_user_home
 from antigravity_suite.history import (
+    BackupEntry,
     ConversationSummary,
+    HistoryBackupManager,
     SyncStats,
     discover_all_history_sources,
     ensure_summaries_schema,
@@ -92,6 +100,10 @@ __all__ = [
     "discover_all_history_sources",
     "merge_histories",
     "watch_mode",
+    "BackupEntry",
+    "HistoryBackupManager",
+    "handle_list_backups",
+    "handle_restore_backup",
     "main",
     "build_parser",
     "print_report",

@@ -10,6 +10,7 @@ import sys
 from typing import List, Optional
 
 from antigravity_suite.config import DEFAULT_CONFIG
+from antigravity_suite.history.backup import HistoryBackupManager
 from antigravity_suite.history.merger import merge_histories
 from antigravity_suite.history.watcher import watch_mode
 
@@ -55,6 +56,22 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Output synchronization telemetry report as structured JSON",
     )
+    parser.add_argument(
+        "--list-backups",
+        action="store_true",
+        help="List available automated history backups and exit",
+    )
+    parser.add_argument(
+        "--restore",
+        metavar="BACKUP_ID",
+        default=None,
+        help="Restore history databases and IDE state from a specific backup ID or path and exit",
+    )
+    parser.add_argument(
+        "--no-backup",
+        action="store_true",
+        help="Skip automatic pre-merge backup snapshot",
+    )
     return parser
 
 
@@ -63,6 +80,8 @@ def print_report(stats: dict) -> None:
     print("=" * 88)
     print("                       Antigravity History Synchronization Report                       ")
     print("=" * 88)
+    if stats.get("backup_id"):
+        print(f"  • Backup Snapshot Created:    {stats['backup_id']}")
     print(f"  • History Pools Scanned:      {stats['conv_stores_scanned']} conv stores, {stats['brain_stores_scanned']} brain stores")
     print(f"  • DB Files Merged:            {stats['db_files_merged']} new databases imported")
     print(f"  • Brain Folders Merged:       {stats['brain_folders_merged']} new project folders imported")
@@ -75,10 +94,50 @@ def print_report(stats: dict) -> None:
     print("=" * 88)
 
 
+def handle_list_backups() -> int:
+    """Lists existing backup snapshots in a formatted table."""
+    backups = HistoryBackupManager.list_backups()
+    if not backups:
+        print("No historical backups found in ~/.config/antigravity/backups/history.")
+        return 0
+
+    print("=" * 88)
+    print("                       Antigravity History Backups Archive                       ")
+    print("=" * 88)
+    print(f" {'BACKUP ID':<36} | {'TIMESTAMP':<22} | {'VSCDB':<5} | {'FILES'}")
+    print("-" * 88)
+    for b in backups:
+        files_str = ", ".join(b.files) if b.files else "none"
+        print(f" {b.backup_id:<36} | {b.timestamp[:19]:<22} | {b.vscdb_entries_count:<5} | {files_str}")
+    print("=" * 88)
+    print(f"Total backups stored: {len(backups)}")
+    print("To restore a backup, run: antigravity-merge-history --restore <BACKUP_ID>")
+    return 0
+
+
+def handle_restore_backup(backup_id: str) -> int:
+    """Restores system state from the specified backup snapshot."""
+    print(f"Initiating restoration from backup: {backup_id}...")
+    success = HistoryBackupManager.restore_backup(backup_id)
+    if success:
+        print(f"✓ Backup '{backup_id}' successfully restored!")
+        print("  - conversation_summaries.db, protobuf indexes, and IDE state restored.")
+        return 0
+    else:
+        print(f"✗ Failed to restore backup '{backup_id}'. Check ID or permissions.", file=sys.stderr)
+        return 1
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     """CLI runner main entry point."""
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.list_backups:
+        return handle_list_backups()
+
+    if args.restore:
+        return handle_restore_backup(args.restore)
 
     if args.watch:
         try:
@@ -97,6 +156,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             target_dir=args.target,
             quiet=args.quiet,
             force_rebuild=args.force,
+            skip_backup=args.no_backup,
         )
 
         if args.json:
