@@ -18,6 +18,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
 REAL_USER="${SUDO_USER:-$USER}"
 REAL_HOME=$(getent passwd "$REAL_USER" 2>/dev/null | cut -d: -f6)
 REAL_HOME="${REAL_HOME:-$HOME}"
+export REAL_USER REAL_HOME
 
 # ==============================================================================
 # Auto-Bootstrap if executed directly via curl / pipe outside repo
@@ -181,11 +182,18 @@ if [ -n "$CLI_APP_DIR" ] || [ -n "$CLI_IDE_DIR" ]; then
     mkdir -p "$TARGET_CONF"
     APP_INSTALL_DIR="${CLI_APP_DIR:-$APP_INSTALL_DIR}"
     IDE_INSTALL_DIR="${CLI_IDE_DIR:-$IDE_INSTALL_DIR}"
+    local_custom="${CUSTOM_ANTIGRAVITY_PATHS:-}"
+    if [ -f "$PATHS_CONF" ] && [ -z "$local_custom" ]; then
+        local_custom=$(grep -E '^(CUSTOM_ANTIGRAVITY_PATHS|CUSTOM_PATHS)=' "$PATHS_CONF" | head -n 1 | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+    fi
     cat <<EOF > "$PATHS_CONF"
 # Antigravity Suite Installation Paths Configuration
 APP_INSTALL_DIR="${APP_INSTALL_DIR}"
 IDE_INSTALL_DIR="${IDE_INSTALL_DIR}"
 EOF
+    if [ -n "$local_custom" ]; then
+        echo "CUSTOM_ANTIGRAVITY_PATHS=\"${local_custom}\"" >> "$PATHS_CONF"
+    fi
 fi
 
 
@@ -239,11 +247,18 @@ step_2_configure_paths() {
         fi
     else
         mkdir -p "$TARGET_CONF"
+        local_custom="${CUSTOM_ANTIGRAVITY_PATHS:-}"
+        if [ -f "$PATHS_CONF" ] && [ -z "$local_custom" ]; then
+            local_custom=$(grep -E '^(CUSTOM_ANTIGRAVITY_PATHS|CUSTOM_PATHS)=' "$PATHS_CONF" | head -n 1 | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+        fi
         cat <<EOF > "$PATHS_CONF"
 # Antigravity Suite Installation Paths Configuration
 APP_INSTALL_DIR="${APP_INSTALL_DIR:-/opt/antigravity2}"
 IDE_INSTALL_DIR="${IDE_INSTALL_DIR:-/opt/antigravity}"
 EOF
+        if [ -n "$local_custom" ]; then
+            echo "CUSTOM_ANTIGRAVITY_PATHS=\"${local_custom}\"" >> "$PATHS_CONF"
+        fi
     fi
 
     if [ -f "$PATHS_CONF" ]; then
@@ -303,6 +318,7 @@ step_4_deploy_scripts() {
     fi
 
     ln -sfn "${TARGET_BIN}/manage-antigravity.sh" "${REAL_HOME}/manage-antigravity.sh"
+    chown -R "${REAL_USER}:${REAL_USER}" "$TARGET_BIN" "$TARGET_ICONS" "$TARGET_CONF" "${REAL_HOME}/manage-antigravity.sh" 2>/dev/null || true
     echo -e "${GREEN}[OK] Installed management tools to ${TARGET_BIN} and symlinked ~/manage-antigravity.sh${NC}"
 }
 
@@ -332,6 +348,7 @@ EOF
     fi
 
     python3 "${TARGET_BIN}/antigravity-generate-icons.py" >/dev/null 2>&1 || true
+    chown -R "${REAL_USER}:${REAL_USER}" "$TARGET_CONF" "$TARGET_ICONS" 2>/dev/null || true
     echo -e "${GREEN}[OK] Icon cache generated.${NC}"
 }
 

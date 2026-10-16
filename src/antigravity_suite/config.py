@@ -18,6 +18,13 @@ def get_user_home() -> Path:
     env_home = os.environ.get("REAL_HOME")
     if env_home and os.path.isdir(env_home):
         return Path(env_home).resolve()
+    real_user = os.environ.get("REAL_USER") or os.environ.get("SUDO_USER") or os.environ.get("USER")
+    if real_user and real_user != "root":
+        try:
+            import pwd
+            return Path(pwd.getpwnam(real_user).pw_dir).resolve()
+        except Exception:
+            pass
     return Path.home().resolve()
 
 

@@ -102,7 +102,7 @@ def list_keyring_items():
                         ilabel = str(item_props.Get('org.freedesktop.Secret.Item', 'Label'))
                         attrs = {str(k): str(v) for k, v in item_props.Get('org.freedesktop.Secret.Item', 'Attributes').items()}
                         is_match = False
-                        if 'antigravity' in ilabel.lower() or attrs.get('service') == 'gemini':
+                        if 'antigravity' in ilabel.lower() or (attrs.get('service') == 'gemini' and 'antigravity' in attrs.get('username', '').lower()):
                             is_match = True
                         elif any('antigravity' in str(v).lower() for v in attrs.values()):
                             is_match = True
@@ -131,6 +131,15 @@ def get_token_from_keyring():
         if not items and search[1]:
             unlock_res = svc.Unlock(search[1])
             items.extend(unlock_res[0])
+            if not items and len(unlock_res) > 1 and str(unlock_res[1]) != "/":
+                try:
+                    p_obj = bus.get_object('org.freedesktop.secrets', unlock_res[1])
+                    p_iface = dbus.Interface(p_obj, 'org.freedesktop.Secret.Prompt')
+                    p_iface.Prompt("")
+                    search2 = svc.SearchItems({'service': 'gemini', 'username': 'antigravity'})
+                    items = list(search2[0])
+                except Exception:
+                    pass
         if items:
             sec_dict = svc.GetSecrets(items, session)
             raw = bytes(sec_dict[items[0]][2]).decode('utf-8', errors='ignore')
@@ -139,7 +148,7 @@ def get_token_from_keyring():
         pass
     return None
 
-def purge_antigravity_from_keyring():
+def purge_antigravity_from_keyring(target="all"):
     bus, svc = get_dbus_secrets_service()
     if not svc:
         print(f"{YELLOW}[WARN] D-Bus Secret Service not available.{NC}")
@@ -153,10 +162,30 @@ def purge_antigravity_from_keyring():
     import dbus
     deleted = 0
     for it in items:
+        lbl = it['label'].lower()
+        attrs = {str(k).lower(): str(v).lower() for k, v in it.get('attributes', {}).items()}
+
+        if target == "app1":
+            if "ide" in lbl or any("ide" in v for v in attrs.values()) or "acc2" in lbl or "profile2" in lbl:
+                continue
+        elif target == "app2":
+            if not ("acc2" in lbl or "profile2" in lbl or "antigravity-2" in lbl):
+                continue
+        elif target == "ide":
+            if not ("ide" in lbl or any("ide" in v for v in attrs.values())):
+                continue
+
         try:
             item_obj = bus.get_object('org.freedesktop.secrets', it['path'])
             item_iface = dbus.Interface(item_obj, 'org.freedesktop.Secret.Item')
-            item_iface.Delete()
+            del_prompt = item_iface.Delete()
+            if del_prompt and str(del_prompt) != "/":
+                try:
+                    p_obj = bus.get_object('org.freedesktop.secrets', del_prompt)
+                    p_iface = dbus.Interface(p_obj, 'org.freedesktop.Secret.Prompt')
+                    p_iface.Prompt("")
+                except Exception:
+                    pass
             print(f"{GREEN}[DELETED]{NC} Removed from GNOME Keyring: {it['label']} ({it['path']})")
             deleted += 1
         except Exception as e:
@@ -217,14 +246,25 @@ def apply_mode_for_app1(mode, migrate_token=True):
             except Exception: pass
         update_launcher_password_store(launcher, "gnome")
 
-def apply_mode_for_app2(mode):
+def apply_mode_for_app2(mode, migrate_token=True):
     cache_file = os.path.join(PROFILE2_DIR, ".gemini", "cache", "antigravity-keyring-unavailable")
+    token_file = os.path.join(PROFILE2_DIR, ".gemini", "jetski-standalone-oauth-token")
     launcher = os.path.join(LOCAL_BIN, "antigravity-acc2")
 
     if mode == "normal":
         os.makedirs(os.path.dirname(cache_file), exist_ok=True)
         with open(cache_file, "a"):
             os.utime(cache_file, None)
+
+        if migrate_token and not os.path.isfile(token_file):
+            token_data = get_token_from_keyring()
+            if token_data:
+                os.makedirs(os.path.dirname(token_file), exist_ok=True)
+                with open(token_file, "w", encoding="utf-8") as f:
+                    f.write(token_data)
+                os.chmod(token_file, 0o600)
+                print(f"{GREEN}[MIGRATED]{NC} Saved existing login token to {token_file}")
+
         update_launcher_password_store(launcher, "normal")
     else:
         if os.path.isfile(cache_file):
@@ -359,8 +399,8 @@ if __name__ == "__main__":
         save_config(cfg)
 
         if mode_normalized == "normal" and args.purge:
-            print(f"\n{YELLOW}Purging Antigravity items from GNOME Keyring...{NC}")
-            purge_antigravity_from_keyring()
+            print(f"\n{YELLOW}Purging Antigravity items for {target} from GNOME Keyring...{NC}")
+            purge_antigravity_from_keyring(target)
 
         print("\nUpdated Status:")
         inspect_status()

@@ -28,7 +28,15 @@ const lsPath = path.join(dir, 'dist', 'languageServer.js');
 if (fs.existsSync(lsPath)) {
     let lsCode = fs.readFileSync(lsPath, 'utf8');
     if (!lsCode.includes('exports.restartLanguageServer = restartLanguageServer;')) {
-        const restartFunc = `
+        const varsDeclaration = `
+let _lsPort = 0;
+let _lastPort = 0;
+let _lastCsrf = '';
+let _lastOptions = null;
+let _isRestarting = false;
+let _restartCount = 0;
+`;
+        const restartFunc = varsDeclaration + `
 async function restartLanguageServer() {
     if (_isRestarting) return;
     _isRestarting = true;
@@ -40,7 +48,6 @@ async function restartLanguageServer() {
         try { if (typeof setIntentionalTermination === 'function') setIntentionalTermination(false); } catch (_) {}
         const newHandle = await startLanguageServer(_lastPort, _lastCsrf, _lastOptions);
         _lsPort = newHandle.port;
-        _lastPort = _lsPort;
         if (_lastOptions && _lastOptions.onPortChanged) {
             _lastOptions.onPortChanged(_lsPort);
         }
@@ -54,10 +61,11 @@ async function restartLanguageServer() {
 }
 exports.restartLanguageServer = restartLanguageServer;
 `;
-        if (!lsCode.includes('let _lastPort = 0;')) {
+        const startMonitorRegex = /async\s+function\s+startAndMonitorLanguageServer\s*\(([^)]*)\)\s*\{/;
+        if (startMonitorRegex.test(lsCode)) {
             lsCode = lsCode.replace(
-                'async function startAndMonitorLanguageServer(port, csrf, options = {}) {',
-                `let _lastPort = 0;\nlet _lastCsrf = '';\nlet _lastOptions = null;\nlet _isRestarting = false;\nlet _restartCount = 0;\n\nasync function startAndMonitorLanguageServer(port, csrf, options = {}) {\n    _lastPort = port;\n    _lastCsrf = csrf;\n    _lastOptions = options;`
+                startMonitorRegex,
+                `async function startAndMonitorLanguageServer($1) {\n    _lastPort = arguments[0];\n    _lastCsrf = arguments[1];\n    _lastOptions = arguments[2];`
             );
         }
         lsCode = lsCode.replace(
@@ -176,7 +184,7 @@ if (fs.existsSync(utilsPath)) {
                 const xid = handle.readUInt32LE(0);
                 if (xid) {
                     const wmClass = (process.env.ANTIGRAVITY_APP_NAME || process.env.ANTIGRAVITY_DESKTOP_NAME).replace(/\\.desktop$/i, '');
-                    require('child_process').exec(\`xprop -id \${xid} -f WM_CLASS 8s -set WM_CLASS "\${wmClass}", "\${wmClass}"\`);
+                    require('child_process').exec(\`xprop -id \${xid} -f WM_CLASS 8s -set WM_CLASS "\${wmClass}"\`);
                 }
             }
         } catch (_) {}

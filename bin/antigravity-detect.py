@@ -25,7 +25,9 @@ RED = '\033[1;31m'
 NC = '\033[0m'
 BOLD = '\033[1m'
 
-REAL_USER = os.environ.get("SUDO_USER") or os.environ.get("USER") or os.environ.get("LOGNAME")
+REAL_USER = os.environ.get("REAL_USER")
+if not REAL_USER:
+    REAL_USER = os.environ.get("SUDO_USER") or os.environ.get("USER") or os.environ.get("LOGNAME")
 REAL_HOME = os.environ.get("REAL_HOME")
 if not REAL_HOME:
     if REAL_USER and REAL_USER != "root":
@@ -42,19 +44,57 @@ PATHS_CONF = os.path.join(CONF_DIR, "paths.conf")
 
 def is_acc1_running(real_home=None):
     home = real_home or REAL_HOME
-    target = f"user-data-dir={home}/.config/Antigravity"
-    res = subprocess.run(["pgrep", "-f", re.escape(target)], capture_output=True)
-    if res.returncode == 0:
-        return True
+    target_udd = os.path.realpath(f"{home}/.config/Antigravity")
     try:
         pids = subprocess.run(["pgrep", "-f", "Antigravity"], capture_output=True, text=True).stdout.strip().split()
         for pid in pids:
             try:
                 with open(f"/proc/{pid}/cmdline", "r", errors="ignore") as f:
-                    cmd = f.read()
-                    if f"user-data-dir={home}/.config/Antigravity" in cmd:
-                        return True
-                    if "user-data-dir=" in cmd and "/.config/Antigravity" in cmd and ".antigravity-profile" not in cmd:
+                    cmd_parts = [p for p in f.read().split('\x00') if p]
+                    if not cmd_parts:
+                        continue
+                    udd = None
+                    for part in cmd_parts:
+                        if part.startswith("--user-data-dir="):
+                            udd = part.split("=", 1)[1]
+                            break
+                    if udd:
+                        if os.path.realpath(os.path.expanduser(udd)) == target_udd:
+                            return True
+                    else:
+                        cmd_line = " ".join(cmd_parts)
+                        if "antigravity-profile" not in cmd_line and "Antigravity" in cmd_line:
+                            if not any(arg.startswith("--user-data-dir=") for arg in cmd_parts):
+                                return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return False
+
+def is_main_ide_running(real_home=None):
+    home = real_home or REAL_HOME
+    target_udd = os.path.realpath(f"{home}/.antigravity-ide")
+    try:
+        pids = subprocess.run(["pgrep", "-f", "antigravity-ide"], capture_output=True, text=True).stdout.strip().split()
+        for pid in pids:
+            try:
+                with open(f"/proc/{pid}/cmdline", "r", errors="ignore") as f:
+                    cmd_parts = [p for p in f.read().split('\x00') if p]
+                    if not cmd_parts:
+                        continue
+                    cmd_line = " ".join(cmd_parts)
+                    if ".antigravity-ide-profile-" in cmd_line or "antigravity-ide-profile" in cmd_line:
+                        continue
+                    udd = None
+                    for part in cmd_parts:
+                        if part.startswith("--user-data-dir="):
+                            udd = part.split("=", 1)[1]
+                            break
+                    if udd:
+                        if os.path.realpath(os.path.expanduser(udd)) == target_udd:
+                            return True
+                    else:
                         return True
             except Exception:
                 continue
@@ -73,12 +113,24 @@ def update_launcher_profile_path(launcher_f, is_acc2, old_p, new_p):
     else:
         l_content = re.sub(r'export PROFILE="[^"]+"', f'export PROFILE="{new_p}"', l_content)
 
-    old_base = os.path.basename(old_p)
-    new_base = os.path.basename(new_p)
-    if old_base and new_base and old_base != new_base:
-        l_content = l_content.replace(old_base, new_base)
+    old_p_clean = old_p.rstrip('/')
+    new_p_clean = new_p.rstrip('/')
+    if old_p_clean in l_content:
+        l_content = l_content.replace(old_p_clean, new_p_clean)
     if old_p in l_content:
         l_content = l_content.replace(old_p, new_p)
+
+    old_base = os.path.basename(old_p_clean)
+    new_base = os.path.basename(new_p_clean)
+    if old_base and new_base and old_base != new_base:
+        suffix = re.escape(new_base[len(old_base):]) if new_base.startswith(old_base) else ''
+        prefix = re.escape(new_base[:len(new_base)-len(old_base)]) if new_base.endswith(old_base) else ''
+        pat = rf'{re.escape(old_base)}'
+        if suffix:
+            pat = rf'{pat}(?!{suffix})'
+        if prefix:
+            pat = rf'(?<!{prefix}){pat}'
+        l_content = re.sub(pat, new_base, l_content)
 
     with open(launcher_f, "w", encoding="utf-8") as f:
         f.write(l_content)
@@ -98,11 +150,16 @@ def inspect_app_dir(d):
             hdr = json.loads(f.read(j_len).decode('utf-8'))
             curr = hdr.get('files', {}).get('package.json', {})
             if 'offset' in curr and 'size' in curr:
-                f.seek(16 + j_len + int(curr['offset']))
-                raw = f.read(min(curr['size'] + 50, 1024)).decode('utf-8', errors='ignore')
-                m = re.search(r'"version"\s*:\s*"([^"]+)"', raw)
-                if m:
-                    ver = m.group(1)
+                f.seek(8 + h_s + int(curr['offset']))
+                pkg_raw = f.read(int(curr['size'])).decode('utf-8', errors='ignore')
+                try:
+                    pkg_data = json.loads(pkg_raw)
+                    if 'version' in pkg_data:
+                        ver = str(pkg_data['version'])
+                except Exception:
+                    m = re.search(r'"version"\s*:\s*"([^"]+)"', pkg_raw)
+                    if m:
+                        ver = m.group(1)
     except Exception:
         pass
 
@@ -446,7 +503,7 @@ def scan_clones(curr_app="", curr_ide=""):
     ide_profile = os.path.join(REAL_HOME, '.gemini', 'antigravity-ide')
     ide_launcher = os.path.join(local_bin, 'antigravity-ide')
     ide_desktop = os.path.join(local_apps, 'antigravity-ide.desktop')
-    ide_running = subprocess.run(['pgrep', '-f', 'antigravity-ide'], capture_output=True).returncode == 0
+    ide_running = is_main_ide_running(REAL_HOME)
     ide_shared = os.path.islink(os.path.join(ide_profile, 'conversations'))
     ide_cache = os.path.join(REAL_HOME, '.gemide', 'cache', 'antigravity-keyring-unavailable')
     if not os.path.isfile(ide_cache):
@@ -575,9 +632,10 @@ def create_launcher_and_desktop(cmd_name, app_type, exe_target, install_dir):
     launcher_path = os.path.join(local_bin, cmd_name)
     desktop_path = os.path.join(local_apps, f"{cmd_name}.desktop")
 
+    user_data_dir = os.path.join(REAL_HOME, ".config", f"Antigravity IDE-{cmd_name}" if "IDE" in app_type else f"Antigravity-{cmd_name}")
     with open(launcher_path, "w", encoding="utf-8") as f:
         f.write("#!/usr/bin/env bash\n")
-        f.write(f'exec "{exe_target}" --password-store=basic --class="{cmd_name}" --name="{cmd_name}" "$@"\n')
+        f.write(f'exec "{exe_target}" --password-store=basic --user-data-dir="{user_data_dir}" --class="{cmd_name}" --name="{cmd_name}" "$@"\n')
     os.chmod(launcher_path, 0o755)
 
     icon_name = "antigravity-ide" if "IDE" in app_type else "antigravity-app"
@@ -1009,6 +1067,10 @@ def configure_single_clone(clone):
         cache_f = os.path.join(p_dir, ".gemini", "cache", "antigravity-keyring-unavailable")
         if is_acc1:
             cache_f = os.path.join(REAL_HOME, ".gemini", "cache", "antigravity-keyring-unavailable")
+        elif is_ide1:
+            cache_f = os.path.join(REAL_HOME, '.gemide', 'cache', 'antigravity-keyring-unavailable')
+            if not os.path.isfile(cache_f):
+                cache_f = os.path.join(REAL_HOME, '.gemini', 'antigravity-ide', 'cache', 'antigravity-keyring-unavailable')
         is_normal_keyring = os.path.isfile(cache_f)
         k_mode = "Normal (File Storage - Recommended)" if is_normal_keyring else "GNOME Keyring (Secret Service)"
 
@@ -1019,7 +1081,7 @@ def configure_single_clone(clone):
         elif is_acc2:
             running = subprocess.run(["pgrep", "-f", "antigravity-profile2.*Antigravity"], capture_output=True).returncode == 0
         elif is_ide1:
-            running = subprocess.run(["pgrep", "-f", "antigravity-ide"], capture_output=True).returncode == 0
+            running = is_main_ide_running(REAL_HOME)
         else:
             bname = os.path.basename(p_dir)
             running = subprocess.run(["pgrep", "-f", f"{bname}"], capture_output=True).returncode == 0
@@ -1097,8 +1159,16 @@ def configure_single_clone(clone):
                     with open(cache_f, "w") as f: f.write("# Keyring bypassed\n")
                     if launcher_f and os.path.isfile(launcher_f):
                         with open(launcher_f, "r") as lf: content = lf.read()
-                        if "--password-store=basic" not in content and "exec " in content:
-                            content = content.replace("exec ", "exec --password-store=basic ")
+                        if "--password-store=basic" not in content:
+                            lines = content.splitlines()
+                            new_lines = []
+                            for line in lines:
+                                if line.strip().startswith("exec "):
+                                    m = re.match(r'^(\s*exec\s+("[^"]+"|\'[^\']+\'|\S+))(.*)$', line)
+                                    if m:
+                                        line = f'{m.group(1)} --password-store=basic{m.group(3)}'
+                                new_lines.append(line)
+                            content = "\n".join(new_lines) + "\n"
                             with open(launcher_f, "w") as lf: lf.write(content)
             print(f"{GREEN}[SUCCESS] Switched credential mode to {new_mode.upper()}.{NC}")
         elif choice == "3":
@@ -1167,6 +1237,9 @@ def configure_single_clone(clone):
         elif choice == "5":
             if is_acc1:
                 print(f"{YELLOW}[NOTICE] Account 1 profile (~/.gemini) cannot be relocated.{NC}")
+                continue
+            if is_acc2:
+                print(f"{YELLOW}[NOTICE] Standard Account 2 profile (~/.antigravity-profile2) cannot be relocated.{NC}")
                 continue
             new_p = input(f"Enter new path for profile directory [current: {p_dir}]: ").strip()
             if new_p and new_p != p_dir:
@@ -1354,6 +1427,10 @@ def configure_unified_instance(u_item, curr_app, curr_ide, custom_paths):
             cache_f = os.path.join(p_dir, ".gemini", "cache", "antigravity-keyring-unavailable")
             if is_acc1:
                 cache_f = os.path.join(REAL_HOME, ".gemini", "cache", "antigravity-keyring-unavailable")
+            elif is_ide1:
+                cache_f = os.path.join(REAL_HOME, '.gemide', 'cache', 'antigravity-keyring-unavailable')
+                if not os.path.isfile(cache_f):
+                    cache_f = os.path.join(REAL_HOME, '.gemini', 'antigravity-ide', 'cache', 'antigravity-keyring-unavailable')
             is_normal_keyring = os.path.isfile(cache_f)
             k_mode = "Normal (File Storage - Recommended)" if is_normal_keyring else "GNOME Keyring (Secret Service)"
         else:
@@ -1368,7 +1445,7 @@ def configure_unified_instance(u_item, curr_app, curr_ide, custom_paths):
             elif is_acc2:
                 running = subprocess.run(["pgrep", "-f", "antigravity-profile2.*Antigravity"], capture_output=True).returncode == 0
             elif is_ide1:
-                running = subprocess.run(["pgrep", "-f", "antigravity-ide"], capture_output=True).returncode == 0
+                running = is_main_ide_running(REAL_HOME)
             else:
                 bname = os.path.basename(p_dir)
                 running = subprocess.run(["pgrep", "-f", f"{bname}"], capture_output=True).returncode == 0
@@ -1484,8 +1561,16 @@ def configure_unified_instance(u_item, curr_app, curr_ide, custom_paths):
                         with open(cache_f, "w") as f: f.write("# Keyring bypassed\n")
                         if launcher_f and os.path.isfile(launcher_f):
                             with open(launcher_f, "r") as lf: content = lf.read()
-                            if "--password-store=basic" not in content and "exec " in content:
-                                content = content.replace("exec ", "exec --password-store=basic ", 1)
+                            if "--password-store=basic" not in content:
+                                lines = content.splitlines()
+                                new_lines = []
+                                for line in lines:
+                                    if line.strip().startswith("exec "):
+                                        m = re.match(r'^(\s*exec\s+("[^"]+"|\'[^\']+\'|\S+))(.*)$', line)
+                                        if m:
+                                            line = f'{m.group(1)} --password-store=basic{m.group(3)}'
+                                    new_lines.append(line)
+                                content = "\n".join(new_lines) + "\n"
                                 with open(launcher_f, "w") as lf: lf.write(content)
                         print(f"{GREEN}[SUCCESS] Switched credential mode to Normal File Storage (Keyring bypassed).{NC}")
             elif choice == "3":
@@ -1544,6 +1629,9 @@ def configure_unified_instance(u_item, curr_app, curr_ide, custom_paths):
             elif choice == "5":
                 if is_acc1:
                     print(f"{YELLOW}[NOTICE] Account 1 profile (~/.gemini) cannot be relocated.{NC}")
+                    continue
+                if is_acc2:
+                    print(f"{YELLOW}[NOTICE] Standard Account 2 profile (~/.antigravity-profile2) cannot be relocated.{NC}")
                     continue
                 new_p = input(f"Enter new path for profile directory [current: {p_dir}]: ").strip()
                 if new_p and new_p != p_dir:

@@ -12,9 +12,20 @@ import os
 import sys
 from pathlib import Path
 
-# Add package source directories to sys.path
 _CURRENT_DIR = Path(__file__).resolve().parent
-_USER_HOME = Path(os.environ.get("REAL_HOME", os.path.expanduser("~"))).resolve()
+_env_home = os.environ.get("REAL_HOME")
+if _env_home and os.path.isdir(_env_home):
+    _USER_HOME = Path(_env_home).resolve()
+else:
+    _real_user = os.environ.get("REAL_USER") or os.environ.get("SUDO_USER") or os.environ.get("USER")
+    if _real_user and _real_user != "root":
+        try:
+            import pwd
+            _USER_HOME = Path(pwd.getpwnam(_real_user).pw_dir).resolve()
+        except Exception:
+            _USER_HOME = Path.home().resolve()
+    else:
+        _USER_HOME = Path.home().resolve()
 
 _CANDIDATES = [
     os.environ.get("ANTIGRAVITY_SUITE_DIR") and Path(os.environ["ANTIGRAVITY_SUITE_DIR"]) / "src",

@@ -18,7 +18,21 @@ import glob
 import argparse
 import subprocess
 
-REAL_HOME = os.environ.get("REAL_HOME", os.path.expanduser("~"))
+REAL_USER = os.environ.get("REAL_USER")
+if not REAL_USER:
+    REAL_USER = os.environ.get("SUDO_USER") or os.environ.get("USER") or "root"
+
+REAL_HOME = os.environ.get("REAL_HOME")
+if not REAL_HOME:
+    if REAL_USER and REAL_USER != "root":
+        try:
+            import pwd
+            REAL_HOME = pwd.getpwnam(REAL_USER).pw_dir
+        except Exception:
+            REAL_HOME = os.path.expanduser("~")
+    else:
+        REAL_HOME = os.path.expanduser("~")
+
 GEMINI_DIR = os.path.join(REAL_HOME, ".gemini")
 MASTER_GEMINI = os.path.join(GEMINI_DIR, "antigravity")
 CONFIG_DIR = os.path.join(GEMINI_DIR, "config")
@@ -129,6 +143,16 @@ def create_safety_backup(category="history", label="pre_change"):
                 accs_dir = os.path.join(ANTIGRAVITY_CONF_DIR, "accounts")
                 if os.path.isdir(accs_dir):
                     tar.add(accs_dir, arcname="suite/accounts", recursive=True)
+            # OAuth tokens
+            token_targets = [
+                (os.path.join(GEMINI_DIR, "jetski-standalone-oauth-token"), "gemini-token"),
+                (os.path.join(REAL_HOME, ".antigravity-profile2", ".gemini", "jetski-standalone-oauth-token"), "acc2-token"),
+                (os.path.join(REAL_HOME, ".gemini-ide", "jetski-standalone-oauth-token"), "gemini-ide-token"),
+                (os.path.join(REAL_HOME, ".gemide", "jetski-standalone-oauth-token"), "gemide-token"),
+            ]
+            for token_path, token_arc in token_targets:
+                if os.path.isfile(token_path):
+                    tar.add(token_path, arcname=os.path.join("suite", "tokens", token_arc))
 
     size_str = format_size(os.path.getsize(tar_path))
     log_success(f"Safety snapshot created: {tar_name} ({size_str})")
@@ -188,8 +212,30 @@ def restore_backup(backup_path):
             dst_conv = os.path.join(MASTER_GEMINI, "conversations")
             os.makedirs(dst_conv, exist_ok=True)
             if os.path.isdir(src_conv):
+                # Clean up post-backup conversations not present in snapshot
+                snapshot_dbs = {os.path.basename(db) for db in glob.glob(os.path.join(src_conv, "*.db"))}
+                for cur_db in glob.glob(os.path.join(dst_conv, "*.db")):
+                    if os.path.basename(cur_db) not in snapshot_dbs:
+                        try:
+                            os.remove(cur_db)
+                            for ext in ["-wal", "-shm"]:
+                                if os.path.exists(f"{cur_db}{ext}"):
+                                    os.remove(f"{cur_db}{ext}")
+                        except Exception:
+                            pass
+
                 for db in glob.glob(os.path.join(src_conv, "*.db")):
-                    shutil.copy2(db, os.path.join(dst_conv, os.path.basename(db)))
+                    db_name = os.path.basename(db)
+                    dst_db = os.path.join(dst_conv, db_name)
+                    shutil.copy2(db, dst_db)
+                    for ext in ["-wal", "-shm"]:
+                        s_wal = f"{db}{ext}"
+                        d_wal = f"{dst_db}{ext}"
+                        if os.path.exists(s_wal):
+                            shutil.copy2(s_wal, d_wal)
+                        elif os.path.exists(d_wal):
+                            try: os.remove(d_wal)
+                            except Exception: pass
 
             src_brain = os.path.join(hist_dir, "brain")
             dst_brain = os.path.join(MASTER_GEMINI, "brain")
@@ -256,6 +302,28 @@ def restore_backup(backup_path):
                 for cf in glob.glob(os.path.join(src_confs, "*.conf")):
                     shutil.copy2(cf, os.path.join(ANTIGRAVITY_CONF_DIR, os.path.basename(cf)))
 
+            tokens_src = os.path.join(suite_dir, "tokens")
+            if os.path.isdir(tokens_src):
+                token_restore_map = [
+                    ("gemini-token", os.path.join(GEMINI_DIR, "jetski-standalone-oauth-token")),
+                    (".gemini-token", os.path.join(GEMINI_DIR, "jetski-standalone-oauth-token")),
+                    ("acc2-token", os.path.join(REAL_HOME, ".antigravity-profile2", ".gemini", "jetski-standalone-oauth-token")),
+                    ("gemini-ide-token", os.path.join(REAL_HOME, ".gemini-ide", "jetski-standalone-oauth-token")),
+                    (".gemini-ide-token", os.path.join(REAL_HOME, ".gemini-ide", "jetski-standalone-oauth-token")),
+                    ("gemide-token", os.path.join(REAL_HOME, ".gemide", "jetski-standalone-oauth-token")),
+                    (".gemide-token", os.path.join(REAL_HOME, ".gemide", "jetski-standalone-oauth-token")),
+                ]
+                for src_name, dst_path in token_restore_map:
+                    token_src_file = os.path.join(tokens_src, src_name)
+                    if os.path.isfile(token_src_file):
+                        os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+                        shutil.copy2(token_src_file, dst_path)
+                        try:
+                            os.chmod(dst_path, 0o600)
+                        except Exception:
+                            pass
+                        log_success(f"Restored OAuth token to {dst_path}")
+
     log_success(f"Restore from {fn} completed successfully!")
     return True
 
@@ -296,7 +364,8 @@ def export_history(output_path=None):
         with open(manifest_p, "w", encoding="utf-8") as f:
             json.dump(manifest, f, indent=2)
 
-        with tarfile.open(output_path, "w:gz") as tar:
+        mode = "w:gz" if output_path.endswith(".gz") else "w"
+        with tarfile.open(output_path, mode) as tar:
             tar.add(manifest_p, arcname="manifest.json")
 
             conv_p = os.path.join(MASTER_GEMINI, "conversations")
@@ -321,6 +390,56 @@ def export_history(output_path=None):
     print(f"  • Total Conversations: {len(conv_dbs)}")
     print(f"  • Total Brain Folders: {len(brain_dirs)}")
     return output_path
+
+def add_path_safe(tar, src_path, arc_prefix, visited=None):
+    if visited is None:
+        visited = set()
+    if os.path.islink(src_path):
+        if not os.path.exists(src_path):
+            return
+        real_p = os.path.realpath(src_path)
+        if real_p in visited:
+            return
+        visited.add(real_p)
+        if os.path.isdir(real_p):
+            add_path_safe(tar, real_p, arc_prefix, visited)
+            return
+        elif os.path.isfile(real_p):
+            try:
+                ti = tar.gettarinfo(real_p, arcname=arc_prefix)
+                with open(real_p, 'rb') as f:
+                    tar.addfile(ti, f)
+            except Exception:
+                pass
+            return
+
+    if os.path.isfile(src_path):
+        try:
+            ti = tar.gettarinfo(src_path, arcname=arc_prefix)
+            with open(src_path, 'rb') as f:
+                tar.addfile(ti, f)
+        except Exception:
+            pass
+        return
+
+    if os.path.isdir(src_path):
+        real_d = os.path.realpath(src_path)
+        if real_d in visited:
+            return
+        visited.add(real_d)
+        try:
+            ti = tar.gettarinfo(src_path, arcname=arc_prefix)
+            tar.addfile(ti)
+        except Exception:
+            pass
+        try:
+            entries = sorted(os.listdir(src_path))
+        except Exception:
+            return
+        for item in entries:
+            s_item = os.path.join(src_path, item)
+            a_item = os.path.join(arc_prefix, item)
+            add_path_safe(tar, s_item, a_item, visited)
 
 def export_suite(output_path=None):
     """Exports rules, skills, plugins, MCP servers, and accounts/tokens."""
@@ -353,45 +472,46 @@ def export_suite(output_path=None):
         with open(manifest_p, "w", encoding="utf-8") as f:
             json.dump(manifest, f, indent=2)
 
-        with tarfile.open(output_path, "w:gz", dereference=True) as tar:
+        mode = "w:gz" if output_path.endswith(".gz") else "w"
+        with tarfile.open(output_path, mode) as tar:
             tar.add(manifest_p, arcname="manifest.json")
 
             # 1. Global Rules
             gemini_md = os.path.join(GEMINI_DIR, "GEMINI.md")
             if os.path.isfile(gemini_md):
-                tar.add(gemini_md, arcname="GEMINI.md")
+                add_path_safe(tar, gemini_md, "GEMINI.md")
 
             # 2. Configs & Plugins
             for cf in ["config.json", "mcp_config.json"]:
                 p = os.path.join(CONFIG_DIR, cf)
                 if os.path.isfile(p):
-                    tar.add(p, arcname=os.path.join("config", cf))
+                    add_path_safe(tar, p, os.path.join("config", cf))
 
             plugins_dir = os.path.join(CONFIG_DIR, "plugins")
             if os.path.isdir(plugins_dir):
-                tar.add(plugins_dir, arcname="config/plugins", recursive=True)
+                add_path_safe(tar, plugins_dir, "config/plugins")
 
-            # 3. Skills (dereferenced automatically by TarFile)
+            # 3. Skills (dereferenced safely, ignoring broken links)
             skills_dir = os.path.join(CONFIG_DIR, "skills")
             if os.path.isdir(skills_dir):
-                tar.add(skills_dir, arcname="config/skills", recursive=True)
+                add_path_safe(tar, skills_dir, "config/skills")
 
             # 4. Underlying .agents repository (if present)
             if os.path.isdir(AGENTS_DIR):
-                tar.add(AGENTS_DIR, arcname="agents", recursive=True)
+                add_path_safe(tar, AGENTS_DIR, "agents")
 
             # 5. MCP server definitions & tool wrappers
             mcp_dir = os.path.join(MASTER_GEMINI, "mcp")
             if os.path.isdir(mcp_dir):
-                tar.add(mcp_dir, arcname="mcp", recursive=True)
+                add_path_safe(tar, mcp_dir, "mcp")
 
             # 6. Accounts, Conf files, and tokens
             if os.path.isdir(ANTIGRAVITY_CONF_DIR):
                 for conf_f in glob.glob(os.path.join(ANTIGRAVITY_CONF_DIR, "*.conf")):
-                    tar.add(conf_f, arcname=os.path.join("config_antigravity", os.path.basename(conf_f)))
+                    add_path_safe(tar, conf_f, os.path.join("config_antigravity", os.path.basename(conf_f)))
                 accs_dir = os.path.join(ANTIGRAVITY_CONF_DIR, "accounts")
                 if os.path.isdir(accs_dir):
-                    tar.add(accs_dir, arcname="accounts", recursive=True)
+                    add_path_safe(tar, accs_dir, "accounts")
 
             token_targets = [
                 (os.path.join(GEMINI_DIR, "jetski-standalone-oauth-token"), "gemini-token"),
@@ -401,7 +521,7 @@ def export_suite(output_path=None):
             ]
             for token_path, token_arc in token_targets:
                 if os.path.isfile(token_path):
-                    tar.add(token_path, arcname=os.path.join("tokens", token_arc))
+                    add_path_safe(tar, token_path, os.path.join("tokens", token_arc))
 
     size_str = format_size(os.path.getsize(output_path))
     log_success(f"Suite configurations export package created successfully!")
@@ -424,8 +544,8 @@ def export_all(output_path=None):
 
     import tempfile
     with tempfile.TemporaryDirectory() as tmpdir:
-        hist_tar = os.path.join(tmpdir, "history_part.tar.gz")
-        suite_tar = os.path.join(tmpdir, "suite_part.tar.gz")
+        hist_tar = os.path.join(tmpdir, "history_part.tar")
+        suite_tar = os.path.join(tmpdir, "suite_part.tar")
 
         export_history(hist_tar)
         export_suite(suite_tar)
@@ -445,13 +565,13 @@ def export_all(output_path=None):
         with tarfile.open(output_path, "w:gz") as final_tar:
             final_tar.add(manifest_p, arcname="manifest.json")
             added_names = {"manifest.json"}
-            with tarfile.open(hist_tar, "r:gz") as h_tar:
+            with tarfile.open(hist_tar, "r:") as h_tar:
                 for member in h_tar.getmembers():
                     if member.name not in added_names:
                         f = h_tar.extractfile(member) if member.isreg() else None
                         final_tar.addfile(member, f)
                         added_names.add(member.name)
-            with tarfile.open(suite_tar, "r:gz") as s_tar:
+            with tarfile.open(suite_tar, "r:") as s_tar:
                 for member in s_tar.getmembers():
                     if member.name not in added_names:
                         f = s_tar.extractfile(member) if member.isreg() else None
@@ -478,13 +598,14 @@ def trigger_history_merge():
         except Exception as e:
             log_warn(f"Merge history trigger returned: {e}")
 
-def import_history(archive_path):
+def import_history(archive_path=None, extracted_dir=None):
     """Imports and merges conversation history from an archive into the master pool."""
-    if not os.path.isfile(archive_path):
+    if not extracted_dir and (not archive_path or not os.path.isfile(archive_path)):
         log_err(f"Archive file not found: {archive_path}")
         return False
 
-    log_info(f"Importing conversation history from {archive_path}...")
+    source_label = archive_path if archive_path else extracted_dir
+    log_info(f"Importing conversation history from {source_label}...")
 
     # 1. Automatic safety backup before modifying local state
     create_safety_backup(category="history", label="pre_import")
@@ -499,10 +620,20 @@ def import_history(archive_path):
     imported_dbs = 0
     imported_brains = 0
 
-    import tempfile
-    with tempfile.TemporaryDirectory() as tmpdir:
-        with tarfile.open(archive_path, "r:gz") as tar:
-            safe_extract_tar(tar, path=tmpdir)
+    import contextlib
+
+    @contextlib.contextmanager
+    def resolve_source():
+        if extracted_dir:
+            yield extracted_dir
+        else:
+            import tempfile
+            with tempfile.TemporaryDirectory() as tmp:
+                with tarfile.open(archive_path, "r:gz") as tar:
+                    safe_extract_tar(tar, path=tmp)
+                yield tmp
+
+    with resolve_source() as tmpdir:
 
         # Look for conversations folder
         src_conv = os.path.join(tmpdir, "conversations")
@@ -526,6 +657,14 @@ def import_history(archive_path):
 
                 if should_copy:
                     shutil.copy2(db, dst)
+                    for ext in ["-wal", "-shm"]:
+                        s_wal = f"{db}{ext}"
+                        d_wal = f"{dst}{ext}"
+                        if os.path.exists(s_wal):
+                            shutil.copy2(s_wal, d_wal)
+                        elif os.path.exists(d_wal):
+                            try: os.remove(d_wal)
+                            except Exception: pass
                     imported_dbs += 1
 
         # Look for brain folder
@@ -590,13 +729,14 @@ def merge_mcp_configs(local_cfg_p, incoming_cfg_p):
     except Exception as e:
         log_warn(f"Failed to merge mcp_config.json: {e}")
 
-def import_suite(archive_path):
+def import_suite(archive_path=None, extracted_dir=None):
     """Imports and merges rules, skills, plugins, MCP servers, and accounts from an archive."""
-    if not os.path.isfile(archive_path):
+    if not extracted_dir and (not archive_path or not os.path.isfile(archive_path)):
         log_err(f"Archive file not found: {archive_path}")
         return False
 
-    log_info(f"Importing suite configurations from {archive_path}...")
+    source_label = archive_path if archive_path else extracted_dir
+    log_info(f"Importing suite configurations from {source_label}...")
 
     # 1. Safety backup of existing configs
     create_safety_backup(category="suite", label="pre_import")
@@ -611,11 +751,20 @@ def import_suite(archive_path):
     imported_mcps = 0
     imported_accs = 0
 
-    import tempfile
-    with tempfile.TemporaryDirectory() as tmpdir:
-        with tarfile.open(archive_path, "r:gz") as tar:
-            safe_extract_tar(tar, path=tmpdir)
+    import contextlib
 
+    @contextlib.contextmanager
+    def resolve_source():
+        if extracted_dir:
+            yield extracted_dir
+        else:
+            import tempfile
+            with tempfile.TemporaryDirectory() as tmp:
+                with tarfile.open(archive_path, "r:gz") as tar:
+                    safe_extract_tar(tar, path=tmp)
+                yield tmp
+
+    with resolve_source() as tmpdir:
         # 1. Global Rules (GEMINI.md)
         gemini_md_src = os.path.join(tmpdir, "GEMINI.md")
         if not os.path.isfile(gemini_md_src):
@@ -623,11 +772,8 @@ def import_suite(archive_path):
 
         if os.path.isfile(gemini_md_src):
             dst_md = os.path.join(GEMINI_DIR, "GEMINI.md")
-            if not os.path.exists(dst_md):
-                shutil.copy2(gemini_md_src, dst_md)
-                log_success("Restored global rules to ~/.gemini/GEMINI.md")
-            else:
-                log_info("Existing ~/.gemini/GEMINI.md kept (pre-import snapshot preserved backup).")
+            shutil.copy2(gemini_md_src, dst_md)
+            log_success("Restored global rules to ~/.gemini/GEMINI.md")
 
         # 2. Config & Plugins
         cfg_src = os.path.join(tmpdir, "config")
@@ -649,11 +795,10 @@ def import_suite(archive_path):
             if os.path.isdir(inc_plugins):
                 for p_item in glob.glob(os.path.join(inc_plugins, "*")):
                     p_dst = os.path.join(CONFIG_DIR, "plugins", os.path.basename(p_item))
-                    if not os.path.exists(p_dst):
-                        if os.path.isdir(p_item):
-                            shutil.copytree(p_item, p_dst)
-                        else:
-                            shutil.copy2(p_item, p_dst)
+                    if os.path.isdir(p_item):
+                        shutil.copytree(p_item, p_dst, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(p_item, p_dst)
 
             # Skills
             inc_skills = os.path.join(cfg_src, "skills")
@@ -661,12 +806,11 @@ def import_suite(archive_path):
                 for s_item in glob.glob(os.path.join(inc_skills, "*")):
                     s_name = os.path.basename(s_item)
                     s_dst = os.path.join(CONFIG_DIR, "skills", s_name)
-                    if not os.path.exists(s_dst):
-                        if os.path.isdir(s_item):
-                            shutil.copytree(s_item, s_dst)
-                        else:
-                            shutil.copy2(s_item, s_dst)
-                        imported_skills += 1
+                    if os.path.isdir(s_item):
+                        shutil.copytree(s_item, s_dst, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(s_item, s_dst)
+                    imported_skills += 1
 
         # 3. Agents repository (if present)
         agents_src = os.path.join(tmpdir, "agents")
@@ -676,11 +820,10 @@ def import_suite(archive_path):
             os.makedirs(AGENTS_DIR, exist_ok=True)
             for a_item in glob.glob(os.path.join(agents_src, "*")):
                 a_dst = os.path.join(AGENTS_DIR, os.path.basename(a_item))
-                if not os.path.exists(a_dst):
-                    if os.path.isdir(a_item):
-                        shutil.copytree(a_item, a_dst)
-                    else:
-                        shutil.copy2(a_item, a_dst)
+                if os.path.isdir(a_item):
+                    shutil.copytree(a_item, a_dst, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(a_item, a_dst)
 
         # 4. MCP Servers
         mcp_src = os.path.join(tmpdir, "mcp")
@@ -690,12 +833,11 @@ def import_suite(archive_path):
             for m_item in glob.glob(os.path.join(mcp_src, "*")):
                 m_name = os.path.basename(m_item)
                 m_dst = os.path.join(MASTER_GEMINI, "mcp", m_name)
-                if not os.path.exists(m_dst):
-                    if os.path.isdir(m_item):
-                        shutil.copytree(m_item, m_dst)
-                    else:
-                        shutil.copy2(m_item, m_dst)
-                    imported_mcps += 1
+                if os.path.isdir(m_item):
+                    shutil.copytree(m_item, m_dst, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(m_item, m_dst)
+                imported_mcps += 1
 
         # 5. Accounts & Configs
         accs_src = os.path.join(tmpdir, "accounts")
@@ -704,9 +846,8 @@ def import_suite(archive_path):
         if os.path.isdir(accs_src):
             for acc_f in glob.glob(os.path.join(accs_src, "*.json")):
                 acc_dst = os.path.join(ANTIGRAVITY_CONF_DIR, "accounts", os.path.basename(acc_f))
-                if not os.path.exists(acc_dst):
-                    shutil.copy2(acc_f, acc_dst)
-                    imported_accs += 1
+                shutil.copy2(acc_f, acc_dst)
+                imported_accs += 1
 
         confs_src = os.path.join(tmpdir, "config_antigravity")
         if not os.path.isdir(confs_src):
@@ -781,13 +922,17 @@ def import_all(archive_path):
     log_info(f"Archive detected as type: {BOLD}{exp_type.upper()}{NC}")
 
     if exp_type == "history":
-        return import_history(archive_path)
+        return import_history(archive_path=archive_path)
     elif exp_type == "suite":
-        return import_suite(archive_path)
+        return import_suite(archive_path=archive_path)
     elif exp_type in ["all", "full"]:
-        h_ok = import_history(archive_path)
-        s_ok = import_suite(archive_path)
-        return h_ok and s_ok
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with tarfile.open(archive_path, "r:gz") as tar:
+                safe_extract_tar(tar, path=tmpdir)
+            h_ok = import_history(extracted_dir=tmpdir)
+            s_ok = import_suite(extracted_dir=tmpdir)
+            return h_ok and s_ok
     else:
         log_err(f"Unknown archive export_type: {exp_type}")
         return False

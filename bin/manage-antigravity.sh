@@ -31,6 +31,7 @@ else
 fi
 REAL_HOME=$(getent passwd "$REAL_USER" 2>/dev/null | cut -d: -f6)
 REAL_HOME="${REAL_HOME:-$HOME}"
+export REAL_USER REAL_HOME
 
 PROFILE2_DIR="${REAL_HOME}/.antigravity-profile2"
 SHARED_GEMINI_DIR="${REAL_HOME}/.gemini"
@@ -202,7 +203,7 @@ def get_app():
                 return ver, f"https://storage.googleapis.com/antigravity-public/antigravity-hub/{ver}-{exec_id}/linux-x64/Antigravity.tar.gz"
     except Exception:
         pass
-    return "2.23.1", "https://storage.googleapis.com/antigravity-public/antigravity-hub/2.23.1-6348059836284928/linux-x64/Antigravity.tar.gz"
+    return "", ""
 
 def get_ide():
     try:
@@ -218,7 +219,7 @@ def get_ide():
                 return m.group(2).split('-')[0], m.group(1)
     except Exception:
         pass
-    return "2.5.5", "https://edgedl.me.gvt1.com/edgedl/release2/j0qc3/antigravity/stable/2.5.5-4923483625488384/linux-x64/Antigravity%20IDE.tar.gz"
+    return "", ""
 
 app_ver, app_url = get_app()
 ide_ver, ide_url = get_ide()
@@ -228,21 +229,31 @@ PYEOF
 
     IFS='|' read -r disc_app_ver disc_app_url disc_ide_ver disc_ide_url <<< "$py_resolver"
 
-    if [ -z "$APP_URL" ]; then
-        APP_URL="$disc_app_url"
-        TARGET_APP_VER="$disc_app_ver"
+    if [ -n "$disc_app_url" ]; then
+        if [ -z "$APP_URL" ]; then
+            APP_URL="$disc_app_url"
+            TARGET_APP_VER="$disc_app_ver"
+        else
+            TARGET_APP_VER=$(echo "$APP_URL" | grep -o -E '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1 || echo "Custom")
+        fi
     else
-        TARGET_APP_VER=$(echo "$APP_URL" | grep -o -E '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1 || echo "Custom")
+        log_warn "Could not reach Google App discovery endpoint (offline or changed). Skipping auto-resolution."
     fi
 
-    if [ -z "$IDE_URL" ]; then
-        IDE_URL="$disc_ide_url"
-        TARGET_IDE_VER="$disc_ide_ver"
+    if [ -n "$disc_ide_url" ]; then
+        if [ -z "$IDE_URL" ]; then
+            IDE_URL="$disc_ide_url"
+            TARGET_IDE_VER="$disc_ide_ver"
+        else
+            TARGET_IDE_VER=$(echo "$IDE_URL" | grep -o -E '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1 || echo "Custom")
+        fi
     else
-        TARGET_IDE_VER=$(echo "$IDE_URL" | grep -o -E '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1 || echo "Custom")
+        log_warn "Could not reach Google IDE discovery endpoint (offline or changed). Skipping auto-resolution."
     fi
 
-    log_success "Discovered Latest: App v${TARGET_APP_VER} | IDE v${TARGET_IDE_VER}"
+    if [ -n "$TARGET_APP_VER" ] || [ -n "$TARGET_IDE_VER" ]; then
+        log_success "Discovered Latest: App ${TARGET_APP_VER:+v$TARGET_APP_VER}${TARGET_APP_VER:-Unknown} | IDE ${TARGET_IDE_VER:+v$TARGET_IDE_VER}${TARGET_IDE_VER:-Unknown}"
+    fi
 }
 
 # ------------------------------------------------------------------------------
@@ -291,10 +302,14 @@ def get_app_version(app_dir):
             header = json.loads(f.read(json_len).decode('utf-8'))
             curr = header.get('files', {}).get('package.json', {})
             if 'offset' in curr and 'size' in curr:
-                f.seek(16 + json_len + int(curr['offset']))
-                raw = f.read(min(curr['size'] + 50, 1024)).decode('utf-8', errors='ignore')
-                m = re.search(r'"version"\s*:\s*"([^"]+)"', raw)
-                if m: return m.group(1)
+                f.seek(8 + header_size + int(curr['offset']))
+                pkg_raw = f.read(int(curr['size'])).decode('utf-8', errors='ignore')
+                try:
+                    pkg_data = json.loads(pkg_raw)
+                    if 'version' in pkg_data: return str(pkg_data['version'])
+                except Exception:
+                    m = re.search(r'"version"\s*:\s*"([^"]+)"', pkg_raw)
+                    if m: return m.group(1)
     except Exception:
         pass
     return 'Unknown'
@@ -618,9 +633,14 @@ if os.path.isfile(asar):
             magic, h_s, h_o, j_len = struct.unpack('<IIII', f.read(16))
             hdr = json.loads(f.read(j_len).decode('utf-8'))
             curr = hdr.get('files', {}).get('package.json', {})
-            f.seek(16 + j_len + int(curr['offset']))
-            m = re.search(r'\"version\"\s*:\s*\"([^\"]+)\"', f.read(min(curr['size']+50, 1024)).decode('utf-8', errors='ignore'))
-            if m: print(m.group(1))
+            f.seek(8 + h_s + int(curr['offset']))
+            raw = f.read(int(curr['size'])).decode('utf-8', errors='ignore')
+            try:
+                pkg = json.loads(raw)
+                if 'version' in pkg: print(pkg['version'])
+            except Exception:
+                m = re.search(r'\"version\"\s*:\s*\"([^\"]+)\"', raw)
+                if m: print(m.group(1))
     except Exception: pass
 " 2>/dev/null || true)
     elif [ "$name" = "Antigravity-IDE" ]; then
@@ -637,10 +657,13 @@ if os.path.isfile(p):
     fi
 
     # Version comparison check: Skip if up-to-date and not forced
-    if [ "$FORCE_INSTALL" != true ] && [ -n "$current_installed" ] && [ "$current_installed" != "None" ] && [ "$current_installed" = "$ver" ]; then
-        log_success "${name} is already at latest version (v${current_installed}). Skipping binary extraction."
-        log_info "(Use --force to force re-download and re-installation)"
-        return 0
+    if [ "$FORCE_INSTALL" != true ] && [ -n "$current_installed" ] && [ "$current_installed" != "None" ]; then
+        highest_ver=$(printf '%s\n%s\n' "$current_installed" "$ver" | sort -V 2>/dev/null | tail -n 1)
+        if [ "$highest_ver" = "$current_installed" ]; then
+            log_success "${name} is already at or newer than target version (installed: v${current_installed}, target: v${ver}). Skipping binary extraction."
+            log_info "(Use --force to force re-download and re-installation)"
+            return 0
+        fi
     fi
 
     log_info "Installing / Updating ${name} to v${ver}..."
@@ -787,10 +810,15 @@ export XDG_CONFIG_HOME="\${REAL_HOME}/.config"
 export ANTIGRAVITY_DESKTOP_NAME="${desktop_name}"
 export ANTIGRAVITY_APP_NAME="${wm_class}"
 export ANTIGRAVITY_ICON_PATH="${LOCAL_ICONS}/${icon_name}.png"
+export ELECTRON_OZONE_PLATFORM_HINT="x11"
 
 cd "\${REAL_HOME}" || cd /tmp
-python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
-python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
+if ! pgrep -f "antigravity-apply-icon.py --daemon" >/dev/null 2>&1; then
+    python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
+fi
+if ! pgrep -f "antigravity-merge-history.py" >/dev/null 2>&1; then
+    python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
+fi
 disown
 
 # SUID sandbox verification guard: prevent fatal crash if chrome-sandbox lacks 4755 root permissions
@@ -806,12 +834,8 @@ if [ -f "${APP_INSTALL_DIR}/chrome-sandbox" ]; then
     fi
 fi
 
-if [ -f "\${REAL_HOME}/.gemini/cache/antigravity-keyring-unavailable" ]; then
-    export DBUS_SESSION_BUS_ADDRESS=""
-    export GNOME_KEYRING_CONTROL=""
-fi
 
-exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}${pass_store_flag}--user-data-dir="\${REAL_HOME}/.config/Antigravity" --class="${wm_class}" --name="${wm_class}" "\$@"
+exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}${pass_store_flag}--ozone-platform=x11 --user-data-dir="\${REAL_HOME}/.config/Antigravity" --class="${wm_class}" --name="${wm_class}" "\$@"
 EOF
     chmod +x "${LOCAL_BIN}/antigravity-1"
     ln -sfn "${LOCAL_BIN}/antigravity-1" "${LOCAL_BIN}/antigravity"
@@ -917,6 +941,7 @@ export ANTIGRAVITY_APP_NAME="antigravity-2"
 export ANTIGRAVITY_ICON_PATH="${LOCAL_ICONS}/antigravity-acc2.png"
 export ANTIGRAVITY_TRAY_ICON_PATH="${LOCAL_ICONS}/antigravity-acc2-tray.png"
 export ANTIGRAVITY_WINDOW_TITLE="Account 2"
+export ELECTRON_OZONE_PLATFORM_HINT="x11"
 
 # 1. Handle restart request
 if [ "\$1" = "--restart" ] || [ "\$1" = "-r" ]; then
@@ -938,8 +963,12 @@ fi
 cd "\${REAL_HOME}" || cd /tmp
 
 # 3. Start background icon & tray cache updater
-python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
-python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
+if ! pgrep -f "antigravity-apply-icon.py --daemon" >/dev/null 2>&1; then
+    python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
+fi
+if ! pgrep -f "antigravity-merge-history.py" >/dev/null 2>&1; then
+    python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
+fi
 disown
 
 # SUID sandbox verification guard: prevent fatal crash if chrome-sandbox lacks 4755 root permissions
@@ -955,13 +984,9 @@ if [ -f "${APP_INSTALL_DIR}/chrome-sandbox" ]; then
     fi
 fi
 
-if [ -f "\${PROFILE2}/.gemini/cache/antigravity-keyring-unavailable" ]; then
-    export DBUS_SESSION_BUS_ADDRESS=""
-    export GNOME_KEYRING_CONTROL=""
-fi
 
 # 4. Launch isolated Account 2 instance
-exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}${pass_store_flag}--user-data-dir="\${PROFILE2}/.config/Antigravity" --class="antigravity-2" --name="antigravity-2" "\$@"
+exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}${pass_store_flag}--ozone-platform=x11 --user-data-dir="\${PROFILE2}/.config/Antigravity" --class="antigravity-2" --name="antigravity-2" "\$@"
 EOF
     chmod +x "${LOCAL_BIN}/antigravity-acc2"
 
@@ -1024,8 +1049,13 @@ setup_ide_shortcuts() {
 
     cat <<EOF > "${LOCAL_BIN}/antigravity-ide"
 #!/usr/bin/env bash
-python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
-python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
+export ELECTRON_OZONE_PLATFORM_HINT="x11"
+if ! pgrep -f "antigravity-apply-icon.py --daemon" >/dev/null 2>&1; then
+    python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
+fi
+if ! pgrep -f "antigravity-merge-history.py" >/dev/null 2>&1; then
+    python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
+fi
 disown
 
 # SUID sandbox verification guard: prevent fatal crash if chrome-sandbox lacks 4755 root permissions
@@ -1041,12 +1071,8 @@ if [ -f "${IDE_INSTALL_DIR}/chrome-sandbox" ]; then
     fi
 fi
 
-if [ -f "${REAL_HOME}/.gemide/cache/antigravity-keyring-unavailable" ]; then
-    export DBUS_SESSION_BUS_ADDRESS=""
-    export GNOME_KEYRING_CONTROL=""
-fi
 
-exec "${IDE_INSTALL_DIR}/antigravity-ide" \${SANDBOX_FLAG}${ide_pass_store}--class="antigravity-ide" --name="antigravity-ide" "\$@"
+exec "${IDE_INSTALL_DIR}/antigravity-ide" \${SANDBOX_FLAG}${ide_pass_store}--ozone-platform=x11 --class="antigravity-ide" --name="antigravity-ide" "\$@"
 EOF
     chmod +x "${LOCAL_BIN}/antigravity-ide"
 
@@ -1105,14 +1131,17 @@ EOF
     fi
     ln -sfn "$SHARED_CONV_DIR/brain" "$ide_gemini/brain"
 
-    # Symlink conversation_summaries.db
+    # Run comprehensive history merge before backing up and symlinking summaries
+    if [ -f "${LOCAL_BIN}/antigravity-merge-history.py" ]; then
+        python3 "${LOCAL_BIN}/antigravity-merge-history.py" --master "$SHARED_CONV_DIR" --quiet >/dev/null 2>&1 || true
+    fi
+
+    # Symlink conversation_summaries.db (do NOT symlink volatile -wal and -shm files)
     if [ -f "$ide_gemini/conversation_summaries.db" ] && [ ! -L "$ide_gemini/conversation_summaries.db" ]; then
         mv "$ide_gemini/conversation_summaries.db" "$ide_gemini/conversation_summaries.db.bak_$(date +%s)"
     fi
     if [ -f "$SHARED_CONV_DIR/conversation_summaries.db" ]; then
         ln -sfn "$SHARED_CONV_DIR/conversation_summaries.db" "$ide_gemini/conversation_summaries.db"
-        [ -f "$SHARED_CONV_DIR/conversation_summaries.db-wal" ] && ln -sfn "$SHARED_CONV_DIR/conversation_summaries.db-wal" "$ide_gemini/conversation_summaries.db-wal"
-        [ -f "$SHARED_CONV_DIR/conversation_summaries.db-shm" ] && ln -sfn "$SHARED_CONV_DIR/conversation_summaries.db-shm" "$ide_gemini/conversation_summaries.db-shm"
     fi
 
     # Symlink protobuf index summaries across App and IDE
@@ -1121,11 +1150,6 @@ EOF
             ln -sfn "$SHARED_CONV_DIR/agyhub_summaries_proto.pb" "$ide_gemini/$sym_proto"
         fi
     done
-
-    # Run comprehensive history merge and title backfill
-    if [ -f "${LOCAL_BIN}/antigravity-merge-history.py" ]; then
-        python3 "${LOCAL_BIN}/antigravity-merge-history.py" --master "$SHARED_CONV_DIR" --quiet >/dev/null 2>&1 || true
-    fi
 
     # Symlink master GEMINI.md, MCP tool schemas, custom skills, rules, and plugins across IDE instances
     mkdir -p "${REAL_HOME}/.gemide"
@@ -1296,16 +1320,14 @@ create_instance() {
 
     if [ "$itype" = "app" ]; then
         if [[ "$iid" =~ ^[0-9]+$ ]] && [ "$iid" -eq 2 ]; then
-            profile_dir="${REAL_HOME}/.antigravity-profile2"
-            wm_class="antigravity-2"
-            launcher="${LOCAL_BIN}/antigravity-acc2"
-            desktop="${LOCAL_APPS}/antigravity-2.desktop"
-        else
-            profile_dir="${REAL_HOME}/.antigravity-profile-app-${iid}"
-            wm_class="antigravity-app-${iid}"
-            launcher="${LOCAL_BIN}/antigravity-app-${iid}"
-            desktop="${LOCAL_APPS}/antigravity-app-${iid}.desktop"
+            log_info "Instance 2 for App corresponds to official Account 2. Delegating to setup_account_2..."
+            setup_account_2
+            return 0
         fi
+        profile_dir="${REAL_HOME}/.antigravity-profile-app-${iid}"
+        wm_class="antigravity-app-${iid}"
+        launcher="${LOCAL_BIN}/antigravity-app-${iid}"
+        desktop="${LOCAL_APPS}/antigravity-app-${iid}.desktop"
 
         mkdir -p "${profile_dir}/.gemini/cache"
         touch "${profile_dir}/.gemini/cache/antigravity-keyring-unavailable"
@@ -1348,6 +1370,7 @@ export XDG_CONFIG_HOME="\${PROFILE}/.config"
 export ANTIGRAVITY_DESKTOP_NAME="${wm_class}.desktop"
 export ANTIGRAVITY_APP_NAME="${wm_class}"
 export ANTIGRAVITY_ICON_PATH="${LOCAL_ICONS}/${wm_class}.png"
+export ELECTRON_OZONE_PLATFORM_HINT="x11"
 
 # Handle restart
 if [ "\$1" = "--restart" ] || [ "\$1" = "-r" ]; then
@@ -1366,7 +1389,9 @@ if [ -n "\$running_pid" ]; then
 fi
 
 cd "\${REAL_HOME}" || cd /tmp
-python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
+if ! pgrep -f "antigravity-apply-icon.py --daemon" >/dev/null 2>&1; then
+    python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
+fi
 disown
 
 # SUID sandbox verification guard: prevent fatal crash if chrome-sandbox lacks 4755 root permissions
@@ -1382,12 +1407,8 @@ if [ -f "${APP_INSTALL_DIR}/chrome-sandbox" ]; then
     fi
 fi
 
-if [ -f "\${PROFILE}/.gemini/cache/antigravity-keyring-unavailable" ]; then
-    export DBUS_SESSION_BUS_ADDRESS=""
-    export GNOME_KEYRING_CONTROL=""
-fi
 
-exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}--password-store=basic --user-data-dir="\${PROFILE}/.config/Antigravity" --class="${wm_class}" --name="${wm_class}" "\$@"
+exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}--password-store=basic --ozone-platform=x11 --user-data-dir="\${PROFILE}/.config/Antigravity" --class="${wm_class}" --name="${wm_class}" "\$@"
 EOF
         chmod +x "$launcher"
 
@@ -1421,8 +1442,8 @@ EOF
         ln -sfn "$LOCAL_ICONS" "${profile_dir}/.local/share/icons"
         [ -f "${SHARED_GEMINI_DIR}/GEMINI.md" ] && ln -sfn "${SHARED_GEMINI_DIR}/GEMINI.md" "${profile_dir}/.gemini/GEMINI.md"
         [ -d "${SHARED_CONFIG_DIR}" ] && ln -sfn "${SHARED_CONFIG_DIR}" "${profile_dir}/.gemini/config"
-        ln -sfn "${profile_dir}/.gemini/GEMINI.md" "${profile_dir}/.gemide/GEMINI.md" 2>/dev/null || true
-        ln -sfn "${profile_dir}/.gemini/config" "${profile_dir}/.gemide/config" 2>/dev/null || true
+        ln -sfn ../.gemini/GEMINI.md "${profile_dir}/.gemide/GEMINI.md" 2>/dev/null || true
+        ln -sfn ../.gemini/config "${profile_dir}/.gemide/config" 2>/dev/null || true
 
         touch "${profile_dir}/.gemide/cache/antigravity-keyring-unavailable"
 
@@ -1452,10 +1473,16 @@ EOF
 set -e
 export REAL_HOME="${REAL_HOME}"
 export PROFILE="${profile_dir}"
-export HOME="${REAL_HOME}"
+export HOME="\${PROFILE}"
+export XDG_CONFIG_HOME="\${PROFILE}/.config"
+export ELECTRON_OZONE_PLATFORM_HINT="x11"
 
-python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
-python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
+if ! pgrep -f "antigravity-apply-icon.py --daemon" >/dev/null 2>&1; then
+    python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
+fi
+if ! pgrep -f "antigravity-merge-history.py" >/dev/null 2>&1; then
+    python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
+fi
 disown
 
 # SUID sandbox verification guard: prevent fatal crash if chrome-sandbox lacks 4755 root permissions
@@ -1471,12 +1498,7 @@ if [ -f "${IDE_INSTALL_DIR}/chrome-sandbox" ]; then
     fi
 fi
 
-if [ -f "\${PROFILE}/.gemide/cache/antigravity-keyring-unavailable" ] || [ -f "\${PROFILE}/.gemini/cache/antigravity-keyring-unavailable" ]; then
-    export DBUS_SESSION_BUS_ADDRESS=""
-    export GNOME_KEYRING_CONTROL=""
-fi
-
-exec "${IDE_INSTALL_DIR}/antigravity-ide" \${SANDBOX_FLAG}--password-store=basic --user-data-dir "\${PROFILE}/.config/Antigravity IDE" --class="${wm_class}" --name="${wm_class}" "\$@"
+exec "${IDE_INSTALL_DIR}/antigravity-ide" \${SANDBOX_FLAG}--password-store=basic --ozone-platform=x11 --user-data-dir "\${PROFILE}/.config/Antigravity IDE" --class="${wm_class}" --name="${wm_class}" "\$@"
 EOF
         chmod +x "$launcher"
 
@@ -1574,7 +1596,7 @@ instances.append(("Antigravity IDE (1)", "IDE", f"{G}Shared{NC}" if ide_shared e
 for p in sorted(glob.glob(os.path.join(real_home, ".antigravity-ide-profile-*"))):
     if ".bak" in p or ".removed" in p: continue
     name = os.path.basename(p).replace(".antigravity-ide-profile-", "")
-    is_shared = os.path.islink(os.path.join(p, ".gemini", "antigravity-ide"))
+    is_shared = os.path.islink(os.path.join(p, ".gemini", "antigravity-ide", "conversations")) or os.path.islink(os.path.join(p, ".gemini", "antigravity-ide"))
     is_run = subprocess.run(["pgrep", "-f", f"{os.path.basename(p)}"], capture_output=True).returncode == 0
     instances.append((f"IDE ({name})", "IDE", f"{G}Shared{NC}" if is_shared else f"{Y}Isolated{NC}", f"antigravity-ide-{name}", f"{G}Running{NC}" if is_run else "Stopped", f"~/.local/bin/antigravity-ide-{name}"))
 
@@ -1640,24 +1662,27 @@ set_history_mode() {
             local ide_conv="${profile_gemini}/conversations"
             local ide_brain="${profile_gemini}/brain"
             mkdir -p "${SHARED_CONV_DIR}/conversations" "${SHARED_CONV_DIR}/brain"
-            if [ -d "$ide_conv" ] && [ ! -L "$ide_conv" ]; then
-                cp -n "${ide_conv}"/*.db "${SHARED_CONV_DIR}/conversations/" 2>/dev/null || true
-                mv "$ide_conv" "${ide_conv}.bak_$(date +%s)"
-            fi
-            if [ -d "$ide_brain" ] && [ ! -L "$ide_brain" ]; then
-                cp -rn "${ide_brain}"/* "${SHARED_CONV_DIR}/brain/" 2>/dev/null || true
-                mv "$ide_brain" "${ide_brain}.bak_$(date +%s)"
+            if [ -d "$profile_gemini" ] && [ ! -L "$profile_gemini" ]; then
+                log_info "Merging private conversations into shared pool via smart merger..."
+                python3 "${LOCAL_BIN}/antigravity-merge-history.py" --source "$profile_gemini" --quiet 2>/dev/null || true
+                if [ -d "$ide_brain" ] && [ ! -L "$ide_brain" ]; then
+                    cp -rn "${ide_brain}"/* "${SHARED_CONV_DIR}/brain/" 2>/dev/null || true
+                    mv "$ide_brain" "${ide_brain}.bak_$(date +%s)"
+                fi
+                if [ -d "$ide_conv" ] && [ ! -L "$ide_conv" ]; then
+                    mv "$ide_conv" "${ide_conv}.bak_$(date +%s)"
+                fi
             fi
             ln -sfn "${SHARED_CONV_DIR}/conversations" "$ide_conv"
             ln -sfn "${SHARED_CONV_DIR}/brain" "$ide_brain"
+            ln -sfn "${SHARED_CONV_DIR}/conversation_summaries.db" "${profile_gemini}/conversation_summaries.db"
+            [ -f "${SHARED_CONV_DIR}/agyhub_summaries_proto.pb" ] && ln -sfn "${SHARED_CONV_DIR}/agyhub_summaries_proto.pb" "${profile_gemini}/agyhub_summaries_proto.pb"
             merge_history
         else
             if [ -d "$profile_gemini" ] && [ ! -L "$profile_gemini" ]; then
                 log_info "Preserving and merging private conversations into shared pool first..."
                 mkdir -p "${SHARED_CONV_DIR}/conversations" "${SHARED_CONV_DIR}/brain"
-                if [ -d "${profile_gemini}/conversations" ]; then
-                    cp -n "${profile_gemini}/conversations"/*.db "${SHARED_CONV_DIR}/conversations/" 2>/dev/null || true
-                fi
+                python3 "${LOCAL_BIN}/antigravity-merge-history.py" --source "$profile_gemini" --quiet 2>/dev/null || true
                 if [ -d "${profile_gemini}/brain" ]; then
                     cp -rn "${profile_gemini}/brain"/* "${SHARED_CONV_DIR}/brain/" 2>/dev/null || true
                 fi
@@ -1681,15 +1706,18 @@ set_history_mode() {
             [ -L "${profile_gemini}/conversation_summaries.db" ] && rm -f "${profile_gemini}/conversation_summaries.db"
             [ -L "${profile_gemini}/agyhub_summaries_proto.pb" ] && rm -f "${profile_gemini}/agyhub_summaries_proto.pb"
             mkdir -p "$ide_conv" "$ide_brain"
-            # Clone existing conversations so chats do not vanish
-            cp -n "${SHARED_CONV_DIR}/conversations"/*.db "$ide_conv/" 2>/dev/null || true
+            # Clone existing conversations so chats do not vanish (including WAL sidecars)
+            cp -n "${SHARED_CONV_DIR}/conversations"/*.db* "$ide_conv/" 2>/dev/null || true
+            cp -rn "${SHARED_CONV_DIR}/brain"/* "$ide_brain/" 2>/dev/null || true
+            cp -n "${SHARED_CONV_DIR}"/*summaries* "${profile_gemini}/" 2>/dev/null || true
         else
             if [ -L "$profile_gemini" ]; then
                 rm -f "$profile_gemini"
             fi
             mkdir -p "${profile_gemini}/conversations" "${profile_gemini}/brain"
-            # Clone existing conversations so chats do not vanish
-            cp -n "${SHARED_CONV_DIR}/conversations"/*.db "${profile_gemini}/conversations/" 2>/dev/null || true
+            # Clone existing conversations so chats do not vanish (including WAL sidecars)
+            cp -n "${SHARED_CONV_DIR}/conversations"/*.db* "${profile_gemini}/conversations/" 2>/dev/null || true
+            cp -rn "${SHARED_CONV_DIR}/brain"/* "${profile_gemini}/brain/" 2>/dev/null || true
             cp -n "${SHARED_CONV_DIR}"/*summaries* "${profile_gemini}/" 2>/dev/null || true
         fi
         log_success "${itype^^} '${iid}' now has ISOLATED private history (existing conversations cloned). "
@@ -1932,7 +1960,7 @@ patch_f5_reload() {
 
     npx --yes asar extract "$asar_file" "$tmp_dir/unpacked"
     node "$patch_js" "$tmp_dir/unpacked"
-    npx --yes asar pack "$tmp_dir/unpacked" "$tmp_dir/app.asar.patched"
+    npx --yes asar pack "$tmp_dir/unpacked" "$tmp_dir/app.asar.patched" --unpack "*.node"
     cp "$tmp_dir/app.asar.patched" "$asar_file"
     rm -rf "$tmp_dir"
 
@@ -1953,7 +1981,13 @@ patch_rtl_all() {
 update_rtl() {
     log_info "Updating antigravity-rtl package..."
     npm cache clean --force 2>/dev/null || true
-    npx --yes antigravity-rtl@latest --restore || true
+    local asar="${APP_INSTALL_DIR}/resources/app.asar"
+    if [ -f "$asar" ]; then
+        npx --yes antigravity-rtl@latest --restore --app --path "$asar" 2>/dev/null || true
+    fi
+    if [ -d "${IDE_INSTALL_DIR}" ]; then
+        npx --yes antigravity-rtl@latest --restore --ide --path "${IDE_INSTALL_DIR}" 2>/dev/null || true
+    fi
     FORCE_INSTALL=true patch_rtl_all
 }
 

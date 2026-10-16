@@ -17,7 +17,21 @@ import zlib
 import glob
 import shutil
 
-REAL_HOME = os.environ.get("REAL_HOME", os.path.expanduser("~"))
+REAL_USER = os.environ.get("REAL_USER")
+if not REAL_USER:
+    REAL_USER = os.environ.get("SUDO_USER") or os.environ.get("USER") or "root"
+
+REAL_HOME = os.environ.get("REAL_HOME")
+if not REAL_HOME:
+    if REAL_USER and REAL_USER != "root":
+        try:
+            import pwd
+            REAL_HOME = pwd.getpwnam(REAL_USER).pw_dir
+        except Exception:
+            REAL_HOME = os.path.expanduser("~")
+    else:
+        REAL_HOME = os.path.expanduser("~")
+
 ACC1_ICON_PATH = os.path.join(REAL_HOME, ".local/share/icons/antigravity.png")
 if not os.path.isfile(ACC1_ICON_PATH):
     ACC1_ICON_PATH = os.path.join(REAL_HOME, ".local/share/icons/antigravity-1.png")
@@ -25,6 +39,31 @@ if not os.path.isfile(ACC1_ICON_PATH):
 ACC2_ICON_PATH = os.path.join(REAL_HOME, ".local/share/icons/antigravity-acc2.png")
 IDE_ICON_PATH = os.path.join(REAL_HOME, ".local/share/icons/antigravity-ide.png")
 ACC2_TRAY_PATH = os.path.join(REAL_HOME, ".local/share/icons/antigravity-acc2-tray.png")
+
+def get_boot_time():
+    try:
+        with open("/proc/stat", "r") as f:
+            for line in f:
+                if line.startswith("btime "):
+                    return int(line.split()[1])
+    except Exception:
+        pass
+    return 0
+
+_BOOT_TIME = get_boot_time()
+_CLK_TCK = os.sysconf(os.sysconf_names.get('SC_CLK_TCK', 'SC_CLK_TCK')) if hasattr(os, 'sysconf') else 100
+
+def get_proc_start_time(pid):
+    try:
+        with open(f"/proc/{pid}/stat", "r") as f:
+            data = f.read()
+            comm_end = data.rfind(')')
+            if comm_end != -1:
+                fields = data[comm_end + 2:].split()
+                return int(fields[19])
+    except Exception:
+        pass
+    return None
 
 def sync_tray_cache():
     effective_tray = ACC2_TRAY_PATH
@@ -41,10 +80,13 @@ def sync_tray_cache():
             continue
         try:
             with open(f"/proc/{pid_str}/cmdline", "rb") as f:
-                cmd = f.read().decode("utf-8", errors="ignore").lower()
-                if "antigravity" in cmd and ("antigravity-profile2" in cmd or "antigravity-2" in cmd or "account2" in cmd):
-                    proc_time = os.path.getctime(f"/proc/{pid_str}")
-                    acc2_processes.append((int(pid_str), proc_time))
+                cmd = f.read().decode("utf-8", errors="ignore")
+                cmd_low = cmd.lower()
+                if "antigravity" in cmd_low and ("antigravity-profile2" in cmd_low or "antigravity-2" in cmd_low or "account2" in cmd_low):
+                    pid = int(pid_str)
+                    st = get_proc_start_time(pid)
+                    proc_time = (_BOOT_TIME + (st / _CLK_TCK)) if st else os.path.getmtime(f"/proc/{pid_str}")
+                    acc2_processes.append((pid, proc_time))
         except Exception:
             pass
 
@@ -63,7 +105,8 @@ def sync_tray_cache():
             with open(f"/proc/{pid_str}/cmdline", "rb") as f:
                 cmd = f.read().decode("utf-8", errors="ignore").lower()
                 if any(x in cmd for x in ["antigravity", "chromium", "chrome", "code", "slack", "discord", "electron"]):
-                    proc_time = os.path.getctime(f"/proc/{pid_str}")
+                    st = get_proc_start_time(pid)
+                    proc_time = (_BOOT_TIME + (st / _CLK_TCK)) if st else os.path.getmtime(f"/proc/{pid_str}")
                     other_procs.append((pid, proc_time))
         except Exception:
             pass
@@ -90,8 +133,12 @@ def reconstruct_png(png_path):
     if not os.path.exists(png_path): return None, None, None
     try:
         with open(png_path, "rb") as f:
-            f.read(8)
+            sig = f.read(8)
+            if sig != b"\x89PNG\r\n\x1a\n":
+                return None, None, None
             idat = bytearray()
+            plte = bytearray()
+            trns = bytearray()
             while True:
                 chunk = f.read(8)
                 if not chunk: break
@@ -99,29 +146,34 @@ def reconstruct_png(png_path):
                 d = f.read(l)
                 f.read(4)
                 if t == b"IDAT": idat.extend(d)
+                elif t == b"PLTE": plte.extend(d)
+                elif t == b"tRNS": trns.extend(d)
                 elif t == b"IEND": break
-        raw = zlib.decompress(bytes(idat))
+
         with open(png_path, "rb") as f:
             f.seek(16)
             w, h, bit_depth, color_type = struct.unpack(">IIBB", f.read(10))
-        if color_type == 6:
-            bpp = 4
-        elif color_type == 2:
-            bpp = 3
-        elif color_type == 4:
-            bpp = 2
-        elif color_type in (0, 3):
-            bpp = 1
-        else:
-            bpp = 4
+
+        raw = zlib.decompress(bytes(idat))
+
+        if color_type == 6: channels = 4
+        elif color_type == 2: channels = 3
+        elif color_type == 4: channels = 2
+        elif color_type in (0, 3): channels = 1
+        else: channels = 4
+
+        bytes_per_sample = 2 if bit_depth == 16 else 1
+        bpp = channels * bytes_per_sample
         stride = 1 + w * bpp
         recon = bytearray(w * h * bpp)
+
         def paeth_predictor(a, b, c):
             p = a + b - c
             pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
             if pa <= pb and pa <= pc: return a
             elif pb <= pc: return b
             else: return c
+
         for y in range(h):
             filter_type = raw[y * stride]
             scanline = raw[y * stride + 1 : (y + 1) * stride]
@@ -140,16 +192,23 @@ def reconstruct_png(png_path):
                 else: val = filt_x
                 recon_row[x] = val
             recon[y * w * bpp : (y + 1) * w * bpp] = recon_row
-        if bpp == 3:
-            rgba = bytearray(w * h * 4)
+
+        if bit_depth == 16:
+            downsampled = bytearray(w * h * channels)
+            for i in range(w * h * channels):
+                downsampled[i] = recon[i * 2]
+            recon = downsampled
+
+        rgba = bytearray(w * h * 4)
+        if color_type == 6:
+            rgba = recon
+        elif color_type == 2:
             for i in range(w * h):
                 rgba[i * 4] = recon[i * 3]
                 rgba[i * 4 + 1] = recon[i * 3 + 1]
                 rgba[i * 4 + 2] = recon[i * 3 + 2]
                 rgba[i * 4 + 3] = 255
-            recon = rgba
-        elif bpp == 2:
-            rgba = bytearray(w * h * 4)
+        elif color_type == 4:
             for i in range(w * h):
                 v = recon[i * 2]
                 a = recon[i * 2 + 1]
@@ -157,17 +216,26 @@ def reconstruct_png(png_path):
                 rgba[i * 4 + 1] = v
                 rgba[i * 4 + 2] = v
                 rgba[i * 4 + 3] = a
-            recon = rgba
-        elif bpp == 1:
-            rgba = bytearray(w * h * 4)
+        elif color_type == 3:
+            plte_len = len(plte)
+            trns_len = len(trns)
+            for i in range(w * h):
+                idx = recon[i]
+                if idx * 3 + 2 < plte_len:
+                    rgba[i * 4] = plte[idx * 3]
+                    rgba[i * 4 + 1] = plte[idx * 3 + 1]
+                    rgba[i * 4 + 2] = plte[idx * 3 + 2]
+                else:
+                    rgba[i * 4] = rgba[i * 4 + 1] = rgba[i * 4 + 2] = 0
+                rgba[i * 4 + 3] = trns[idx] if idx < trns_len else 255
+        elif color_type == 0:
             for i in range(w * h):
                 v = recon[i]
                 rgba[i * 4] = v
                 rgba[i * 4 + 1] = v
                 rgba[i * 4 + 2] = v
                 rgba[i * 4 + 3] = 255
-            recon = rgba
-        return w, h, recon
+        return w, h, rgba
     except Exception:
         return None, None, None
 
@@ -177,8 +245,8 @@ def png_to_cardinal_array(png_path):
     base_name = os.path.basename(png_path)
     hicolor_dir = os.path.join(REAL_HOME, ".local/share/icons/hicolor")
     
-    # Standard X11 _NET_WM_ICON sizes up to 256
-    sizes = [16, 24, 32, 48, 64, 128, 256]
+    # Standard X11 _NET_WM_ICON sizes up to 128 (avoiding 256 to stay well within standard X11 request length limits)
+    sizes = [16, 24, 32, 48, 64, 128]
     orig_w, orig_h, orig_data = None, None, None
     for target_size in sizes:
         sz_path = os.path.join(hicolor_dir, f"{target_size}x{target_size}", "apps", base_name)
@@ -239,7 +307,7 @@ def focus_window(target_account="2"):
         for wid in wids:
             w_res = subprocess.run(["xprop", "-id", wid, "WM_CLASS"], capture_output=True, text=True)
             stdout_lower = w_res.stdout.lower()
-            if target_account == "2" and ("antigravity-2" in stdout_lower or "account2" in stdout_lower):
+            if target_account == "2" and ("antigravity-2" in stdout_lower or "account2" in stdout_lower or "antigravity-acc2" in stdout_lower):
                 target_wid = int(wid, 16)
                 break
             elif target_account == "1" and ('"antigravity-1"' in stdout_lower or '"antigravity"' in stdout_lower):
@@ -343,6 +411,8 @@ def apply_icon_to_windows():
             res = subprocess.run(['xwininfo', '-root', '-tree'], capture_output=True, text=True)
         except Exception:
             return
+        patched_wids = getattr(apply_icon_to_windows, "_patched_wids", set())
+
         for line in res.stdout.splitlines():
             m = re.search(r'(0x[0-9a-fA-F]+)\s+"([^"]*)":\s+\("([^"]*)"\s+"([^"]*)"\)', line)
             if not m: continue
@@ -374,16 +444,37 @@ def apply_icon_to_windows():
             if not is_ag:
                 continue
 
-            # Check if custom instance matching ~/.local/share/icons/{c1}.png exists
-            custom_icon_path = os.path.join(REAL_HOME, ".local/share/icons", f"{c1}.png")
-            if os.path.isfile(custom_icon_path) and c1 not in ("antigravity", "antigravity-1", "antigravity-acc2", "antigravity-ide"):
-                c_arr, length = get_icon_data(custom_icon_path)
-                if c_arr:
-                    cls_custom = f"{c1}\0{c1}\0".encode("utf-8")
-                    x11.XChangeProperty(display, wid, atom_icon, atom_cardinal, 32, 0, ctypes.cast(c_arr, ctypes.c_void_p), length)
-                    x11.XChangeProperty(display, wid, atom_class, atom_string, 8, 0, cls_custom, len(cls_custom))
-                    x11.XFlush(display)
+            # Check if custom instance matching ~/.local/share/icons/{custom_wm}.png exists
+            custom_wm = None
+            m_app = re.search(r'\.antigravity-profile-(app-[a-zA-Z0-9_-]+)', win_cmd) or \
+                    re.search(r'\.antigravity-profile-([a-zA-Z0-9_-]+)', win_cmd)
+            m_ide = re.search(r'\.antigravity-ide-profile-([a-zA-Z0-9_-]+)', win_cmd)
+            m_cls = re.search(r'--class[=\s]+"?([a-zA-Z0-9_-]+)"?', win_cmd)
+
+            if m_app and ("profile2" not in m_app.group(0)):
+                custom_wm = f"antigravity-{m_app.group(1)}" if not m_app.group(1).startswith("antigravity") else m_app.group(1)
+            elif m_ide:
+                custom_wm = f"antigravity-ide-{m_ide.group(1)}"
+            elif m_cls:
+                found_c = m_cls.group(1)
+                if found_c not in ("antigravity", "antigravity-1", "antigravity-2", "antigravity-acc2", "antigravity-ide"):
+                    custom_wm = found_c
+            elif c1 not in ("antigravity", "antigravity-1", "antigravity-2", "antigravity-acc2", "antigravity-ide"):
+                custom_wm = c1
+
+            if custom_wm:
+                if (wid, custom_wm) in patched_wids and c1 == custom_wm:
                     continue
+                custom_icon_path = os.path.join(REAL_HOME, ".local/share/icons", f"{custom_wm}.png")
+                if os.path.isfile(custom_icon_path):
+                    c_arr, length = get_icon_data(custom_icon_path)
+                    if c_arr:
+                        cls_custom = f"{custom_wm}\0{custom_wm}\0".encode("utf-8")
+                        x11.XChangeProperty(display, wid, atom_icon, atom_cardinal, 32, 0, ctypes.cast(c_arr, ctypes.c_void_p), length)
+                        x11.XChangeProperty(display, wid, atom_class, atom_string, 8, 0, cls_custom, len(cls_custom))
+                        x11.XFlush(display)
+                        patched_wids.add((wid, custom_wm))
+                continue
 
             is_ide = False
             is_acc2 = False
@@ -398,23 +489,35 @@ def apply_icon_to_windows():
                 continue
 
             if is_ide:
+                if (wid, "antigravity-ide") in patched_wids and c1 == "antigravity-ide":
+                    continue
                 c_arr, length = get_icon_data(IDE_ICON_PATH)
                 if c_arr:
                     x11.XChangeProperty(display, wid, atom_icon, atom_cardinal, 32, 0, ctypes.cast(c_arr, ctypes.c_void_p), length)
                     x11.XChangeProperty(display, wid, atom_class, atom_string, 8, 0, cls_ide, len(cls_ide))
                     x11.XFlush(display)
+                    patched_wids.add((wid, "antigravity-ide"))
             elif is_acc2:
+                if (wid, "antigravity-2") in patched_wids and c1 == "antigravity-2":
+                    continue
                 c_arr, length = get_icon_data(ACC2_ICON_PATH)
                 if c_arr:
                     x11.XChangeProperty(display, wid, atom_icon, atom_cardinal, 32, 0, ctypes.cast(c_arr, ctypes.c_void_p), length)
                     x11.XChangeProperty(display, wid, atom_class, atom_string, 8, 0, cls_acc2, len(cls_acc2))
                     x11.XFlush(display)
+                    patched_wids.add((wid, "antigravity-2"))
             elif not is_acc2 and not is_ide:
+                target_acc1_cls = "antigravity-1" if has_other_apps else "antigravity"
+                if (wid, target_acc1_cls) in patched_wids and c1 == target_acc1_cls:
+                    continue
                 c_arr, length = get_icon_data(ACC1_ICON_PATH)
                 if c_arr:
                     x11.XChangeProperty(display, wid, atom_icon, atom_cardinal, 32, 0, ctypes.cast(c_arr, ctypes.c_void_p), length)
                     x11.XChangeProperty(display, wid, atom_class, atom_string, 8, 0, cls_acc1, len(cls_acc1))
                     x11.XFlush(display)
+                    patched_wids.add((wid, target_acc1_cls))
+
+        apply_icon_to_windows._patched_wids = patched_wids
     finally:
         if display and x11:
             try:
@@ -431,6 +534,5 @@ if __name__ == "__main__":
         for _ in range(30):
             time.sleep(1)
             apply_icon_to_windows()
-            sync_tray_cache()
     else:
         apply_icon_to_windows()
