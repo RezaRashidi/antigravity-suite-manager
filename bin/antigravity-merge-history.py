@@ -3,7 +3,7 @@
 Antigravity History Synchronization CLI Entry Point.
 
 Thin, modular CLI wrapper maintaining full backward-compatibility while
-delegating core logic to the modular `antigravity` package.
+delegating core logic to the modular `antigravity_suite` package.
 """
 
 from __future__ import annotations
@@ -14,19 +14,25 @@ from pathlib import Path
 
 # Add package source directories to sys.path
 _CURRENT_DIR = Path(__file__).resolve().parent
-_REPO_SRC = _CURRENT_DIR.parent / "src"
 _USER_HOME = Path(os.environ.get("REAL_HOME", os.path.expanduser("~"))).resolve()
-_INSTALLED_SRC = _USER_HOME / ".antigravity-suite-manager" / "src"
 
-for _src in [_REPO_SRC, _INSTALLED_SRC]:
-    if _src.is_dir() and str(_src) not in sys.path:
-        sys.path.insert(0, str(_src))
+_CANDIDATES = [
+    os.environ.get("ANTIGRAVITY_SUITE_DIR") and Path(os.environ["ANTIGRAVITY_SUITE_DIR"]) / "src",
+    _CURRENT_DIR.parent / "src",
+    _USER_HOME / ".antigravity-suite-manager" / "src",
+    _USER_HOME / "PhpstormProjects" / "antigravity-suite-manager" / "src",
+    Path.cwd() / "src",
+]
+
+for _cand in _CANDIDATES:
+    if _cand and isinstance(_cand, Path) and _cand.is_dir() and str(_cand) not in sys.path:
+        sys.path.insert(0, str(_cand))
 
 # Re-export all public API symbols for complete backwards compatibility
-from antigravity.auth import refresh_ide_oauth_token
-from antigravity.cli.merge import build_parser, main, print_report
-from antigravity.config import DEFAULT_CONFIG, SuiteConfig, get_user_home
-from antigravity.history import (
+from antigravity_suite.auth import refresh_ide_oauth_token
+from antigravity_suite.cli.merge import build_parser, main, print_report
+from antigravity_suite.config import DEFAULT_CONFIG, SuiteConfig, get_user_home
+from antigravity_suite.history import (
     ConversationSummary,
     SyncStats,
     discover_all_history_sources,
@@ -42,7 +48,7 @@ from antigravity.history import (
     upsert_summary,
     watch_mode,
 )
-from antigravity.proto import (
+from antigravity_suite.proto import (
     build_cascade_summary,
     build_summaries_state,
     build_trajectory_metadata_blob,

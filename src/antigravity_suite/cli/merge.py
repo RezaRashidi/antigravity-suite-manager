@@ -9,9 +9,9 @@ import json
 import sys
 from typing import List, Optional
 
-from antigravity.config import DEFAULT_CONFIG
-from antigravity.history.merger import merge_histories
-from antigravity.history.watcher import watch_mode
+from antigravity_suite.config import DEFAULT_CONFIG
+from antigravity_suite.history.merger import merge_histories
+from antigravity_suite.history.watcher import watch_mode
 
 
 def build_parser() -> argparse.ArgumentParser:

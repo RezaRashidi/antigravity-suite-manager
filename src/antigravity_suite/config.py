@@ -69,6 +69,10 @@ class SuiteConfig:
 
     @property
     def summaries_db_path(self) -> Path:
+        return self.master_app_dir / "conversation_summaries.db"
+
+    @property
+    def sub_summaries_db_path(self) -> Path:
         return self.conversations_dir / "conversation_summaries.db"
 
     @property

@@ -14,7 +14,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
-from antigravity.proto.wire import (
+from antigravity_suite.proto.wire import (
     encode_annotations_field,
     encode_tag_bytes,
     encode_tag_uint,
@@ -30,7 +30,7 @@ def get_last_user_step_index(db_path: Union[str, Path], step_count: int = 0) -> 
     """
     if os.path.isfile(db_path):
         try:
-            conn = sqlite3.connect(db_path)
+            conn = sqlite3.connect(db_path, timeout=15.0)
             cur = conn.cursor()
             cur.execute("SELECT idx FROM steps WHERE step_type = 14 ORDER BY idx DESC LIMIT 1;")
             row = cur.fetchone()

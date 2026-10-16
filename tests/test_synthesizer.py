@@ -7,12 +7,12 @@ import os
 import sqlite3
 import tempfile
 import unittest
-from antigravity.history.synthesizer import (
+from antigravity_suite.history.synthesizer import (
     is_synthesized_db_incomplete,
     parse_step14_user_prompt,
     synthesize_db_from_transcript,
 )
-from antigravity.proto.trajectory import parse_trajectory_metadata_blob
+from antigravity_suite.proto.trajectory import parse_trajectory_metadata_blob
 
 
 class TestSynthesizer(unittest.TestCase):

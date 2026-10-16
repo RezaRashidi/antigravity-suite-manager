@@ -15,9 +15,9 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
-from antigravity.config import DEFAULT_CONFIG, get_user_home
-from antigravity.history.discovery import discover_all_history_sources
-from antigravity.history.merger import merge_histories
+from antigravity_suite.config import DEFAULT_CONFIG, get_user_home
+from antigravity_suite.history.discovery import discover_all_history_sources
+from antigravity_suite.history.merger import merge_histories
 
 
 def watch_mode(

@@ -306,6 +306,9 @@ step_4_deploy_scripts() {
         fi
     done
 
+    # Register antigravity_suite package in user site-packages
+    python3 -c "import site, os; sp = site.getusersitepackages(); os.makedirs(sp, exist_ok=True); open(os.path.join(sp, 'antigravity_suite.pth'), 'w').write('${SCRIPT_DIR}/src\n')" 2>/dev/null || true
+
     if [ -d "${SCRIPT_DIR}/assets" ]; then
         cp -f "${SCRIPT_DIR}/assets"/antigravity-master-*.png "${TARGET_ICONS}/" 2>/dev/null || true
         [ -f "${TARGET_ICONS}/antigravity-master-black.png" ] && cp -f "${TARGET_ICONS}/antigravity-master-black.png" "${TARGET_ICONS}/antigravity-1.png" 2>/dev/null || true

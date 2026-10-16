@@ -19,8 +19,8 @@ classifiers = [
 ]
 
 [project.scripts]
-antigravity-merge-history = "antigravity.cli.merge:main"
+antigravity-merge-history = "antigravity_suite.cli.merge:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["antigravity*"]
+include = ["antigravity_suite*"]

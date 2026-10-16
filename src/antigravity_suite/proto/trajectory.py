@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from antigravity.config import DEFAULT_CONFIG
-from antigravity.proto.wire import encode_tag_bytes, read_varint
+from antigravity_suite.config import DEFAULT_CONFIG
+from antigravity_suite.proto.wire import encode_tag_bytes, read_varint
 
 
 def build_trajectory_metadata_blob(

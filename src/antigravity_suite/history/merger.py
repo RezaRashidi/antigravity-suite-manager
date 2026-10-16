@@ -19,35 +19,35 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple, Union
 
-from antigravity.auth.token import refresh_ide_oauth_token
-from antigravity.config import DEFAULT_CONFIG, get_user_home
-from antigravity.history.discovery import discover_all_history_sources
-from antigravity.history.extractor import (
+from antigravity_suite.auth.token import refresh_ide_oauth_token
+from antigravity_suite.config import DEFAULT_CONFIG, get_user_home
+from antigravity_suite.history.discovery import discover_all_history_sources
+from antigravity_suite.history.extractor import (
     extract_conv_text,
     get_annotation_title,
     sync_annotation_file,
 )
-from antigravity.history.models import ConversationSummary, SyncStats
-from antigravity.history.sqlite_store import (
+from antigravity_suite.history.models import ConversationSummary, SyncStats
+from antigravity_suite.history.sqlite_store import (
     ensure_summaries_schema,
     get_actual_steps_count,
     load_existing_summaries,
     upsert_summary,
 )
-from antigravity.history.synthesizer import (
+from antigravity_suite.history.synthesizer import (
     is_synthesized_db_incomplete,
     synthesize_db_from_transcript,
 )
-from antigravity.proto.cascade import (
+from antigravity_suite.proto.cascade import (
     build_cascade_summary,
     get_last_user_step_index,
     parse_cascade_summary,
 )
-from antigravity.proto.vscdb import (
+from antigravity_suite.proto.vscdb import (
     build_summaries_state,
     build_unified_state_sync,
 )
-from antigravity.proto.wire import (
+from antigravity_suite.proto.wire import (
     encode_tag_bytes,
     extract_entries_from_proto,
     extract_pure_binary_summary,
@@ -75,13 +75,34 @@ def merge_histories(
 
     master_conv_dir = effective_master / "conversations"
     master_brain_dir = effective_master / "brain"
-    master_sum_db = master_conv_dir / "conversation_summaries.db"
+    master_sum_db = effective_master / "conversation_summaries.db"
+    sub_sum_db = master_conv_dir / "conversation_summaries.db"
     master_proto = effective_master / "agyhub_summaries_proto.pb"
     master_anno = effective_master / "annotations"
 
     master_conv_dir.mkdir(parents=True, exist_ok=True)
     master_brain_dir.mkdir(parents=True, exist_ok=True)
     master_anno.mkdir(parents=True, exist_ok=True)
+
+    # Migrate and maintain symlink: master_conv_dir / conversation_summaries.db -> ../conversation_summaries.db
+    if sub_sum_db.exists() and not sub_sum_db.is_symlink():
+        if not master_sum_db.exists():
+            try:
+                shutil.move(str(sub_sum_db), str(master_sum_db))
+            except Exception:
+                pass
+        try:
+            if not sub_sum_db.is_symlink():
+                if sub_sum_db.exists():
+                    os.remove(str(sub_sum_db))
+                sub_sum_db.symlink_to("../conversation_summaries.db")
+        except Exception:
+            pass
+    elif not sub_sum_db.exists() and master_sum_db.exists():
+        try:
+            sub_sum_db.symlink_to("../conversation_summaries.db")
+        except Exception:
+            pass
 
     stats = SyncStats()
 
@@ -155,7 +176,7 @@ def merge_histories(
 
     # 4. Read and Synchronize conversation_summaries.db
     all_summaries: Dict[str, bytes] = {}
-    con = sqlite3.connect(str(master_sum_db))
+    con = sqlite3.connect(str(master_sum_db), timeout=15.0)
     ensure_summaries_schema(con)
     cur = con.cursor()
     existing_rows = load_existing_summaries(master_sum_db)
@@ -344,7 +365,7 @@ def merge_histories(
     state_vscdb = home / ".config" / "Antigravity IDE" / "User" / "globalStorage" / "state.vscdb"
     if state_vscdb.is_file():
         try:
-            v_con = sqlite3.connect(str(state_vscdb))
+            v_con = sqlite3.connect(str(state_vscdb), timeout=15.0)
             v_cur = v_con.cursor()
             rows = v_cur.execute(
                 "SELECT value FROM ItemTable WHERE key IN ('antigravityUnifiedStateSync.trajectorySummaries', 'antigravityUnifiedStateSync');"
@@ -405,7 +426,7 @@ def merge_histories(
         try:
             val_wrap_b64 = build_summaries_state(all_summaries)
             outer_b64 = build_unified_state_sync(all_summaries)
-            v_con = sqlite3.connect(str(state_vscdb))
+            v_con = sqlite3.connect(str(state_vscdb), timeout=15.0)
             v_cur = v_con.cursor()
             v_cur.execute(
                 "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('antigravityUnifiedStateSync.trajectorySummaries', ?);",
@@ -421,6 +442,13 @@ def merge_histories(
         except Exception:
             pass
 
+    # Flush SQLite WAL to disk so replicated files have complete state
+    try:
+        cur.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+        con.commit()
+    except Exception:
+        pass
+
     # 8. Replicate conversation_summaries.db and proto to target IDE profiles
     target_ide_dirs = []
     for td in sorted(set(ide_candidates)):
@@ -433,12 +461,39 @@ def merge_histories(
         try:
             tgt_conv_dir = os.path.join(target_d, "conversations")
             os.makedirs(tgt_conv_dir, exist_ok=True)
-            t_sum_db = os.path.join(tgt_conv_dir, "conversation_summaries.db")
 
+            # Replicate canonical conversation_summaries.db using SQLite backup API
+            tgt_root_sum_db = os.path.join(target_d, "conversation_summaries.db")
+            if not os.path.islink(tgt_root_sum_db) and not (
+                os.path.exists(tgt_root_sum_db) and os.path.samefile(str(master_sum_db), tgt_root_sum_db)
+            ):
+                try:
+                    dest_c = sqlite3.connect(tgt_root_sum_db, timeout=15.0)
+                    con.backup(dest_c)
+                    dest_c.close()
+                except Exception:
+                    pass
+
+            t_sum_db = os.path.join(tgt_conv_dir, "conversation_summaries.db")
             if not os.path.islink(t_sum_db) and not (
                 os.path.exists(t_sum_db) and os.path.samefile(str(master_sum_db), t_sum_db)
             ):
-                shutil.copy2(master_sum_db, t_sum_db)
+                try:
+                    # Prefer relative symlink to root conversation_summaries.db if possible
+                    if os.path.exists(tgt_root_sum_db) and not os.path.exists(t_sum_db):
+                        try:
+                            os.symlink("../conversation_summaries.db", t_sum_db)
+                        except Exception:
+                            dest_c = sqlite3.connect(t_sum_db, timeout=15.0)
+                            con.backup(dest_c)
+                            dest_c.close()
+                    else:
+                        dest_c = sqlite3.connect(t_sum_db, timeout=15.0)
+                        con.backup(dest_c)
+                        dest_c.close()
+                except Exception:
+                    pass
+
             if not os.path.islink(tgt_conv_dir) and not os.path.samefile(str(master_conv_dir), tgt_conv_dir):
                 for db_src in glob.glob(os.path.join(str(master_conv_dir), "*.db")):
                     tgt_db = os.path.join(tgt_conv_dir, os.path.basename(db_src))
@@ -464,16 +519,14 @@ def merge_histories(
         sync_annotation_file(effective_master, c_id, c_title)
 
     stats.total_active_history = cur.execute("SELECT count(*) FROM conversation_summaries;").fetchone()[0]
-    con.close()
 
-    # 9b. Mirror master conversation_summaries.db to root effective_master for full compatibility
-    root_sum_db = effective_master / "conversation_summaries.db"
-    if master_sum_db.is_file() and not root_sum_db.is_symlink():
-        try:
-            if not root_sum_db.exists() or not os.path.samefile(str(master_sum_db), str(root_sum_db)):
-                shutil.copy2(master_sum_db, root_sum_db)
-        except Exception:
-            pass
+    # Final WAL checkpoint before closing master connection
+    try:
+        cur.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+        con.commit()
+    except Exception:
+        pass
+    con.close()
 
     # 10. Automatically refresh IDE OAuth token if expired
     for ide_dir in DEFAULT_CONFIG.ide_dirs:

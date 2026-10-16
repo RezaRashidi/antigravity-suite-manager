@@ -15,26 +15,61 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from antigravity.config import DEFAULT_CONFIG, get_user_home
-from antigravity.proto.trajectory import build_trajectory_metadata_blob
-from antigravity.proto.wire import encode_tag_bytes, encode_tag_uint, read_varint
+from antigravity_suite.config import DEFAULT_CONFIG, get_user_home
+from antigravity_suite.proto.trajectory import build_trajectory_metadata_blob
+from antigravity_suite.proto.wire import encode_tag_bytes, encode_tag_uint, read_varint
 
 
 def is_synthesized_db_incomplete(db_path: Union[str, Path]) -> bool:
     """
-    Checks if a conversation SQLite database is empty or unreadable.
-    NEVER marks an existing database with valid steps as incomplete.
+    Checks if a conversation SQLite database has missing/empty message payloads
+    (e.g. legacy synthesized databases missing Tag 20 assistant messages or Step 132 tool metadata).
+    STRICTLY protects authentic databases containing rich step types from ever being re-synthesized.
     """
     db_p = str(db_path)
     if not os.path.isfile(db_p) or os.path.getsize(db_p) == 0:
         return True
     try:
-        conn = sqlite3.connect(db_p)
+        conn = sqlite3.connect(db_p, timeout=15.0)
         cur = conn.cursor()
         cur.execute("SELECT count(*) FROM steps;")
         total_steps = cur.fetchone()[0]
+        if total_steps == 0:
+            conn.close()
+            return True
+
+        # Check step types: if authentic rich step types exist, protect completely!
+        cur.execute("SELECT DISTINCT step_type FROM steps;")
+        step_types = {r[0] for r in cur.fetchall()}
+        rich_authentic_types = step_types - {0, 14, 15, 132}
+        if rich_authentic_types:
+            conn.close()
+            return False
+
+        # For synthesized databases (only 14, 15, 132), check if assistant text is present
+        cur.execute("SELECT step_payload FROM steps WHERE step_type = 15 LIMIT 5;")
+        s15_rows = cur.fetchall()
+        if s15_rows:
+            # Wire format for tag 20 wire type 2: (20 << 3) | 2 = 162 = 0xa2, 0x01
+            has_tag20 = any(row[0] and b"\xa2\x01" in row[0] for row in s15_rows)
+            if not has_tag20:
+                conn.close()
+                return True
+
+        # Check step 132: verify tool execution metadata is present
+        cur.execute("SELECT metadata, step_payload FROM steps WHERE step_type = 132 LIMIT 5;")
+        s132_rows = cur.fetchall()
+        if s132_rows:
+            # Tag 4 in metadata: (4 << 3) | 2 = 0x22
+            has_tool_meta = any(row[0] and len(row[0]) > 20 and b"\x22" in row[0] for row in s132_rows)
+            # Tag 140 in payload: (140 << 3) | 2 = 1122 = 0xe2, 0x08
+            has_tool_payload = any(row[1] and b"\xe2\x08" in row[1] for row in s132_rows)
+            if not (has_tool_meta and has_tool_payload):
+                conn.close()
+                return True
+
         conn.close()
-        return total_steps == 0
+        return False
     except Exception:
         return True
 
@@ -135,7 +170,7 @@ def synthesize_db_from_transcript(
     db_str = str(db_path)
     try:
         os.makedirs(os.path.dirname(db_str), exist_ok=True)
-        conn = sqlite3.connect(db_str)
+        conn = sqlite3.connect(db_str, timeout=15.0)
         cur = conn.cursor()
         cur.execute("""CREATE TABLE IF NOT EXISTS `trajectory_meta` (
             `trajectory_id` text, `cascade_id` text, `trajectory_type` integer, `source` integer, PRIMARY KEY (`trajectory_id`)

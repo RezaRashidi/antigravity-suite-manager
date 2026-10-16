@@ -15,7 +15,7 @@ import sqlite3
 from pathlib import Path
 from typing import Optional, Tuple, Union
 
-from antigravity.history.synthesizer import parse_step14_user_prompt
+from antigravity_suite.history.synthesizer import parse_step14_user_prompt
 
 
 def get_annotation_title(gemini_dir: Union[str, Path], conv_id: str) -> Optional[str]:
@@ -126,7 +126,7 @@ def extract_conv_text(
     db_str = str(db_path) if db_path else ""
     if not first_user_prompt and os.path.isfile(db_str):
         try:
-            conn = sqlite3.connect(db_str)
+            conn = sqlite3.connect(db_str, timeout=15.0)
             cur = conn.cursor()
             cur.execute("SELECT step_payload FROM steps WHERE step_type = 14 ORDER BY idx ASC LIMIT 5;")
             rows = cur.fetchall()
@@ -141,8 +141,25 @@ def extract_conv_text(
         except Exception:
             pass
 
-    # Inspect markdown artifacts in the brain folder
-    if t_str:
+    # 1. Derive title from user prompt if available
+    title = ""
+    preview = latest_user_prompt or first_user_prompt or ""
+    if first_user_prompt:
+        lines = [line.strip() for line in first_user_prompt.split("\n") if line.strip()]
+        if lines:
+            t_cand = lines[0]
+            if len(t_cand) > 80:
+                t_cand = t_cand[:77] + "..."
+            if t_cand and t_cand.lower() not in ["hi", "hello", "hey", "conversation", "untitled conversation"]:
+                title = t_cand
+
+    # 2. Fallback to markdown artifacts ONLY if no title could be derived from user prompt
+    if not title and t_str:
+        generic_blacklist = {
+            "task", "tasks", "implementation plan", "overview", "walkthrough",
+            "architecture", "notes", "summary", "checklist", "test results",
+            "verification", "instructions", "scratchpad", "conversation", "untitled conversation"
+        }
         brain_folder = os.path.dirname(os.path.dirname(os.path.dirname(t_str)))
         if os.path.isdir(brain_folder):
             for art_name in ["task.md", "implementation_plan.md", "architecture.md"]:
@@ -154,31 +171,23 @@ def extract_conv_text(
                                 l_clean = l.strip()
                                 if l_clean.startswith("# ") and len(l_clean) > 3:
                                     art_title = l_clean[2:].strip()
-                                    if art_title and art_title not in ["Task", "Implementation Plan"]:
-                                        return art_title, latest_user_prompt or first_user_prompt or art_title
+                                    if art_title and art_title.lower() not in generic_blacklist:
+                                        title = art_title
+                                        return title, preview or title
                     except Exception:
                         pass
-            # Any markdown file with a heading
-            for af_path in glob.glob(os.path.join(brain_folder, "*.md")):
-                try:
-                    with open(af_path, "r", encoding="utf-8", errors="ignore") as af:
-                        for l in af:
-                            l_clean = l.strip()
-                            if l_clean.startswith("# ") and len(l_clean) > 3:
-                                art_title = l_clean[2:].strip()
-                                if art_title and art_title not in ["Task", "Overview"]:
-                                    return art_title, latest_user_prompt or first_user_prompt or art_title
-                except Exception:
-                    pass
-
-    title = ""
-    preview = latest_user_prompt or first_user_prompt or ""
-    if first_user_prompt:
-        lines = [line.strip() for line in first_user_prompt.split("\n") if line.strip()]
-        if lines:
-            t_cand = lines[0]
-            if len(t_cand) > 80:
-                t_cand = t_cand[:77] + "..."
-            title = t_cand
+            if not title:
+                for af_path in glob.glob(os.path.join(brain_folder, "*.md")):
+                    try:
+                        with open(af_path, "r", encoding="utf-8", errors="ignore") as af:
+                            for l in af:
+                                l_clean = l.strip()
+                                if l_clean.startswith("# ") and len(l_clean) > 3:
+                                    art_title = l_clean[2:].strip()
+                                    if art_title and art_title.lower() not in generic_blacklist:
+                                        title = art_title
+                                        return title, preview or title
+                    except Exception:
+                        pass
 
     return title, preview

@@ -15,7 +15,7 @@ import urllib.request
 from pathlib import Path
 from typing import Optional, Union
 
-from antigravity.config import get_user_home
+from antigravity_suite.config import get_user_home
 
 
 def refresh_ide_oauth_token(

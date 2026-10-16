@@ -10,7 +10,7 @@ from __future__ import annotations
 import base64
 from typing import Dict
 
-from antigravity.proto.wire import (
+from antigravity_suite.proto.wire import (
     encode_tag_bytes,
     encode_tag_uint,
     extract_pure_binary_summary,

@@ -3,7 +3,7 @@ Unit Tests for Protobuf Wire Format Encoding and Decoding.
 """
 
 import unittest
-from antigravity.proto.wire import (
+from antigravity_suite.proto.wire import (
     encode_annotations_field,
     encode_tag_bytes,
     encode_tag_uint,

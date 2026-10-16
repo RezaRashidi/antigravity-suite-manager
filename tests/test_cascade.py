@@ -3,8 +3,8 @@ Unit Tests for Cascade Summary and Trajectory Metadata Protobuf Serialization.
 """
 
 import unittest
-from antigravity.proto.cascade import build_cascade_summary, parse_cascade_summary
-from antigravity.proto.trajectory import (
+from antigravity_suite.proto.cascade import build_cascade_summary, parse_cascade_summary
+from antigravity_suite.proto.trajectory import (
     build_trajectory_metadata_blob,
     parse_trajectory_metadata_blob,
 )

@@ -2,20 +2,20 @@
 Protocol Buffers Wire Format, Cascade Summaries, and Metadata Package.
 """
 
-from antigravity.proto.cascade import (
+from antigravity_suite.proto.cascade import (
     build_cascade_summary,
     get_last_user_step_index,
     parse_cascade_summary,
 )
-from antigravity.proto.trajectory import (
+from antigravity_suite.proto.trajectory import (
     build_trajectory_metadata_blob,
     parse_trajectory_metadata_blob,
 )
-from antigravity.proto.vscdb import (
+from antigravity_suite.proto.vscdb import (
     build_summaries_state,
     build_unified_state_sync,
 )
-from antigravity.proto.wire import (
+from antigravity_suite.proto.wire import (
     encode_annotations_field,
     encode_tag_bytes,
     encode_tag_uint,

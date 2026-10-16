@@ -11,7 +11,7 @@ import sqlite3
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
-from antigravity.history.models import ConversationSummary
+from antigravity_suite.history.models import ConversationSummary
 
 
 def ensure_summaries_schema(conn: sqlite3.Connection) -> None:
@@ -55,7 +55,7 @@ def load_existing_summaries(
     if not os.path.isfile(db_str):
         return {}
 
-    conn = sqlite3.connect(db_str)
+    conn = sqlite3.connect(db_str, timeout=15.0)
     cur = conn.cursor()
     ensure_summaries_schema(conn)
 
@@ -106,7 +106,7 @@ def get_actual_steps_count(db_path: Union[str, Path]) -> int:
     if not os.path.isfile(db_str):
         return 0
     try:
-        conn = sqlite3.connect(db_str)
+        conn = sqlite3.connect(db_str, timeout=15.0)
         cnt = conn.cursor().execute("SELECT count(*) FROM steps;").fetchone()[0]
         conn.close()
         return int(cnt)
