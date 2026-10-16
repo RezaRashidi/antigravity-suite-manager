@@ -18,6 +18,47 @@ from typing import Optional, Tuple, Union
 from antigravity_suite.history.synthesizer import parse_step14_user_prompt
 
 
+def decode_pbtxt_string(s: str) -> str:
+    """Decodes a Protobuf text format quoted string, preserving UTF-8 text and resolving escape sequences."""
+    if not s:
+        return ""
+    if "\\" not in s:
+        return s.strip()
+
+    # 1. Decode consecutive octal byte escapes (Protobuf text format for UTF-8 bytes: e.g. \330\263)
+    def decode_octal_match(m: re.Match) -> str:
+        raw_bytes = bytes(int(x, 8) for x in re.findall(r"\\([0-7]{1,3})", m.group(0)))
+        try:
+            return raw_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            return raw_bytes.decode("latin-1", errors="replace")
+
+    res = re.sub(r"(?:\\[0-7]{1,3})+", decode_octal_match, s)
+
+    # 2. Decode standard unicode escapes (\uXXXX, \UXXXXXXXX) and common C escapes
+    if "\\" in res:
+        try:
+            res = re.sub(
+                r"\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8}",
+                lambda m: m.group(0).encode("utf-8").decode("unicode_escape"),
+                res,
+            )
+            c_escapes = {
+                "\\n": "\n",
+                "\\r": "\r",
+                "\\t": "\t",
+                '\\"': '"',
+                "\\'": "'",
+                "\\\\": "\\",
+            }
+            for esc, char in c_escapes.items():
+                res = res.replace(esc, char)
+        except Exception:
+            pass
+
+    return res.strip()
+
+
 def get_annotation_title(gemini_dir: Union[str, Path], conv_id: str) -> Optional[str]:
     """Reads authentic title from annotations/<conv_id>.pbtxt if present."""
     anno_file = os.path.join(str(gemini_dir), "annotations", f"{conv_id}.pbtxt")
@@ -27,7 +68,7 @@ def get_annotation_title(gemini_dir: Union[str, Path], conv_id: str) -> Optional
                 content = f.read()
             m = re.search(r'title\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', content)
             if m:
-                clean_title = m.group(1).encode("utf-8").decode("unicode_escape").strip()
+                clean_title = decode_pbtxt_string(m.group(1))
                 if clean_title and clean_title not in ["Conversation", "Untitled Conversation"]:
                     return clean_title
         except Exception:
@@ -103,20 +144,25 @@ def extract_conv_text(
                             entry = json.loads(line)
                         except Exception:
                             continue
-                        src = entry.get("source", "")
-                        typ = entry.get("type", "")
-                        content = entry.get("content", "")
-                        if typ == "USER_INPUT" or (src == "USER_EXPLICIT" and typ not in ["VIEW_FILE", "CODE_ACTION"]):
-                            clean = content
-                            m = re.search(r"<USER_REQUEST>(.*?)</USER_REQUEST>", content, re.DOTALL)
-                            if m:
-                                clean = m.group(1).strip()
-                            else:
-                                clean = content.strip()
-                            if clean:
-                                if not first_user_prompt:
-                                    first_user_prompt = clean
-                                latest_user_prompt = clean
+                        try:
+                            src = entry.get("source", "")
+                            typ = entry.get("type", "")
+                            content = entry.get("content", "")
+                            if not isinstance(content, str):
+                                continue
+                            if typ == "USER_INPUT" or (src == "USER_EXPLICIT" and typ not in ["VIEW_FILE", "CODE_ACTION"]):
+                                clean = content
+                                m = re.search(r"<USER_REQUEST>(.*?)</USER_REQUEST>", content, re.DOTALL)
+                                if m:
+                                    clean = m.group(1).strip()
+                                else:
+                                    clean = content.strip()
+                                if clean:
+                                    if not first_user_prompt:
+                                        first_user_prompt = clean
+                                    latest_user_prompt = clean
+                        except Exception:
+                            continue
                 if first_user_prompt:
                     break
             except Exception:

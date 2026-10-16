@@ -10,13 +10,13 @@ from __future__ import annotations
 import base64
 import datetime
 import re
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 
 def encode_varint(n: int) -> bytes:
     """Encodes an integer into standard Protobuf Varint wire format."""
     out = bytearray()
-    val = n
+    val = n & 0xFFFFFFFFFFFFFFFF if n < 0 else n
     while val > 0x7F:
         out.append((val & 0x7F) | 0x80)
         val >>= 7
@@ -57,10 +57,13 @@ def encode_timestamp_field(dt_str: str) -> bytes:
     """
     try:
         clean = dt_str.replace("Z", "+00:00")
+        clean = re.sub(r"(\.\d{6})\d+", r"\1", clean)
         dt = datetime.datetime.fromisoformat(clean)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
         secs = int(dt.timestamp())
     except Exception:
-        secs = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+        secs = 0
     return encode_tag_uint(1, secs)
 
 
@@ -83,54 +86,91 @@ def encode_annotations_field(step_count: int, last_user_step: int = -1) -> bytes
 def extract_pure_binary_summary(raw: Any) -> Optional[bytes]:
     """
     Extracts raw protobuf binary summary from raw database value.
-    Unwraps google.protobuf.Value / ValueWrapper base64 string if present.
+    Unwraps google.protobuf.Value string_value base64 string if present.
     """
     if not raw or not isinstance(raw, (bytes, bytearray)):
         return None
 
-    # Check if raw is wrapped in ValueWrapper: tag 0x0a + varint len + base64 string
-    if raw.startswith(b"\n"):
+    raw_bytes = bytes(raw)
+    # Check if raw is wrapped in google.protobuf.Value: tag 3 string_value (0x1A) + varint len + base64 string
+    if len(raw_bytes) >= 4 and raw_bytes[0] == 0x1A:
         pos = 1
-        length, pos = read_varint(raw, pos)
-        if pos + length == len(raw) and length >= 4:
-            candidate_b64 = raw[pos : pos + length]
-            if re.match(rb"^[A-Za-z0-9+/=]+$", candidate_b64):
+        length, pos = read_varint(raw_bytes, pos)
+        if pos + length == len(raw_bytes) and length >= 4:
+            candidate_b64 = raw_bytes[pos : pos + length]
+            if re.match(rb"^[A-Za-z0-9+/=\s]+$", candidate_b64):
                 try:
-                    decoded = base64.b64decode(candidate_b64, validate=True)
-                    if decoded and len(decoded) >= 20:
-                        return decoded
+                    decoded = base64.b64decode(candidate_b64)
+                    if decoded:
+                        return extract_pure_binary_summary(decoded)
                 except Exception:
                     pass
-    return bytes(raw)
+
+    return raw_bytes
 
 
 def extract_entries_from_proto(data: bytes) -> Dict[str, bytes]:
     """
     Extracts {uuid: pure_binary_summary_bytes} from binary summaries proto
     (e.g., agyhub_summaries_proto.pb or state.vscdb decoded base64).
+    Recursively unwraps wrappers like google.protobuf.Value or outer messages.
     """
     entries: Dict[str, bytes] = {}
+    if not data:
+        return entries
+
     pos = 0
     total = len(data)
 
     while pos < total:
-        tag = data[pos]
-        pos += 1
+        tag_wire, pos = read_varint(data, pos)
+        wire_type = tag_wire & 7
+        tag_num = tag_wire >> 3
+
+        if wire_type == 0:
+            _, pos = read_varint(data, pos)
+            continue
+        elif wire_type == 1:
+            pos += 8
+            continue
+        elif wire_type == 5:
+            pos += 4
+            continue
+        elif wire_type != 2:
+            break
+
         length, pos = read_varint(data, pos)
         if pos + length > total:
             break
         entry_data = data[pos : pos + length]
         pos += length
 
-        # In a map entry, tag 0x0a is key (uuid string, length 36 = 0x24)
-        if tag == 0x0a and len(entry_data) > 38 and entry_data[0] == 0x0a and entry_data[1] == 0x24:
-            uuid = entry_data[2:38].decode("ascii", "ignore")
-            val_chunk = entry_data[38:]
-            if len(val_chunk) > 2 and val_chunk[0] == 0x12:
-                vlen, vpos = read_varint(val_chunk, 1)
-                raw_val = val_chunk[vpos : vpos + vlen]
-                pure = extract_pure_binary_summary(raw_val)
-                if pure:
-                    entries[uuid] = pure
+        # 1. Check if tag 3 contains a Base64 string (google.protobuf.Value wrapper)
+        if tag_num == 3 and re.match(rb"^[A-Za-z0-9+/=\s]+$", entry_data):
+            try:
+                decoded = base64.b64decode(entry_data)
+                sub_entries = extract_entries_from_proto(decoded)
+                if sub_entries:
+                    entries.update(sub_entries)
+                    continue
+            except Exception:
+                pass
+
+        # 2. Check if tag 1 is a map entry (contains UUID in subtag 1)
+        if tag_num == 1:
+            if len(entry_data) > 38 and entry_data[0] == 0x0A and entry_data[1] == 0x24:
+                uuid = entry_data[2:38].decode("ascii", "ignore")
+                val_chunk = entry_data[38:]
+                if len(val_chunk) > 2 and val_chunk[0] in (0x12, 0x1A):
+                    vlen, vpos = read_varint(val_chunk, 1)
+                    raw_val = val_chunk[vpos : vpos + vlen]
+                    pure = extract_pure_binary_summary(raw_val)
+                    if pure:
+                        entries[uuid] = pure
+            else:
+                # Could be an outer container wrapping entries (e.g. in antigravityUnifiedStateSync)
+                sub_entries = extract_entries_from_proto(entry_data)
+                if sub_entries:
+                    entries.update(sub_entries)
 
     return entries

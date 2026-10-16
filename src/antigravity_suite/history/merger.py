@@ -43,6 +43,7 @@ from antigravity_suite.proto.cascade import (
     get_last_user_step_index,
     parse_cascade_summary,
 )
+from antigravity_suite.proto.trajectory import parse_trajectory_metadata_blob
 from antigravity_suite.proto.vscdb import (
     build_summaries_state,
     build_unified_state_sync,
@@ -52,6 +53,22 @@ from antigravity_suite.proto.wire import (
     extract_entries_from_proto,
     extract_pure_binary_summary,
 )
+
+
+def get_db_trajectory_meta(db_path: Path) -> Tuple[Optional[str], Optional[str]]:
+    """Reads workspace_uri and project_id from trajectory_metadata_blob if present."""
+    if not db_path.is_file():
+        return None, None
+    try:
+        conn = sqlite3.connect(str(db_path), timeout=15.0)
+        row = conn.cursor().execute("SELECT data FROM trajectory_metadata_blob WHERE id = 'main';").fetchone()
+        conn.close()
+        if row and row[0]:
+            meta = parse_trajectory_metadata_blob(row[0])
+            return meta.get("workspace_uri"), meta.get("project_id")
+    except Exception:
+        pass
+    return None, None
 
 
 def merge_histories(
@@ -107,7 +124,11 @@ def merge_histories(
     stats = SyncStats()
 
     # 1. Discover all history pools across the system
-    conv_pools, brain_pools, ide_candidates = discover_all_history_sources(target_dir, home)
+    conv_pools, brain_pools, ide_candidates = discover_all_history_sources(
+        target_dir=target_dir,
+        user_home=home,
+        source_dir=source_dir,
+    )
     stats.conv_stores_scanned = len(conv_pools)
     stats.brain_stores_scanned = len(brain_pools)
 
@@ -122,13 +143,17 @@ def merge_histories(
             if base == "conversation_summaries.db":
                 continue
             target_file = master_conv_dir / base
+            needs_copy = False
             if not target_file.exists():
-                try:
-                    shutil.copy2(src_file, target_file)
-                    stats.db_files_merged += 1
-                except Exception:
-                    pass
+                needs_copy = True
             elif target_file.stat().st_size == 0 and os.path.getsize(src_file) > 0:
+                needs_copy = True
+            elif os.path.getsize(src_file) > target_file.stat().st_size:
+                needs_copy = True
+            elif os.path.getmtime(src_file) > (target_file.stat().st_mtime + 2.0):
+                needs_copy = True
+
+            if needs_copy:
                 try:
                     shutil.copy2(src_file, target_file)
                     stats.db_files_merged += 1
@@ -239,133 +264,121 @@ def merge_histories(
 
         transcript_file = master_brain_dir / conv_id / ".system_generated" / "logs" / "transcript.jsonl"
         anno_title = get_annotation_title(effective_master, conv_id)
+        db_ws_uri, db_proj_id = get_db_trajectory_meta(db_file) if has_db else (None, None)
 
-        if conv_id in all_summaries:
-            curr_raw = all_summaries[conv_id]
-            parsed_raw = parse_cascade_summary(curr_raw)
-            raw_title = parsed_raw.get("title", "")
-            raw_summary = parsed_raw.get("summary", "")
+        curr_raw = all_summaries.get(conv_id)
+        parsed_raw = parse_cascade_summary(curr_raw) if curr_raw else {}
+        raw_title = parsed_raw.get("title", "")
+        raw_summary = parsed_raw.get("summary", "")
 
-            curr_title = existing_rows.get(conv_id, ("",))[0] if conv_id in existing_rows else ""
-            curr_prev = existing_rows.get(conv_id, ("", "", ""))[1] if conv_id in existing_rows else ""
+        curr_title = existing_rows[conv_id][0] if conv_id in existing_rows else ""
+        curr_prev = existing_rows[conv_id][1] if conv_id in existing_rows else ""
+        curr_step_cnt = existing_rows[conv_id][2] if conv_id in existing_rows else parsed_raw.get("step_count", 0)
 
-            final_title = anno_title or curr_title or raw_title
-            final_prev = curr_prev or raw_summary
+        final_title = anno_title or curr_title or raw_title
+        final_prev = curr_prev or raw_summary
 
-            if not final_title or final_title.strip() == "" or final_title in ["Conversation", "Untitled Conversation"]:
-                if curr_prev and curr_prev.strip() and curr_prev not in ["Conversation", "Untitled Conversation"]:
-                    final_title = curr_prev.strip().split("\n")[0][:80]
-                elif raw_summary and raw_summary.strip() and raw_summary not in ["Conversation", "Untitled Conversation"]:
-                    final_title = raw_summary.strip().split("\n")[0][:80]
+        if not final_title or final_title.strip() in ["", "Conversation", "Untitled Conversation"]:
+            if curr_prev and curr_prev.strip() not in ["", "Conversation", "Untitled Conversation"]:
+                final_title = curr_prev.strip().split("\n")[0][:80]
+            elif raw_summary and raw_summary.strip() not in ["", "Conversation", "Untitled Conversation"]:
+                final_title = raw_summary.strip().split("\n")[0][:80]
 
-            if not final_title or final_title.strip() == "" or final_title in ["Conversation", "Untitled Conversation"]:
-                ext_t, ext_p = extract_conv_text(db_file, transcript_file)
-                if ext_t:
-                    final_title = ext_t
-                    final_prev = ext_p or final_prev
+        if not final_title or final_title.strip() in ["", "Conversation", "Untitled Conversation"]:
+            ext_t, ext_p = extract_conv_text(db_file, transcript_file)
+            if ext_t:
+                final_title = ext_t
+                final_prev = ext_p or final_prev
 
-            curr_raw_title = parsed_raw.get("title") or parsed_raw.get("summary")
-            needs_title_rebuild = bool(
-                final_title
-                and (
-                    not curr_raw_title
-                    or curr_raw_title in ["Conversation", "Untitled Conversation"]
-                )
+        if not final_title:
+            final_title = "Conversation"
+        if not final_prev:
+            final_prev = final_title
+
+        target_step_cnt = max(actual_steps, curr_step_cnt, 1)
+        ws_uri = db_ws_uri or parsed_raw.get("workspace_uri")
+        proj_id = db_proj_id or parsed_raw.get("project_id")
+
+        curr_raw_title = parsed_raw.get("title") or parsed_raw.get("summary")
+        needs_title_rebuild = bool(
+            final_title
+            and (
+                not curr_raw_title
+                or curr_raw_title in ["Conversation", "Untitled Conversation"]
             )
-            is_corrupt_raw = bool(curr_raw and any(ord(c) < 32 and c not in "\n\r\t" for c in (raw_summary or "")))
+        )
+        is_corrupt_raw = bool(curr_raw and any(ord(c) < 32 and c not in "\n\r\t" for c in (raw_summary or "")))
+        needs_steps_rebuild = bool(actual_steps > curr_step_cnt)
+        is_not_in_sqlite = bool(conv_id not in existing_rows)
 
-            if curr_raw and len(curr_raw) > 20 and not needs_title_rebuild and not is_corrupt_raw:
-                all_summaries[conv_id] = curr_raw
-                if curr_title != final_title or curr_prev != final_prev:
-                    cur.execute(
-                        "UPDATE conversation_summaries SET title=?, preview=? WHERE conversation_id=?;",
-                        (final_title, final_prev, conv_id),
-                    )
-                    stats.conversations_updated += 1
-                continue
-
-        # Ingest from existing SQLite row
-        if conv_id in existing_rows:
-            curr_title, curr_prev, curr_step_cnt, curr_mtime, curr_raw_blob = existing_rows[conv_id]
-            pure_bin = extract_pure_binary_summary(curr_raw_blob)
-            final_title = anno_title or curr_title
-            final_prev = curr_prev
-            if not final_title or final_title in ["Conversation", "Untitled Conversation"]:
-                ext_t, ext_p = extract_conv_text(db_file, transcript_file)
-                if ext_t:
-                    final_title = ext_t
-                    final_prev = ext_p or final_prev
-
-            if pure_bin and len(pure_bin) > 20:
-                parsed = parse_cascade_summary(pure_bin)
-                raw_t = parsed.get("title") or parsed.get("summary")
-                if not final_title or final_title in ["Conversation", "Untitled Conversation"]:
-                    final_title = raw_t or final_title
-
-            if final_title and final_title not in ["Conversation", "Untitled Conversation"]:
-                step_cnt = max(actual_steps, curr_step_cnt, 1)
-                user_step = get_last_user_step_index(db_file, step_cnt)
-
-                if pure_bin and len(pure_bin) > 20 and curr_title == final_title and curr_step_cnt == step_cnt:
-                    all_summaries[conv_id] = pure_bin
-                    continue
-
-                new_bin = build_cascade_summary(
-                    conv_id,
-                    final_title,
-                    final_prev or final_title,
-                    step_cnt,
-                    file_mtime_iso,
-                    last_user_step=user_step,
-                )
-                all_summaries[conv_id] = new_bin
+        # If summary exists, is valid, is in SQLite, and doesn't need rebuild:
+        if (
+            curr_raw
+            and len(curr_raw) > 20
+            and not needs_title_rebuild
+            and not is_corrupt_raw
+            and not needs_steps_rebuild
+            and not is_not_in_sqlite
+        ):
+            all_summaries[conv_id] = curr_raw
+            if curr_title != final_title or curr_prev != final_prev:
                 cur.execute(
-                    "UPDATE conversation_summaries SET title=?, preview=?, step_count=?, last_modified_time=?, raw_summary=? WHERE conversation_id=?;",
-                    (final_title, final_prev or final_title, step_cnt, file_mtime_iso, new_bin, conv_id),
+                    "UPDATE conversation_summaries SET title=?, preview=? WHERE conversation_id=?;",
+                    (final_title, final_prev, conv_id),
                 )
                 stats.conversations_updated += 1
-                continue
+            continue
 
-        # Generate new authentic summary
-        title, preview = extract_conv_text(db_file, transcript_file)
-        if anno_title:
-            title = anno_title
-        if not title:
-            title = "Conversation"
-        if not preview:
-            preview = title
-
-        step_cnt = max(actual_steps, 1)
-        user_step = get_last_user_step_index(db_file, step_cnt)
-        pure_bin = build_cascade_summary(
+        # Reconstruct authentic summary
+        user_step = get_last_user_step_index(db_file, target_step_cnt)
+        new_bin = build_cascade_summary(
             conv_id,
-            title,
-            preview,
-            step_cnt,
+            final_title,
+            final_prev,
+            target_step_cnt,
             file_mtime_iso,
             last_user_step=user_step,
+            workspace_uri=ws_uri,
+            project_id=proj_id,
         )
-        all_summaries[conv_id] = pure_bin
+        all_summaries[conv_id] = new_bin
 
         summary_model = ConversationSummary(
             conversation_id=conv_id,
-            title=title,
-            preview=preview,
-            step_count=step_cnt,
+            title=final_title,
+            preview=final_prev,
+            step_count=target_step_cnt,
             last_modified_time=file_mtime_iso,
             last_user_input_step_index=user_step,
-            raw_summary=pure_bin,
+            raw_summary=new_bin,
+            workspace_uris=ws_uri or "",
+            project_id=proj_id or "",
         )
         upsert_summary(con, summary_model)
-        stats.summaries_backfilled += 1
+        if is_not_in_sqlite:
+            stats.summaries_backfilled += 1
+        else:
+            stats.conversations_updated += 1
 
     con.commit()
 
     # 5. Read titles from VS Code state.vscdb
-    state_vscdb = home / ".config" / "Antigravity IDE" / "User" / "globalStorage" / "state.vscdb"
-    if state_vscdb.is_file():
+    candidate_vscdbs = [
+        home / ".config" / "Antigravity IDE" / "User" / "globalStorage" / "state.vscdb",
+        home / ".config" / "Antigravity" / "User" / "globalStorage" / "state.vscdb",
+        home / ".config" / "antigravity-ide" / "User" / "globalStorage" / "state.vscdb",
+    ]
+    for cand in ide_candidates:
+        cand_vsc = Path(cand) / "User" / "globalStorage" / "state.vscdb"
+        if cand_vsc.is_file() and cand_vsc not in candidate_vscdbs:
+            candidate_vscdbs.append(cand_vsc)
+
+    ide_ingested_total = 0
+    for vscdb_p in candidate_vscdbs:
+        if not vscdb_p.is_file():
+            continue
         try:
-            v_con = sqlite3.connect(str(state_vscdb), timeout=15.0)
+            v_con = sqlite3.connect(str(vscdb_p), timeout=15.0)
             v_cur = v_con.cursor()
             rows = v_cur.execute(
                 "SELECT value FROM ItemTable WHERE key IN ('antigravityUnifiedStateSync.trajectorySummaries', 'antigravityUnifiedStateSync');"
@@ -387,21 +400,31 @@ def merge_histories(
                             if ide_title and (
                                 not curr_t or curr_t in ["Conversation", "IDE Conversation", "Untitled Conversation"]
                             ):
-                                sc = curr_parsed.get(2, 1)
                                 db_p = master_conv_dir / f"{u_id}.db"
+                                db_ws_uri, db_proj_id = get_db_trajectory_meta(db_p)
+                                sc = max(get_actual_steps_count(db_p), curr_parsed.get("step_count", 0), curr_parsed.get(2, 0), 1)
                                 user_step = get_last_user_step_index(db_p, sc)
                                 new_bin = build_cascade_summary(
-                                    u_id, ide_title, ide_title, sc, last_user_step=user_step
+                                    u_id,
+                                    ide_title,
+                                    ide_title,
+                                    sc,
+                                    last_user_step=user_step,
+                                    workspace_uri=db_ws_uri or curr_parsed.get("workspace_uri"),
+                                    project_id=db_proj_id or curr_parsed.get("project_id"),
                                 )
                                 all_summaries[u_id] = new_bin
                                 cur.execute(
                                     "UPDATE conversation_summaries SET title=?, raw_summary=? WHERE conversation_id=?",
                                     (ide_title, new_bin, u_id),
                                 )
+                                ide_ingested_total += 1
             v_con.close()
             con.commit()
         except Exception:
             pass
+
+    stats.ide_state_ingested = ide_ingested_total
 
     # 6. Serialize and write agyhub_summaries_proto.pb
     try:
@@ -422,12 +445,20 @@ def merge_histories(
         pass
 
     # 7. Update state.vscdb across all IDE profiles
-    if state_vscdb.is_file():
+    for vscdb_p in candidate_vscdbs:
+        if not vscdb_p.is_file():
+            continue
         try:
-            val_wrap_b64 = build_summaries_state(all_summaries)
-            outer_b64 = build_unified_state_sync(all_summaries)
-            v_con = sqlite3.connect(str(state_vscdb), timeout=15.0)
+            v_con = sqlite3.connect(str(vscdb_p), timeout=15.0)
             v_cur = v_con.cursor()
+            old_sync_row = v_cur.execute(
+                "SELECT value FROM ItemTable WHERE key = 'antigravityUnifiedStateSync';"
+            ).fetchone()
+            old_sync_b64 = old_sync_row[0] if old_sync_row else None
+
+            val_wrap_b64 = build_summaries_state(all_summaries)
+            outer_b64 = build_unified_state_sync(all_summaries, existing_raw_b64=old_sync_b64)
+
             v_cur.execute(
                 "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('antigravityUnifiedStateSync.trajectorySummaries', ?);",
                 (val_wrap_b64,),
@@ -438,7 +469,6 @@ def merge_histories(
             )
             v_con.commit()
             v_con.close()
-            stats.ide_state_ingested = 1
         except Exception:
             pass
 
@@ -496,8 +526,19 @@ def merge_histories(
 
             if not os.path.islink(tgt_conv_dir) and not os.path.samefile(str(master_conv_dir), tgt_conv_dir):
                 for db_src in glob.glob(os.path.join(str(master_conv_dir), "*.db")):
-                    tgt_db = os.path.join(tgt_conv_dir, os.path.basename(db_src))
+                    base_name = os.path.basename(db_src)
+                    if base_name == "conversation_summaries.db":
+                        continue
+                    tgt_db = os.path.join(tgt_conv_dir, base_name)
+                    needs_copy = False
                     if not os.path.exists(tgt_db) or os.path.getsize(tgt_db) == 0:
+                        needs_copy = True
+                    elif os.path.getsize(db_src) > os.path.getsize(tgt_db):
+                        needs_copy = True
+                    elif os.path.getmtime(db_src) > (os.path.getmtime(tgt_db) + 2.0):
+                        needs_copy = True
+
+                    if needs_copy:
                         try:
                             shutil.copy2(db_src, tgt_db)
                         except Exception:

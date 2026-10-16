@@ -53,11 +53,9 @@ def watch_mode(
     except Exception as e:
         print(f"[Antigravity Watcher] Warning: Initial merge encountered error: {e}", flush=True)
 
-    print(f"[Antigravity Watcher] Actively monitoring conversation directories for modifications...", flush=True)
-
-    def _get_mtime_snapshot(dirs: List[str]) -> Dict[str, float]:
+    def _get_mtime_snapshot(conv_dirs: List[str], brain_dirs: List[str]) -> Dict[str, float]:
         snapshot: Dict[str, float] = {}
-        for d in dirs:
+        for d in conv_dirs:
             if not os.path.isdir(d):
                 continue
             for pattern in ["*.db", "*.pb", "conversation_summaries.db", "conversation_summaries.db-wal"]:
@@ -66,30 +64,57 @@ def watch_mode(
                         snapshot[f] = os.path.getmtime(f)
                     except Exception:
                         pass
+        for b in brain_dirs:
+            if not os.path.isdir(b):
+                continue
+            for f in glob.glob(os.path.join(b, "*", ".system_generated", "logs", "transcript*.jsonl")):
+                try:
+                    snapshot[f] = os.path.getmtime(f)
+                except Exception:
+                    pass
         return snapshot
 
+    conv_pools, brain_pools, _ = discover_all_history_sources(user_home=home)
+    watch_conv_dirs = list(set([str(effective_master / "conversations")] + conv_pools))
+    watch_brain_dirs = list(set([str(effective_master / "brain")] + brain_pools))
+    last_snapshot = _get_mtime_snapshot(watch_conv_dirs, watch_brain_dirs)
     last_merge_time = time.time()
-    last_snapshot: Dict[str, float] = {}
+
+    print(f"[Antigravity Watcher] Actively monitoring conversation directories for modifications...", flush=True)
+
+    last_discovery_time = time.time()
 
     while running:
         try:
-            conv_pools, _, _ = discover_all_history_sources(user_home=home)
-            watch_dirs = list(set([str(effective_master / "conversations")] + conv_pools))
-            current_snapshot = _get_mtime_snapshot(watch_dirs)
+            now = time.time()
+            if (now - last_discovery_time) >= 60.0:
+                conv_pools, brain_pools, _ = discover_all_history_sources(user_home=home)
+                watch_conv_dirs = list(set([str(effective_master / "conversations")] + conv_pools))
+                watch_brain_dirs = list(set([str(effective_master / "brain")] + brain_pools))
+                last_discovery_time = now
+
+            current_snapshot = _get_mtime_snapshot(watch_conv_dirs, watch_brain_dirs)
 
             has_changes = False
+            changed_file = None
             for f, mtime in current_snapshot.items():
                 if f not in last_snapshot or last_snapshot[f] < mtime:
                     has_changes = True
+                    changed_file = (f, last_snapshot.get(f), mtime)
                     break
 
             if has_changes and (time.time() - last_merge_time) >= debounce_seconds:
-                last_snapshot = current_snapshot
-                last_merge_time = time.time()
+                print(
+                    f"[Antigravity Watcher] Change detected in {changed_file[0]} (prev={changed_file[1]}, curr={changed_file[2]}), syncing...",
+                    flush=True,
+                )
                 try:
                     merge_histories(effective_master, quiet=True, user_home=home)
                 except Exception as e:
                     print(f"[Antigravity Watcher] Merge error: {e}", flush=True)
+                # Snapshot after merge finishes so self-modifications are recognized
+                last_snapshot = _get_mtime_snapshot(watch_conv_dirs, watch_brain_dirs)
+                last_merge_time = time.time()
             elif not last_snapshot:
                 last_snapshot = current_snapshot
 

@@ -73,5 +73,30 @@ class TestProtobufWire(unittest.TestCase):
         self.assertEqual(entries[uuid_str], payload)
 
 
+    def test_varint_negative(self):
+        val = -5
+        encoded = encode_varint(val)
+        decoded, pos = read_varint(encoded, 0)
+        # In two's complement 64-bit uint
+        self.assertEqual(decoded, val & ((1 << 64) - 1))
+
+    def test_extract_entries_with_nested_base64(self):
+        import base64
+        uuid_str = "12345678-1234-1234-1234-123456789abc"
+        inner_summary = b"\x08\x01\x12\x04data"
+        b64_inner = base64.b64encode(inner_summary)
+
+        # In state.vscdb: tag 1 is UUID, tag 2 is Value containing tag 3 string_value
+        value_wrapper = encode_tag_bytes(3, b64_inner)
+        entry = bytearray()
+        entry += encode_tag_bytes(1, uuid_str.encode("utf-8"))
+        entry += encode_tag_bytes(2, value_wrapper)
+        proto_data = encode_tag_bytes(1, bytes(entry))
+
+        entries = extract_entries_from_proto(proto_data)
+        self.assertIn(uuid_str, entries)
+        self.assertEqual(entries[uuid_str], inner_summary)
+
+
 if __name__ == "__main__":
     unittest.main()

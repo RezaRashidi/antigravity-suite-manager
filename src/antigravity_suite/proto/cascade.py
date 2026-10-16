@@ -12,7 +12,7 @@ import os
 import re
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from antigravity_suite.proto.wire import (
     encode_annotations_field,
@@ -49,7 +49,7 @@ def build_cascade_summary(
     step_count: int = 1,
     last_modified_iso: Optional[str] = None,
     last_user_step: int = -1,
-    workspace_uri: Optional[str] = None,
+    workspace_uri: Optional[Union[str, List[str]]] = None,
     project_id: Optional[str] = None,
 ) -> bytes:
     """
@@ -102,8 +102,12 @@ def build_cascade_summary(
     anno_bytes = encode_annotations_field(step_count, last_user_step)
     out += encode_tag_bytes(16, anno_bytes)
     # Tag 19: workspace_uris
-    if workspace_uri:
-        out += encode_tag_bytes(19, workspace_uri.encode("utf-8"))
+    if isinstance(workspace_uri, list):
+        for w in workspace_uri:
+            if w:
+                out += encode_tag_bytes(19, str(w).encode("utf-8"))
+    elif workspace_uri:
+        out += encode_tag_bytes(19, str(workspace_uri).encode("utf-8"))
 
     return bytes(out)
 
@@ -125,6 +129,8 @@ def parse_cascade_summary(data: bytes) -> Dict[Any, Any]:
         if wire_type == 0:  # Varint
             val, pos = read_varint(data, pos)
             res[tag_num] = val
+            if tag_num == 2:
+                res["step_count"] = val
         elif wire_type == 2:  # Length-delimited
             length, pos = read_varint(data, pos)
             val_bytes = data[pos : pos + length]
@@ -154,7 +160,10 @@ def parse_cascade_summary(data: bytes) -> Dict[Any, Any]:
                     pass
             elif tag_num == 19:
                 try:
-                    res["workspace_uri"] = val_bytes.decode("utf-8")
+                    w_uri = val_bytes.decode("utf-8")
+                    res.setdefault("workspace_uris", []).append(w_uri)
+                    if "workspace_uri" not in res:
+                        res["workspace_uri"] = w_uri
                 except Exception:
                     pass
             elif tag_num in (5, 14):

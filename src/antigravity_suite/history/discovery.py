@@ -20,6 +20,7 @@ from antigravity_suite.config import DEFAULT_CONFIG, get_user_home
 def discover_all_history_sources(
     target_dir: Optional[Union[str, Path]] = None,
     user_home: Optional[Union[str, Path]] = None,
+    source_dir: Optional[Union[str, Path]] = None,
 ) -> Tuple[List[str], List[str], List[str]]:
     """
     Thoroughly discovers all conversation databases, brain directories, and custom
@@ -51,7 +52,7 @@ def discover_all_history_sources(
     brain_dirs: Set[str] = set()
     ide_candidates: Set[str] = set()
 
-    # 2. Add explicit target directory if provided
+    # 2. Add explicit target and source directories if provided
     search_roots: Set[str] = set()
     if target_dir:
         t_path = os.path.realpath(str(target_dir))
@@ -63,6 +64,17 @@ def discover_all_history_sources(
                 conv_dirs.add(t_path)
             if "brain" in os.path.basename(t_path):
                 brain_dirs.add(t_path)
+
+    if source_dir:
+        s_path = os.path.realpath(str(source_dir))
+        if os.path.isdir(s_path):
+            search_roots.add(s_path)
+            if glob.glob(os.path.join(s_path, "*.db")):
+                conv_dirs.add(s_path)
+            if "conversations" in os.path.basename(s_path):
+                conv_dirs.add(s_path)
+            if "brain" in os.path.basename(s_path):
+                brain_dirs.add(s_path)
 
     # 3. Known profile roots across all homes
     for h in homes:
@@ -99,12 +111,18 @@ def discover_all_history_sources(
                     with open(d_file, "r", encoding="utf-8", errors="ignore") as f:
                         content = f.read()
                         if "antigravity" in content.lower() or "gemini" in content.lower():
-                            for m in re.finditer(r"--user-data-dir=[\"']?([^\s\"']+)[\"']?", content):
-                                search_roots.add(os.path.expanduser(m.group(1)))
-                            for m in re.finditer(r"--profile-directory=[\"']?([^\s\"']+)[\"']?", content):
-                                search_roots.add(os.path.expanduser(m.group(1)))
-                            for m in re.finditer(r"GEMINI_DIR=[\"']?([^\s\"']+)[\"']?", content):
-                                search_roots.add(os.path.expanduser(m.group(1)))
+                            for m in re.finditer(r'--user-data-dir=(?:"([^"]+)"|\'([^\']+)\'|([^\s"\']+))', content):
+                                val = m.group(1) or m.group(2) or m.group(3)
+                                if val:
+                                    search_roots.add(os.path.expanduser(val.strip()))
+                            for m in re.finditer(r'GEMINI_DIR=(?:"([^"]+)"|\'([^\']+)\'|([^\s"\']+))', content):
+                                val = m.group(1) or m.group(2) or m.group(3)
+                                if val:
+                                    search_roots.add(os.path.expanduser(val.strip()))
+                            for m in re.finditer(r'--profile-directory=(?:"([^"]+)"|\'([^\']+)\'|([^\s"\']+))', content):
+                                val = m.group(1) or m.group(2) or m.group(3)
+                                if val and (val.startswith("/") or val.startswith("~")):
+                                    search_roots.add(os.path.expanduser(val.strip()))
                 except Exception:
                     pass
 

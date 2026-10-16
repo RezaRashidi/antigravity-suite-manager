@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime
 import json
 import os
+import re
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -32,8 +33,8 @@ def refresh_ide_oauth_token(
     token_file = os.path.join(effective_ide, "jetski-standalone-oauth-token")
     oauth_file = os.path.join(effective_ide, "oauth_credentials.json")
 
-    # Fallback to ~/.gemini if not found in .gemide
-    if not os.path.isfile(token_file):
+    # Fallback to ~/.gemini only if ide_dir was not explicitly passed
+    if not os.path.isfile(token_file) and ide_dir is None:
         effective_ide = os.path.join(home, ".gemini")
         token_file = os.path.join(effective_ide, "jetski-standalone-oauth-token")
         oauth_file = os.path.join(effective_ide, "oauth_credentials.json")
@@ -59,7 +60,10 @@ def refresh_ide_oauth_token(
     if expiry_str:
         try:
             exp_clean = expiry_str.replace("Z", "+00:00")
+            exp_clean = re.sub(r"(\.\d{6})\d+", r"\1", exp_clean)
             exp_dt = datetime.datetime.fromisoformat(exp_clean)
+            if exp_dt.tzinfo is None:
+                exp_dt = exp_dt.replace(tzinfo=datetime.timezone.utc)
             now_dt = datetime.datetime.now(datetime.timezone.utc)
             if (exp_dt - now_dt).total_seconds() < 300:
                 needs_refresh = True
@@ -109,9 +113,10 @@ def refresh_ide_oauth_token(
                 inner_token["expiry"] = new_expiry
                 token_data["token"] = inner_token
 
-                # Write back atomically
+                # Write back atomically with restricted 0o600 permissions
                 tmp_file = token_file + ".tmp"
-                with open(tmp_file, "w", encoding="utf-8") as f:
+                fd = os.open(tmp_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
                     json.dump(token_data, f, indent=2)
                 os.replace(tmp_file, token_file)
                 return True

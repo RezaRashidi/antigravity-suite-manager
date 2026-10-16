@@ -67,15 +67,36 @@ def load_existing_summaries(
 
 
 def upsert_summary(conn: sqlite3.Connection, summary: ConversationSummary) -> None:
-    """Inserts or replaces a conversation summary row."""
+    """Inserts or updates a conversation summary row preserving non-empty metadata."""
     cur = conn.cursor()
-    cur.execute("""INSERT OR REPLACE INTO conversation_summaries (
+    cur.execute("""INSERT INTO conversation_summaries (
         conversation_id, title, preview, step_count, last_modified_time,
         workspace_uris, status, source, project_id, agent_name,
         parent_conversation_id, nesting_depth, battle_id, winning_conversation_id,
         not_fully_idle, killed, last_user_input_time, last_user_input_step_index,
         app_data_dir, raw_summary, group_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);""", (
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(conversation_id) DO UPDATE SET
+        title = CASE WHEN excluded.title != '' THEN excluded.title ELSE conversation_summaries.title END,
+        preview = CASE WHEN excluded.preview != '' THEN excluded.preview ELSE conversation_summaries.preview END,
+        step_count = CASE WHEN excluded.step_count > 0 THEN excluded.step_count ELSE conversation_summaries.step_count END,
+        last_modified_time = excluded.last_modified_time,
+        workspace_uris = CASE WHEN excluded.workspace_uris != '' THEN excluded.workspace_uris ELSE conversation_summaries.workspace_uris END,
+        status = CASE WHEN excluded.status != '' THEN excluded.status ELSE conversation_summaries.status END,
+        source = CASE WHEN excluded.source != '' THEN excluded.source ELSE conversation_summaries.source END,
+        project_id = CASE WHEN excluded.project_id != '' AND excluded.project_id != 'outside-of-project' THEN excluded.project_id ELSE conversation_summaries.project_id END,
+        agent_name = CASE WHEN excluded.agent_name != '' THEN excluded.agent_name ELSE conversation_summaries.agent_name END,
+        parent_conversation_id = CASE WHEN excluded.parent_conversation_id != '' THEN excluded.parent_conversation_id ELSE conversation_summaries.parent_conversation_id END,
+        nesting_depth = CASE WHEN excluded.nesting_depth > 0 THEN excluded.nesting_depth ELSE conversation_summaries.nesting_depth END,
+        battle_id = CASE WHEN excluded.battle_id != '' THEN excluded.battle_id ELSE conversation_summaries.battle_id END,
+        winning_conversation_id = CASE WHEN excluded.winning_conversation_id != '' THEN excluded.winning_conversation_id ELSE conversation_summaries.winning_conversation_id END,
+        not_fully_idle = excluded.not_fully_idle,
+        killed = excluded.killed,
+        last_user_input_time = excluded.last_user_input_time,
+        last_user_input_step_index = CASE WHEN excluded.last_user_input_step_index >= 0 THEN excluded.last_user_input_step_index ELSE conversation_summaries.last_user_input_step_index END,
+        app_data_dir = CASE WHEN excluded.app_data_dir != '' THEN excluded.app_data_dir ELSE conversation_summaries.app_data_dir END,
+        raw_summary = CASE WHEN excluded.raw_summary IS NOT NULL THEN excluded.raw_summary ELSE conversation_summaries.raw_summary END,
+        group_id = CASE WHEN excluded.group_id != '' THEN excluded.group_id ELSE conversation_summaries.group_id END;""", (
         summary.conversation_id,
         summary.title,
         summary.preview,

@@ -118,7 +118,8 @@ def parse_step14_user_prompt(payload: bytes) -> str:
                             p_chunk = 0
                             while p_chunk < len(v19):
                                 tw_c, p_chunk = read_varint(v19, p_chunk)
-                                if (tw_c & 7) == 2:
+                                w_c = tw_c & 7
+                                if w_c == 2:
                                     lc, p_chunk = read_varint(v19, p_chunk)
                                     vc = v19[p_chunk : p_chunk + lc]
                                     p_chunk += lc
@@ -127,16 +128,28 @@ def parse_step14_user_prompt(payload: bytes) -> str:
                                             chunk_text = vc.decode("utf-8", errors="ignore")
                                         except Exception:
                                             pass
-                                elif (tw_c & 7) == 0:
+                                elif w_c == 0:
                                     _, p_chunk = read_varint(v19, p_chunk)
+                                elif w_c == 1:
+                                    p_chunk += 8
+                                elif w_c == 5:
+                                    p_chunk += 4
                                 else:
                                     break
                     elif w19 == 0:
                         _, p19 = read_varint(val, p19)
+                    elif w19 == 1:
+                        p19 += 8
+                    elif w19 == 5:
+                        p19 += 4
                     else:
                         break
         elif wire_type == 0:
             _, pos = read_varint(payload, pos)
+        elif wire_type == 1:
+            pos += 8
+        elif wire_type == 5:
+            pos += 4
         else:
             break
 
@@ -218,10 +231,17 @@ def synthesize_db_from_transcript(
         cur.execute("INSERT OR REPLACE INTO trajectory_meta VALUES (?, ?, 4, 1);", (conv_id, conv_id))
         cur.execute("INSERT OR REPLACE INTO trajectory_metadata_blob VALUES (\"main\", ?);", (ws_blob,))
 
-        # Clear existing steps table in case of re-synthesis
-        cur.execute("DELETE FROM steps;")
+        tool_types = {
+            "VIEW_FILE", "RUN_COMMAND", "GENERIC", "GREP_SEARCH", "LIST_DIRECTORY",
+            "SEARCH_WEB", "READ_URL_CONTENT", "GENERATE_IMAGE", "ASK_QUESTION",
+            "CODE_ACTION", "ERROR_MESSAGE", "WRITE_TO_FILE", "REPLACE_FILE_CONTENT",
+            "MULTI_REPLACE_FILE_CONTENT", "EDIT_FILE", "FIND_BY_NAME", "BROWSER_SUBAGENT",
+            "BROWSER_ACTION", "SCHEDULE", "INVOKE_SUBAGENT", "MANAGE_SUBAGENTS",
+            "MANAGE_TASK", "SEND_MESSAGE",
+        }
 
         pending_tool_calls: List[Dict[str, Any]] = []
+        steps_rows: List[Tuple[int, int, int, bytes, bytes]] = []
         out_idx = 0
         with open(tf_str, "r", encoding="utf-8", errors="ignore") as f:
             for line in f:
@@ -243,16 +263,29 @@ def synthesize_db_from_transcript(
                 if typ in ["CHECKPOINT", "CONVERSATION_HISTORY", "KNOWLEDGE_ARTIFACTS", "EPHEMERAL_MESSAGE", "SYSTEM_MESSAGE"] or src == "SYSTEM":
                     continue
 
+                is_tool = (
+                    typ.upper() in tool_types
+                    or bool(entry.get("tool_action") or entry.get("tool_summary"))
+                    or src in ["TOOL", "SYSTEM_TOOL"]
+                )
+
                 # Classify step
-                if typ == "USER_INPUT" or ("<USER_REQUEST>" in content and src != "MODEL") or (src == "USER_EXPLICIT" and typ not in ["VIEW_FILE", "CODE_ACTION"]):
-                    step_type = 14
-                elif typ in ["VIEW_FILE", "RUN_COMMAND", "GENERIC", "GREP_SEARCH", "LIST_DIRECTORY", "SEARCH_WEB", "READ_URL_CONTENT", "GENERATE_IMAGE", "ASK_QUESTION", "CODE_ACTION", "ERROR_MESSAGE"]:
+                if is_tool:
                     step_type = 132
+                elif typ == "USER_INPUT" or (src == "USER_EXPLICIT" and not is_tool) or (
+                    src not in ["MODEL", "TOOL", "ASSISTANT"] and isinstance(content, str) and "<USER_REQUEST>" in content
+                ):
+                    step_type = 14
+                    pending_tool_calls.clear()
                 elif typ == "PLANNER_RESPONSE" or src == "MODEL" or thinking or tool_calls:
                     step_type = 15
+                    if tool_calls:
+                        pending_tool_calls.clear()
                 else:
                     if content:
                         step_type = 15 if src == "MODEL" else 14
+                        if step_type == 14:
+                            pending_tool_calls.clear()
                     else:
                         continue
 
@@ -273,11 +306,11 @@ def synthesize_db_from_transcript(
                 if step_type == 14:
                     payload += encode_tag_bytes(5, bytes(meta))
                     clean = content
-                    m = re.search(r"<USER_REQUEST>(.*?)</USER_REQUEST>", content, re.DOTALL)
-                    if m:
-                        clean = m.group(1).strip()
+                    if isinstance(content, str):
+                        m = re.search(r"<USER_REQUEST>(.*?)</USER_REQUEST>", content, re.DOTALL)
+                        clean = m.group(1).strip() if m else content.strip()
                     else:
-                        clean = content.strip()
+                        clean = str(content)
                     u_bytes = bytearray()
                     if clean:
                         u_bytes += encode_tag_bytes(2, clean.encode("utf-8", errors="ignore"))
@@ -290,9 +323,9 @@ def synthesize_db_from_transcript(
                     payload += encode_tag_bytes(5, bytes(meta))
                     m_bytes = bytearray()
                     if content:
-                        m_bytes += encode_tag_bytes(1, content.encode("utf-8", errors="ignore"))
+                        m_bytes += encode_tag_bytes(1, str(content).encode("utf-8", errors="ignore"))
                     if thinking:
-                        m_bytes += encode_tag_bytes(3, thinking.encode("utf-8", errors="ignore"))
+                        m_bytes += encode_tag_bytes(3, str(thinking).encode("utf-8", errors="ignore"))
                     m_bytes += encode_tag_bytes(6, b"antigravity-agent")
                     if tool_calls:
                         for tci, tc in enumerate(tool_calls):
@@ -315,7 +348,7 @@ def synthesize_db_from_transcript(
                                 tc_b += encode_tag_bytes(9, str(tc_name).encode("utf-8", errors="ignore"))
                             m_bytes += encode_tag_bytes(7, bytes(tc_b))
                     if content:
-                        m_bytes += encode_tag_bytes(8, content.encode("utf-8", errors="ignore"))
+                        m_bytes += encode_tag_bytes(8, str(content).encode("utf-8", errors="ignore"))
                     m_bytes += encode_tag_uint(12, 2)
                     payload += encode_tag_bytes(20, bytes(m_bytes))
 
@@ -349,17 +382,25 @@ def synthesize_db_from_transcript(
                             t_bytes += encode_tag_bytes(1, bytes(pair))
                     if content:
                         out_sub = bytearray()
-                        out_sub += encode_tag_bytes(1, content.encode("utf-8", errors="ignore"))
+                        out_sub += encode_tag_bytes(1, str(content).encode("utf-8", errors="ignore"))
                         t_bytes += encode_tag_bytes(2, bytes(out_sub))
                     payload += encode_tag_bytes(140, bytes(t_bytes))
 
-                cur.execute("""INSERT OR REPLACE INTO steps 
-                    (idx, step_type, status, metadata, step_payload) VALUES (?, ?, ?, ?, ?);""",
-                    (out_idx, step_type, status, bytes(meta), bytes(payload)))
+                steps_rows.append((out_idx, step_type, status, bytes(meta), bytes(payload)))
                 out_idx += 1
 
-        conn.commit()
-        conn.close()
-        return out_idx > 0
+        if steps_rows:
+            cur.execute("DELETE FROM steps;")
+            cur.executemany(
+                """INSERT OR REPLACE INTO steps 
+                (idx, step_type, status, metadata, step_payload) VALUES (?, ?, ?, ?, ?);""",
+                steps_rows,
+            )
+            conn.commit()
+            conn.close()
+            return True
+        else:
+            conn.close()
+            return False
     except Exception:
         return False
