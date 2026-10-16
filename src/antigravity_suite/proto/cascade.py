@@ -2,21 +2,20 @@
 Protobuf Serializer and Parser for Antigravity Cascade Trajectory Summaries.
 
 Encodes and decodes the native binary summary format used in
-conversation_summaries.db and state.vscdb:
+conversation_summaries.db, agyhub_summaries_proto.pb, and state.vscdb:
   Tag 1:  summary / initial user prompt (string)
-  Tag 2:  step_count (varint)
+  Tag 2:  step_count (uint32 varint)
   Tag 3:  last_modified_time (google.protobuf.Timestamp)
   Tag 4:  trajectory_id (string UUID)
-  Tag 5:  last_modified_time (legacy compatibility)
-  Tag 6:  status (varint: 1 = IDLE)
-  Tag 7:  trajectory_type (varint: 4)
-  Tag 8:  source (varint: 1 = CASCADE_SOURCE_USER)
-  Tag 9:  project_id (string)
-  Tag 10: agent_name (string: 'antigravity-agent')
-  Tag 14: last_user_input_time (google.protobuf.Timestamp)
-  Tag 15: title submessage (Tag 1 = title string, Tag 7 = timestamp)
-  Tag 16: last_user_input_step_index (varint)
-  Tag 19: workspace_uris (repeated string)
+  Tag 5:  status (varint: 1 = CASCADE_RUN_STATUS_IDLE)
+  Tag 7:  created_time (google.protobuf.Timestamp)
+  Tag 9:  workspaces (repeated CortexWorkspaceMetadata: Tag 1 = uri, Tag 2 = git_root)
+  Tag 10: last_user_input_time (google.protobuf.Timestamp)
+  Tag 15: annotations submessage (Tag 1 = title string, Tag 7 = view timestamp)
+  Tag 16: last_user_input_step_index (uint32 varint)
+  Tag 17: trajectory_metadata (CortexTrajectoryMetadata)
+  Tag 20: source (varint: 1 = CASCADE_SOURCE_USER)
+  Tag 22: trajectory_type (varint: 4)
 """
 
 from __future__ import annotations
@@ -25,6 +24,7 @@ import datetime
 import os
 import re
 import sqlite3
+import struct
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -65,20 +65,30 @@ def build_cascade_summary(
     title: str,
     summary: str,
     step_count: int,
-    last_modified_iso: Optional[str] = None,
+    last_modified_iso: Optional[Union[str, datetime.datetime, int, float]] = None,
     last_user_step: int = -1,
     workspace_uri: Optional[Union[str, List[str]]] = None,
     project_id: Optional[str] = None,
+    created_iso: Optional[Union[str, datetime.datetime, int, float]] = None,
+    last_user_input_iso: Optional[Union[str, datetime.datetime, int, float]] = None,
 ) -> bytes:
     """
     Serializes conversation metadata into authentic Antigravity CascadeTrajectorySummary binary protobuf.
     """
     if not last_modified_iso:
         last_modified_iso = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S.000000+00:00")
+    if not created_iso:
+        created_iso = last_modified_iso
+    if not last_user_input_iso:
+        last_user_input_iso = last_modified_iso
+
     if last_user_step < 0 and step_count > 0:
         last_user_step = max(0, step_count - 1)
 
-    ts_bytes = encode_timestamp_field(last_modified_iso)
+    ts_modified = encode_timestamp_field(last_modified_iso)
+    ts_created = encode_timestamp_field(created_iso)
+    ts_user_input = encode_timestamp_field(last_user_input_iso)
+
     effective_title = title or summary or "Conversation"
     effective_summary = summary or title or "Conversation"
 
@@ -91,50 +101,57 @@ def build_cascade_summary(
     out += encode_tag_uint(2, max(1, step_count))
 
     # Tag 3: last_modified_time timestamp
-    out += encode_tag_bytes(3, ts_bytes)
+    out += encode_tag_bytes(3, ts_modified)
 
     # Tag 4: trajectory_id (UUID)
     out += encode_tag_bytes(4, uuid.encode("utf-8"))
 
-    # Tag 5: last_modified_time (compatibility)
-    out += encode_tag_bytes(5, ts_bytes)
+    # Tag 5: status (1 = IDLE)
+    out += encode_tag_uint(5, 1)
 
-    # Tag 6: status (1 = IDLE)
-    out += encode_tag_uint(6, 1)
+    # Tag 7: created_time timestamp
+    out += encode_tag_bytes(7, ts_created)
 
-    # Tag 7: trajectory_type (4)
-    out += encode_tag_uint(7, 4)
+    # Tag 9: workspaces (CortexWorkspaceMetadata)
+    ws_list = [workspace_uri] if isinstance(workspace_uri, str) else (workspace_uri or [])
+    for w in ws_list:
+        if w:
+            sub_ws = bytearray()
+            sub_ws += encode_tag_bytes(1, str(w).encode("utf-8"))
+            sub_ws += encode_tag_bytes(2, str(w).encode("utf-8"))
+            out += encode_tag_bytes(9, bytes(sub_ws))
 
-    # Tag 8: source (1)
-    out += encode_tag_uint(8, 1)
+    # Tag 10: last_user_input_time (google.protobuf.Timestamp)
+    out += encode_tag_bytes(10, ts_user_input)
 
-    # Tag 9: project_id
-    p_id = project_id or "outside-of-project"
-    out += encode_tag_bytes(9, p_id.encode("utf-8"))
-
-    # Tag 10: agent_name
-    out += encode_tag_bytes(10, b"antigravity-agent")
-
-    # Tag 14: last_user_input_time
-    out += encode_tag_bytes(14, ts_bytes)
-
-    # Tag 15: title submessage (Tag 1 = title, Tag 7 = timestamp)
+    # Tag 15: annotations submessage (Tag 1 = title, Tag 7 = view timestamp)
     sub_15 = bytearray()
     sub_15 += encode_tag_bytes(1, effective_title.encode("utf-8"))
-    sub_15 += encode_tag_bytes(7, ts_bytes)
+    sub_15 += encode_tag_bytes(7, ts_modified)
     out += encode_tag_bytes(15, bytes(sub_15))
 
-    # Tag 16: annotations submessage (Subtag 4 = last_user_step, Subtag 5 = step_count)
-    ann_bytes = encode_annotations_field(max(1, step_count), max(0, last_user_step))
-    out += encode_tag_bytes(16, ann_bytes)
+    # Tag 16: last_user_input_step_index (uint32 varint)
+    out += encode_tag_uint(16, max(0, last_user_step))
 
-    # Tag 19: workspace_uris
-    if isinstance(workspace_uri, list):
-        for w in workspace_uri:
-            if w:
-                out += encode_tag_bytes(19, str(w).encode("utf-8"))
-    elif workspace_uri:
-        out += encode_tag_bytes(19, str(workspace_uri).encode("utf-8"))
+    # Tag 17: trajectory_metadata (CortexTrajectoryMetadata)
+    sub_17 = bytearray()
+    if ws_list and ws_list[0]:
+        sub_ws_17 = bytearray()
+        sub_ws_17 += encode_tag_bytes(1, str(ws_list[0]).encode("utf-8"))
+        sub_ws_17 += encode_tag_bytes(2, str(ws_list[0]).encode("utf-8"))
+        sub_17 += encode_tag_bytes(1, bytes(sub_ws_17))
+        sub_17 += encode_tag_bytes(7, str(ws_list[0]).encode("utf-8"))
+    sub_17 += encode_tag_bytes(2, ts_created)
+    sub_17 += encode_tag_bytes(6, uuid.encode("utf-8"))
+    if project_id and project_id != "outside-of-project":
+        sub_17 += encode_tag_bytes(14, project_id.encode("utf-8"))
+    out += encode_tag_bytes(17, bytes(sub_17))
+
+    # Tag 20: source (1)
+    out += encode_tag_uint(20, 1)
+
+    # Tag 22: trajectory_type (4)
+    out += encode_tag_uint(22, 4)
 
     return bytes(out)
 
@@ -143,10 +160,14 @@ def parse_cascade_summary(data: bytes) -> Dict[Any, Any]:
     """
     Parses a Protobuf binary CascadeTrajectorySummary into a dictionary
     supporting both native Google Antigravity tag layout and legacy formats.
+    Detects corrupt or Year 1 (0001-01-01) timestamps.
     """
     res: Dict[Any, Any] = {}
     if not data:
         return res
+
+    if b"\x80\x92\xb8\xc3\x98\xfe\xff\xff\xff\x01" in data:
+        res["has_bad_timestamp"] = True
 
     pos = 0
     data_len = len(data)
@@ -162,8 +183,12 @@ def parse_cascade_summary(data: bytes) -> Dict[Any, Any]:
             res[tag_num] = val
             if tag_num == 2:
                 res["step_count"] = val
+            elif tag_num == 5:
+                res["status"] = val
             elif tag_num == 16:
                 res["last_user_step"] = val
+            elif tag_num == 22:
+                res["trajectory_type"] = val
         elif wire_type == 2:  # Length-delimited
             length, pos = read_varint(data, pos)
             val_bytes = data[pos : pos + length]
@@ -171,22 +196,53 @@ def parse_cascade_summary(data: bytes) -> Dict[Any, Any]:
             res[tag_num] = val_bytes
 
             # Attempt UTF-8 decoding for string candidate tags
-            if tag_num in (1, 3, 4, 9, 10, 19):
+            if tag_num in (1, 4, 19):
                 try:
                     decoded_str = val_bytes.decode("utf-8")
                     tag_strings[tag_num] = decoded_str
                 except Exception:
                     pass
 
-            if tag_num == 9 and tag_num in tag_strings:
-                res["project_id"] = tag_strings[9]
-            elif tag_num == 19 and tag_num in tag_strings:
+            if tag_num == 19 and tag_num in tag_strings:
                 w_uri = tag_strings[19]
                 res.setdefault("workspace_uris", []).append(w_uri)
                 if "workspace_uri" not in res:
                     res["workspace_uri"] = w_uri
+            elif tag_num == 9:
+                # Can be CortexWorkspaceMetadata submessage or legacy string
+                try:
+                    p9 = 0
+                    while p9 < len(val_bytes):
+                        tw9, p9 = read_varint(val_bytes, p9)
+                        w9 = tw9 & 7
+                        t9 = tw9 >> 3
+                        if w9 == 2:
+                            l9, p9 = read_varint(val_bytes, p9)
+                            b9 = val_bytes[p9 : p9 + l9]
+                            p9 += l9
+                            if t9 == 1:
+                                uri_str = b9.decode("utf-8", "ignore")
+                                res.setdefault("workspace_uris", []).append(uri_str)
+                                if "workspace_uri" not in res:
+                                    res["workspace_uri"] = uri_str
+                        elif w9 == 0:
+                            _, p9 = read_varint(val_bytes, p9)
+                        elif w9 == 1:
+                            p9 += 8
+                        elif w9 == 5:
+                            p9 += 4
+                        else:
+                            break
+                except Exception:
+                    pass
+                if "workspace_uri" not in res:
+                    try:
+                        str9 = val_bytes.decode("utf-8")
+                        res["project_id"] = str9
+                    except Exception:
+                        pass
             elif tag_num == 15:
-                # Submessage containing title
+                # Submessage containing title and last_user_view_time
                 try:
                     p15 = 0
                     while p15 < len(val_bytes):
@@ -198,13 +254,15 @@ def parse_cascade_summary(data: bytes) -> Dict[Any, Any]:
                             b15 = val_bytes[p15 : p15 + l15]
                             p15 += l15
                             if t15 == 1:
-                                res["title"] = b15.decode("utf-8")
+                                res["title"] = b15.decode("utf-8", "ignore")
                         elif w15 == 0:
                             _, p15 = read_varint(val_bytes, p15)
                         elif w15 == 1:
                             p15 += 8
                         elif w15 == 5:
                             p15 += 4
+                        else:
+                            break
                 except Exception:
                     pass
             elif tag_num == 16:
@@ -222,19 +280,81 @@ def parse_cascade_summary(data: bytes) -> Dict[Any, Any]:
                         elif w16 == 2:
                             l16, p16 = read_varint(val_bytes, p16)
                             p16 += l16
+                        else:
+                            break
                 except Exception:
                     pass
-            elif tag_num in (3, 5, 14):
+            elif tag_num == 17:
+                # CortexTrajectoryMetadata submessage
+                try:
+                    p17 = 0
+                    while p17 < len(val_bytes):
+                        tw17, p17 = read_varint(val_bytes, p17)
+                        w17 = tw17 & 7
+                        t17 = tw17 >> 3
+                        if w17 == 2:
+                            l17, p17 = read_varint(val_bytes, p17)
+                            b17 = val_bytes[p17 : p17 + l17]
+                            p17 += l17
+                            if t17 == 14:
+                                res["project_id"] = b17.decode("utf-8", "ignore")
+                            elif t17 == 7:
+                                uri_str = b17.decode("utf-8", "ignore")
+                                if "workspace_uri" not in res:
+                                    res["workspace_uri"] = uri_str
+                        elif w17 == 0:
+                            _, p17 = read_varint(val_bytes, p17)
+                        elif w17 == 1:
+                            p17 += 8
+                        elif w17 == 5:
+                            p17 += 4
+                        else:
+                            break
+                except Exception:
+                    pass
+            elif tag_num in (3, 5, 7, 10, 14):
                 # Timestamp submessage
                 try:
                     p_ts = 0
-                    tw_ts, p_ts = read_varint(val_bytes, p_ts)
-                    if (tw_ts >> 3) == 1 and (tw_ts & 7) == 0:
-                        secs, _ = read_varint(val_bytes, p_ts)
-                        dt = datetime.datetime.fromtimestamp(secs, tz=datetime.timezone.utc)
-                        res[f"ts_{tag_num}"] = dt.strftime("%Y-%m-%d %H:%M:%S.000000+00:00")
+                    s_secs = None
+                    while p_ts < len(val_bytes):
+                        tw_ts, p_ts = read_varint(val_bytes, p_ts)
+                        w_ts = tw_ts & 7
+                        t_ts = tw_ts >> 3
+                        if w_ts == 0:
+                            v_ts, p_ts = read_varint(val_bytes, p_ts)
+                            if t_ts == 1:
+                                s_secs = struct.unpack("<q", struct.pack("<Q", v_ts & 0xFFFFFFFFFFFFFFFF))[0]
+                        elif w_ts == 2:
+                            l_ts, p_ts = read_varint(val_bytes, p_ts)
+                            p_ts += l_ts
+                        elif w_ts == 1:
+                            p_ts += 8
+                        elif w_ts == 5:
+                            p_ts += 4
+                        else:
+                            break
+                    if s_secs is not None:
+                        if s_secs < 1000000000:
+                            res["has_bad_timestamp"] = True
+                        else:
+                            dt = datetime.datetime.fromtimestamp(s_secs, tz=datetime.timezone.utc)
+                            iso_str = dt.strftime("%Y-%m-%d %H:%M:%S.000000+00:00")
+                            res[f"ts_{tag_num}"] = iso_str
+                            if tag_num == 3:
+                                res["last_modified_iso"] = iso_str
+                            elif tag_num == 7:
+                                res["created_iso"] = iso_str
+                            elif tag_num == 10:
+                                res["last_user_input_iso"] = iso_str
+                            elif tag_num == 14:
+                                res.setdefault("last_user_input_iso", iso_str)
+                    else:
+                        if tag_num in (3, 7, 10):
+                            res["has_bad_timestamp"] = True
                 except Exception:
-                    pass
+                    if tag_num in (3, 7, 10):
+                        res["has_bad_timestamp"] = True
         elif wire_type == 1:
             pos += 8
         elif wire_type == 5:
@@ -256,9 +376,7 @@ def parse_cascade_summary(data: bytes) -> Dict[Any, Any]:
 
     # Resolve Title
     if "title" not in res or not res["title"]:
-        if 3 in tag_strings and tag_strings[3] and not tag_strings[3].startswith("\x08"):
-            res["title"] = tag_strings[3]
-        elif "summary" in res and res["summary"]:
+        if "summary" in res and res["summary"]:
             res["title"] = res["summary"]
 
     return res

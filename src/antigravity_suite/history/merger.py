@@ -56,6 +56,7 @@ from antigravity_suite.proto.wire import (
 # Re-export get_db_trajectory_meta for backward compatibility
 __all__ = [
     "get_db_trajectory_meta",
+    "get_transcript_timestamps",
     "merge_histories",
     "setup_master_directories",
     "collect_all_conversation_ids",
@@ -63,6 +64,44 @@ __all__ = [
     "serialize_master_proto",
     "sync_annotation_files",
 ]
+
+
+def get_transcript_timestamps(
+    transcript_path: Path,
+) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """
+    Extracts authentic ISO timestamps from transcript.jsonl:
+    (created_time, last_user_input_time, last_modified_time)
+    """
+    if not transcript_path.is_file():
+        return None, None, None
+    try:
+        import json
+
+        with open(transcript_path, "r", encoding="utf-8") as f:
+            lines = [line.strip() for line in f if line.strip()]
+        if not lines:
+            return None, None, None
+
+        first_obj = json.loads(lines[0])
+        created_time = first_obj.get("created_at")
+
+        last_obj = json.loads(lines[-1])
+        last_modified_time = last_obj.get("created_at")
+
+        last_user_input_time = None
+        for line in reversed(lines):
+            try:
+                obj = json.loads(line)
+                if obj.get("type") == "USER_INPUT":
+                    last_user_input_time = obj.get("created_at")
+                    break
+            except Exception:
+                continue
+
+        return created_time, last_user_input_time, last_modified_time
+    except Exception:
+        return None, None, None
 
 
 def setup_master_directories(effective_master: Path) -> Tuple[Path, Path, Path, Path, Path]:
@@ -172,6 +211,24 @@ def resolve_conversation_item(
     actual_steps = get_actual_steps_count(db_file) if has_db else (existing_rows[conv_id][2] if conv_id in existing_rows else 0)
 
     transcript_file = master_brain_dir / conv_id / ".system_generated" / "logs" / "transcript.jsonl"
+    t_created, t_user_input, t_modified = get_transcript_timestamps(transcript_file)
+
+    sql_mtime = existing_rows[conv_id][3] if conv_id in existing_rows and existing_rows[conv_id][3] else None
+    sql_user_input = (
+        existing_rows[conv_id][5]
+        if conv_id in existing_rows and len(existing_rows[conv_id]) > 5 and existing_rows[conv_id][5]
+        else None
+    )
+    sql_user_step = (
+        existing_rows[conv_id][6]
+        if conv_id in existing_rows and len(existing_rows[conv_id]) > 6 and existing_rows[conv_id][6] is not None
+        else -1
+    )
+
+    final_modified_iso = t_modified or sql_mtime or file_mtime_iso
+    final_user_input_iso = t_user_input or sql_user_input or final_modified_iso
+    final_created_iso = t_created or final_user_input_iso or final_modified_iso
+
     anno_title = get_annotation_title(effective_master, conv_id)
     db_ws_uri, db_proj_id = get_db_trajectory_meta(db_file) if has_db else (None, None)
 
@@ -216,7 +273,19 @@ def resolve_conversation_item(
             or curr_raw_title in ["Conversation", "Untitled Conversation"]
         )
     )
-    is_corrupt_raw = bool(curr_raw and any(ord(c) < 32 and c not in "\n\r\t\x1b\x0c" for c in (raw_summary or "")))
+    has_bad_timestamps = bool(
+        curr_raw
+        and (
+            b"\x80\x92\xb8\xc3\x98\xfe\xff\xff\xff\x01" in curr_raw
+            or parsed_raw.get("has_bad_timestamp")
+            or not parsed_raw.get("ts_3")
+            or not parsed_raw.get("ts_10")
+        )
+    )
+    is_corrupt_raw = bool(
+        has_bad_timestamps
+        or (curr_raw and any(ord(c) < 32 and c not in "\n\r\t\x1b\x0c" for c in (raw_summary or "")))
+    )
     needs_steps_rebuild = bool(actual_steps > curr_step_cnt)
     is_not_in_sqlite = bool(conv_id not in existing_rows)
 
@@ -244,19 +313,25 @@ def resolve_conversation_item(
         user_step = (
             parsed_raw.get("last_user_step")
             if parsed_raw.get("last_user_step") is not None
-            else get_last_user_step_index(db_file, target_step_cnt)
+            else (sql_user_step if sql_user_step >= 0 else get_last_user_step_index(db_file, target_step_cnt))
         )
     else:
-        user_step = get_last_user_step_index(db_file, target_step_cnt)
+        user_step = (
+            sql_user_step
+            if sql_user_step >= 0
+            else get_last_user_step_index(db_file, target_step_cnt)
+        )
         raw_to_store = build_cascade_summary(
             conv_id,
             final_title,
             final_prev,
             target_step_cnt,
-            file_mtime_iso,
+            last_modified_iso=final_modified_iso,
             last_user_step=user_step,
             workspace_uri=ws_uri,
             project_id=proj_id,
+            created_iso=final_created_iso,
+            last_user_input_iso=final_user_input_iso,
         )
 
     all_summaries[conv_id] = raw_to_store
@@ -266,7 +341,8 @@ def resolve_conversation_item(
         title=final_title,
         preview=final_prev,
         step_count=target_step_cnt,
-        last_modified_time=file_mtime_iso,
+        last_modified_time=final_modified_iso,
+        last_user_input_time=final_user_input_iso,
         last_user_input_step_index=user_step,
         raw_summary=raw_to_store,
         workspace_uris=ws_uri or "",
@@ -303,7 +379,7 @@ def synchronize_master_summaries(
     for c_id, row in existing_rows.items():
         if row[4]:
             raw = extract_pure_binary_summary(row[4])
-            if raw and len(raw) > 20:
+            if raw and len(raw) > 20 and b"\x80\x92\xb8\xc3\x98\xfe\xff\xff\xff\x01" not in raw:
                 all_summaries[c_id] = raw
 
     # Ingest master protobuf binary summaries if available
@@ -312,7 +388,7 @@ def synchronize_master_summaries(
             with open(master_proto, "rb") as f:
                 proto_data = f.read()
             for c_uuid, raw in extract_entries_from_proto(proto_data).items():
-                if raw and len(raw) > 20:
+                if raw and len(raw) > 20 and b"\x80\x92\xb8\xc3\x98\xfe\xff\xff\xff\x01" not in raw:
                     all_summaries[c_uuid] = raw
         except Exception:
             pass
@@ -356,6 +432,21 @@ def serialize_master_proto(master_proto: Path, all_summaries: Dict[str, bytes]) 
         with open(tmp_proto, "wb") as f:
             f.write(bytes(entries_data))
         os.replace(tmp_proto, master_proto)
+
+        # Atomically synchronize companion protobuf files in master directory
+        parent_dir = master_proto.parent
+        for companion_name in [
+            "jetbox_summaries.pb",
+            "jetbox_summaries_proto.pb",
+            "agyhub_summaries.pb",
+        ]:
+            companion_file = parent_dir / companion_name
+            if companion_file.exists():
+                try:
+                    if not companion_file.is_symlink():
+                        shutil.copy2(master_proto, companion_file)
+                except Exception:
+                    pass
     except Exception:
         pass
 

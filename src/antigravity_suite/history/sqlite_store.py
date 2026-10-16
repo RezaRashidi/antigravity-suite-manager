@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import sqlite3
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from antigravity_suite.history.models import ConversationSummary
 
@@ -82,11 +82,11 @@ def copy_sqlite_db_safely(src_path: Union[str, Path], dst_path: Union[str, Path]
 
 def load_existing_summaries(
     db_path: Union[str, Path],
-) -> Dict[str, Tuple[str, str, int, str, Optional[bytes]]]:
+) -> Dict[str, Tuple[Any, ...]]:
     """
     Loads existing indexed summaries from conversation_summaries.db.
     Returns:
-      conv_id -> (title, preview, step_count, last_modified_time, raw_summary)
+      conv_id -> (title, preview, step_count, last_modified_time, raw_summary, last_user_input_time, last_user_input_step_index)
     """
     db_str = str(db_path)
     if not os.path.isfile(db_str):
@@ -98,9 +98,11 @@ def load_existing_summaries(
         cur = conn.cursor()
         ensure_summaries_schema(conn)
 
-        existing: Dict[str, Tuple[str, str, int, str, Optional[bytes]]] = {}
-        for r in cur.execute("SELECT conversation_id, title, preview, step_count, last_modified_time, raw_summary FROM conversation_summaries;").fetchall():
-            existing[r[0]] = (r[1], r[2], r[3], r[4], r[5])
+        existing: Dict[str, Tuple[Any, ...]] = {}
+        for r in cur.execute(
+            "SELECT conversation_id, title, preview, step_count, last_modified_time, raw_summary, last_user_input_time, last_user_input_step_index FROM conversation_summaries;"
+        ).fetchall():
+            existing[r[0]] = (r[1], r[2], r[3], r[4], r[5], r[6], r[7])
         return existing
     except Exception:
         return {}

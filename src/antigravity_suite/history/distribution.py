@@ -114,12 +114,19 @@ def replicate_to_ide_profiles(
                     if needs_copy:
                         copy_sqlite_db_safely(db_src, tgt_db)
 
-            # 4. Replicate agyhub_summaries_proto.pb
-            t_proto = os.path.join(target_d, "agyhub_summaries_proto.pb")
+            # 4. Replicate agyhub_summaries_proto.pb and companion protobuf files
             if master_proto.is_file():
-                if not os.path.islink(t_proto) and not (
-                    os.path.exists(t_proto) and os.path.samefile(str(master_proto), t_proto)
-                ):
-                    shutil.copy2(master_proto, t_proto)
+                for pb_name in [
+                    "agyhub_summaries_proto.pb",
+                    "jetbox_summaries.pb",
+                    "jetbox_summaries_proto.pb",
+                    "agyhub_summaries.pb",
+                ]:
+                    t_pb = os.path.join(target_d, pb_name)
+                    if os.path.exists(t_pb) or pb_name == "agyhub_summaries_proto.pb":
+                        if not os.path.islink(t_pb) and not (
+                            os.path.exists(t_pb) and os.path.samefile(str(master_proto), t_pb)
+                        ):
+                            shutil.copy2(master_proto, t_pb)
         except Exception:
             pass

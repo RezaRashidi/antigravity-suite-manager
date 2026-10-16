@@ -62,5 +62,29 @@ class TestCascadeAndTrajectory(unittest.TestCase):
         self.assertEqual(parsed.get("project_id"), proj_id)
 
 
+    def test_timestamps_and_year1_detection(self):
+        uuid = "b8ce61c5-e433-43af-ac03-e29bcb50c347"
+        data = build_cascade_summary(
+            uuid=uuid,
+            title="Timestamp Test",
+            summary="Testing timestamps",
+            step_count=5,
+            last_modified_iso="2026-08-14 18:05:41.000000+00:00",
+            created_iso="2026-08-01 10:00:00.000000+00:00",
+            last_user_input_iso="2026-08-14 17:30:00.000000+00:00",
+        )
+        self.assertNotIn(b"\x80\x92\xb8\xc3\x98\xfe\xff\xff\xff\x01", data)
+        parsed = parse_cascade_summary(data)
+        self.assertFalse(parsed.get("has_bad_timestamp", False))
+        self.assertEqual(parsed.get("last_modified_iso"), "2026-08-14 18:05:41.000000+00:00")
+        self.assertEqual(parsed.get("created_iso"), "2026-08-01 10:00:00.000000+00:00")
+        self.assertEqual(parsed.get("last_user_input_iso"), "2026-08-14 17:30:00.000000+00:00")
+
+        # Corrupted data with Year 1 bytes
+        corrupted = data + b"\x08\x80\x92\xb8\xc3\x98\xfe\xff\xff\xff\x01"
+        parsed_corrupt = parse_cascade_summary(corrupted)
+        self.assertTrue(parsed_corrupt.get("has_bad_timestamp"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -125,9 +125,12 @@ def ingest_vscdb_summaries(
                                 ide_title,
                                 ide_title,
                                 sc,
+                                last_modified_iso=curr_parsed.get("last_modified_iso") or curr_parsed.get("ts_3"),
                                 last_user_step=user_step,
                                 workspace_uri=db_ws_uri or curr_parsed.get("workspace_uri"),
                                 project_id=db_proj_id or curr_parsed.get("project_id"),
+                                created_iso=curr_parsed.get("created_iso") or curr_parsed.get("ts_7"),
+                                last_user_input_iso=curr_parsed.get("last_user_input_iso") or curr_parsed.get("ts_10"),
                             )
                             all_summaries[u_id] = new_bin
                             cur.execute(
