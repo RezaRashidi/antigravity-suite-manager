@@ -582,11 +582,18 @@ def sync_annotation_files(
     """Synchronizes annotations/<conv_id>.pbtxt files for Desktop App UI rendering."""
     if pinned_set is None:
         pinned_set = set()
-    for c_id, c_title in cur.execute(
-        "SELECT conversation_id, title FROM conversation_summaries WHERE length(title) > 0;"
+    for c_id, c_title, raw_summary in cur.execute(
+        "SELECT conversation_id, title, raw_summary FROM conversation_summaries WHERE length(title) > 0;"
     ).fetchall():
         is_pin = c_id in pinned_set
-        sync_annotation_file(effective_master, c_id, c_title, pinned=is_pin)
+        is_arc = False
+        if raw_summary:
+            try:
+                parsed = parse_cascade_summary(raw_summary)
+                is_arc = bool(parsed.get("archived", False))
+            except Exception:
+                is_arc = False
+        sync_annotation_file(effective_master, c_id, c_title, pinned=is_pin, archived=is_arc)
 
 
 def merge_histories(

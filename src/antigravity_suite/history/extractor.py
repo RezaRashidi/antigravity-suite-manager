@@ -93,8 +93,8 @@ def sync_annotation_file(
     master_gemini: Union[str, Path],
     conv_id: str,
     title: str,
-    pinned: bool = False,
-    archived: bool = False,
+    pinned: Optional[bool] = None,
+    archived: Optional[bool] = None,
 ) -> bool:
     """Ensures annotations/<conv_id>.pbtxt exists, has title, and preserves pinned/archived states."""
     if not title or title.strip() in ["", "Conversation", "Untitled Conversation"]:
@@ -121,16 +121,16 @@ def sync_annotation_file(
             else:
                 new_content = f"{title_line}  {content}".strip()
 
-            if pinned:
+            if pinned is True:
                 if not re.search(r'pinned\s*:\s*true', new_content, re.IGNORECASE):
                     new_content = new_content.strip() + "  pinned:true"
-            else:
+            elif pinned is False:
                 new_content = re.sub(r'\s*pinned\s*:\s*true', '', new_content, flags=re.IGNORECASE)
 
-            if archived:
+            if archived is True:
                 if not re.search(r'archived\s*:\s*true', new_content, re.IGNORECASE):
                     new_content = new_content.strip() + "  archived:true"
-            else:
+            elif archived is False:
                 new_content = re.sub(r'\s*archived\s*:\s*true', '', new_content, flags=re.IGNORECASE)
 
             new_content = re.sub(r'[ \t]+', ' ', new_content).strip()
@@ -144,9 +144,9 @@ def sync_annotation_file(
     else:
         try:
             body = title_line
-            if pinned:
+            if pinned is True:
                 body += "  pinned:true"
-            if archived:
+            if archived is True:
                 body += "  archived:true"
             with open(anno_file, "w", encoding="utf-8") as f:
                 f.write(f"{body}\n")

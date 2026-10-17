@@ -216,13 +216,17 @@ def discover_pinned_conversation_ids(user_home: Optional[Path] = None) -> Set[st
     for p in home.glob(".antigravity-profile*/.config/Antigravity/app_storage.json"):
         candidate_app_storages.append(p)
 
-    for app_store in candidate_app_storages:
-        if app_store.is_file():
-            found_app_storage = True
-            try:
-                with open(app_store, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                raw_val = data.get("pinned_conversations_order", [])
+    existing_stores = [p for p in candidate_app_storages if p.is_file()]
+    # Sort by modification time descending: the most recently active profile reflects the user's latest pin/unpin action
+    existing_stores.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+
+    for app_store in existing_stores:
+        try:
+            with open(app_store, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if "pinned_conversations_order" in data or "pinnedConversations" in data:
+                found_app_storage = True
+                raw_val = data.get("pinned_conversations_order") or data.get("pinnedConversations") or []
                 if isinstance(raw_val, str):
                     try:
                         raw_val = json.loads(raw_val)
@@ -232,8 +236,10 @@ def discover_pinned_conversation_ids(user_home: Optional[Path] = None) -> Set[st
                     for c_id in raw_val:
                         if isinstance(c_id, str) and len(c_id) >= 32:
                             pinned_ids.add(c_id.strip())
-            except Exception:
-                pass
+                # Take the most recently modified profile's list as authoritative to allow cross-profile unpinning
+                break
+        except Exception:
+            pass
 
     # 2. Search candidate annotations directories only as fallback if no app_storage.json exists
     if not found_app_storage:

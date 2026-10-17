@@ -436,5 +436,77 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             self.assertTrue(len(p2_files) > 0)
             self.assertEqual(p1_files[0].name, p2_files[0].name)
 
+    def test_sync_annotation_files_preserves_archived_conversations(self):
+        import sqlite3
+        from antigravity_suite.history.merger import sync_annotation_files
+        from antigravity_suite.history.extractor import sync_annotation_file
+        from antigravity_suite.proto.cascade import build_cascade_summary
+
+        with tempfile.TemporaryDirectory() as td:
+            master = Path(td)
+            cid = "44444444-5555-6666-7777-888888888888"
+
+            # 1. Calling with None preserves existing flag
+            sync_annotation_file(master, cid, "Initial Title", archived=True)
+            anno_f = master / "annotations" / f"{cid}.pbtxt"
+            self.assertIn("archived:true", anno_f.read_text())
+
+            sync_annotation_file(master, cid, "Initial Title", archived=None)
+            self.assertIn("Initial Title", anno_f.read_text())
+            self.assertIn("archived:true", anno_f.read_text())
+
+            # 2. sync_annotation_files preserves archived from raw_summary
+            raw_arc = build_cascade_summary(cid, "Archived Chat", "Preview", 3, archived=True)
+            raw_active = build_cascade_summary("active-uuid", "Active Chat", "Preview", 3, archived=False)
+
+            db_p = master / "test.db"
+            with sqlite3.connect(str(db_p)) as con:
+                cur = con.cursor()
+                cur.execute("CREATE TABLE conversation_summaries (conversation_id TEXT, title TEXT, raw_summary BLOB);")
+                cur.execute("INSERT INTO conversation_summaries VALUES (?, ?, ?);", (cid, "Archived Chat", raw_arc))
+                cur.execute("INSERT INTO conversation_summaries VALUES (?, ?, ?);", ("active-uuid", "Active Chat", raw_active))
+
+                sync_annotation_files(master, cur, pinned_set=set())
+
+            self.assertIn("archived:true", (master / "annotations" / f"{cid}.pbtxt").read_text())
+            self.assertNotIn("archived:true", (master / "annotations" / "active-uuid.pbtxt").read_text())
+
+    def test_cross_profile_unpinning_precedence(self):
+        import time, json
+        from antigravity_suite.history.discovery import discover_pinned_conversation_ids, replicate_pinned_conversations_order
+
+        with tempfile.TemporaryDirectory() as td:
+            u_home = Path(td)
+            p1_cfg = u_home / ".config" / "Antigravity"
+            p2_cfg = u_home / ".antigravity-profile2" / ".config" / "Antigravity"
+            p1_cfg.mkdir(parents=True)
+            p2_cfg.mkdir(parents=True)
+
+            f1 = p1_cfg / "app_storage.json"
+            f2 = p2_cfg / "app_storage.json"
+
+            uuid_a = "00000000-1111-2222-3333-aaaaaaaaaaaa"
+            uuid_b = "00000000-1111-2222-3333-bbbbbbbbbbbb"
+
+            # Older Profile 2 has [uuid_a, uuid_b]
+            with open(f2, "w") as f:
+                json.dump({"pinned_conversations_order": [uuid_a, uuid_b]}, f)
+            os.utime(f2, (1000, 1000))
+
+            # Newer Profile 1 has unpinned uuid_b -> only [uuid_a]
+            with open(f1, "w") as f:
+                json.dump({"pinned_conversations_order": [uuid_a]}, f)
+            os.utime(f1, (2000, 2000))
+
+            # discover must pick newer Profile 1 (uuid_a only, uuid_b dropped)
+            pinned = discover_pinned_conversation_ids(user_home=u_home)
+            self.assertEqual(pinned, {uuid_a})
+
+            # replicate must update older Profile 2 and remove uuid_b
+            replicate_pinned_conversations_order(pinned, user_home=u_home)
+            with open(f2) as f:
+                data2 = json.load(f)
+            self.assertEqual(data2["pinned_conversations_order"], [uuid_a])
+
 if __name__ == "__main__":
     unittest.main()
