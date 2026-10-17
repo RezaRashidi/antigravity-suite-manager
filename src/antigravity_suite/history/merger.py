@@ -819,7 +819,7 @@ def merge_histories(
         )
 
         # 12. Synchronize annotations/<conv_id>.pbtxt files for Desktop App UI title rendering
-        target_annos = stats.dirty_conv_ids if (not force_rebuild and stats.dirty_conv_ids) else None
+        target_annos = None if force_rebuild else stats.dirty_conv_ids
         sync_annotation_files(effective_master, cur, pinned_set=pinned_ids, target_conv_ids=target_annos)
 
         stats.total_active_history = cur.execute("SELECT count(*) FROM conversation_summaries;").fetchone()[0]

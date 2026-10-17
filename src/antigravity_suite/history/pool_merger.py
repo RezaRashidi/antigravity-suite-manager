@@ -109,15 +109,50 @@ def merge_brain_folders(brain_pools: List[str], master_brain_dir: Path) -> int:
                 except Exception:
                     pass
             else:
-                # Fast path: skip os.walk if source directory has not been modified after target
+                # Fast path: skip full walk if transcript files and root files are already up-to-date
                 try:
-                    src_mtime = os.path.getmtime(b_item)
-                    tgt_mtime = target_brain_item.stat().st_mtime
                     src_logs = os.path.join(b_item, ".system_generated", "logs")
                     tgt_logs = target_brain_item / ".system_generated" / "logs"
-                    if tgt_logs.is_dir() and os.path.isdir(src_logs):
-                        if os.path.getmtime(src_logs) <= tgt_logs.stat().st_mtime and src_mtime <= tgt_mtime:
-                            continue
+                    needs_walk = False
+
+                    # 1. Directory mtime: new files created or deleted in root folder
+                    if os.path.getmtime(b_item) > (target_brain_item.stat().st_mtime + 2.0):
+                        needs_walk = True
+
+                    # 2. Check key transcript files in logs directory
+                    if not needs_walk and os.path.isdir(src_logs):
+                        if not tgt_logs.is_dir():
+                            needs_walk = True
+                        else:
+                            for log_name in ("transcript.jsonl", "transcript_full.jsonl"):
+                                s_f = os.path.join(src_logs, log_name)
+                                if os.path.isfile(s_f):
+                                    t_f = tgt_logs / log_name
+                                    if not t_f.is_file():
+                                        needs_walk = True
+                                        break
+                                    s_st = os.stat(s_f)
+                                    t_st = t_f.stat()
+                                    if s_st.st_size > t_st.st_size or s_st.st_mtime > (t_st.st_mtime + 2.0):
+                                        needs_walk = True
+                                        break
+
+                    # 3. Check root level files (e.g. task.md, implementation_plan.md)
+                    if not needs_walk:
+                        for entry in os.scandir(b_item):
+                            if entry.is_file():
+                                t_f = target_brain_item / entry.name
+                                if not t_f.is_file():
+                                    needs_walk = True
+                                    break
+                                s_st = entry.stat()
+                                t_st = t_f.stat()
+                                if s_st.st_size > t_st.st_size or s_st.st_mtime > (t_st.st_mtime + 2.0):
+                                    needs_walk = True
+                                    break
+
+                    if not needs_walk:
+                        continue
                 except Exception:
                     pass
 

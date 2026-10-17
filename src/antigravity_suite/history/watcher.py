@@ -103,6 +103,7 @@ class LinuxInotifyWatcher:
             try:
                 for entry in os.scandir(bd):
                     if entry.is_dir():
+                        self.add_watch_dir(entry.path)
                         logs_d = os.path.join(entry.path, ".system_generated", "logs")
                         if os.path.isdir(logs_d):
                             self.add_watch_dir(logs_d)
@@ -263,6 +264,11 @@ def watch_mode(
                 # Kernel-level event waiting (blocks in epoll with 0 CPU usage during timeout)
                 events = inotify.wait_for_events(timeout_sec=2.0)
                 for ev_path in events:
+                    if os.path.isdir(ev_path):
+                        inotify.add_watch_dir(ev_path)
+                        logs_d = os.path.join(ev_path, ".system_generated", "logs")
+                        if os.path.isdir(logs_d):
+                            inotify.add_watch_dir(logs_d)
                     base = os.path.basename(ev_path)
                     if not base or base.startswith("conversation_summaries"):
                         continue

@@ -805,6 +805,73 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             imported = merge_brain_folders([str(pool_dir)], master_dir)
             self.assertEqual(imported, 0)
 
+    def test_merge_brain_folders_copies_appended_transcript(self):
+        import time
+        from antigravity_suite.history.pool_merger import merge_brain_folders
+
+        with tempfile.TemporaryDirectory() as td:
+            pool = Path(td) / "pool"
+            master = Path(td) / "master"
+            c = "11111111-2222-3333-4444-555555555555"
+            s_logs = pool / c / ".system_generated" / "logs"
+            t_logs = master / c / ".system_generated" / "logs"
+            s_logs.mkdir(parents=True)
+            t_logs.mkdir(parents=True)
+
+            (s_logs / "transcript.jsonl").write_text("initial\n")
+            (t_logs / "transcript.jsonl").write_text("initial\n")
+
+            # Simulate older directory mtimes (Linux doesn't touch dir mtime on append)
+            old_time = time.time() - 200
+            for p in [pool / c, s_logs, master / c, t_logs]:
+                os.utime(str(p), (old_time, old_time))
+
+            # Append new turn to source transcript
+            with open(s_logs / "transcript.jsonl", "a") as f:
+                f.write("new user message turn\n")
+
+            merge_brain_folders([str(pool)], master)
+            self.assertEqual(
+                (t_logs / "transcript.jsonl").stat().st_size,
+                (s_logs / "transcript.jsonl").stat().st_size
+            )
+
+    def test_sync_annotation_files_idle_early_return(self):
+        import sqlite3
+        from antigravity_suite.history.merger import sync_annotation_files
+
+        with tempfile.TemporaryDirectory() as td:
+            master = Path(td)
+            antigravity_dir = master / ".gemini" / "antigravity"
+            anno_dir = antigravity_dir / "annotations"
+            anno_dir.mkdir(parents=True)
+
+            # Target_conv_ids is an empty set (0 dirty conversations)
+            # Should return immediately without requiring active sqlite connection
+            target_annos = set()
+            sync_annotation_files(antigravity_dir, cur=None, target_conv_ids=target_annos)
+            # Verify no files were created or errors thrown
+            self.assertEqual(len(list(anno_dir.glob("*.pbtxt"))), 0)
+
+    def test_linux_inotify_watches_conversation_dirs_and_artifacts(self):
+        from antigravity_suite.history.watcher import LinuxInotifyWatcher
+
+        watcher = LinuxInotifyWatcher()
+        if not watcher.available:
+            self.skipTest("Linux inotify / epoll not supported in this environment")
+
+        with tempfile.TemporaryDirectory() as td:
+            b = Path(td) / "brain"
+            c = b / "conv1"
+            l = c / ".system_generated" / "logs"
+            l.mkdir(parents=True)
+
+            watcher.sync_watch_targets([], [str(b)])
+            (c / "task.md").write_text("# Plan")
+            evs = watcher.wait_for_events(timeout_sec=0.2)
+            self.assertTrue(any("task.md" in ev for ev in evs))
+            watcher.close()
+
 if __name__ == "__main__":
     unittest.main()
 
