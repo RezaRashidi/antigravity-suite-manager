@@ -508,5 +508,59 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
                 data2 = json.load(f)
             self.assertEqual(data2["pinned_conversations_order"], [uuid_a])
 
+    def test_missing_pbtxt_does_not_unarchive_conversation(self):
+        import sqlite3
+        from antigravity_suite.history.merger import synchronize_master_summaries, sync_annotation_files, SyncStats
+        from antigravity_suite.history.sqlite_store import ensure_summaries_schema
+        from antigravity_suite.proto.cascade import build_cascade_summary, parse_cascade_summary
+
+        with tempfile.TemporaryDirectory() as td:
+            master = Path(td)
+            master_conv = master / "conversations"
+            master_brain = master / "brain"
+            master_conv.mkdir(parents=True)
+            master_brain.mkdir(parents=True)
+            master_db = master / "conversation_summaries.db"
+            master_proto = master / "agyhub_summaries_proto.pb"
+
+            # Create an archived conversation
+            cid = "55555555-6666-7777-8888-999999999999"
+            raw_arc = build_cascade_summary(cid, "Important Archived Chat", "Archived preview", 10, archived=True)
+
+            # Create mock conv database
+            with sqlite3.connect(str(master_conv / f"{cid}.db")) as ccon:
+                ccon.execute("CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, status INTEGER);")
+                ccon.execute("INSERT INTO steps VALUES (0, 14, 3);")
+
+            # Insert into master database without any annotations/.pbtxt existing
+            with sqlite3.connect(str(master_db)) as con:
+                ensure_summaries_schema(con)
+                con.execute(
+                    "INSERT INTO conversation_summaries (conversation_id, title, preview, step_count, last_modified_time, last_user_input_time, raw_summary) VALUES (?, ?, ?, ?, datetime('now'), datetime('now'), ?);",
+                    (cid, "Important Archived Chat", "Archived preview", 10, raw_arc),
+                )
+
+            # Ensure annotations folder has NO file for this conversation
+            anno_f = master / "annotations" / f"{cid}.pbtxt"
+            self.assertFalse(anno_f.is_file())
+
+            # Run synchronize_master_summaries
+            synchronize_master_summaries(master, master_conv, master_brain, master_db, master_proto, stats=SyncStats())
+
+            # 1. Verify SQLite raw_summary still has archived = True
+            with sqlite3.connect(str(master_db)) as con:
+                row = con.execute("SELECT raw_summary FROM conversation_summaries WHERE conversation_id = ?;", (cid,)).fetchone()
+                self.assertIsNotNone(row)
+                self.assertIsNotNone(row[0])
+                parsed = parse_cascade_summary(row[0])
+                self.assertTrue(parsed.get("archived"), f"Archived flag was prematurely erased! parsed={parsed}")
+
+                # Step 12 of merge syncs annotations
+                sync_annotation_files(master, con.cursor(), pinned_set=set())
+
+            # 2. Verify generated annotations file now contains archived:true
+            self.assertTrue(anno_f.is_file())
+            self.assertIn("archived:true", anno_f.read_text())
+
 if __name__ == "__main__":
     unittest.main()

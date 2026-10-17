@@ -65,8 +65,9 @@ def decode_pbtxt_string(s: str) -> str:
 def get_annotation_info(gemini_dir: Union[str, Path], conv_id: str) -> dict:
     """Reads authentic title, pinned, and archived status from annotations/<conv_id>.pbtxt."""
     anno_file = os.path.join(str(gemini_dir), "annotations", f"{conv_id}.pbtxt")
-    info = {"title": None, "pinned": False, "archived": False}
+    info = {"title": None, "pinned": None, "archived": None, "exists": False}
     if os.path.isfile(anno_file):
+        info["exists"] = True
         try:
             with open(anno_file, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
@@ -77,8 +78,13 @@ def get_annotation_info(gemini_dir: Union[str, Path], conv_id: str) -> dict:
                     info["title"] = clean_title
             if re.search(r'pinned\s*:\s*true', content, re.IGNORECASE):
                 info["pinned"] = True
+            elif re.search(r'pinned\s*:\s*false', content, re.IGNORECASE):
+                info["pinned"] = False
+
             if re.search(r'archived\s*:\s*true', content, re.IGNORECASE):
                 info["archived"] = True
+            elif re.search(r'archived\s*:\s*false', content, re.IGNORECASE):
+                info["archived"] = False
         except Exception:
             pass
     return info

@@ -272,16 +272,39 @@ def resolve_conversation_item(
     final_user_input_iso = t_clean_user_input or sql_user_input or final_modified_iso
     final_created_iso = t_clean_created or final_user_input_iso or final_modified_iso
 
-    anno_info = get_annotation_info(effective_master, conv_id)
-    anno_title = anno_info.get("title")
-    is_pinned = bool(anno_info.get("pinned") or (pinned_set and conv_id in pinned_set))
-    is_archived = bool(anno_info.get("archived"))
-    db_ws_uri, db_proj_id = get_db_trajectory_meta(db_file) if has_db else (None, None)
-
     curr_raw = all_summaries.get(conv_id)
     parsed_raw = parse_cascade_summary(curr_raw) if curr_raw else {}
     raw_title = parsed_raw.get("title", "")
     raw_summary = parsed_raw.get("summary", "")
+
+    sql_raw = existing_rows[conv_id][4] if conv_id in existing_rows else None
+    parsed_sql = parse_cascade_summary(sql_raw) if sql_raw else {}
+    sql_pinned = bool(parsed_sql.get("pinned", False))
+    sql_archived = bool(parsed_sql.get("archived", False))
+
+    raw_pinned = bool(parsed_raw.get("pinned", False))
+    raw_archived = bool(parsed_raw.get("archived", False))
+
+    anno_info = get_annotation_info(effective_master, conv_id)
+    anno_title = anno_info.get("title")
+
+    # Pinned: pinned_set (app_storage.json) is primary; fallback to anno_info, then proto/sqlite
+    if pinned_set is not None and conv_id in pinned_set:
+        is_pinned = True
+    elif anno_info.get("exists") and anno_info.get("pinned") is not None:
+        is_pinned = bool(anno_info.get("pinned"))
+    else:
+        is_pinned = raw_pinned or sql_pinned
+
+    # Archived: anno_info if explicitly present; fallback to existing proto/sqlite state
+    raw_arc = raw_archived
+    sql_arc = sql_archived if conv_id in existing_rows else False
+    if anno_info.get("exists") and anno_info.get("archived") is not None:
+        is_archived = bool(anno_info.get("archived"))
+    else:
+        is_archived = raw_arc or sql_arc
+
+    db_ws_uri, db_proj_id = get_db_trajectory_meta(db_file) if has_db else (None, None)
 
     curr_title = existing_rows[conv_id][0] if conv_id in existing_rows else ""
     curr_prev = existing_rows[conv_id][1] if conv_id in existing_rows else ""
@@ -359,13 +382,6 @@ def resolve_conversation_item(
     needs_steps_rebuild = bool(actual_steps > curr_step_cnt)
     is_not_in_sqlite = bool(conv_id not in existing_rows)
 
-    sql_raw = existing_rows[conv_id][4] if conv_id in existing_rows else None
-    parsed_sql = parse_cascade_summary(sql_raw) if sql_raw else {}
-    sql_pinned = bool(parsed_sql.get("pinned", False))
-    sql_archived = bool(parsed_sql.get("archived", False))
-
-    raw_pinned = bool(parsed_raw.get("pinned", False))
-    raw_archived = bool(parsed_raw.get("archived", False))
     needs_pinned_rebuild = bool(
         is_pinned != raw_pinned
         or is_archived != raw_archived
