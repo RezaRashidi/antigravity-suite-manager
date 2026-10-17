@@ -110,7 +110,10 @@ def sync_annotation_file(
     os.makedirs(anno_dir, exist_ok=True)
     anno_file = os.path.join(anno_dir, f"{conv_id}.pbtxt")
 
-    clean_title = title.strip().replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
+    clean_title = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", title).strip()
+    clean_title = clean_title.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
+    if not clean_title or clean_title in ["", "Conversation", "Untitled Conversation"]:
+        clean_title = "Conversation"
     title_line = f'title: "{clean_title}"'
 
     if os.path.isfile(anno_file):
@@ -120,7 +123,7 @@ def sync_annotation_file(
             m = re.search(r'title\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', content)
             if m:
                 existing_t = m.group(1).strip()
-                if not existing_t or existing_t in ["Conversation", "Untitled Conversation"]:
+                if not existing_t or existing_t in ["Conversation", "Untitled Conversation"] or "@[" in existing_t:
                     new_content = re.sub(r'title\s*:\s*"[^"\\]*(?:\\.[^"\\]*)*"', title_line, content)
                 else:
                     new_content = content

@@ -133,7 +133,19 @@ def ingest_vscdb_summaries(
                             raw_ws = db_ws_uri or curr_parsed.get("workspace_uri")
                             norm_ws = normalize_workspace_uri(raw_ws)
                             mapped_pid = get_project_id_for_workspace(norm_ws) if norm_ws else None
-                            effective_pid = mapped_pid or db_proj_id or curr_parsed.get("project_id") or ""
+                            clean_mapped = mapped_pid if mapped_pid and mapped_pid != "outside-of-project" else ""
+                            clean_curr = curr_parsed.get("project_id") if curr_parsed.get("project_id") and curr_parsed.get("project_id") != "outside-of-project" else ""
+                            clean_db = db_proj_id if db_proj_id and db_proj_id != "outside-of-project" else ""
+
+                            existing_sql_pid = ""
+                            try:
+                                sql_row = cur.execute("SELECT project_id FROM conversation_summaries WHERE conversation_id = ?;", (u_id,)).fetchone()
+                                if sql_row and sql_row[0] and sql_row[0] != "outside-of-project":
+                                    existing_sql_pid = sql_row[0]
+                            except Exception:
+                                pass
+
+                            effective_pid = clean_mapped or existing_sql_pid or clean_db or clean_curr or ""
                             sc = max(get_actual_steps_count(db_p), curr_parsed.get("step_count", 0), curr_parsed.get(2, 0), 1)
                             user_step = get_last_user_step_index(db_p, sc)
                             is_pin = bool((pinned_set and u_id in pinned_set) or curr_parsed.get("pinned", False))

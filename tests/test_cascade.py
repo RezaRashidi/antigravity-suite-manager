@@ -284,16 +284,16 @@ class TestCascadeAndTrajectory(unittest.TestCase):
 
         alpha_root = "file:///home/user/PhpstormProjects/project-alpha"
         alpha_sub = "file:///home/user/PhpstormProjects/project-alpha/.github/workflows"
-        root_pid = get_project_id_for_workspace(alpha_root)
-        sub_pid = get_project_id_for_workspace(alpha_sub)
+        root_pid = get_project_id_for_workspace(alpha_root, create_missing=True)
+        sub_pid = get_project_id_for_workspace(alpha_sub, create_missing=True)
         self.assertIsNotNone(root_pid)
         self.assertEqual(root_pid, sub_pid)
 
-        beta_pid = get_project_id_for_workspace("file:///home/user/Music/project-beta")
+        beta_pid = get_project_id_for_workspace("file:///home/user/Music/project-beta", create_missing=True)
         self.assertIsNotNone(beta_pid)
         self.assertNotEqual(root_pid, beta_pid)
 
-        gamma_pid = get_project_id_for_workspace("file:///home/user/PhpstormProjects/sample-app")
+        gamma_pid = get_project_id_for_workspace("file:///home/user/PhpstormProjects/sample-app", create_missing=True)
         self.assertIsNotNone(gamma_pid)
         self.assertNotEqual(beta_pid, gamma_pid)
 

@@ -173,28 +173,6 @@ def discover_workspace_roots(user_home: Optional[Path] = None) -> List[str]:
             except Exception:
                 pass
 
-    # 3. Candidate state.vscdb recently opened paths
-    for pat in [
-        os.path.join(str(home), ".config", "*", "User", "globalStorage", "state.vscdb"),
-        os.path.join(str(home), ".antigravity*", ".config", "*", "User", "globalStorage", "state.vscdb"),
-    ]:
-        for sp in glob.glob(pat):
-            if any(k in sp.lower() for k in ["antigravity", "code"]):
-                try:
-                    with sqlite3.connect(sp, timeout=2.0) as s_con:
-                        s_cur = s_con.cursor()
-                        row = s_cur.execute(
-                            "SELECT value FROM ItemTable WHERE key = 'history.recentlyOpenedPathsList';"
-                        ).fetchone()
-                        if row and row[0]:
-                            parsed = json.loads(row[0])
-                            for entry in parsed.get("entries", []):
-                                furi = entry.get("folderUri")
-                                if furi and str(furi).startswith("file://") and not any(k in str(furi) for k in [".gemini"]):
-                                    roots_set.add(str(furi))
-                except Exception:
-                    pass
-
     # Update KNOWN_ROOTS in-place
     for r in sorted(roots_set):
         if r not in KNOWN_ROOTS:
@@ -403,8 +381,11 @@ def ensure_project_configs(
                 parsed = urlsplit(ws)
                 path_str = unquote(parsed.path)
                 clean_path = path_str.replace("\\", "/").rstrip("/")
+                # If workspace_uris was not explicitly provided, only auto-create config for genuine Git repositories
+                if workspace_uris is None and not (Path(clean_path) / ".git").exists():
+                    continue
                 pname = clean_path.split("/")[-1] if clean_path else "project"
-                pid = get_project_id_for_workspace(ws, user_home=home)
+                pid = get_project_id_for_workspace(ws, user_home=home, create_missing=True)
                 proj_def = {
                     "id": pid,
                     "name": pname,
@@ -435,13 +416,14 @@ def get_project_id_for_workspace(
     ws_uri: Optional[str],
     user_home: Optional[Path] = None,
     mappings: Optional[Dict[str, str]] = None,
+    create_missing: bool = False,
 ) -> Optional[str]:
     """
     Resolves canonical project_id for a workspace URI dynamically:
       1. Uses pre-discovered or cached project mappings (O(1))
       2. Resolves subfolder to normalized root project
       3. Performs lazy refresh on cache miss before fallback
-      4. Generates deterministic UUID5 for any unregistered project root
+      4. Returns None if unregistered, preventing phantom UUID generation
     """
     if not ws_uri:
         return None
@@ -464,6 +446,9 @@ def get_project_id_for_workspace(
     if ws_norm in refreshed:
         mappings[ws_norm] = refreshed[ws_norm]
         return refreshed[ws_norm]
+
+    if not create_missing:
+        return None
 
     # Generate a deterministic UUID5 for authentic, stable project identification
     deterministic_id = str(uuid.uuid5(uuid.NAMESPACE_URL, ws_norm))

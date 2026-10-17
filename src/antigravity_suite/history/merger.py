@@ -372,10 +372,11 @@ def resolve_conversation_item(
         final_title = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", final_title).strip()
 
     if not final_title or final_title.strip() in ["", "Conversation", "Untitled Conversation"]:
-        if curr_prev and curr_prev.strip() not in ["", "Conversation", "Untitled Conversation"]:
-            final_title = curr_prev.strip().split("\n")[0][:80]
-        elif raw_summary and raw_summary.strip() not in ["", "Conversation", "Untitled Conversation"]:
-            final_title = raw_summary.strip().split("\n")[0][:80]
+        cand_text = curr_prev if (curr_prev and curr_prev.strip() not in ["", "Conversation", "Untitled Conversation"]) else (raw_summary or "")
+        clean_cand = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", cand_text).strip()
+        lines = [l.strip() for l in clean_cand.split("\n") if l.strip()]
+        if lines:
+            final_title = lines[0][:80]
 
     if not final_title:
         final_title = "Conversation"
@@ -391,7 +392,13 @@ def resolve_conversation_item(
 
     # Resolve project_id from authentic workspace mapping (using pre-discovered mappings O(1))
     mapped_pid = get_project_id_for_workspace(ws_uri, mappings=project_mappings) if ws_uri else None
-    proj_id = mapped_pid or db_proj_id or parsed_raw.get("project_id") or existing_proj or ""
+    clean_mapped = mapped_pid if mapped_pid and mapped_pid != "outside-of-project" else ""
+    clean_existing = existing_proj if existing_proj and existing_proj != "outside-of-project" else ""
+    clean_db = db_proj_id if db_proj_id and db_proj_id != "outside-of-project" else ""
+    clean_raw = parsed_raw.get("project_id") if parsed_raw.get("project_id") and parsed_raw.get("project_id") != "outside-of-project" else ""
+
+    # Priority: Existing DB row PID > Authentic mapped PID > Trajectory meta PID > Raw proto PID
+    proj_id = clean_existing or clean_mapped or clean_db or clean_raw or ""
     if not proj_id and ws_uri:
         proj_id = "outside-of-project"
 
@@ -425,8 +432,16 @@ def resolve_conversation_item(
             or not parsed_raw.get("ts_10")
         )
     )
+    has_trajectory_mismatch = bool(
+        curr_raw
+        and (
+            not parsed_raw.get("trajectory_id")
+            or parsed_raw.get("trajectory_id") != conv_id
+        )
+    )
     is_corrupt_raw = bool(
         has_bad_timestamps
+        or has_trajectory_mismatch
         or (curr_raw and any(ord(c) < 32 and c not in "\n\r\t\x1b\x0c" for c in (raw_summary or "")))
     )
     needs_steps_rebuild = bool(actual_steps > curr_step_cnt)

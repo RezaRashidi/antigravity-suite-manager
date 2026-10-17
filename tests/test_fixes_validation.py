@@ -872,6 +872,141 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             self.assertTrue(any("task.md" in ev for ev in evs))
             watcher.close()
 
+    def test_trajectory_id_mismatch_healed_in_merger(self):
+        import sqlite3
+        from antigravity_suite.history.merger import resolve_conversation_item
+        from antigravity_suite.history.models import SyncStats
+        from antigravity_suite.proto.cascade import build_cascade_summary, parse_cascade_summary
+
+        conv_id = "11111111-1111-1111-1111-111111111111"
+        wrong_id = "22222222-2222-2222-2222-222222222222"
+
+        # Create raw binary summary with mismatched trajectory_id (wrong_id)
+        corrupt_raw = build_cascade_summary(
+            wrong_id,
+            "Test Title",
+            "Test Summary",
+            5,
+            last_modified_iso="2026-10-10 12:00:00.000000+00:00"
+        )
+        parsed_corrupt = parse_cascade_summary(corrupt_raw)
+        self.assertEqual(parsed_corrupt.get("trajectory_id"), wrong_id)
+
+        with tempfile.TemporaryDirectory() as td:
+            master = Path(td)
+            db_dir = master / "conversations"
+            db_dir.mkdir(parents=True)
+            db_file = db_dir / f"{conv_id}.db"
+
+            with sqlite3.connect(str(db_file)) as con:
+                con.execute("CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, status INTEGER, has_subtrajectory NUMERIC, metadata BLOB, error_details BLOB, permissions BLOB, task_details BLOB, render_info BLOB, step_payload BLOB, step_format INTEGER);")
+                con.execute("INSERT INTO steps VALUES (0, 14, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0);")
+
+            sum_db = master / "conversation_summaries.db"
+            with sqlite3.connect(str(sum_db)) as con:
+                from antigravity_suite.history.sqlite_store import ensure_summaries_schema
+                ensure_summaries_schema(con)
+
+                stats = SyncStats()
+                all_summaries = {}
+                existing_rows = {
+                    conv_id: ("Test Title", "Test Preview", 5, "2026-10-10 12:00:00", corrupt_raw, "2026-10-10 12:00:00", 0, "", "outside-of-project")
+                }
+
+                # Resolve item: must detect trajectory_id mismatch and rebuild binary!
+                resolve_conversation_item(
+                    conv_id=conv_id,
+                    effective_master=master,
+                    master_conv_dir=db_dir,
+                    master_brain_dir=master / "brain",
+                    existing_rows=existing_rows,
+                    all_summaries=all_summaries,
+                    cur=con.cursor(),
+                    con=con,
+                    stats=stats,
+                    pinned_set=set(),
+                    project_mappings={}
+                )
+
+                healed_raw = all_summaries.get(conv_id)
+                self.assertIsNotNone(healed_raw)
+                parsed_healed = parse_cascade_summary(healed_raw)
+                self.assertEqual(parsed_healed.get("trajectory_id"), conv_id)
+
+    def test_authentic_project_id_not_overwritten_by_outside_of_project(self):
+        import sqlite3
+        from antigravity_suite.history.merger import resolve_conversation_item
+        from antigravity_suite.history.models import SyncStats
+        from antigravity_suite.history.sqlite_store import ensure_summaries_schema
+        from antigravity_suite.proto.cascade import build_cascade_summary
+
+        conv_id = "33333333-3333-3333-3333-333333333333"
+        authentic_pid = "247e98f3-8f0a-42be-bc77-e89c3bc6b998"
+
+        # Raw summary has outside-of-project
+        raw_with_outside = build_cascade_summary(
+            conv_id,
+            "Lede Chat",
+            "Lede Summary",
+            3,
+            project_id="outside-of-project"
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            master = Path(td)
+            db_dir = master / "conversations"
+            db_dir.mkdir(parents=True)
+            db_file = db_dir / f"{conv_id}.db"
+
+            with sqlite3.connect(str(db_file)) as con:
+                con.execute("CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, status INTEGER, has_subtrajectory NUMERIC, metadata BLOB, error_details BLOB, permissions BLOB, task_details BLOB, render_info BLOB, step_payload BLOB, step_format INTEGER);")
+                con.execute("INSERT INTO steps VALUES (0, 14, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0);")
+
+            sum_db = master / "conversation_summaries.db"
+            with sqlite3.connect(str(sum_db)) as con:
+                ensure_summaries_schema(con)
+
+                stats = SyncStats()
+                all_summaries = {}
+                # SQLite existing row has authentic_pid at index 8 and raw_with_outside at index 4!
+                existing_rows = {
+                    conv_id: ("Lede Chat", "Lede Preview", 3, "2026-10-10 12:00:00", raw_with_outside, "2026-10-10 12:00:00", 0, "file:///home/user/lede", authentic_pid)
+                }
+
+                resolve_conversation_item(
+                    conv_id=conv_id,
+                    effective_master=master,
+                    master_conv_dir=db_dir,
+                    master_brain_dir=master / "brain",
+                    existing_rows=existing_rows,
+                    all_summaries=all_summaries,
+                    cur=con.cursor(),
+                    con=con,
+                    stats=stats,
+                    pinned_set=set(),
+                    project_mappings={}
+                )
+
+                row = con.cursor().execute("SELECT project_id FROM conversation_summaries WHERE conversation_id = ?;", (conv_id,)).fetchone()
+                self.assertEqual(row[0], authentic_pid)
+
+    def test_sync_annotation_file_strips_at_mentions(self):
+        from antigravity_suite.history.extractor import sync_annotation_file
+
+        with tempfile.TemporaryDirectory() as td:
+            master = Path(td)
+            conv_id = "44444444-4444-4444-4444-444444444444"
+            dirty_title = "@[/home/reza/PhpstormProjects/app/User.php:20-30] Refactor auth"
+
+            ok = sync_annotation_file(master, conv_id, dirty_title)
+            self.assertTrue(ok)
+
+            anno_file = master / "annotations" / f"{conv_id}.pbtxt"
+            self.assertTrue(anno_file.exists())
+            content = anno_file.read_text()
+            self.assertNotIn("@[", content)
+            self.assertIn("Refactor auth", content)
+
 if __name__ == "__main__":
     unittest.main()
 

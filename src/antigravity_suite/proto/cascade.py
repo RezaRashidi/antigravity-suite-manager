@@ -314,6 +314,8 @@ def parse_cascade_summary(data: bytes) -> Dict[Any, Any]:
                                 if "project_id" not in res:
                                     res["project_id"] = b17.decode("utf-8", "ignore")
                                 res["has_tag_14"] = True
+                            elif t17 == 6:
+                                res["root_conversation_id"] = b17.decode("utf-8", "ignore")
                             elif t17 == 7:
                                 uri_str = b17.decode("utf-8", "ignore")
                                 if "workspace_uri" not in res:
@@ -404,6 +406,8 @@ def parse_cascade_summary(data: bytes) -> Dict[Any, Any]:
     # Resolve UUID / Trajectory ID
     if 4 in tag_strings and UUID_REGEX.match(tag_strings[4]):
         res["trajectory_id"] = tag_strings[4]
+    elif "root_conversation_id" in res and UUID_REGEX.match(res["root_conversation_id"]):
+        res["trajectory_id"] = res["root_conversation_id"]
     elif 1 in tag_strings and UUID_REGEX.match(tag_strings[1]):
         res["trajectory_id"] = tag_strings[1]
 

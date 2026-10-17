@@ -60,12 +60,12 @@ class TestProjectMappingAndGrouping(unittest.TestCase):
         """Verifies projects resolve to stable, deterministic IDs and subfolders match roots."""
         alpha_root = "file:///home/user/PhpstormProjects/project-alpha"
         alpha_sub = "file:///home/user/PhpstormProjects/project-alpha/.github/workflows"
-        root_pid = get_project_id_for_workspace(alpha_root, user_home=self.temp_dir)
-        sub_pid = get_project_id_for_workspace(alpha_sub, user_home=self.temp_dir)
+        root_pid = get_project_id_for_workspace(alpha_root, user_home=self.temp_dir, create_missing=True)
+        sub_pid = get_project_id_for_workspace(alpha_sub, user_home=self.temp_dir, create_missing=True)
         self.assertIsNotNone(root_pid)
         self.assertEqual(root_pid, sub_pid)
 
-        beta_pid = get_project_id_for_workspace("file:///home/user/Music/project-beta", user_home=self.temp_dir)
+        beta_pid = get_project_id_for_workspace("file:///home/user/Music/project-beta", user_home=self.temp_dir, create_missing=True)
         self.assertIsNotNone(beta_pid)
         self.assertNotEqual(root_pid, beta_pid)
 
