@@ -430,6 +430,7 @@ def resolve_conversation_item(
     if has_db and ws_uri and (ws_uri != db_ws_uri or proj_id != db_proj_id):
         try:
             with sqlite3.connect(str(db_file), timeout=5.0) as conv_conn:
+                conv_conn.execute("CREATE TABLE IF NOT EXISTS trajectory_metadata_blob (id text DEFAULT 'main', data blob, PRIMARY KEY (id));")
                 new_blob = build_trajectory_metadata_blob(conv_id, ws_uri, proj_id)
                 conv_conn.execute("INSERT OR REPLACE INTO trajectory_metadata_blob (id, data) VALUES ('main', ?);", (new_blob,))
                 conv_conn.commit()

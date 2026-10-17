@@ -44,6 +44,18 @@ def ensure_summaries_schema(conn: sqlite3.Connection) -> None:
         ON conversation_summaries (last_user_input_time);""")
     cur.execute("""CREATE INDEX IF NOT EXISTS idx_conversation_summaries_last_modified_time
         ON conversation_summaries (last_modified_time);""")
+
+    # Ensure legacy schemas have workspace_uris and project_id columns
+    try:
+        cur.execute("PRAGMA table_info(conversation_summaries);")
+        cols = {row[1] for row in cur.fetchall()}
+        if "workspace_uris" not in cols:
+            cur.execute('ALTER TABLE conversation_summaries ADD COLUMN workspace_uris text NOT NULL DEFAULT "";')
+        if "project_id" not in cols:
+            cur.execute('ALTER TABLE conversation_summaries ADD COLUMN project_id text NOT NULL DEFAULT "";')
+    except Exception:
+        pass
+
     conn.commit()
 
 

@@ -362,7 +362,7 @@ def ensure_project_configs(
         for ws in targets:
             if not ws or ws in existing_folder_uris:
                 continue
-            if not ws.startswith("file://") or any(k in ws for k in [".gemini", "/tmp"]):
+            if not ws.startswith("file://") or any(k in ws for k in [".gemini", "/tmp"]) or is_container_or_system_root(ws):
                 continue
             parsed = urlsplit(ws)
             path_str = unquote(parsed.path)
