@@ -62,9 +62,10 @@ def decode_pbtxt_string(s: str) -> str:
     return res.strip()
 
 
-def get_annotation_title(gemini_dir: Union[str, Path], conv_id: str) -> Optional[str]:
-    """Reads authentic title from annotations/<conv_id>.pbtxt if present."""
+def get_annotation_info(gemini_dir: Union[str, Path], conv_id: str) -> dict:
+    """Reads authentic title, pinned, and archived status from annotations/<conv_id>.pbtxt."""
     anno_file = os.path.join(str(gemini_dir), "annotations", f"{conv_id}.pbtxt")
+    info = {"title": None, "pinned": False, "archived": False}
     if os.path.isfile(anno_file):
         try:
             with open(anno_file, "r", encoding="utf-8", errors="ignore") as f:
@@ -72,17 +73,30 @@ def get_annotation_title(gemini_dir: Union[str, Path], conv_id: str) -> Optional
             m = re.search(r'title\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', content)
             if m:
                 clean_title = decode_pbtxt_string(m.group(1))
-                if clean_title and clean_title not in ["Conversation", "Untitled Conversation"]:
-                    if "@[" in clean_title:
-                        return None
-                    return clean_title
+                if clean_title and clean_title not in ["Conversation", "Untitled Conversation"] and "@[" not in clean_title:
+                    info["title"] = clean_title
+            if re.search(r'pinned\s*:\s*true', content, re.IGNORECASE):
+                info["pinned"] = True
+            if re.search(r'archived\s*:\s*true', content, re.IGNORECASE):
+                info["archived"] = True
         except Exception:
             pass
-    return None
+    return info
 
 
-def sync_annotation_file(master_gemini: Union[str, Path], conv_id: str, title: str) -> bool:
-    """Ensures annotations/<conv_id>.pbtxt exists and has title so Desktop App shows it."""
+def get_annotation_title(gemini_dir: Union[str, Path], conv_id: str) -> Optional[str]:
+    """Reads authentic title from annotations/<conv_id>.pbtxt if present."""
+    return get_annotation_info(gemini_dir, conv_id).get("title")
+
+
+def sync_annotation_file(
+    master_gemini: Union[str, Path],
+    conv_id: str,
+    title: str,
+    pinned: bool = False,
+    archived: bool = False,
+) -> bool:
+    """Ensures annotations/<conv_id>.pbtxt exists, has title, and preserves pinned/archived states."""
     if not title or title.strip() in ["", "Conversation", "Untitled Conversation"]:
         return False
 
@@ -102,20 +116,31 @@ def sync_annotation_file(master_gemini: Union[str, Path], conv_id: str, title: s
                 existing_t = m.group(1).strip()
                 if not existing_t or existing_t in ["Conversation", "Untitled Conversation"]:
                     new_content = re.sub(r'title\s*:\s*"[^"\\]*(?:\\.[^"\\]*)*"', title_line, content)
-                    with open(anno_file, "w", encoding="utf-8") as f:
-                        f.write(new_content)
-                    return True
+                else:
+                    new_content = content
             else:
                 new_content = f"{title_line}  {content}".strip()
+
+            if pinned and not re.search(r'pinned\s*:\s*true', new_content, re.IGNORECASE):
+                new_content = new_content.strip() + "  pinned:true"
+            if archived and not re.search(r'archived\s*:\s*true', new_content, re.IGNORECASE):
+                new_content = new_content.strip() + "  archived:true"
+
+            if new_content != content:
                 with open(anno_file, "w", encoding="utf-8") as f:
-                    f.write(f"{new_content}\n")
+                    f.write(f"{new_content.strip()}\n")
                 return True
         except Exception:
             return False
     else:
         try:
+            body = title_line
+            if pinned:
+                body += "  pinned:true"
+            if archived:
+                body += "  archived:true"
             with open(anno_file, "w", encoding="utf-8") as f:
-                f.write(f"{title_line}\n")
+                f.write(f"{body}\n")
             return True
         except Exception:
             return False

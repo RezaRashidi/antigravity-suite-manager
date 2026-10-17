@@ -7,6 +7,7 @@ from antigravity_suite.history.discovery import discover_all_history_sources
 from antigravity_suite.history.distribution import replicate_to_ide_profiles
 from antigravity_suite.history.extractor import (
     extract_conv_text,
+    get_annotation_info,
     get_annotation_title,
     sync_annotation_file,
 )
@@ -43,6 +44,7 @@ __all__ = [
     "SyncStats",
     "discover_all_history_sources",
     "extract_conv_text",
+    "get_annotation_info",
     "get_annotation_title",
     "sync_annotation_file",
     "ensure_summaries_schema",

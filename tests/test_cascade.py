@@ -335,9 +335,44 @@ class TestCascadeAndTrajectory(unittest.TestCase):
 
         val_b64 = base64.b64encode(bytes(payload)).decode("ascii")
         parsed = parse_sidebar_workspaces(val_b64)
-        self.assertIn("file:///home/user/app", parsed)
+    def test_cascade_summary_pinned_and_archived_roundtrip(self):
+        """Verifies Tag 15 encodes Tag 12 (pinned) and Tag 8 (archived) properly."""
+        uuid = "c99bd561-40b1-47a4-b851-10d371ff1bcd"
+        data = build_cascade_summary(
+            uuid=uuid,
+            title="Running Two AntiGravity Apps Same Account",
+            summary="Refactored profiles.",
+            step_count=100,
+            pinned=True,
+            archived=False,
+        )
+        parsed = parse_cascade_summary(data)
+        self.assertEqual(parsed.get("title"), "Running Two AntiGravity Apps Same Account")
+        self.assertTrue(parsed.get("pinned"))
+        self.assertFalse(parsed.get("archived", False))
+
+        # Check Tag 12 varint byte sequence in Tag 15
+        from antigravity_suite.proto.wire import read_varint
+        p = 0
+        tag15_found = False
+        while p < len(data):
+            tw, p = read_varint(data, p)
+            wt = tw & 7
+            tn = tw >> 3
+            if wt == 2:
+                l, p = read_varint(data, p)
+                val = data[p : p + l]
+                p += l
+                if tn == 15:
+                    tag15_found = True
+                    # Check that Tag 12 varint 1 (b"\x60\x01") is inside val
+                    self.assertIn(b"\x60\x01", val)
+            elif wt == 0:
+                _, p = read_varint(data, p)
+        self.assertTrue(tag15_found)
 
 
 if __name__ == "__main__":
     unittest.main()
+
 

@@ -56,7 +56,7 @@ def discover_candidate_vscdbs(
 ) -> List[Path]:
     """Dynamically discovers all state.vscdb paths across profiles and standard locations."""
     candidate_vscdbs_set = set()
-    homes = [user_home, Path(os.path.expanduser("~"))]
+    homes = [user_home] if user_home else [Path(os.path.expanduser("~"))]
 
     for h in homes:
         h_str = str(h)
@@ -64,6 +64,9 @@ def discover_candidate_vscdbs(
             os.path.join(h_str, ".config", "*", "User", "globalStorage", "state.vscdb"),
             os.path.join(h_str, ".config", "Google", "*", "User", "globalStorage", "state.vscdb"),
             os.path.join(h_str, ".antigravity*", ".config", "*", "User", "globalStorage", "state.vscdb"),
+            os.path.join(h_str, ".config", "*", "User", "workspaceStorage", "*", "state.vscdb"),
+            os.path.join(h_str, ".config", "Google", "*", "User", "workspaceStorage", "*", "state.vscdb"),
+            os.path.join(h_str, ".antigravity*", ".config", "*", "User", "workspaceStorage", "*", "state.vscdb"),
         ]:
             for vpath in glob.glob(pattern):
                 if any(k in vpath.lower() for k in ["antigravity", "gemini"]):
@@ -71,9 +74,12 @@ def discover_candidate_vscdbs(
 
     if ide_candidates:
         for cand in ide_candidates:
-            cand_vsc = Path(cand) / "User" / "globalStorage" / "state.vscdb"
+            cand_p = Path(cand)
+            cand_vsc = cand_p / "User" / "globalStorage" / "state.vscdb"
             if cand_vsc.is_file():
                 candidate_vscdbs_set.add(cand_vsc.resolve())
+            for ws_vsc in glob.glob(str(cand_p / "User" / "workspaceStorage" / "*" / "state.vscdb")):
+                candidate_vscdbs_set.add(Path(ws_vsc).resolve())
 
     return sorted(list(candidate_vscdbs_set))
 
@@ -83,6 +89,7 @@ def ingest_vscdb_summaries(
     all_summaries: Dict[str, bytes],
     master_conv_dir: Path,
     con: sqlite3.Connection,
+    pinned_set: Optional[Set[str]] = None,
 ) -> int:
     """
     Reads conversation titles from VS Code state.vscdb ItemTable and enriches
@@ -129,6 +136,8 @@ def ingest_vscdb_summaries(
                             effective_pid = mapped_pid or db_proj_id or curr_parsed.get("project_id") or ""
                             sc = max(get_actual_steps_count(db_p), curr_parsed.get("step_count", 0), curr_parsed.get(2, 0), 1)
                             user_step = get_last_user_step_index(db_p, sc)
+                            is_pin = bool((pinned_set and u_id in pinned_set) or curr_parsed.get("pinned", False))
+                            is_arc = bool(curr_parsed.get("archived", False))
                             new_bin = build_cascade_summary(
                                 u_id,
                                 ide_title,
@@ -140,6 +149,8 @@ def ingest_vscdb_summaries(
                                 project_id=effective_pid,
                                 created_iso=curr_parsed.get("created_iso") or curr_parsed.get("ts_7"),
                                 last_user_input_iso=curr_parsed.get("last_user_input_iso") or curr_parsed.get("ts_10"),
+                                pinned=is_pin,
+                                archived=is_arc,
                             )
                             all_summaries[u_id] = new_bin
                             cur.execute(
@@ -187,6 +198,7 @@ def write_vscdb_unified_state(
         try:
             v_con = sqlite3.connect(str(vscdb_p), timeout=15.0)
             v_cur = v_con.cursor()
+            v_cur.execute("CREATE TABLE IF NOT EXISTS ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB);")
             old_sync_row = v_cur.execute(
                 "SELECT value FROM ItemTable WHERE key = 'antigravityUnifiedStateSync';"
             ).fetchone()

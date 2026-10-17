@@ -48,6 +48,44 @@ graph TD
 | **Launcher** | `~/.local/bin/antigravity-1`, `antigravity-acc2` | `~/.local/bin/antigravity-ide` |
 | **Desktop Shortcut** | `~/.local/share/applications/antigravity-1.desktop` | `~/.local/share/applications/antigravity-ide.desktop` |
 
+### 1.1 Antigravity IDE Process & Component Architecture
+
+Antigravity IDE is built upon a modified VS Code OSS core with tight integration between editor processes and native language services:
+
+```mermaid
+graph TD
+    subgraph "Antigravity IDE Architecture"
+        IDEApp["Electron Main Process (/opt/antigravity/antigravity-ide)"]
+        Renderer["Workbench Webview & Monaco Editor (Renderer)"]
+        ExtHost["Extension Host Process"]
+        MainLS["[LS Main] Go Language Server (Loopback TLS)"]
+        LspClient["[LS lspClient] Workspace Language Server"]
+
+        IDEApp --> Renderer
+        IDEApp --> ExtHost
+        IDEApp --> MainLS
+        ExtHost --> LspClient
+        
+        Renderer <-->|"VS Code Extension API"| ExtHost
+        ExtHost <-->|"ConnectRPC / gRPC-Web"| MainLS
+        ExtHost <-->|"ConnectRPC / gRPC-Web"| LspClient
+        
+        MainLS --> Cloud["Google Daily Cloud Code Backend"]
+        MainLS --> MCPCore["System MCP Servers (grafana, kibana, portainer, proxmox)"]
+        LspClient --> MCPProj["Project MCP Servers (elasticsearch, caveman)"]
+        
+        MainLS --> VSCDB["state.vscdb (globalStorage)"]
+        MainLS --> SQLite["conversation_summaries.db & <uuid>.db"]
+    end
+```
+
+- **VS Code Core (`resources/app/`)**: Electron main runtime, Monaco editor rendering, extension host sandboxing, and workbench state management.
+- **Antigravity Extension Host (`resources/app/extensions/antigravity/`)**: Custom extension acting as the IPC bridge between editor events (buffer edits, active tabs, terminal output) and the Go Language Server.
+- **Dual Go Language Server Architecture**:
+  - `[LS Main]` (**Main Language Server**): Spawned by Electron main process on dynamic loopback HTTPS port. Handles Cloud Code OAuth2 authentication, Gemini streaming, user quota monitoring, and system MCP tools.
+  - `[LS lspClient]` (**Workspace Language Server**): Spawned by extension host for active workspace. Manages codebase semantic index, symbol lookup, and workspace-scoped MCP servers.
+- **ConnectRPC Transport**: High-throughput binary RPC protocol over local TLS (`127.0.0.1:<port>`), authenticated via session token header `x-codeium-csrf-token: <csrf>`.
+
 ---
 
 ## 2. Language Server Architecture & ConnectRPC Protocols
@@ -113,6 +151,27 @@ with urllib.request.urlopen(req, context=ctx) as r:
 Checks cloud project binding and subscription metadata:
 - Consumer projects: `cloudaicompanionProject: aicode-consumers`.
 - Paid tier IDs: `g1-pro-tier` (Google AI Pro) vs `free-tier` (Antigravity Starter Quota).
+
+#### 4. `UpdateConversationAnnotations`
+Dynamically pushes conversation title, pinned status, and archival state into the running Go Language Server's in-memory index and disk state without restarting the IDE or Desktop App:
+```python
+req = urllib.request.Request(
+    f"https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/UpdateConversationAnnotations",
+    data=json.dumps({
+        "cascadeIds": [conversation_id],
+        "annotations": {
+            "title": title,
+            "pinned": True,
+            "archived": False
+        }
+    }).encode("utf-8"),
+    headers={"Content-Type": "application/json", "x-codeium-csrf-token": csrf}
+)
+with urllib.request.urlopen(req, context=ctx) as r:
+    res = json.loads(r.read().decode())
+```
+> [!NOTE]
+> Language server port is dynamically bound upon launch. Discover it via loopback listeners: `ss -tulpn | grep language_server`. CSRF token is parsed from `--csrf_token` command line arguments of the process.
 
 ---
 
@@ -222,28 +281,63 @@ The IDE frontend and language server decode chat messages from the binary Protob
 
 ```mermaid
 graph TD
-    Payload["step_payload (Protobuf)"]
-    Payload --> Tag1["Tag 1 (Varint): step_type (14=User, 15=Assistant, 132=Tool)"]
-    Payload --> Tag4["Tag 4 (Varint): status (3=DONE, 4=ERROR)"]
+    Payload["step_payload (Protobuf Outer Message)"]
+    Payload --> Tag1["Tag 1 (Varint): step_type (14=User, 15=Assistant, 132=Tool, ...)"]
+    Payload --> Tag4["Tag 4 (Varint): status (1=UNSPECIFIED, 2=RUNNING, 3=DONE, 4=ERROR)"]
     Payload --> Tag5["Tag 5 (Bytes): TrajectoryMetadata (conv_id, cascade_id)"]
-    Payload --> TagPayload{"Step Specific Body"}
+    Payload --> TagPayload{"Step Specific Body by Tag"}
     
-    TagPayload -->|"step_type == 14"| Tag19["Tag 19 (UserInput)"]
-    Tag19 --> Tag19_2["Subfield 2: Raw User Prompt Text"]
-    Tag19 --> Tag19_3["Subfield 3: UserInputChunk (Tag 1 = Clean Title Text)"]
+    TagPayload -->|"step_type == 14"| Tag19["Tag 19 (CortexStepUserInput)"]
+    Tag19 --> Tag19_1["Subfield 1: query (string)"]
+    Tag19 --> Tag19_2["Subfield 2: Raw User Prompt Text (string)"]
+    Tag19 --> Tag19_3["Subfield 3: UserInputChunk (Subfield 1 = Clean Title Text)"]
+    Tag19 --> Tag19_5["Subfield 5: images (repeated ImageData)"]
+    Tag19 --> Tag19_9["Subfield 9: media (repeated MediaItem: mime_type, uri)"]
 
-    TagPayload -->|"step_type == 15"| Tag20["Tag 20 (ModelResponse)"]
-    Tag20 --> Tag20_1["Subfield 1: Markdown Response Body"]
-    Tag20 --> Tag20_3["Subfield 3: Thinking / Chain-of-Thought"]
+    TagPayload -->|"step_type == 15"| Tag20["Tag 20 (CortexStepPlannerResponse)"]
+    Tag20 --> Tag20_1["Subfield 1: Primary Markdown Response Body (string)"]
+    Tag20 --> Tag20_3["Subfield 3: Thinking / CoT Reasoning (string)"]
     Tag20 --> Tag20_6["Subfield 6: Agent ID ('antigravity-agent')"]
-    Tag20 --> Tag20_7["Subfield 7: ToolCall Proto (call_id, function, args)"]
-    Tag20 --> Tag20_8["Subfield 8: Markdown Response Body"]
-    Tag20 --> Tag20_12["Subfield 12: Varint 2"]
+    Tag20 --> Tag20_7["Subfield 7: ToolCall Proto (call_id, function, args JSON)"]
+    Tag20 --> Tag20_8["Subfield 8: Fallback Markdown Response Body (string)"]
+    Tag20 --> Tag20_11["Subfield 11: thinking_duration (int64)"]
+    Tag20 --> Tag20_14["Subfield 14: thinking_signature (bytes)"]
+    Tag20 --> Tag20_16["Subfield 16: raw_thinking (string)"]
 
-    TagPayload -->|"step_type == 132"| Tag140["Tag 140 (ToolExecution)"]
-    Tag140 --> Tag140_1["Subfield 1: Tool Parameters / Summary"]
-    Tag140 --> Tag140_2["Subfield 2: Command stdout / Result Content"]
+    TagPayload -->|"step_type == 28"| Tag28["Tag 28 (CortexStepRunCommand)"]
+    Tag28 --> Tag28_1["Subfield 1: command_line (string)"]
+    Tag28 --> Tag28_2["Subfield 2: cwd (string)"]
+    Tag28 --> Tag28_3["Subfield 3: is_daemon (bool)"]
+
+    TagPayload -->|"step_type == 47"| Tag47["Tag 47 (CortexStepMcpTool)"]
+    Tag47 --> Tag47_1["Subfield 1: server_name (string)"]
+    Tag47 --> Tag47_2["Subfield 2: tool_name (string)"]
+    Tag47 --> Tag47_3["Subfield 3: arguments_json (string)"]
+
+    TagPayload -->|"step_type == 132/140"| Tag140["Tag 140 (CortexStepGeneric / ToolExecution)"]
+    Tag140 --> Tag140_1["Subfield 1: Tool Parameters / Args Key-Value Pairs"]
+    Tag140 --> Tag140_2["Subfield 2: Command stdout / Result Content (string)"]
+
+    TagPayload -->|"step_type == 143"| Tag143["Tag 143 (CortexStepInvokeSubagent)"]
+    Tag143 --> Tag143_1["Subfield 1: role (string)"]
+    Tag143 --> Tag143_2["Subfield 2: prompt (string)"]
+
+    TagPayload -->|"step_type == 154"| Tag154["Tag 154 (CortexStepAskQuestion)"]
 ```
+
+#### Complete Step Type Enumeration & Body Tag Mapping
+| Step Type ID | Name | Payload Tag | Schema Message | Primary Fields |
+|:---:|:---|:---:|:---|:---|
+| **14** | `USER_INPUT` | **19** | `CortexStepUserInput` | Subfield 1=`query`, Subfield 2=`user_response` (raw prompt), Subfield 3=`items` (`UserInputChunk`: 1=`clean_title`), Subfield 5=`images`, Subfield 9=`media` |
+| **15** | `PLANNER_RESPONSE` | **20** | `CortexStepPlannerResponse` | Subfield 1=`response` (markdown), Subfield 3=`thinking` (CoT), Subfield 6=`message_id`, Subfield 7=`tool_calls`, Subfield 8=`modified_response`, Subfield 16=`raw_thinking` |
+| **28** | `RUN_COMMAND` | **28** | `CortexStepRunCommand` | Subfield 1=`command_line`, Subfield 2=`cwd`, Subfield 3=`is_daemon`, Subfield 5=`wait_ms_before_async` |
+| **42** | `SEARCH_WEB` | **42** | `CortexStepSearchWeb` | Subfield 1=`query`, Subfield 2=`results` |
+| **47** | `MCP_TOOL` | **47** | `CortexStepMcpTool` | Subfield 1=`server_name`, Subfield 2=`tool_name`, Subfield 3=`arguments_json` |
+| **93** | `TASK_BOUNDARY` | **93** | `CortexStepTaskBoundary` | Subfield 1=`boundary_marker` |
+| **94** | `NOTIFY_USER` | **94** | `CortexStepNotifyUser` | Subfield 1=`message` |
+| **132** / **140** | `TOOL_EXECUTION` | **140** | `CortexStepGeneric` | Subfield 1=`args` key-value pairs, Subfield 2=`result` stdout/output text |
+| **143** | `INVOKE_SUBAGENT`| **143** | `CortexStepInvokeSubagent` | Subfield 1=`role`, Subfield 2=`prompt`, Subfield 3=`subagent_id` |
+| **154** | `ASK_QUESTION` | **154** | `CortexStepAskQuestion` | Subfield 1=`questions`, Subfield 2=`options`, Subfield 3=`is_multi_select` |
 
 > [!WARNING]
 > **Empty Messages & Blank Bubble Headers Cause**:
@@ -260,16 +354,250 @@ When restoring conversations from transcript logs:
    - Inspects `steps` table for Step 14 rows: checks for wire tag `b"\x1a"` (Tag 19, Subfield 3, wire type 2). If absent, user title bubbles are blank.
    - When incomplete, the merger automatically re-synthesizes the SQLite database from the transcript log.
 
-### 6. `agyhub_summaries_proto.pb` (Protobuf Format)
-Fast binary index used by the Electron UI sidebar to render conversation titles without scanning SQLite or JSON directories. Updated directly by `antigravity-merge-history.py`.
+### 6. Fast Binary Indices (`agyhub_summaries_proto.pb` & `jetbox_summaries.pb`)
+Fast binary Protobuf caches used by the Electron UI sidebar to render conversation titles without scanning SQLite or JSON directories:
+- `~/.gemini/antigravity/agyhub_summaries_proto.pb`
+- `~/.gemini/antigravity/jetbox_summaries.pb`
+Both files encapsulate repeated `CascadeTrajectorySummary` records. Updated directly by `antigravity-merge-history.py`.
 
-### 7. `state.vscdb` (VS Code Global State SQLite)
+### 7. Definitive Protobuf Tag Reference (Extracted Descriptors)
+
+#### 7.1 `CascadeTrajectorySummary` (`jetski_cortex.proto`)
+The top-level conversation summary message persisted inside SQLite `conversation_summaries.raw_summary` and serialized in `agyhub_summaries_proto.pb`:
+
+| Tag | Field Name | Wire Type | Proto Type | Description |
+|:---:|:---|:---:|:---|:---|
+| **1** | `summary` | Length-Delimited | `string` | Conversation prompt text or summary fallback |
+| **2** | `step_count` | Varint | `uint32` | Total number of trajectory steps executed |
+| **3** | `last_modified_time` | Length-Delimited | `google.protobuf.Timestamp` | Last modification timestamp (`seconds`, `nanos`) |
+| **4** | `trajectory_id` | Length-Delimited | `string` | Canonical conversation UUID |
+| **5** | `status` | Varint | `CascadeRunStatus` | Run status enum (1=IDLE, 2=RUNNING, 3=PAUSED) |
+| **7** | `created_time` | Length-Delimited | `google.protobuf.Timestamp` | Conversation initial creation timestamp |
+| **8** | `waiting_steps` | Length-Delimited | `repeated CortexTrajectoryStepWithIndex` | Steps awaiting user response or tool approval |
+| **9** | `workspaces` | Length-Delimited | `repeated CortexWorkspaceMetadata` | Workspaces and Git repositories bound to conversation |
+| **10** | `last_user_input_time` | Length-Delimited | `google.protobuf.Timestamp` | Exact timestamp of the last prompt sent by user |
+| **12** | `latest_notify_user_step` | Length-Delimited | `CortexTrajectoryStepWithIndex` | Most recent notification step |
+| **14** | `latest_task_boundary_step` | Length-Delimited | `CortexTrajectoryStepWithIndex` | Most recent task boundary execution marker |
+| **15** | `annotations` | Length-Delimited | `ConversationAnnotations` | User annotations submessage (title, pinned, archived) |
+| **16** | `last_user_input_step_index` | Varint | `uint32` | Step index of last user input. Governs "New" unread badge |
+| **17** | `trajectory_metadata` | Length-Delimited | `CortexTrajectoryMetadata` | Deep conversation, agent config, and project metadata |
+| **18** | `has_active_children` | Varint | `bool` | True if multi-agent subagents are currently running |
+| **19** | `battle_mode_info` | Length-Delimited | `BattleModeInfo` | Multi-model arena / battle mode tracking info |
+| **20** | `source` | Varint | `CortexTrajectorySource` | Creation client source enum (1=USER, 2=IDE, etc.) |
+| **21** | `not_fully_idle` | Varint | `bool` | In-flight execution sentinel flag |
+| **22** | `trajectory_type` | Varint | `CortexTrajectoryType` | Trajectory type enum (4=CHAT) |
+| **23** | `killed` | Varint | `bool` | True if conversation was explicitly killed by user |
+| **24** | `fork_parent_conversation_id` | Length-Delimited | `string` | Parent UUID if conversation was forked |
+| **25** | `interrupted` | Varint | `bool` | True if stream was aborted mid-generation |
+| **26** | `has_activity` | Varint | `bool` | Background activity indicator |
+| **27** | `cloud` | Varint | `bool` | True if synchronized to Google Cloud backend |
+| **28** | `latest_executor_termination_reason` | Varint | `ExecutorTerminationReason` | Termination code of last executor run |
+
+#### 7.2 `ConversationAnnotations` (Tag 15 in `CascadeTrajectorySummary`)
+Defines all user-facing state flags, titles, and categorization:
+
+| Tag | Field Name | Wire Type | Proto Type | Description |
+|:---:|:---|:---:|:---|:---|
+| **1** | `title` | Length-Delimited | `string` | Conversation title displayed in sidebar |
+| **3** | `tags` | Length-Delimited | `repeated string` | Tag list attached to conversation |
+| **4** | `archived` | Varint | `bool` | **Canonical archival status flag** |
+| **5** | `archival_status_timestamp` | Length-Delimited | `google.protobuf.Timestamp` | Timestamp when conversation was archived/restored |
+| **6** | `starred` | Varint | `bool` | Starred / favorite flag |
+| **7** | `last_user_view_time` | Length-Delimited | `google.protobuf.Timestamp` | Timestamp when user last clicked or opened conversation |
+| **8** | `marked_as_unread` | Varint | `bool` | Explicit unread marker |
+| **9** | `group_id` | Length-Delimited | `string` | Folder or group category UUID |
+| **10** | `group_index` | Varint | `int32` | Relative sort index inside group |
+| **11** | `group_description` | Length-Delimited | `string` | Description of group |
+| **12** | `pinned` | Varint | `bool` | **Pinned status flag** (evaluated by Desktop App `gZ()`) |
+| **13** | `cls` | Length-Delimited | `repeated int64` | Classifier category IDs |
+| **14** | `active_profile` | Length-Delimited | `string` | Profile label under which conversation was created |
+| **15** | `conversation_group_id` | Length-Delimited | `string` | Group cluster identifier |
+| **16** | `sensitivity_level` | Varint | `SensitivityLevel` | DLP data sensitivity classification |
+
+#### 7.3 `CortexWorkspaceMetadata` (Tag 9 in Summary & Tag 1 in Metadata)
+| Tag | Field Name | Wire Type | Proto Type | Description |
+|:---:|:---|:---:|:---|:---|
+| **1** | `workspace_folder_absolute_uri` | Length-Delimited | `string` | Project workspace URI (e.g. `file:///home/user/project`) |
+| **2** | `git_root_absolute_uri` | Length-Delimited | `string` | Git repository root URI |
+| **3** | `repository` | Length-Delimited | `Repository` | Repository metadata submessage |
+| **4** | `branch_name` | Length-Delimited | `string` | Active Git branch name |
+
+#### 7.4 `CortexTrajectoryMetadata` (Tag 17 in Summary & `trajectory_metadata_blob`)
+| Tag | Field Name | Wire Type | Proto Type | Description |
+|:---:|:---|:---:|:---|:---|
+| **1** | `workspaces` | Length-Delimited | `repeated CortexWorkspaceMetadata` | Workspaces array |
+| **2** | `created_at` | Length-Delimited | `google.protobuf.Timestamp` | Trajectory initialization timestamp |
+| **3** | `initialization_state_id` | Length-Delimited | `string` | Init state UUID |
+| **4** | `agent_script` | Length-Delimited | `AgentScriptItem` | Configured workflow script metadata |
+| **5** | `parent_conversation_id` | Length-Delimited | `string` | Parent conversation UUID in agent tree |
+| **6** | `root_conversation_id` | Length-Delimited | `string` | Root conversation UUID |
+| **7** | `workspace_uris` | Length-Delimited | `repeated string` | Workspace URI strings list |
+| **8** | `subagent_spec` | Length-Delimited | `SubagentSpec` | Subagent configuration specification |
+| **10** | `static_config` | Length-Delimited | `CustomAgentSpec` | Static agent prompt and tool definitions |
+| **11** | `executable_spec` | Length-Delimited | `ExecutableScriptSpec` | Executable script runner specs |
+| **12** | `source_metadata` | Length-Delimited | `SourceMetadata` | Origin client metadata |
+| **15** | `mendel_experiment_ids` | Length-Delimited | `repeated int32` | Active Google Mendel feature experiment IDs |
+| **16** | `is_battle_mode_fork` | Varint | `bool` | True if trajectory is a Battle Mode fork |
+| **17** | `nesting_depth` | Varint | `int32` | Subagent recursion nesting depth |
+| **18** | `project_id` | Length-Delimited | `string` | Project identifier (`outside-of-project` or hash) |
+| **19** | `environment_id` | Length-Delimited | `string` | Environment execution ID |
+| **20** | `tags` | Length-Delimited | `repeated string` | Trajectory metadata tags |
+| **21** | `replacements` | Length-Delimited | `repeated StringReplacement` | Context placeholder replacements |
+| **22** | `battle_mode_metadata` | Length-Delimited | `BattleModeMetadata` | Multi-model arena metadata |
+| **23** | `remote_control_details` | Length-Delimited | `RemoteControlDetails` | Remote headless control session state |
+
+---
+
+### 8. Desktop App Storage (`app_storage.json`) & Double-Elimination Filtering Mechanics
+
+The Antigravity Hub Desktop App stores UI interaction state in `~/.config/Antigravity/app_storage.json` (and instance profile variants like `~/.antigravity-profile2/.config/Antigravity/app_storage.json`).
+
+#### Critical Keys & Formatting
+```json
+{
+  "pinnedConversations": "[\"c99bd561-1ff5-4e7a-9774-60193bb967b5\"]",
+  "archivedConversations": "[\"4632490d-2bcf-4f90-8e12-c2cb4e6503c5\"]",
+  "conversationTitles": {
+    "c99bd561-1ff5-4e7a-9774-60193bb967b5": "Running Two AntiGravity Apps Same Account"
+  }
+}
+```
+> [!CRITICAL]
+> **String-Encoded JSON Arrays vs Native JSON Arrays**:
+> - The Electron Desktop App periodically writes `pinnedConversations` and `archivedConversations` as a **JSON-stringified string** (e.g. `"[\"uuid1\", \"uuid2\"]"`), NOT a native JSON array.
+> - Parser implementations must handle both native JSON lists and double-deserialization of stringified arrays (`if isinstance(val, str): val = json.loads(val)`).
+
+#### The Double-Elimination Filter in Desktop App UI (`main.js` / `gZ()`)
+The Desktop App frontend applies a strict two-tier filter when categorizing conversations:
+1. **Pinned Filter**:
+   - The UI checks `indexes.pinned.has(uuid)` (from `app_storage.json`).
+   - **AND** it checks `summary.annotations.pinned === true` (from Protobuf Tag 15 -> Tag 12).
+   - **Double-Elimination Failure**: If a conversation is in `pinnedConversations` inside `app_storage.json`, but `raw_summary` Protobuf Tag 12 is false/missing, the UI strips the chat from the pinned section entirely.
+2. **Archived Filter**:
+   - The UI checks `indexes.archived.has(uuid)` (from `app_storage.json`).
+   - **AND** it checks `summary.annotations.archived === true` (from Protobuf Tag 15 -> Tag 4).
+   - If Protobuf Tag 4 is not set, the chat appears in active conversations instead of archives.
+
+#### 3-Tier Synchronization Mandate
+To ensure 100% parity across IDE and Desktop App without missing or miscategorized chats:
+1. **Protobuf `raw_summary`**: Set Tag 15 -> Tag 12 (`pinned = true`) and Tag 15 -> Tag 4 (`archived = true/false`).
+2. **`app_storage.json`**: Update both native lists and write stringified JSON arrays across all instance config roots.
+3. **ConnectRPC `UpdateConversationAnnotations`**: Send live updates to running Go Language Server instances so memory caches refresh instantly.
+
+---
+
+### 9. `state.vscdb` (VS Code Global State SQLite)
 Located at `~/.config/Antigravity IDE/User/globalStorage/state.vscdb`:
 - **Table**: `ItemTable (key TEXT PRIMARY KEY, value TEXT)`
 - **Key Entries**:
   - `antigravityAuthStatus`: JSON containing `{ "name": "...", "email": "...", "apiKey": "..." }`.
   - `antigravityUnifiedStateSync.userStatus`: Base64-encoded Protobuf caching user status, models, and tiers.
   - `antigravityUnifiedStateSync.trajectorySummaries`: Base64-encoded Protobuf index of all conversations.
+
+---
+
+### 10. Legacy vs. Modern Database & Storage Architecture Comparison
+
+The storage architecture of Antigravity IDE underwent a major transition from flat binary/JSON structures (Early 2024 - Mid 2026) to a transactional SQLite + Protobuf wire system (Late 2026+):
+
+| Dimension | Legacy Architecture (Early 2024 - Mid 2026) | Modern Architecture (Late 2026+) |
+| :--- | :--- | :--- |
+| **Chat Storage Format** | Flat binary Protobuf files (`<uuid>.pb`) and JSON logs (`<uuid>.json`) | Dedicated SQLite databases per conversation (`<uuid>.db`) with WAL journal |
+| **Trajectory Steps** | Monolithic blob containing all steps in memory | Granular `steps` table: 1 row per step (`idx`), indexed by step type |
+| **Global Conversation Index** | Flat binary files (`agyhub_summaries_proto.pb`, `jetbox_summaries.pb`) | SQLite relational database `conversation_summaries.db` with B-Tree indices |
+| **Workspace Filtering** | None. All conversations appeared in a single flat sidebar list | Strict workspace partitioning via `workspace_uris` and `project_id` columns |
+| **Unread "New" State** | Not tracked. Spurious badges or untracked state | Tracked via `last_user_input_step_index` and `last_user_input_time` |
+| **IDE State Persistence** | Basic JSON / file cache | Two-way synchronized `state.vscdb` (`antigravityUnifiedStateSync.trajectorySummaries`) |
+| **Concurrent Safe Operations** | High risk of file corruption during concurrent access or hard crashes | ACID compliant via SQLite WAL mode and transactions (`copy_sqlite_db_safely`) |
+| **Subagent / Multi-Agent Support** | Flat, no hierarchy tracking | Relational hierarchy tracking via `parent_conversation_id` and `nesting_depth` |
+
+#### Detailed Schema Comparison
+
+##### 1. Legacy Schema (`conversation_summaries` - Initial Format)
+```sql
+-- Initial barebones schema without workspace separation
+CREATE TABLE conversation_summaries (
+    conversation_id TEXT PRIMARY KEY,
+    title TEXT DEFAULT "",
+    preview TEXT DEFAULT "",
+    step_count INTEGER DEFAULT 0,
+    last_modified_time DATETIME NOT NULL,
+    status TEXT DEFAULT "CASCADE_RUN_STATUS_IDLE",
+    source TEXT DEFAULT "",
+    raw_summary BLOB
+);
+-- Limitations of Legacy:
+-- 1. No workspace_uris or project_id: All conversations leaked across all workspaces.
+-- 2. No last_user_input_step_index: Sidebar displayed spurious "New" badges permanently.
+-- 3. No timestamps indexing: Full table scan required on every sidebar load.
+```
+
+##### 2. Modern Schema (`conversation_summaries` - Full Modern Schema)
+```sql
+CREATE TABLE conversation_summaries (
+    conversation_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL DEFAULT "",
+    preview TEXT NOT NULL DEFAULT "",
+    step_count INTEGER NOT NULL DEFAULT 0,
+    last_modified_time DATETIME NOT NULL,
+    workspace_uris TEXT NOT NULL DEFAULT "",            -- [MODERN] Project Git URI for workspace filtering
+    status TEXT NOT NULL DEFAULT "CASCADE_RUN_STATUS_IDLE",
+    source TEXT NOT NULL DEFAULT "",
+    project_id TEXT NOT NULL DEFAULT "",                -- [MODERN] Project hash / "outside-of-project"
+    agent_name TEXT NOT NULL DEFAULT "",                -- [MODERN] Specialized agent spec name
+    parent_conversation_id TEXT NOT NULL DEFAULT "",    -- [MODERN] Agent tree parent UUID
+    nesting_depth INTEGER NOT NULL DEFAULT 0,           -- [MODERN] Subagent recursion depth
+    battle_id TEXT NOT NULL DEFAULT "",                 -- [MODERN] Battle Mode arena identifier
+    winning_conversation_id TEXT NOT NULL DEFAULT "",   -- [MODERN] Battle Mode winner UUID
+    not_fully_idle NUMERIC NOT NULL DEFAULT false,      -- [MODERN] In-flight execution sentinel
+    killed NUMERIC NOT NULL DEFAULT false,              -- [MODERN] Cancelled/killed state flag
+    last_user_input_time DATETIME NOT NULL,             -- [MODERN] Exact timestamp of last user prompt
+    last_user_input_step_index INTEGER NOT NULL DEFAULT -1, -- [MODERN] Read/unread indicator
+    app_data_dir TEXT NOT NULL DEFAULT "antigravity",
+    raw_summary BLOB,                                   -- Complete CascadeTrajectorySummary protobuf
+    group_id TEXT NOT NULL DEFAULT ""                   -- [MODERN] Grouping / folder identifier
+);
+
+CREATE INDEX idx_conversation_summaries_last_user_input_time
+    ON conversation_summaries (last_user_input_time);
+CREATE INDEX idx_conversation_summaries_last_modified_time
+    ON conversation_summaries (last_modified_time);
+```
+
+##### 3. Modern Per-Conversation Database (`<uuid>.db`)
+Each conversation is an independent SQLite database preventing single-point corruption:
+```sql
+CREATE TABLE trajectory_meta (
+    trajectory_id TEXT PRIMARY KEY,
+    cascade_id TEXT,
+    trajectory_type INTEGER, -- 4=CHAT
+    source INTEGER           -- 1=USER, 2=IDE
+);
+
+CREATE TABLE steps (
+    idx INTEGER PRIMARY KEY,
+    step_type INTEGER NOT NULL DEFAULT 0, -- 14=User, 15=Assistant, 28=RunCommand, 47=MCP, 140=Tool
+    status INTEGER NOT NULL DEFAULT 0,    -- 1=UNSPECIFIED, 2=RUNNING, 3=DONE, 4=ERROR
+    has_subtrajectory NUMERIC NOT NULL DEFAULT false,
+    metadata BLOB,                        -- Protobuf Tag 5 TrajectoryMetadata
+    error_details BLOB,
+    permissions BLOB,
+    task_details BLOB,
+    render_info BLOB,
+    step_payload BLOB,                    -- Protobuf payload (Tags 19, 20, 28, 47, 140)
+    step_format INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE trajectory_metadata_blob (
+    id TEXT PRIMARY KEY DEFAULT "main",
+    data BLOB -- Protobuf CortexTrajectoryMetadata (workspaces, git_root, project_id)
+);
+
+CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB, size INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE executor_metadata (idx INTEGER PRIMARY KEY, data BLOB);
+CREATE TABLE parent_references (idx INTEGER PRIMARY KEY, data BLOB);
+CREATE TABLE battle_mode_infos (idx INTEGER PRIMARY KEY, data BLOB);
+```
 
 ---
 

@@ -71,6 +71,8 @@ def build_cascade_summary(
     project_id: Optional[str] = None,
     created_iso: Optional[Union[str, datetime.datetime, int, float]] = None,
     last_user_input_iso: Optional[Union[str, datetime.datetime, int, float]] = None,
+    pinned: bool = False,
+    archived: bool = False,
 ) -> bytes:
     """
     Serializes conversation metadata into authentic Antigravity CascadeTrajectorySummary binary protobuf.
@@ -124,10 +126,14 @@ def build_cascade_summary(
     # Tag 10: last_user_input_time (google.protobuf.Timestamp)
     out += encode_tag_bytes(10, ts_user_input)
 
-    # Tag 15: annotations submessage (Tag 1 = title, Tag 7 = view timestamp)
+    # Tag 15: annotations submessage (Tag 1 = title, Tag 4 = archived, Tag 7 = view timestamp, Tag 8 = marked_as_unread, Tag 12 = pinned)
     sub_15 = bytearray()
     sub_15 += encode_tag_bytes(1, effective_title.encode("utf-8"))
     sub_15 += encode_tag_bytes(7, ts_modified)
+    if pinned:
+        sub_15 += encode_tag_uint(12, 1)
+    if archived:
+        sub_15 += encode_tag_uint(4, 1)
     out += encode_tag_bytes(15, bytes(sub_15))
 
     # Tag 16: last_user_input_step_index (uint32 varint)
@@ -257,7 +263,11 @@ def parse_cascade_summary(data: bytes) -> Dict[Any, Any]:
                             if t15 == 1:
                                 res["title"] = b15.decode("utf-8", "ignore")
                         elif w15 == 0:
-                            _, p15 = read_varint(val_bytes, p15)
+                            v15, p15 = read_varint(val_bytes, p15)
+                            if t15 == 12:
+                                res["pinned"] = bool(v15)
+                            elif t15 in (4, 8):
+                                res["archived"] = bool(v15)
                         elif w15 == 1:
                             p15 += 8
                         elif w15 == 5:

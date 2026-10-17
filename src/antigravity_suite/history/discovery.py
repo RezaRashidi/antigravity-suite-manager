@@ -196,3 +196,108 @@ def discover_all_history_sources(
         return out
 
     return dedupe(conv_dirs), dedupe(brain_dirs), dedupe(ide_candidates)
+
+
+def discover_pinned_conversation_ids(user_home: Optional[Path] = None) -> Set[str]:
+    """
+    Discovers all pinned conversation UUIDs across all app_storage.json configs
+    and annotations/*.pbtxt files.
+    """
+    home = Path(user_home).resolve() if user_home else Path.home().resolve()
+    pinned_ids: Set[str] = set()
+
+    # 1. Search candidate app_storage.json locations
+    candidate_app_storages = [
+        home / ".config" / "Antigravity" / "app_storage.json",
+        home / ".config" / "Antigravity IDE" / "app_storage.json",
+    ]
+    for p in home.glob(".antigravity-profile*/.config/Antigravity/app_storage.json"):
+        candidate_app_storages.append(p)
+
+    for app_store in candidate_app_storages:
+        if app_store.is_file():
+            try:
+                with open(app_store, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                raw_val = data.get("pinned_conversations_order", [])
+                if isinstance(raw_val, str):
+                    try:
+                        raw_val = json.loads(raw_val)
+                    except Exception:
+                        raw_val = []
+                if isinstance(raw_val, list):
+                    for c_id in raw_val:
+                        if isinstance(c_id, str) and len(c_id) >= 32:
+                            pinned_ids.add(c_id.strip())
+            except Exception:
+                pass
+
+    # 2. Search candidate annotations directories
+    anno_dirs = [
+        home / ".gemini" / "antigravity" / "annotations",
+        home / ".gemide" / "antigravity-ide" / "annotations",
+    ]
+    for p in home.glob(".antigravity-profile*/.gemini/antigravity/annotations"):
+        anno_dirs.append(p)
+
+    for ad in anno_dirs:
+        if ad.is_dir():
+            for pbtxt in ad.glob("*.pbtxt"):
+                try:
+                    with open(pbtxt, "r", encoding="utf-8", errors="ignore") as f:
+                        if re.search(r"pinned\s*:\s*true", f.read(), re.IGNORECASE):
+                            pinned_ids.add(pbtxt.stem.strip())
+                except Exception:
+                    pass
+
+    return pinned_ids
+
+
+def replicate_pinned_conversations_order(
+    pinned_ids: Set[str],
+    user_home: Optional[Path] = None,
+) -> None:
+    """
+    Ensures all discovered app_storage.json files contain the complete set of
+    pinned conversation IDs in pinned_conversations_order.
+    """
+    if not pinned_ids:
+        return
+    home = Path(user_home).resolve() if user_home else Path.home().resolve()
+    candidate_app_storages = [
+        home / ".config" / "Antigravity" / "app_storage.json",
+    ]
+    for p in home.glob(".antigravity-profile*/.config/Antigravity/app_storage.json"):
+        candidate_app_storages.append(p)
+
+    for app_store in candidate_app_storages:
+        if app_store.is_file():
+            try:
+                with open(app_store, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                raw_val = data.get("pinned_conversations_order", [])
+                was_str = isinstance(raw_val, str)
+                if was_str:
+                    try:
+                        existing = json.loads(raw_val)
+                    except Exception:
+                        existing = []
+                elif isinstance(raw_val, list):
+                    existing = raw_val
+                else:
+                    existing = []
+
+                merged = list(existing)
+                changed = False
+                for pid in sorted(pinned_ids):
+                    if pid not in merged:
+                        merged.append(pid)
+                        changed = True
+
+                if changed:
+                    data["pinned_conversations_order"] = json.dumps(merged) if was_str else merged
+                    with open(app_store, "w", encoding="utf-8") as f:
+                        json.dump(data, f, indent=2)
+            except Exception:
+                pass
+

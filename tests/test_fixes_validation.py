@@ -324,5 +324,41 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
                 migration.MASTER_GEMINI = orig_master
                 migration.GEMINI_DIR = orig_gemini
 
+    def test_vscdb_sync_discovers_and_updates_workspace_storage(self):
+        """Verifies discover_candidate_vscdbs finds workspaceStorage and write_vscdb_unified_state syncs it."""
+        from pathlib import Path
+        import sqlite3
+        from antigravity_suite.history.vscdb_sync import discover_candidate_vscdbs, write_vscdb_unified_state
+        from antigravity_suite.proto.cascade import build_cascade_summary
+
+        with tempfile.TemporaryDirectory() as td:
+            user_home = Path(td)
+            global_dir = user_home / ".config" / "Antigravity IDE" / "User" / "globalStorage"
+            global_dir.mkdir(parents=True)
+            global_db = global_dir / "state.vscdb"
+            with sqlite3.connect(str(global_db)) as con:
+                con.execute("CREATE TABLE ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB);")
+
+            ws_dir = user_home / ".config" / "Antigravity IDE" / "User" / "workspaceStorage" / "mock_workspace_1"
+            ws_dir.mkdir(parents=True)
+            ws_db = ws_dir / "state.vscdb"
+            with sqlite3.connect(str(ws_db)) as con:
+                con.execute("CREATE TABLE ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB);")
+
+            discovered = discover_candidate_vscdbs(user_home=user_home)
+            self.assertIn(global_db.resolve(), discovered)
+            self.assertIn(ws_db.resolve(), discovered)
+
+            # Write unified state and verify both databases are populated
+            mock_cid = "11111111-2222-3333-4444-555555555555"
+            mock_bin = build_cascade_summary(mock_cid, "Test Chat", "Preview", 5)
+            write_vscdb_unified_state(discovered, {mock_cid: mock_bin})
+
+            for target_db in [global_db, ws_db]:
+                with sqlite3.connect(str(target_db)) as con:
+                    row = con.cursor().execute("SELECT value FROM ItemTable WHERE key = 'antigravityUnifiedStateSync.trajectorySummaries';").fetchone()
+                    self.assertIsNotNone(row)
+                    self.assertIsNotNone(row[0])
+
 if __name__ == "__main__":
     unittest.main()

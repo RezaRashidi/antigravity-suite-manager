@@ -21,10 +21,15 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
 from antigravity_suite.auth.token import refresh_ide_oauth_token
 from antigravity_suite.config import DEFAULT_CONFIG, SuiteConfig, get_user_home
 from antigravity_suite.history.backup import HistoryBackupManager
-from antigravity_suite.history.discovery import discover_all_history_sources
+from antigravity_suite.history.discovery import (
+    discover_all_history_sources,
+    discover_pinned_conversation_ids,
+    replicate_pinned_conversations_order,
+)
 from antigravity_suite.history.distribution import replicate_to_ide_profiles
 from antigravity_suite.history.extractor import (
     extract_conv_text,
+    get_annotation_info,
     get_annotation_title,
     sync_annotation_file,
 )
@@ -215,6 +220,7 @@ def resolve_conversation_item(
     cur: sqlite3.Cursor,
     con: sqlite3.Connection,
     stats: SyncStats,
+    pinned_set: Optional[Set[str]] = None,
 ) -> None:
     """Evaluates and synchronizes an individual conversation entry in SQLite."""
     db_file = master_conv_dir / f"{conv_id}.db"
@@ -266,7 +272,10 @@ def resolve_conversation_item(
     final_user_input_iso = t_clean_user_input or sql_user_input or final_modified_iso
     final_created_iso = t_clean_created or final_user_input_iso or final_modified_iso
 
-    anno_title = get_annotation_title(effective_master, conv_id)
+    anno_info = get_annotation_info(effective_master, conv_id)
+    anno_title = anno_info.get("title")
+    is_pinned = bool(anno_info.get("pinned") or (pinned_set and conv_id in pinned_set))
+    is_archived = bool(anno_info.get("archived"))
     db_ws_uri, db_proj_id = get_db_trajectory_meta(db_file) if has_db else (None, None)
 
     curr_raw = all_summaries.get(conv_id)
@@ -350,6 +359,21 @@ def resolve_conversation_item(
     needs_steps_rebuild = bool(actual_steps > curr_step_cnt)
     is_not_in_sqlite = bool(conv_id not in existing_rows)
 
+    sql_raw = existing_rows[conv_id][4] if conv_id in existing_rows else None
+    parsed_sql = parse_cascade_summary(sql_raw) if sql_raw else {}
+    sql_pinned = bool(parsed_sql.get("pinned", False))
+    sql_archived = bool(parsed_sql.get("archived", False))
+
+    raw_pinned = bool(parsed_raw.get("pinned", False))
+    raw_archived = bool(parsed_raw.get("archived", False))
+    needs_pinned_rebuild = bool(
+        is_pinned != raw_pinned
+        or is_archived != raw_archived
+        or is_pinned != sql_pinned
+        or is_archived != sql_archived
+    )
+    needs_sql_sync = bool(is_not_in_sqlite or (sql_raw != curr_raw))
+
     # If summary exists, is valid, is in SQLite, and doesn't need rebuild:
     if (
         curr_raw
@@ -360,6 +384,8 @@ def resolve_conversation_item(
         and not is_not_in_sqlite
         and not needs_ws_rebuild
         and not needs_proj_rebuild
+        and not needs_pinned_rebuild
+        and not needs_sql_sync
     ):
         all_summaries[conv_id] = curr_raw
         if curr_title != final_title or curr_prev != final_prev:
@@ -379,6 +405,7 @@ def resolve_conversation_item(
         and not needs_steps_rebuild
         and not needs_ws_rebuild
         and not needs_proj_rebuild
+        and (is_pinned == raw_pinned and is_archived == raw_archived)
     ):
         raw_to_store = curr_raw
         user_step = (
@@ -403,6 +430,8 @@ def resolve_conversation_item(
             project_id=proj_id,
             created_iso=final_created_iso,
             last_user_input_iso=final_user_input_iso,
+            pinned=is_pinned,
+            archived=is_archived,
         )
 
     all_summaries[conv_id] = raw_to_store
@@ -424,7 +453,7 @@ def resolve_conversation_item(
         project_id=proj_id or "",
     )
     upsert_summary(con, summary_model)
-    sync_annotation_file(effective_master, conv_id, final_title)
+    sync_annotation_file(effective_master, conv_id, final_title, pinned=is_pinned, archived=is_archived)
 
     # Keep conversation db trajectory_metadata_blob in sync if present
     if has_db and ws_uri and (ws_uri != db_ws_uri or proj_id != db_proj_id):
@@ -450,6 +479,7 @@ def synchronize_master_summaries(
     master_sum_db: Path,
     master_proto: Path,
     stats: SyncStats,
+    pinned_set: Optional[Set[str]] = None,
 ) -> Tuple[sqlite3.Connection, Dict[str, bytes]]:
     """
     Connects to master SQLite database, ensures schema, ingests existing summaries,
@@ -498,6 +528,7 @@ def synchronize_master_summaries(
             cur=cur,
             con=con,
             stats=stats,
+            pinned_set=pinned_set,
         )
 
     con.commit()
@@ -539,12 +570,19 @@ def serialize_master_proto(master_proto: Path, all_summaries: Dict[str, bytes]) 
         pass
 
 
-def sync_annotation_files(effective_master: Path, cur: sqlite3.Cursor) -> None:
+def sync_annotation_files(
+    effective_master: Path,
+    cur: sqlite3.Cursor,
+    pinned_set: Optional[Set[str]] = None,
+) -> None:
     """Synchronizes annotations/<conv_id>.pbtxt files for Desktop App UI rendering."""
+    if pinned_set is None:
+        pinned_set = set()
     for c_id, c_title in cur.execute(
         "SELECT conversation_id, title FROM conversation_summaries WHERE length(title) > 0;"
     ).fetchall():
-        sync_annotation_file(effective_master, c_id, c_title)
+        is_pin = c_id in pinned_set
+        sync_annotation_file(effective_master, c_id, c_title, pinned=is_pin)
 
 
 def merge_histories(
@@ -621,6 +659,10 @@ def merge_histories(
         force_rebuild=force_rebuild,
     )
 
+    # 6.5. Discover and unify all pinned conversations across Desktop App profiles
+    pinned_ids = discover_pinned_conversation_ids(user_home=home)
+    replicate_pinned_conversations_order(pinned_ids, user_home=home)
+
     # 7. Read and synchronize conversation_summaries.db
     con, all_summaries = synchronize_master_summaries(
         effective_master=effective_master,
@@ -629,6 +671,7 @@ def merge_histories(
         master_sum_db=master_sum_db,
         master_proto=master_proto,
         stats=stats,
+        pinned_set=pinned_ids,
     )
 
     try:
@@ -640,6 +683,7 @@ def merge_histories(
             all_summaries=all_summaries,
             master_conv_dir=master_conv_dir,
             con=con,
+            pinned_set=pinned_ids,
         )
 
         # 9. Serialize and write agyhub_summaries_proto.pb
@@ -666,7 +710,7 @@ def merge_histories(
         )
 
         # 12. Synchronize annotations/<conv_id>.pbtxt files for Desktop App UI title rendering
-        sync_annotation_files(effective_master, cur)
+        sync_annotation_files(effective_master, cur, pinned_set=pinned_ids)
 
         stats.total_active_history = cur.execute("SELECT count(*) FROM conversation_summaries;").fetchone()[0]
 
