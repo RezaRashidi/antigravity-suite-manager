@@ -1338,7 +1338,11 @@ create_instance() {
 
         if [ "$imode" = "shared" ]; then
             log_info "Configuring shared conversation history with master pool..."
-            rm -rf "${profile_dir}/.gemini/antigravity"
+            if [ -L "${profile_dir}/.gemini/antigravity" ]; then
+                rm -f "${profile_dir}/.gemini/antigravity"
+            else
+                rm -rf "${profile_dir}/.gemini/antigravity"
+            fi
             ln -sfn "$SHARED_CONV_DIR" "${profile_dir}/.gemini/antigravity"
             ln -sfn "$SHARED_CONFIG_DIR" "${profile_dir}/.gemini/config"
         else

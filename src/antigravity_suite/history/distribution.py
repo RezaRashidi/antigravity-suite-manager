@@ -31,7 +31,7 @@ def replicate_to_ide_profiles(
     """
     valid_targets = []
     for td in sorted(set(target_ide_dirs)):
-        if os.path.isdir(td) and os.path.realpath(td) != str(effective_master):
+        if os.path.isdir(td) and Path(td).resolve() != effective_master.resolve():
             if "suite-manager" in os.path.basename(td):
                 continue
             valid_targets.append(td)

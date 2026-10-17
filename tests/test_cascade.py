@@ -297,6 +297,47 @@ class TestCascadeAndTrajectory(unittest.TestCase):
         self.assertIsNotNone(gamma_pid)
         self.assertNotEqual(beta_pid, gamma_pid)
 
+    def test_parse_cascade_tag17_workspace_metadata(self):
+        """Verifies Tag 17 Tag 1 CortexWorkspaceMetadata submessage is correctly decoded."""
+        from antigravity_suite.proto.wire import encode_tag_bytes
+
+        # Build Tag 17 with only Tag 1 CortexWorkspaceMetadata (no Tag 7, no Tag 9)
+        ws_sub = bytearray()
+        ws_sub += encode_tag_bytes(1, b"file:///home/user/workspace/app")
+        ws_sub += encode_tag_bytes(2, b"file:///home/user/workspace/app")
+
+        tag17_body = bytearray()
+        tag17_body += encode_tag_bytes(1, bytes(ws_sub))
+        tag17_body += encode_tag_bytes(18, b"project-uuid-1234")
+
+        data = bytearray()
+        data += encode_tag_bytes(1, b"Prompt message")
+        data += encode_tag_bytes(17, bytes(tag17_body))
+
+        parsed = parse_cascade_summary(bytes(data))
+        self.assertEqual(parsed.get("workspace_uri"), "file:///home/user/workspace/app")
+        self.assertEqual(parsed.get("project_id"), "project-uuid-1234")
+
+    def test_parse_sidebar_workspaces_mixed_wire_types(self):
+        """Verifies parse_sidebar_workspaces tolerates non-length-delimited fields without corrupting."""
+        import base64
+        from antigravity_suite.proto.vscdb import parse_sidebar_workspaces
+        from antigravity_suite.proto.wire import encode_tag_bytes, encode_tag_uint
+
+        valid_entry = bytearray()
+        valid_entry += encode_tag_bytes(1, b"file:///home/user/app")
+        valid_entry += encode_tag_bytes(2, b"dummy-row-bytes")
+
+        payload = bytearray()
+        payload += encode_tag_uint(10, 42)  # Varint Tag 10
+        payload += encode_tag_bytes(1, bytes(valid_entry))  # Length-delimited entry
+        payload += encode_tag_uint(12, 1)  # Varint Tag 12
+
+        val_b64 = base64.b64encode(bytes(payload)).decode("ascii")
+        parsed = parse_sidebar_workspaces(val_b64)
+        self.assertIn("file:///home/user/app", parsed)
+
 
 if __name__ == "__main__":
     unittest.main()
+

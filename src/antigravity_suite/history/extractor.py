@@ -210,13 +210,33 @@ def extract_conv_text(
     brain_folder = ""
     if t_str:
         cand_bf = os.path.dirname(os.path.dirname(os.path.dirname(t_str)))
-        if os.path.isdir(cand_bf):
+        conv_uuid = os.path.basename(cand_bf)
+        parent_dir = os.path.dirname(cand_bf)
+        # Check direct folder
+        if os.path.isdir(cand_bf) and any(glob.glob(os.path.join(cand_bf, "*.md"))):
+            brain_folder = cand_bf
+        else:
+            # Check sibling brain/<conv_id> or antigravity/brain/<conv_id>
+            for b_cand in [
+                os.path.join(parent_dir, "brain", conv_uuid),
+                os.path.join(parent_dir, "antigravity", "brain", conv_uuid),
+                os.path.join(os.path.dirname(parent_dir), "brain", conv_uuid),
+                os.path.join(os.path.dirname(parent_dir), "antigravity", "brain", conv_uuid),
+            ]:
+                if os.path.isdir(b_cand) and any(glob.glob(os.path.join(b_cand, "*.md"))):
+                    brain_folder = b_cand
+                    break
+        if not brain_folder and os.path.isdir(cand_bf):
             brain_folder = cand_bf
     if not brain_folder and db_str:
         p_db = Path(db_str)
         cand_bf = str(p_db.parent.parent / "brain" / p_db.stem)
         if os.path.isdir(cand_bf):
             brain_folder = cand_bf
+        else:
+            cand_bf2 = str(p_db.parent.parent.parent / "brain" / p_db.stem)
+            if os.path.isdir(cand_bf2):
+                brain_folder = cand_bf2
 
     # 1. Authentic H1 Document Title Extraction Pipeline (SKILL.md 7.3)
     title = ""

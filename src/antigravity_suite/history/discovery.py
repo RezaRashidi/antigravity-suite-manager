@@ -185,17 +185,6 @@ def discover_all_history_sources(
         except Exception:
             pass
 
-    # 7. Check legacy backup history directories
-    for h in homes:
-        hist_backup_dir = os.path.join(h, ".config", "antigravity", "backups", "history")
-        if os.path.isdir(hist_backup_dir):
-            for b_cand in glob.glob(os.path.join(hist_backup_dir, "*", "conversations*")):
-                if os.path.isdir(b_cand):
-                    conv_dirs.add(os.path.realpath(b_cand))
-            for b_cand in glob.glob(os.path.join(hist_backup_dir, "*", "brain*")):
-                if os.path.isdir(b_cand):
-                    brain_dirs.add(os.path.realpath(b_cand))
-
     def dedupe(paths: Set[str]) -> List[str]:
         seen = set()
         out = []

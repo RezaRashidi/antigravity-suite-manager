@@ -156,24 +156,44 @@ def parse_sidebar_workspaces(val_b64: Optional[str]) -> Dict[str, bytes]:
     while pos < total:
         try:
             tw, pos = read_varint(raw, pos)
-            l, pos = read_varint(raw, pos)
-            entry_raw = raw[pos : pos + l]
-            pos += l
-            epos = 0
-            k = None
-            v = None
-            while epos < len(entry_raw):
-                etw, epos = read_varint(entry_raw, epos)
-                etag = etw >> 3
-                el, epos = read_varint(entry_raw, epos)
-                eval_ = entry_raw[epos : epos + el]
-                epos += el
-                if etag == 1:
-                    k = eval_.decode("utf-8", "ignore")
-                elif etag == 2:
-                    v = eval_
-            if k:
-                workspaces[k] = v or b""
+            wt = tw & 7
+            if wt == 2:
+                l, pos = read_varint(raw, pos)
+                entry_raw = raw[pos : pos + l]
+                pos += l
+                epos = 0
+                k = None
+                v = None
+                while epos < len(entry_raw):
+                    etw, epos = read_varint(entry_raw, epos)
+                    etag = etw >> 3
+                    ewt = etw & 7
+                    if ewt == 2:
+                        el, epos = read_varint(entry_raw, epos)
+                        eval_ = entry_raw[epos : epos + el]
+                        epos += el
+                        if etag == 1:
+                            k = eval_.decode("utf-8", "ignore")
+                        elif etag == 2:
+                            v = eval_
+                    elif ewt == 0:
+                        _, epos = read_varint(entry_raw, epos)
+                    elif ewt == 1:
+                        epos += 8
+                    elif ewt == 5:
+                        epos += 4
+                    else:
+                        break
+                if k:
+                    workspaces[k] = v or b""
+            elif wt == 0:
+                _, pos = read_varint(raw, pos)
+            elif wt == 1:
+                pos += 8
+            elif wt == 5:
+                pos += 4
+            else:
+                break
         except Exception:
             break
     return workspaces

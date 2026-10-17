@@ -303,6 +303,29 @@ def parse_cascade_summary(data: bytes) -> Dict[Any, Any]:
                                 uri_str = b17.decode("utf-8", "ignore")
                                 if "workspace_uri" not in res:
                                     res["workspace_uri"] = uri_str
+                            elif t17 == 1:
+                                try:
+                                    p_sub = 0
+                                    while p_sub < len(b17):
+                                        tw_sub, p_sub = read_varint(b17, p_sub)
+                                        w_sub = tw_sub & 7
+                                        t_sub = tw_sub >> 3
+                                        if w_sub == 2:
+                                            l_sub, p_sub = read_varint(b17, p_sub)
+                                            sub_val = b17[p_sub : p_sub + l_sub]
+                                            p_sub += l_sub
+                                            if t_sub == 1 and "workspace_uri" not in res:
+                                                res["workspace_uri"] = sub_val.decode("utf-8", "ignore")
+                                        elif w_sub == 0:
+                                            _, p_sub = read_varint(b17, p_sub)
+                                        elif w_sub == 1:
+                                            p_sub += 8
+                                        elif w_sub == 5:
+                                            p_sub += 4
+                                        else:
+                                            break
+                                except Exception:
+                                    pass
                         elif w17 == 0:
                             _, p17 = read_varint(val_bytes, p17)
                         elif w17 == 1:

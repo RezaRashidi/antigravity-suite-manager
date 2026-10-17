@@ -120,7 +120,7 @@ def watch_mode(
                     flush=True,
                 )
                 try:
-                    merge_histories(effective_master, quiet=True, user_home=home)
+                    merge_histories(effective_master, quiet=True, user_home=home, skip_backup=True)
                 except Exception as e:
                     print(f"[Antigravity Watcher] Merge error: {e}", flush=True)
                 # Snapshot after merge finishes so self-modifications are recognized

@@ -28,7 +28,7 @@ def merge_raw_db_pools(conv_pools: List[str], master_conv_dir: Path) -> int:
     """
     db_files_merged = 0
     for pool in conv_pools:
-        if os.path.realpath(pool) == str(master_conv_dir):
+        if Path(pool).resolve() == master_conv_dir.resolve():
             continue
         for src_file in glob.glob(os.path.join(pool, "*")):
             base = os.path.basename(src_file)
@@ -86,7 +86,7 @@ def merge_brain_folders(brain_pools: List[str], master_brain_dir: Path) -> int:
     """
     brain_folders_merged = 0
     for b_pool in brain_pools:
-        if os.path.realpath(b_pool) == str(master_brain_dir):
+        if Path(b_pool).resolve() == master_brain_dir.resolve():
             continue
         for b_item in glob.glob(os.path.join(b_pool, "*")):
             if not os.path.isdir(b_item):
