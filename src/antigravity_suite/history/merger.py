@@ -45,6 +45,7 @@ from antigravity_suite.history.sqlite_store import (
 from antigravity_suite.history.projects import (
     KNOWN_PROJECT_MAPPINGS,
     KNOWN_ROOTS,
+    discover_project_mappings,
     ensure_project_configs,
     get_project_id_for_workspace,
     normalize_workspace_uri,
@@ -221,6 +222,7 @@ def resolve_conversation_item(
     con: sqlite3.Connection,
     stats: SyncStats,
     pinned_set: Optional[Set[str]] = None,
+    project_mappings: Optional[Dict[str, str]] = None,
 ) -> None:
     """Evaluates and synchronizes an individual conversation entry in SQLite."""
     db_file = master_conv_dir / f"{conv_id}.db"
@@ -343,8 +345,8 @@ def resolve_conversation_item(
     raw_ws = db_ws_uri or parsed_raw.get("workspace_uri") or existing_ws
     ws_uri = normalize_workspace_uri(raw_ws)
 
-    # Resolve project_id from authentic workspace mapping
-    mapped_pid = get_project_id_for_workspace(ws_uri) if ws_uri else None
+    # Resolve project_id from authentic workspace mapping (using pre-discovered mappings O(1))
+    mapped_pid = get_project_id_for_workspace(ws_uri, mappings=project_mappings) if ws_uri else None
     proj_id = mapped_pid or db_proj_id or parsed_raw.get("project_id") or existing_proj or ""
     if not proj_id and ws_uri:
         proj_id = "outside-of-project"
@@ -392,7 +394,9 @@ def resolve_conversation_item(
         or is_pinned != sql_pinned
         or is_archived != sql_archived
     )
-    needs_sql_sync = bool(is_not_in_sqlite or (sql_raw != curr_raw))
+    sql_clean = extract_pure_binary_summary(sql_raw) if sql_raw else None
+    curr_clean = extract_pure_binary_summary(curr_raw) if curr_raw else None
+    needs_sql_sync = bool(is_not_in_sqlite or (sql_clean != curr_clean))
 
     # If summary exists, is valid, is in SQLite, and doesn't need rebuild:
     if (
@@ -504,6 +508,7 @@ def synchronize_master_summaries(
     master_proto: Path,
     stats: SyncStats,
     pinned_set: Optional[Set[str]] = None,
+    user_home: Optional[Path] = None,
 ) -> Tuple[sqlite3.Connection, Dict[str, bytes]]:
     """
     Connects to master SQLite database, ensures schema, ingests existing summaries,
@@ -511,6 +516,7 @@ def synchronize_master_summaries(
     Returns:
         (con, all_summaries)
     """
+    home = user_home or get_user_home()
     all_summaries: Dict[str, bytes] = {}
     con = sqlite3.connect(str(master_sum_db), timeout=15.0)
     ensure_summaries_schema(con)
@@ -541,6 +547,9 @@ def synchronize_master_summaries(
         extra_ids=all_summaries.keys(),
     )
 
+    # Pre-discover project mappings once in memory (O(1) resolution)
+    project_mappings = discover_project_mappings(home)
+
     for conv_id in sorted(all_conv_ids):
         resolve_conversation_item(
             conv_id=conv_id,
@@ -553,14 +562,15 @@ def synchronize_master_summaries(
             con=con,
             stats=stats,
             pinned_set=pinned_set,
+            project_mappings=project_mappings,
         )
 
     con.commit()
     return con, all_summaries
 
 
-def serialize_master_proto(master_proto: Path, all_summaries: Dict[str, bytes]) -> None:
-    """Serializes in-memory summaries dictionary to binary Protobuf file atomically."""
+def serialize_master_proto(master_proto: Path, all_summaries: Dict[str, bytes]) -> bool:
+    """Serializes in-memory summaries dictionary to binary Protobuf file atomically if changed."""
     try:
         entries_data = bytearray()
         for u_id, p_bin in sorted(all_summaries.items()):
@@ -571,9 +581,19 @@ def serialize_master_proto(master_proto: Path, all_summaries: Dict[str, bytes]) 
                 entry += encode_tag_bytes(2, raw)
                 entries_data += encode_tag_bytes(1, bytes(entry))
 
+        new_bytes = bytes(entries_data)
+        if master_proto.is_file():
+            try:
+                if master_proto.stat().st_size == len(new_bytes):
+                    with open(master_proto, "rb") as cur_f:
+                        if cur_f.read() == new_bytes:
+                            return False  # Unchanged! Skip writing to disk and companion copies
+            except Exception:
+                pass
+
         tmp_proto = str(master_proto) + ".tmp"
         with open(tmp_proto, "wb") as f:
-            f.write(bytes(entries_data))
+            f.write(new_bytes)
         os.replace(tmp_proto, master_proto)
 
         # Atomically synchronize companion protobuf files in master directory
@@ -590,8 +610,9 @@ def serialize_master_proto(master_proto: Path, all_summaries: Dict[str, bytes]) 
                         shutil.copy2(master_proto, companion_file)
                 except Exception:
                     pass
+        return True
     except Exception:
-        pass
+        return False
 
 
 def sync_annotation_files(
@@ -703,6 +724,7 @@ def merge_histories(
         master_proto=master_proto,
         stats=stats,
         pinned_set=pinned_ids,
+        user_home=home,
     )
 
     try:

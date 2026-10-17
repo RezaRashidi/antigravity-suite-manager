@@ -207,8 +207,24 @@ def write_vscdb_unified_state(
             ).fetchone()
             old_sync_b64 = old_sync_row[0] if old_sync_row else None
 
+            old_traj_row = v_cur.execute(
+                "SELECT value FROM ItemTable WHERE key = 'antigravityUnifiedStateSync.trajectorySummaries';"
+            ).fetchone()
+            old_traj_b64 = old_traj_row[0] if old_traj_row else None
+
             val_wrap_b64 = build_summaries_state(all_summaries)
             outer_b64 = build_unified_state_sync(all_summaries, existing_raw_b64=old_sync_b64)
+
+            # Ensure sidebarWorkspaces includes all active workspaces
+            old_ws_row = v_cur.execute(
+                "SELECT value FROM ItemTable WHERE key = 'antigravityUnifiedStateSync.sidebarWorkspaces';"
+            ).fetchone()
+            old_ws_b64 = old_ws_row[0] if old_ws_row else None
+            new_ws_b64 = update_sidebar_workspaces_state(old_ws_b64, sorted(list(active_workspaces)))
+
+            # Fast path: Skip expensive disk writes if state payload is completely identical
+            if outer_b64 == old_sync_b64 and val_wrap_b64 == old_traj_b64 and new_ws_b64 == old_ws_b64:
+                continue
 
             v_cur.execute(
                 "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('antigravityUnifiedStateSync.trajectorySummaries', ?);",
@@ -218,13 +234,6 @@ def write_vscdb_unified_state(
                 "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('antigravityUnifiedStateSync', ?);",
                 (outer_b64,),
             )
-
-            # Ensure sidebarWorkspaces includes all active workspaces
-            old_ws_row = v_cur.execute(
-                "SELECT value FROM ItemTable WHERE key = 'antigravityUnifiedStateSync.sidebarWorkspaces';"
-            ).fetchone()
-            old_ws_b64 = old_ws_row[0] if old_ws_row else None
-            new_ws_b64 = update_sidebar_workspaces_state(old_ws_b64, sorted(list(active_workspaces)))
             v_cur.execute(
                 "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('antigravityUnifiedStateSync.sidebarWorkspaces', ?);",
                 (new_ws_b64,),

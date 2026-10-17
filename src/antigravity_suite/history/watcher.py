@@ -94,6 +94,10 @@ def watch_mode(
     print(f"[Antigravity Watcher] Actively monitoring conversation directories for modifications...", flush=True)
 
     last_discovery_time = time.time()
+    first_change_time: Optional[float] = None
+    last_change_time: Optional[float] = None
+    burst_count = 0
+    pending_file: Optional[str] = None
 
     while running:
         try:
@@ -114,18 +118,46 @@ def watch_mode(
                     changed_file = (f, last_snapshot.get(f), mtime)
                     break
 
-            if has_changes and (time.time() - last_merge_time) >= debounce_seconds:
+            if has_changes:
+                if first_change_time is None:
+                    first_change_time = now
+                    burst_count = 1
+                else:
+                    burst_count += 1
+                last_change_time = now
+                pending_file = changed_file[0]
+                last_snapshot = current_snapshot
+
+            should_trigger = False
+            trigger_reason = ""
+            if first_change_time is not None and last_change_time is not None:
+                quiet_duration = now - last_change_time
+                total_duration = now - first_change_time
+                required_quiet = debounce_seconds if burst_count <= 1 else min(debounce_seconds * 2.5, 8.0)
+
+                if quiet_duration >= required_quiet:
+                    should_trigger = True
+                    trigger_reason = f"quiet period settled ({quiet_duration:.1f}s >= {required_quiet:.1f}s, bursts={burst_count})"
+                elif total_duration >= 15.0:
+                    should_trigger = True
+                    trigger_reason = f"hard deadline ceiling reached ({total_duration:.1f}s >= 15.0s, bursts={burst_count})"
+
+            if should_trigger:
                 print(
-                    f"[Antigravity Watcher] Change detected in {changed_file[0]} (prev={changed_file[1]}, curr={changed_file[2]}), syncing...",
+                    f"[Antigravity Watcher] Sync triggered: {trigger_reason} on {pending_file}...",
                     flush=True,
                 )
                 try:
                     merge_histories(effective_master, quiet=True, user_home=home, skip_backup=True)
                 except Exception as e:
                     print(f"[Antigravity Watcher] Merge error: {e}", flush=True)
-                # Snapshot after merge finishes so self-modifications are recognized
+
                 last_snapshot = _get_mtime_snapshot(watch_conv_dirs, watch_brain_dirs)
                 last_merge_time = time.time()
+                first_change_time = None
+                last_change_time = None
+                burst_count = 0
+                pending_file = None
             elif not last_snapshot:
                 last_snapshot = current_snapshot
 

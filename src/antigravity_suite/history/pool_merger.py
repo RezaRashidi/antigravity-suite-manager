@@ -46,16 +46,22 @@ def merge_raw_db_pools(conv_pools: List[str], master_conv_dir: Path) -> int:
             elif base.endswith(".db"):
                 # STRICT STEP PRECEDENCE (Bug 2 & 10):
                 # A truncated database must NEVER overwrite a complete database
-                src_steps = get_actual_steps_count(src_file)
-                tgt_steps = get_actual_steps_count(target_file)
-                if src_steps > tgt_steps:
-                    needs_copy = True
-                elif src_steps < tgt_steps:
+                # Fast path: identical size and timestamp means file is already synced
+                src_stat = os.stat(src_file)
+                tgt_stat = target_file.stat()
+                if src_stat.st_size == tgt_stat.st_size and abs(src_stat.st_mtime - tgt_stat.st_mtime) < 1.0:
                     needs_copy = False
                 else:
-                    # Same number of steps: update only if source is genuinely newer
-                    if os.path.getmtime(src_file) > (target_file.stat().st_mtime + 2.0):
+                    src_steps = get_actual_steps_count(src_file)
+                    tgt_steps = get_actual_steps_count(target_file)
+                    if src_steps > tgt_steps:
                         needs_copy = True
+                    elif src_steps < tgt_steps:
+                        needs_copy = False
+                    else:
+                        # Same number of steps: update only if source is genuinely newer
+                        if src_stat.st_mtime > (tgt_stat.st_mtime + 2.0):
+                            needs_copy = True
             else:
                 # Non-sqlite files (.pb)
                 if os.path.getsize(src_file) > target_file.stat().st_size:

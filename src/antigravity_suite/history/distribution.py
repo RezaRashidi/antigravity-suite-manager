@@ -101,15 +101,20 @@ def replicate_to_ide_profiles(
                     if not os.path.exists(tgt_db) or os.path.getsize(tgt_db) == 0:
                         needs_copy = True
                     else:
-                        src_steps = get_actual_steps_count(db_src)
-                        tgt_steps = get_actual_steps_count(tgt_db)
-                        if src_steps > tgt_steps:
-                            needs_copy = True
-                        elif src_steps < tgt_steps:
+                        src_stat = os.stat(db_src)
+                        tgt_stat = os.stat(tgt_db)
+                        if src_stat.st_size == tgt_stat.st_size and abs(src_stat.st_mtime - tgt_stat.st_mtime) < 1.0:
                             needs_copy = False
                         else:
-                            if os.path.getmtime(db_src) > (os.path.getmtime(tgt_db) + 2.0):
+                            src_steps = get_actual_steps_count(db_src)
+                            tgt_steps = get_actual_steps_count(tgt_db)
+                            if src_steps > tgt_steps:
                                 needs_copy = True
+                            elif src_steps < tgt_steps:
+                                needs_copy = False
+                            else:
+                                if src_stat.st_mtime > (tgt_stat.st_mtime + 2.0):
+                                    needs_copy = True
 
                     if needs_copy:
                         copy_sqlite_db_safely(db_src, tgt_db)

@@ -15,8 +15,15 @@ from antigravity_suite.history.models import ConversationSummary
 
 
 def ensure_summaries_schema(conn: sqlite3.Connection) -> None:
-    """Ensures conversation_summaries table exists with all standard columns."""
+    """Ensures conversation_summaries table exists with all standard columns and WAL mode enabled."""
     cur = conn.cursor()
+    try:
+        cur.execute("PRAGMA journal_mode = WAL;")
+        cur.execute("PRAGMA synchronous = NORMAL;")
+        cur.execute("PRAGMA busy_timeout = 5000;")
+    except Exception:
+        pass
+
     cur.execute("""CREATE TABLE IF NOT EXISTS conversation_summaries (
         conversation_id text PRIMARY KEY,
         title text NOT NULL DEFAULT "",
@@ -170,16 +177,41 @@ def upsert_summary(conn: sqlite3.Connection, summary: ConversationSummary) -> No
     ))
 
 
+_STEP_COUNT_CACHE: Dict[str, Tuple[float, int, int]] = {}  # db_str -> (mtime, size, count)
+
+
+def clear_step_count_cache() -> None:
+    """Clears the in-memory step count cache."""
+    _STEP_COUNT_CACHE.clear()
+
+
 def get_actual_steps_count(db_path: Union[str, Path]) -> int:
-    """Returns the count of steps from a trajectory SQLite database."""
+    """
+    Returns the count of steps from a trajectory SQLite database.
+    Uses compound stat caching (file_path, st_mtime, st_size) to eliminate redundant
+    SQLite connection overhead on unchanged databases.
+    """
     db_str = str(db_path)
-    if not os.path.isfile(db_str):
+    try:
+        st = os.stat(db_str)
+    except Exception:
         return 0
+
+    mtime = st.st_mtime
+    size = st.st_size
+    if size == 0:
+        return 0
+
+    cached = _STEP_COUNT_CACHE.get(db_str)
+    if cached is not None and cached[0] == mtime and cached[1] == size:
+        return cached[2]
+
     conn = None
     try:
         conn = sqlite3.connect(db_str, timeout=15.0)
-        cnt = conn.cursor().execute("SELECT count(*) FROM steps;").fetchone()[0]
-        return int(cnt)
+        cnt = int(conn.cursor().execute("SELECT count(*) FROM steps;").fetchone()[0])
+        _STEP_COUNT_CACHE[db_str] = (mtime, size, cnt)
+        return cnt
     except Exception:
         return 0
     finally:

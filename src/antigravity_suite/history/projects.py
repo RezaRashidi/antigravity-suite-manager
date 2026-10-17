@@ -12,7 +12,9 @@ import glob
 import json
 import os
 import sqlite3
+import time
 import uuid
+from functools import lru_cache
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from urllib.parse import unquote, urlsplit
@@ -55,6 +57,10 @@ def register_known_root(root_uri: str) -> None:
     """Registers a root workspace URI into the active KNOWN_ROOTS cache."""
     if root_uri and root_uri not in KNOWN_ROOTS:
         KNOWN_ROOTS.append(root_uri)
+        try:
+            normalize_workspace_uri.cache_clear()
+        except Exception:
+            pass
 
 
 def register_project_mapping(workspace_uri: str, project_id: str) -> None:
@@ -63,18 +69,20 @@ def register_project_mapping(workspace_uri: str, project_id: str) -> None:
         KNOWN_PROJECT_MAPPINGS[workspace_uri] = project_id
 
 
+@lru_cache(maxsize=2048)
 def is_container_or_system_root(uri_str: str) -> bool:
     """
     Returns True if uri_str is a parent container folder or system root
     (e.g. /tmp, /var/tmp, /home/<user>, /home/<user>/PhpstormProjects) that
     should NOT swallow sub-projects.
     """
+    if not uri_str:
+        return True
     parsed = urlsplit(uri_str)
-    path_str = unquote(parsed.path).rstrip("/")
+    path_str = unquote(parsed.path).replace("\\", "/").rstrip("/")
     if path_str in ("/tmp", "/var/tmp", "/home", "/Users", "") or path_str.count("/") <= 2:
         return True
-    p = PurePosixPath(path_str)
-    parts = p.parts
+    parts = path_str.split("/")
     if len(parts) == 4 and parts[1].lower() in ("home", "users") and parts[3].lower() in PROJECT_CONTAINERS:
         return True
     return False
@@ -195,6 +203,7 @@ def discover_workspace_roots(user_home: Optional[Path] = None) -> List[str]:
     return sorted(list(roots_set), key=len, reverse=True)
 
 
+@lru_cache(maxsize=1024)
 def normalize_workspace_uri(
     uri: Optional[str],
     user_home: Optional[Path] = None,
@@ -252,16 +261,15 @@ def normalize_workspace_uri(
                 curr = curr.parent
 
         # 3. Universal project container directory heuristic
-        p_posix = PurePosixPath(path_str)
-        parts = p_posix.parts
+        clean_path = path_str.replace("\\", "/")
+        parts = clean_path.split("/")
         start_idx = 0
         if len(parts) >= 3 and parts[1].lower() in ("home", "users"):
             start_idx = 3
 
         for i in range(start_idx, len(parts) - 1):
             if parts[i].lower() in PROJECT_CONTAINERS:
-                root_parts = parts[: i + 2]
-                root_path = PurePosixPath(*root_parts)
+                root_path = "/".join(parts[: i + 2])
                 root_uri = f"file://{root_path}"
                 register_known_root(root_uri)
                 return root_uri
@@ -269,13 +277,36 @@ def normalize_workspace_uri(
     return uri_str
 
 
-def discover_project_mappings(user_home: Optional[Path] = None) -> Dict[str, str]:
+_PROJECT_MAPPINGS_CACHE: Optional[Dict[str, str]] = None
+_LAST_MAPPINGS_DISCOVERY_TIME: float = 0.0
+
+
+def clear_workspace_caches() -> None:
+    """Clears workspace normalization and project mapping runtime caches."""
+    global _PROJECT_MAPPINGS_CACHE, _LAST_MAPPINGS_DISCOVERY_TIME
+    _PROJECT_MAPPINGS_CACHE = None
+    _LAST_MAPPINGS_DISCOVERY_TIME = 0.0
+    is_container_or_system_root.cache_clear()
+    normalize_workspace_uri.cache_clear()
+
+
+def discover_project_mappings(
+    user_home: Optional[Path] = None,
+    force_refresh: bool = False,
+    cache_ttl: float = 60.0,
+) -> Dict[str, str]:
     """
     Dynamically discovers all project mappings across all active instances:
       1. Registered JSON project files in ~/.gemini/config/projects/ and ~/.gemide/config/projects/
       2. Active conversation_summaries.db (workspace_uris -> project_id) across Hub and IDE
       3. Existing runtime KNOWN_PROJECT_MAPPINGS
+    Caches results in-memory with automatic TTL and force_refresh support.
     """
+    global _PROJECT_MAPPINGS_CACHE, _LAST_MAPPINGS_DISCOVERY_TIME
+    now = time.time()
+    if not force_refresh and _PROJECT_MAPPINGS_CACHE is not None and (now - _LAST_MAPPINGS_DISCOVERY_TIME) < cache_ttl:
+        return dict(_PROJECT_MAPPINGS_CACHE)
+
     home = user_home or get_user_home()
     mappings: Dict[str, str] = dict(KNOWN_PROJECT_MAPPINGS)
 
@@ -320,8 +351,10 @@ def discover_project_mappings(user_home: Optional[Path] = None) -> Dict[str, str
                 except Exception:
                     pass
 
-    # Update runtime cache in-place
+    # Update runtime caches in-place
     KNOWN_PROJECT_MAPPINGS.update(mappings)
+    _PROJECT_MAPPINGS_CACHE = dict(mappings)
+    _LAST_MAPPINGS_DISCOVERY_TIME = now
     return mappings
 
 
@@ -369,7 +402,8 @@ def ensure_project_configs(
                     continue
                 parsed = urlsplit(ws)
                 path_str = unquote(parsed.path)
-                pname = PurePosixPath(path_str).name or "project"
+                clean_path = path_str.replace("\\", "/").rstrip("/")
+                pname = clean_path.split("/")[-1] if clean_path else "project"
                 pid = get_project_id_for_workspace(ws, user_home=home)
                 proj_def = {
                     "id": pid,
@@ -400,12 +434,14 @@ def ensure_project_configs(
 def get_project_id_for_workspace(
     ws_uri: Optional[str],
     user_home: Optional[Path] = None,
+    mappings: Optional[Dict[str, str]] = None,
 ) -> Optional[str]:
     """
     Resolves canonical project_id for a workspace URI dynamically:
-      1. Scans ~/.gemini/config/projects/*.json and conversation_summaries.db
+      1. Uses pre-discovered or cached project mappings (O(1))
       2. Resolves subfolder to normalized root project
-      3. Generates deterministic UUID5 for any unregistered project root
+      3. Performs lazy refresh on cache miss before fallback
+      4. Generates deterministic UUID5 for any unregistered project root
     """
     if not ws_uri:
         return None
@@ -414,13 +450,25 @@ def get_project_id_for_workspace(
         return None
 
     home = user_home or get_user_home()
-    mappings = discover_project_mappings(home)
+    if mappings is None:
+        mappings = discover_project_mappings(home)
 
     if ws_norm in mappings:
         return mappings[ws_norm]
+
+    if ws_norm in KNOWN_PROJECT_MAPPINGS:
+        return KNOWN_PROJECT_MAPPINGS[ws_norm]
+
+    # Lazy refresh check on cache miss in case a new project was registered on disk
+    refreshed = discover_project_mappings(home, force_refresh=True)
+    if ws_norm in refreshed:
+        mappings[ws_norm] = refreshed[ws_norm]
+        return refreshed[ws_norm]
 
     # Generate a deterministic UUID5 for authentic, stable project identification
     deterministic_id = str(uuid.uuid5(uuid.NAMESPACE_URL, ws_norm))
     mappings[ws_norm] = deterministic_id
     KNOWN_PROJECT_MAPPINGS[ws_norm] = deterministic_id
+    if _PROJECT_MAPPINGS_CACHE is not None:
+        _PROJECT_MAPPINGS_CACHE[ws_norm] = deterministic_id
     return deterministic_id

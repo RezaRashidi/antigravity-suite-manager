@@ -562,5 +562,89 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             self.assertTrue(anno_f.is_file())
             self.assertIn("archived:true", anno_f.read_text())
 
+    def test_step_count_compound_stat_caching(self):
+        import sqlite3
+        from antigravity_suite.history.sqlite_store import get_actual_steps_count, clear_step_count_cache, _STEP_COUNT_CACHE
+
+        with tempfile.TemporaryDirectory() as td:
+            db_p = Path(td) / "test_steps.db"
+            with sqlite3.connect(str(db_p)) as con:
+                con.execute("CREATE TABLE steps (idx INTEGER PRIMARY KEY);")
+                con.execute("INSERT INTO steps VALUES (1), (2), (3);")
+
+            clear_step_count_cache()
+            self.assertNotIn(str(db_p), _STEP_COUNT_CACHE)
+
+            # First call populates cache
+            c1 = get_actual_steps_count(db_p)
+            self.assertEqual(c1, 3)
+            self.assertIn(str(db_p), _STEP_COUNT_CACHE)
+
+            # Modify table directly without changing mtime or size? Size will change with insert
+            with sqlite3.connect(str(db_p)) as con:
+                con.execute("INSERT INTO steps VALUES (4), (5);")
+            
+            c2 = get_actual_steps_count(db_p)
+            self.assertEqual(c2, 5)
+
+    def test_project_mapping_cache_and_lazy_refresh(self):
+        import json
+        from antigravity_suite.history.projects import (
+            discover_project_mappings,
+            get_project_id_for_workspace,
+            clear_workspace_caches,
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            home = Path(td)
+            proj_dir = home / ".gemini" / "config" / "projects"
+            proj_dir.mkdir(parents=True)
+
+            ws_uri = "file:///home/user/workspace/project-alpha"
+            p1_def = {
+                "id": "11111111-2222-3333-4444-555555555555",
+                "name": "project-alpha",
+                "projectResources": {"resources": [{"folderUri": ws_uri}]},
+            }
+            with open(proj_dir / "p1.json", "w") as f:
+                json.dump(p1_def, f)
+
+            clear_workspace_caches()
+
+            # 1. Discover mappings
+            m = discover_project_mappings(user_home=home)
+            self.assertIn(ws_uri, m)
+            self.assertEqual(m[ws_uri], "11111111-2222-3333-4444-555555555555")
+
+            # 2. Fast O(1) resolution
+            pid = get_project_id_for_workspace(ws_uri, user_home=home, mappings=m)
+            self.assertEqual(pid, "11111111-2222-3333-4444-555555555555")
+
+            # 3. Add new project on disk (simulating user opening project during session)
+            ws_beta = "file:///home/user/workspace/project-beta"
+            p2_def = {
+                "id": "66666666-7777-8888-9999-000000000000",
+                "name": "project-beta",
+                "projectResources": {"resources": [{"folderUri": ws_beta}]},
+            }
+            with open(proj_dir / "p2.json", "w") as f:
+                json.dump(p2_def, f)
+
+            # Lazy refresh should detect it automatically without manual cache clearing
+            pid2 = get_project_id_for_workspace(ws_beta, user_home=home)
+            self.assertEqual(pid2, "66666666-7777-8888-9999-000000000000")
+
+    def test_normalize_workspace_uri_fast_strings_and_windows_paths(self):
+        from antigravity_suite.history.projects import normalize_workspace_uri, is_container_or_system_root
+
+        # System root check
+        self.assertTrue(is_container_or_system_root("file:///tmp"))
+        self.assertTrue(is_container_or_system_root("file:///home/reza/PhpstormProjects"))
+        self.assertFalse(is_container_or_system_root("file:///home/reza/PhpstormProjects/antigravity-suite-manager"))
+
+        # Normalization with cross-platform slashes
+        norm = normalize_workspace_uri("file:///home/reza/PhpstormProjects/my-app/subfolder/file")
+        self.assertEqual(norm, "file:///home/reza/PhpstormProjects/my-app")
+
 if __name__ == "__main__":
     unittest.main()
