@@ -51,15 +51,36 @@ def _has_tag_in_proto(data: bytes, target_tag: int, target_wire: int = 2) -> boo
     return False
 
 
+_VERIFIED_COMPLETE_DBS: Dict[str, Tuple[float, int]] = {}  # db_p -> (mtime, size)
+
+
+def clear_synthesized_db_cache() -> None:
+    """Clears the verified complete database cache."""
+    _VERIFIED_COMPLETE_DBS.clear()
+
+
 def is_synthesized_db_incomplete(db_path: Union[str, Path]) -> bool:
     """
     Checks if a conversation SQLite database has missing/empty message payloads
     (e.g. legacy synthesized databases missing Tag 20 assistant messages or Step 132 tool metadata).
     STRICTLY protects authentic databases containing rich step types from ever being re-synthesized.
+    Uses compound stat caching (db_p, mtime, size) to eliminate hundreds of redundant SQLite inspection queries.
     """
     db_p = str(db_path)
-    if not os.path.isfile(db_p) or os.path.getsize(db_p) == 0:
+    try:
+        st = os.stat(db_p)
+    except Exception:
         return True
+
+    mtime = st.st_mtime
+    size = st.st_size
+    if size == 0:
+        return True
+
+    cached = _VERIFIED_COMPLETE_DBS.get(db_p)
+    if cached is not None and cached[0] == mtime and cached[1] == size:
+        return False
+
     conn = None
     try:
         conn = sqlite3.connect(db_p, timeout=15.0)
@@ -74,6 +95,7 @@ def is_synthesized_db_incomplete(db_path: Union[str, Path]) -> bool:
         step_types = {r[0] for r in cur.fetchall()}
         rich_authentic_types = step_types - {0, 14, 15, 132}
         if rich_authentic_types:
+            _VERIFIED_COMPLETE_DBS[db_p] = (mtime, size)
             return False
 
         # Step 14 check: ensure user prompt bubble and Tag 3 chunk are present
@@ -101,6 +123,7 @@ def is_synthesized_db_incomplete(db_path: Union[str, Path]) -> bool:
             if not (has_tool_meta and has_tool_payload):
                 return True
 
+        _VERIFIED_COMPLETE_DBS[db_p] = (mtime, size)
         return False
     except Exception:
         return True

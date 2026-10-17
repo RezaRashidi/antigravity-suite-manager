@@ -646,5 +646,165 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
         norm = normalize_workspace_uri("file:///home/reza/PhpstormProjects/my-app/subfolder/file")
         self.assertEqual(norm, "file:///home/reza/PhpstormProjects/my-app")
 
+    def test_get_transcript_timestamps_tail_seeking(self):
+        from antigravity_suite.history.merger import get_transcript_timestamps
+
+        with tempfile.TemporaryDirectory() as td:
+            t_file = Path(td) / "transcript.jsonl"
+
+            # 1. Create a large transcript (> 100KB)
+            first_entry = {
+                "step_index": 0,
+                "type": "CONVERSATION_START",
+                "created_at": "2026-10-10T10:00:00.000Z",
+                "content": "Start"
+            }
+            # Filler to bloat file > 150KB
+            filler_text = "x" * 1024
+
+            with open(t_file, "w", encoding="utf-8") as f:
+                f.write(json.dumps(first_entry) + "\n")
+                for i in range(1, 150):
+                    entry = {
+                        "step_index": i,
+                        "type": "MODEL",
+                        "created_at": f"2026-10-10T10:{i%60:02d}:00.000Z",
+                        "content": filler_text
+                    }
+                    f.write(json.dumps(entry) + "\n")
+                
+                # Add a USER_INPUT in the tail
+                user_entry = {
+                    "step_index": 150,
+                    "type": "USER_INPUT",
+                    "source": "USER_EXPLICIT",
+                    "created_at": "2026-10-10T11:00:00.000Z",
+                    "content": "User prompt"
+                }
+                f.write(json.dumps(user_entry) + "\n")
+
+                # Final response
+                last_entry = {
+                    "step_index": 151,
+                    "type": "MODEL",
+                    "created_at": "2026-10-10T11:05:00.000Z",
+                    "content": "Model final response"
+                }
+                f.write(json.dumps(last_entry) + "\n")
+
+            self.assertGreater(t_file.stat().st_size, 100 * 1024)
+
+            # Extract timestamps: returns (created_time, last_user_input_time, last_modified_time)
+            c_time, u_time, m_time = get_transcript_timestamps(t_file)
+            self.assertEqual(c_time, "2026-10-10T10:00:00.000Z")
+            self.assertEqual(u_time, "2026-10-10T11:00:00.000Z")
+            self.assertEqual(m_time, "2026-10-10T11:05:00.000Z")
+
+    def test_is_synthesized_db_incomplete_compound_cache(self):
+        import sqlite3
+        from antigravity_suite.history.synthesizer import (
+            is_synthesized_db_incomplete,
+            clear_synthesized_db_cache,
+            _VERIFIED_COMPLETE_DBS
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            db_p = Path(td) / "conversation_summaries.db"
+            with sqlite3.connect(str(db_p)) as con:
+                con.execute("CREATE TABLE steps (step_index INTEGER PRIMARY KEY, step_type INTEGER, step_payload BLOB, metadata BLOB);")
+                con.execute("INSERT INTO steps VALUES (0, 1, ?, ?);", (b"", b""))
+
+            clear_synthesized_db_cache()
+            self.assertEqual(len(_VERIFIED_COMPLETE_DBS), 0)
+
+            # First run: queries DB, determines it is complete (not incomplete), caches it
+            incomplete = is_synthesized_db_incomplete(db_p)
+            self.assertFalse(incomplete)
+            self.assertIn(str(db_p), _VERIFIED_COMPLETE_DBS)
+
+            # Second run: fast-path hit, cache length unchanged
+            incomplete2 = is_synthesized_db_incomplete(db_p)
+            self.assertFalse(incomplete2)
+
+            # Invalidate by clearing
+            clear_synthesized_db_cache()
+            self.assertEqual(len(_VERIFIED_COMPLETE_DBS), 0)
+
+    def test_sync_annotation_files_selective_filtering(self):
+        import sqlite3
+        from antigravity_suite.history.merger import sync_annotation_files
+
+        with tempfile.TemporaryDirectory() as td:
+            master = Path(td)
+            antigravity_dir = master / ".gemini" / "antigravity"
+            anno_dir = antigravity_dir / "annotations"
+            db_file = antigravity_dir / "conversation_summaries.db"
+
+            anno_dir.mkdir(parents=True)
+            with sqlite3.connect(str(db_file)) as con:
+                con.execute("CREATE TABLE conversation_summaries (conversation_id TEXT PRIMARY KEY, title TEXT, raw_summary BLOB);")
+                con.execute("INSERT INTO conversation_summaries VALUES ('c1', 'Chat One', ?), ('c2', 'Chat Two', ?);", (b"", b""))
+                cur = con.cursor()
+
+                # 1. Sync only c1
+                sync_annotation_files(antigravity_dir, cur, target_conv_ids={"c1"})
+                self.assertTrue((anno_dir / "c1.pbtxt").exists())
+                self.assertFalse((anno_dir / "c2.pbtxt").exists())
+
+                # 2. Sync c2
+                sync_annotation_files(antigravity_dir, cur, target_conv_ids={"c2"})
+                self.assertTrue((anno_dir / "c2.pbtxt").exists())
+
+    def test_linux_inotify_watcher_interface(self):
+        from antigravity_suite.history.watcher import LinuxInotifyWatcher
+
+        watcher = LinuxInotifyWatcher()
+        if not watcher.available:
+            self.skipTest("Linux inotify / epoll not supported in this environment")
+
+        with tempfile.TemporaryDirectory() as td:
+            watch_dir = Path(td)
+            ok = watcher.add_watch_dir(watch_dir)
+            self.assertTrue(ok)
+
+            # Create file inside watch_dir
+            test_file = watch_dir / "test.txt"
+            test_file.write_text("hello")
+
+            # Poll events
+            triggered = watcher.wait_for_events(timeout_sec=0.2)
+            self.assertTrue(triggered)
+
+            watcher.close()
+
+    def test_merge_brain_folders_mtime_fast_path(self):
+        import time
+        from antigravity_suite.history.pool_merger import merge_brain_folders
+
+        with tempfile.TemporaryDirectory() as td:
+            pool_dir = Path(td) / "pool"
+            master_dir = Path(td) / "master"
+            conv_id = "11111111-2222-3333-4444-555555555555"
+
+            src_conv = pool_dir / conv_id / ".system_generated" / "logs"
+            tgt_conv = master_dir / conv_id / ".system_generated" / "logs"
+            src_conv.mkdir(parents=True)
+            tgt_conv.mkdir(parents=True)
+
+            (src_conv / "transcript.jsonl").write_text('{"step": 1}\n')
+            (tgt_conv / "transcript.jsonl").write_text('{"step": 1}\n')
+
+            # Ensure target mtime is newer or equal
+            now = time.time()
+            os.utime(str(src_conv), (now - 10, now - 10))
+            os.utime(str(tgt_conv), (now, now))
+            os.utime(str(pool_dir / conv_id), (now - 10, now - 10))
+            os.utime(str(master_dir / conv_id), (now, now))
+
+            # Run merge: should fast-path continue without importing new folders
+            imported = merge_brain_folders([str(pool_dir)], master_dir)
+            self.assertEqual(imported, 0)
+
 if __name__ == "__main__":
     unittest.main()
+

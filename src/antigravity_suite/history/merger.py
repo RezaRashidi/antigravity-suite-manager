@@ -90,32 +90,76 @@ def get_transcript_timestamps(
     """
     Extracts authentic ISO timestamps from transcript.jsonl:
     (created_time, last_user_input_time, last_modified_time)
+    Uses streaming and tail-seeking to avoid loading massive multi-megabyte JSONL files into memory.
     """
     if not transcript_path.is_file():
         return None, None, None
     try:
-        import json
-
-        with open(transcript_path, "r", encoding="utf-8") as f:
-            lines = [line.strip() for line in f if line.strip()]
-        if not lines:
+        fsize = transcript_path.stat().st_size
+        if fsize == 0:
             return None, None, None
 
-        first_obj = json.loads(lines[0])
-        created_time = first_obj.get("created_at")
-
-        last_obj = json.loads(lines[-1])
-        last_modified_time = last_obj.get("created_at")
-
+        created_time = None
+        last_modified_time = None
         last_user_input_time = None
-        for line in reversed(lines):
-            try:
-                obj = json.loads(line)
-                if obj.get("type") == "USER_INPUT":
-                    last_user_input_time = obj.get("created_at")
-                    break
-            except Exception:
-                continue
+
+        with open(transcript_path, "rb") as f:
+            # 1. Read first line for created_time
+            first_line = f.readline().decode("utf-8", errors="ignore").strip()
+            if first_line:
+                try:
+                    first_obj = json.loads(first_line)
+                    created_time = first_obj.get("created_at")
+                except Exception:
+                    pass
+
+            # 2. Tail-seek for last_modified_time and last_user_input_time
+            chunk_size = min(fsize, 65536)
+            f.seek(fsize - chunk_size)
+            tail_bytes = f.read(chunk_size)
+            tail_lines = tail_bytes.decode("utf-8", errors="ignore").splitlines()
+
+            # Discard first line if seek landed in the middle of a line
+            if fsize > chunk_size and tail_lines:
+                tail_lines.pop(0)
+
+            clean_lines = [l.strip() for l in tail_lines if l.strip()]
+            if clean_lines:
+                try:
+                    last_obj = json.loads(clean_lines[-1])
+                    last_modified_time = last_obj.get("created_at")
+                except Exception:
+                    pass
+
+                for line in reversed(clean_lines):
+                    try:
+                        obj = json.loads(line)
+                        if obj.get("type") == "USER_INPUT":
+                            last_user_input_time = obj.get("created_at")
+                            break
+                    except Exception:
+                        continue
+
+            # If last_user_input_time wasn't found in the last 64KB and file is larger,
+            # inspect up to the last 256KB before giving up
+            if not last_user_input_time and fsize > chunk_size:
+                larger_chunk = min(fsize, 262144)
+                f.seek(fsize - larger_chunk)
+                t_bytes = f.read(larger_chunk)
+                t_lines = t_bytes.decode("utf-8", errors="ignore").splitlines()
+                if fsize > larger_chunk and t_lines:
+                    t_lines.pop(0)
+                for line in reversed(t_lines):
+                    line_s = line.strip()
+                    if not line_s or "USER_INPUT" not in line_s:
+                        continue
+                    try:
+                        obj = json.loads(line_s)
+                        if obj.get("type") == "USER_INPUT":
+                            last_user_input_time = obj.get("created_at")
+                            break
+                    except Exception:
+                        continue
 
         return created_time, last_user_input_time, last_modified_time
     except Exception:
@@ -418,6 +462,7 @@ def resolve_conversation_item(
                 (final_title, final_prev, conv_id),
             )
             stats.conversations_updated += 1
+            stats.dirty_conv_ids.add(conv_id)
         return
 
     # Reconstruct authentic summary if needed, or reuse valid existing binary
@@ -498,6 +543,7 @@ def resolve_conversation_item(
         stats.summaries_backfilled += 1
     else:
         stats.conversations_updated += 1
+    stats.dirty_conv_ids.add(conv_id)
 
 
 def synchronize_master_summaries(
@@ -619,13 +665,23 @@ def sync_annotation_files(
     effective_master: Path,
     cur: sqlite3.Cursor,
     pinned_set: Optional[Set[str]] = None,
+    target_conv_ids: Optional[Set[str]] = None,
 ) -> None:
     """Synchronizes annotations/<conv_id>.pbtxt files for Desktop App UI rendering."""
     if pinned_set is None:
         pinned_set = set()
-    for c_id, c_title, raw_summary in cur.execute(
-        "SELECT conversation_id, title, raw_summary FROM conversation_summaries WHERE length(title) > 0;"
-    ).fetchall():
+    if target_conv_ids is not None and not target_conv_ids:
+        return
+
+    if target_conv_ids is not None:
+        placeholders = ",".join("?" for _ in target_conv_ids)
+        query = f"SELECT conversation_id, title, raw_summary FROM conversation_summaries WHERE length(title) > 0 AND conversation_id IN ({placeholders});"
+        rows = cur.execute(query, list(target_conv_ids)).fetchall()
+    else:
+        query = "SELECT conversation_id, title, raw_summary FROM conversation_summaries WHERE length(title) > 0;"
+        rows = cur.execute(query).fetchall()
+
+    for c_id, c_title, raw_summary in rows:
         is_pin = c_id in pinned_set
         is_arc = False
         if raw_summary:
@@ -763,7 +819,8 @@ def merge_histories(
         )
 
         # 12. Synchronize annotations/<conv_id>.pbtxt files for Desktop App UI title rendering
-        sync_annotation_files(effective_master, cur, pinned_set=pinned_ids)
+        target_annos = stats.dirty_conv_ids if (not force_rebuild and stats.dirty_conv_ids) else None
+        sync_annotation_files(effective_master, cur, pinned_set=pinned_ids, target_conv_ids=target_annos)
 
         stats.total_active_history = cur.execute("SELECT count(*) FROM conversation_summaries;").fetchone()[0]
 

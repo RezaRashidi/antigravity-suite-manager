@@ -109,6 +109,18 @@ def merge_brain_folders(brain_pools: List[str], master_brain_dir: Path) -> int:
                 except Exception:
                     pass
             else:
+                # Fast path: skip os.walk if source directory has not been modified after target
+                try:
+                    src_mtime = os.path.getmtime(b_item)
+                    tgt_mtime = target_brain_item.stat().st_mtime
+                    src_logs = os.path.join(b_item, ".system_generated", "logs")
+                    tgt_logs = target_brain_item / ".system_generated" / "logs"
+                    if tgt_logs.is_dir() and os.path.isdir(src_logs):
+                        if os.path.getmtime(src_logs) <= tgt_logs.stat().st_mtime and src_mtime <= tgt_mtime:
+                            continue
+                except Exception:
+                    pass
+
                 # Update newer or larger files in existing folder
                 for root, _, files in os.walk(b_item):
                     rel = os.path.relpath(root, b_item)

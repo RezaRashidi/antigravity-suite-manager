@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import datetime
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Set
 
 
 @dataclass
@@ -56,6 +56,7 @@ class SyncStats:
     ide_state_ingested: int = 0
     total_active_history: int = 0
     backup_id: Optional[str] = None
+    dirty_conv_ids: Set[str] = field(default_factory=set)
 
     def to_dict(self) -> dict:
         return {
