@@ -197,32 +197,32 @@ class TestCascadeAndTrajectory(unittest.TestCase):
             update_sidebar_workspaces_state,
         )
 
-        initial = update_sidebar_workspaces_state(None, ["file:///home/user/PhpstormProjects/Odirect"])
+        initial = update_sidebar_workspaces_state(None, ["file:///home/user/PhpstormProjects/project-alpha"])
         parsed1 = parse_sidebar_workspaces(initial)
-        self.assertIn("file:///home/user/PhpstormProjects/Odirect", parsed1)
+        self.assertIn("file:///home/user/PhpstormProjects/project-alpha", parsed1)
 
         updated = update_sidebar_workspaces_state(initial, [
-            "file:///home/user/PhpstormProjects/Odirect",
-            "file:///home/user/Music/lede",
+            "file:///home/user/PhpstormProjects/project-alpha",
+            "file:///home/user/Music/project-beta",
         ])
         parsed2 = parse_sidebar_workspaces(updated)
-        self.assertIn("file:///home/user/PhpstormProjects/Odirect", parsed2)
-        self.assertIn("file:///home/user/Music/lede", parsed2)
+        self.assertIn("file:///home/user/PhpstormProjects/project-alpha", parsed2)
+        self.assertIn("file:///home/user/Music/project-beta", parsed2)
 
     def test_normalize_workspace_uri(self):
         from antigravity_suite.history.merger import normalize_workspace_uri
 
         self.assertEqual(
-            normalize_workspace_uri("file:///home/user/PhpstormProjects/Odirect/instasi-backend"),
-            "file:///home/user/PhpstormProjects/Odirect",
+            normalize_workspace_uri("file:///home/user/PhpstormProjects/project-alpha/backend"),
+            "file:///home/user/PhpstormProjects/project-alpha",
         )
         self.assertEqual(
-            normalize_workspace_uri("file:///home/user/Music/lede/src"),
-            "file:///home/user/Music/lede",
+            normalize_workspace_uri("file:///home/user/Music/project-beta/src"),
+            "file:///home/user/Music/project-beta",
         )
         self.assertEqual(
-            normalize_workspace_uri('["file:///home/user/PhpstormProjects/Odirect/memory-bank"]'),
-            "file:///home/user/PhpstormProjects/Odirect",
+            normalize_workspace_uri('["file:///home/user/PhpstormProjects/project-alpha/memory-bank"]'),
+            "file:///home/user/PhpstormProjects/project-alpha",
         )
 
     def test_project_id_tag18_and_tag14(self):
@@ -233,7 +233,7 @@ class TestCascadeAndTrajectory(unittest.TestCase):
             title="Project Tag Test",
             summary="Testing Tag 18 and Tag 14",
             step_count=3,
-            workspace_uri="file:///home/user/PhpstormProjects/Odirect",
+            workspace_uri="file:///home/user/PhpstormProjects/project-alpha",
             project_id="7bc454c1-6ec0-4ab3-b5eb-09fb9887e76f",
         )
         parsed = parse_cascade_summary(data)
@@ -282,20 +282,20 @@ class TestCascadeAndTrajectory(unittest.TestCase):
     def test_get_project_id_for_workspace(self):
         from antigravity_suite.history.projects import get_project_id_for_workspace
 
-        odirect_root = "file:///home/user/PhpstormProjects/Odirect"
-        odirect_sub = "file:///home/user/PhpstormProjects/Odirect/.github/workflows"
-        root_pid = get_project_id_for_workspace(odirect_root)
-        sub_pid = get_project_id_for_workspace(odirect_sub)
+        alpha_root = "file:///home/user/PhpstormProjects/project-alpha"
+        alpha_sub = "file:///home/user/PhpstormProjects/project-alpha/.github/workflows"
+        root_pid = get_project_id_for_workspace(alpha_root)
+        sub_pid = get_project_id_for_workspace(alpha_sub)
         self.assertIsNotNone(root_pid)
         self.assertEqual(root_pid, sub_pid)
 
-        lede_pid = get_project_id_for_workspace("file:///home/user/Music/lede")
-        self.assertIsNotNone(lede_pid)
-        self.assertNotEqual(root_pid, lede_pid)
+        beta_pid = get_project_id_for_workspace("file:///home/user/Music/project-beta")
+        self.assertIsNotNone(beta_pid)
+        self.assertNotEqual(root_pid, beta_pid)
 
-        k6_pid = get_project_id_for_workspace("file:///home/user/PhpstormProjects/k6")
-        self.assertIsNotNone(k6_pid)
-        self.assertNotEqual(lede_pid, k6_pid)
+        gamma_pid = get_project_id_for_workspace("file:///home/user/PhpstormProjects/sample-app")
+        self.assertIsNotNone(gamma_pid)
+        self.assertNotEqual(beta_pid, gamma_pid)
 
 
 if __name__ == "__main__":

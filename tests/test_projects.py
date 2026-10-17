@@ -33,24 +33,24 @@ class TestProjectMappingAndGrouping(unittest.TestCase):
         """Verifies subfolders correctly normalize to their canonical project root."""
         test_cases = [
             (
-                "file:///home/user/PhpstormProjects/Odirect/.github/workflows",
-                "file:///home/user/PhpstormProjects/Odirect",
+                "file:///home/user/PhpstormProjects/project-alpha/.github/workflows",
+                "file:///home/user/PhpstormProjects/project-alpha",
             ),
             (
-                "file:///home/user/PhpstormProjects/Odirect/instasi-backend/src",
-                "file:///home/user/PhpstormProjects/Odirect",
+                "file:///home/user/PhpstormProjects/project-alpha/backend/src",
+                "file:///home/user/PhpstormProjects/project-alpha",
             ),
             (
-                "file:///home/user/Music/lede/package/kernel/mac80211",
-                "file:///home/user/Music/lede",
+                "file:///home/user/Music/project-beta/package/kernel/mac80211",
+                "file:///home/user/Music/project-beta",
             ),
             (
-                '["file:///home/user/PhpstormProjects/k6/load-tests"]',
-                "file:///home/user/PhpstormProjects/k6",
+                '["file:///home/user/PhpstormProjects/sample-app/load-tests"]',
+                "file:///home/user/PhpstormProjects/sample-app",
             ),
             (
-                "file:///home/user/Downloads/cloudflare/workers",
-                "file:///home/user/Downloads/cloudflare",
+                "file:///home/user/Downloads/cdn-worker/workers",
+                "file:///home/user/Downloads/cdn-worker",
             ),
         ]
         for sub_path, expected_root in test_cases:
@@ -58,22 +58,22 @@ class TestProjectMappingAndGrouping(unittest.TestCase):
 
     def test_known_projects_resolve_to_registered_ids(self):
         """Verifies projects resolve to stable, deterministic IDs and subfolders match roots."""
-        odirect_root = "file:///home/user/PhpstormProjects/Odirect"
-        odirect_sub = "file:///home/user/PhpstormProjects/Odirect/.github/workflows"
-        root_pid = get_project_id_for_workspace(odirect_root, user_home=self.temp_dir)
-        sub_pid = get_project_id_for_workspace(odirect_sub, user_home=self.temp_dir)
+        alpha_root = "file:///home/user/PhpstormProjects/project-alpha"
+        alpha_sub = "file:///home/user/PhpstormProjects/project-alpha/.github/workflows"
+        root_pid = get_project_id_for_workspace(alpha_root, user_home=self.temp_dir)
+        sub_pid = get_project_id_for_workspace(alpha_sub, user_home=self.temp_dir)
         self.assertIsNotNone(root_pid)
         self.assertEqual(root_pid, sub_pid)
 
-        lede_pid = get_project_id_for_workspace("file:///home/user/Music/lede", user_home=self.temp_dir)
-        self.assertIsNotNone(lede_pid)
-        self.assertNotEqual(root_pid, lede_pid)
+        beta_pid = get_project_id_for_workspace("file:///home/user/Music/project-beta", user_home=self.temp_dir)
+        self.assertIsNotNone(beta_pid)
+        self.assertNotEqual(root_pid, beta_pid)
 
     def test_ensure_project_configs_creation(self):
         """Verifies missing project JSON definitions are properly created dynamically."""
         test_workspaces = [
-            "file:///home/user/PhpstormProjects/k6",
-            "file:///home/user/Downloads/cloudflare",
+            "file:///home/user/PhpstormProjects/sample-app",
+            "file:///home/user/Downloads/cdn-worker",
         ]
         ensure_project_configs(user_home=self.temp_dir, workspace_uris=test_workspaces)
         projects_dir = self.temp_dir / ".gemini" / "config" / "projects"
@@ -82,16 +82,16 @@ class TestProjectMappingAndGrouping(unittest.TestCase):
         created_files = list(projects_dir.glob("*.json"))
         self.assertEqual(len(created_files), 2)
 
-        k6_pid = get_project_id_for_workspace("file:///home/user/PhpstormProjects/k6", user_home=self.temp_dir)
-        k6_file = projects_dir / f"{k6_pid}.json"
-        self.assertTrue(k6_file.is_file())
-        with open(k6_file, "r", encoding="utf-8") as f:
-            k6_data = json.load(f)
-        self.assertEqual(k6_data["name"], "k6")
-        self.assertEqual(k6_data["id"], k6_pid)
+        sample_pid = get_project_id_for_workspace("file:///home/user/PhpstormProjects/sample-app", user_home=self.temp_dir)
+        sample_file = projects_dir / f"{sample_pid}.json"
+        self.assertTrue(sample_file.is_file())
+        with open(sample_file, "r", encoding="utf-8") as f:
+            sample_data = json.load(f)
+        self.assertEqual(sample_data["name"], "sample-app")
+        self.assertEqual(sample_data["id"], sample_pid)
         self.assertEqual(
-            k6_data["projectResources"]["resources"][0]["gitFolder"]["folderUri"],
-            "file:///home/user/PhpstormProjects/k6",
+            sample_data["projectResources"]["resources"][0]["gitFolder"]["folderUri"],
+            "file:///home/user/PhpstormProjects/sample-app",
         )
 
     def test_dynamic_project_discovery(self):

@@ -204,7 +204,7 @@ def write_vscdb_unified_state(
                 (outer_b64,),
             )
 
-            # Ensure sidebarWorkspaces includes all active workspaces (including lede, Odirect, etc.)
+            # Ensure sidebarWorkspaces includes all active workspaces
             old_ws_row = v_cur.execute(
                 "SELECT value FROM ItemTable WHERE key = 'antigravityUnifiedStateSync.sidebarWorkspaces';"
             ).fetchone()
