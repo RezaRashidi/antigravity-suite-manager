@@ -21,5 +21,9 @@ dist/
 .vscode/
 *.swp
 *.bak
-*~
 src_code*.txt
+
+# Test data and local fixtures
+tests/test_data/
+test_data/
+.test_data/
