@@ -59,23 +59,23 @@ class TestProjectMappingAndGrouping(unittest.TestCase):
     def test_known_projects_resolve_to_registered_ids(self):
         """Verifies all registered workspace roots resolve to authentic project IDs."""
         self.assertEqual(
-            get_project_id_for_workspace("file:///home/reza/PhpstormProjects/Odirect"),
+            get_project_id_for_workspace("file:///home/reza/PhpstormProjects/Odirect", user_home=self.temp_dir),
             "7bc454c1-6ec0-4ab3-b5eb-09fb9887e76f",
         )
         self.assertEqual(
-            get_project_id_for_workspace("file:///home/reza/Music/lede"),
+            get_project_id_for_workspace("file:///home/reza/Music/lede", user_home=self.temp_dir),
             "247e98f3-52b3-41c9-aebb-1732fb2b7070",
         )
         self.assertEqual(
-            get_project_id_for_workspace("file:///home/reza/Library/nokia_modem"),
+            get_project_id_for_workspace("file:///home/reza/Library/nokia_modem", user_home=self.temp_dir),
             "1c547948-02a7-481b-b9f6-1218b789cbde",
         )
         self.assertEqual(
-            get_project_id_for_workspace("file:///home/reza/Music/irankhodro"),
+            get_project_id_for_workspace("file:///home/reza/Music/irankhodro", user_home=self.temp_dir),
             "23773526-c9f9-4e44-b037-c47941ed0160",
         )
         self.assertEqual(
-            get_project_id_for_workspace("file:///home/reza/PhpstormProjects/api"),
+            get_project_id_for_workspace("file:///home/reza/PhpstormProjects/api", user_home=self.temp_dir),
             "3ee949ba-1b1a-4941-a05a-282d79f5636b",
         )
 
@@ -114,6 +114,49 @@ class TestProjectMappingAndGrouping(unittest.TestCase):
 
         resolved_pid = get_project_id_for_workspace(custom_uri, user_home=self.temp_dir)
         self.assertEqual(resolved_pid, custom_pid)
+
+    def test_generic_container_heuristic_any_user_machine(self):
+        """Verifies root normalization works for arbitrary users and container directories without hardcoding."""
+        cases = [
+            (
+                "file:///Users/developer/repos/distributed-service/internal/handler/auth",
+                "file:///Users/developer/repos/distributed-service",
+            ),
+            (
+                "file:///home/ubuntu/workspace/cloud-api/src/controllers",
+                "file:///home/ubuntu/workspace/cloud-api",
+            ),
+            (
+                "file:///home/dev/projects/ai-bot/tests/integration",
+                "file:///home/dev/projects/ai-bot",
+            ),
+            (
+                "file:///home/dev/Desktop/quick-script/data",
+                "file:///home/dev/Desktop/quick-script",
+            ),
+            (
+                "file:///home/dev/code/web-portal",
+                "file:///home/dev/code/web-portal",
+            ),
+            (
+                "file:///var/log/syslog",
+                "file:///var/log/syslog",
+            ),
+        ]
+        for sub_path, expected_root in cases:
+            self.assertEqual(normalize_workspace_uri(sub_path), expected_root)
+
+    def test_git_repository_root_dynamic_detection(self):
+        """Verifies local filesystem git repository roots are automatically detected."""
+        repo_dir = self.temp_dir / "my-git-repo"
+        git_dir = repo_dir / ".git"
+        sub_dir = repo_dir / "src" / "pkg" / "module"
+        sub_dir.mkdir(parents=True)
+        git_dir.mkdir()
+
+        sub_uri = f"file://{sub_dir}"
+        expected_root = f"file://{repo_dir}"
+        self.assertEqual(normalize_workspace_uri(sub_uri, user_home=self.temp_dir), expected_root)
 
 
 if __name__ == "__main__":

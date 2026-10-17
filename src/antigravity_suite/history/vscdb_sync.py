@@ -174,7 +174,9 @@ def write_vscdb_unified_state(
             parsed = parse_cascade_summary(raw)
             ws = parsed.get("workspace_uri")
             if ws and str(ws).startswith("file://") and not any(k in str(ws) for k in [".gemini", ".config/Antigravity", "AppData"]):
-                active_workspaces.add(str(ws))
+                norm_w = normalize_workspace_uri(str(ws))
+                if norm_w:
+                    active_workspaces.add(str(norm_w))
         except Exception:
             pass
 
