@@ -81,10 +81,50 @@ def is_container_or_system_root(uri_str: str) -> bool:
     return False
 
 
+def get_candidate_gemini_dirs(user_home: Optional[Path] = None) -> List[Path]:
+    """
+    Returns candidate Antigravity root directories across Hub (~/.gemini),
+    IDE (~/.gemide, ~/.gemini-ide), and custom profiles.
+    """
+    home = user_home or get_user_home()
+    candidates: List[Path] = []
+    env_dir = os.environ.get("ANTIGRAVITY_GEMINI_DIR")
+    if env_dir:
+        candidates.append(Path(env_dir))
+
+    candidates.extend([
+        home / ".gemini",
+        home / ".gemide",
+        home / ".gemini-ide",
+        home / ".antigravity-profile2" / ".gemini",
+    ])
+
+    for p_glob in [
+        home / ".antigravity-profile-app-*" / ".gemini",
+        home / ".antigravity-ide-profile-*" / ".gemini",
+    ]:
+        for match in glob.glob(str(p_glob)):
+            candidates.append(Path(match))
+
+    seen = set()
+    valid = []
+    for c in candidates:
+        try:
+            res = c.resolve()
+            if res.is_dir() and str(res) not in seen:
+                seen.add(str(res))
+                valid.append(c)
+        except Exception:
+            pass
+    if not valid:
+        valid = [home / ".gemini"]
+    return valid
+
+
 def discover_workspace_roots(user_home: Optional[Path] = None) -> List[str]:
     """
     Dynamically discovers all authentic workspace roots from:
-      1. ~/.gemini/config/projects/*.json project definitions
+      1. Registered project definitions in ~/.gemini/config/projects/ and ~/.gemide/config/projects/
       2. IDE workspaceStorage (workspace.json files)
       3. IDE state.vscdb (history.recentlyOpenedPathsList)
       4. Active conversation_summaries.db (workspace_uris column)
@@ -93,22 +133,23 @@ def discover_workspace_roots(user_home: Optional[Path] = None) -> List[str]:
     home = user_home or get_user_home()
     roots_set: Set[str] = set(KNOWN_ROOTS)
 
-    # 1. ~/.gemini/config/projects/*.json
-    projects_dir = home / ".gemini" / "config" / "projects"
-    if projects_dir.is_dir():
-        for fpath in projects_dir.glob("*.json"):
-            if fpath.name in ("outside-of-project.json", "default-cli-project.json"):
-                continue
-            try:
-                with open(fpath, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                resources = data.get("projectResources", {}).get("resources", [])
-                for r in resources:
-                    furi = r.get("folderUri") or r.get("gitFolder", {}).get("folderUri")
-                    if furi and str(furi).startswith("file://"):
-                        roots_set.add(str(furi))
-            except Exception:
-                pass
+    # 1. Candidate project configs (~/.gemini/config/projects/, ~/.gemide/config/projects/)
+    for gdir in get_candidate_gemini_dirs(home):
+        projects_dir = gdir / "config" / "projects"
+        if projects_dir.is_dir():
+            for fpath in projects_dir.glob("*.json"):
+                if fpath.name in ("outside-of-project.json", "default-cli-project.json"):
+                    continue
+                try:
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    resources = data.get("projectResources", {}).get("resources", [])
+                    for r in resources:
+                        furi = r.get("folderUri") or r.get("gitFolder", {}).get("folderUri")
+                        if furi and str(furi).startswith("file://"):
+                            roots_set.add(str(furi))
+                except Exception:
+                    pass
 
     # 2. Candidate IDE workspaceStorage
     for pat in [
@@ -231,52 +272,54 @@ def normalize_workspace_uri(
 
 def discover_project_mappings(user_home: Optional[Path] = None) -> Dict[str, str]:
     """
-    Dynamically discovers all project mappings from:
-      1. Registered JSON project files in ~/.gemini/config/projects/*.json
-      2. Active conversation_summaries.db (workspace_uris -> project_id)
+    Dynamically discovers all project mappings across all active instances:
+      1. Registered JSON project files in ~/.gemini/config/projects/ and ~/.gemide/config/projects/
+      2. Active conversation_summaries.db (workspace_uris -> project_id) across Hub and IDE
       3. Existing runtime KNOWN_PROJECT_MAPPINGS
     """
     home = user_home or get_user_home()
     mappings: Dict[str, str] = dict(KNOWN_PROJECT_MAPPINGS)
 
-    # 1. Read authentic project definitions in ~/.gemini/config/projects/
-    projects_dir = home / ".gemini" / "config" / "projects"
-    if projects_dir.is_dir():
-        for fpath in projects_dir.glob("*.json"):
-            if fpath.name in ("outside-of-project.json", "default-cli-project.json"):
-                continue
-            try:
-                with open(fpath, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                pid = data.get("id")
-                pname = data.get("name", "")
-                resources = data.get("projectResources", {}).get("resources", [])
-                for r in resources:
-                    furi = r.get("folderUri") or r.get("gitFolder", {}).get("folderUri")
-                    if furi and pid and str(furi).startswith("file://"):
-                        if furi not in mappings or not pname.startswith("/"):
-                            mappings[str(furi)] = str(pid)
-            except Exception:
-                pass
+    for gdir in get_candidate_gemini_dirs(home):
+        # 1. Read authentic project definitions in config/projects/
+        projects_dir = gdir / "config" / "projects"
+        if projects_dir.is_dir():
+            for fpath in projects_dir.glob("*.json"):
+                if fpath.name in ("outside-of-project.json", "default-cli-project.json"):
+                    continue
+                try:
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    pid = data.get("id")
+                    pname = data.get("name", "")
+                    resources = data.get("projectResources", {}).get("resources", [])
+                    for r in resources:
+                        furi = r.get("folderUri") or r.get("gitFolder", {}).get("folderUri")
+                        if furi and pid and str(furi).startswith("file://"):
+                            if furi not in mappings or not pname.startswith("/"):
+                                mappings[str(furi)] = str(pid)
+                except Exception:
+                    pass
 
-    # 2. Read previous authentic associations from conversation_summaries.db
-    db_path = home / ".gemini" / "antigravity" / "conversation_summaries.db"
-    if db_path.is_file():
-        try:
-            with sqlite3.connect(db_path, timeout=2.0) as con:
-                cur = con.cursor()
-                for row in cur.execute(
-                    "SELECT DISTINCT workspace_uris, project_id FROM conversation_summaries "
-                    "WHERE workspace_uris IS NOT NULL AND workspace_uris != '' "
-                    "AND project_id IS NOT NULL AND project_id != '' "
-                    "AND project_id != 'outside-of-project';"
-                ):
-                    raw_ws, pid = row[0], row[1]
-                    norm_ws = normalize_workspace_uri(raw_ws, user_home=home)
-                    if norm_ws and pid and norm_ws not in mappings:
-                        mappings[norm_ws] = str(pid)
-        except Exception:
-            pass
+        # 2. Read previous authentic associations from conversation_summaries.db
+        for sub in ["antigravity", "antigravity-ide", ""]:
+            db_path = (gdir / sub / "conversation_summaries.db") if sub else (gdir / "conversation_summaries.db")
+            if db_path.is_file():
+                try:
+                    with sqlite3.connect(db_path, timeout=2.0) as con:
+                        cur = con.cursor()
+                        for row in cur.execute(
+                            "SELECT DISTINCT workspace_uris, project_id FROM conversation_summaries "
+                            "WHERE workspace_uris IS NOT NULL AND workspace_uris != '' "
+                            "AND project_id IS NOT NULL AND project_id != '' "
+                            "AND project_id != 'outside-of-project';"
+                        ):
+                            raw_ws, pid = row[0], row[1]
+                            norm_ws = normalize_workspace_uri(raw_ws, user_home=home)
+                            if norm_ws and pid and norm_ws not in mappings:
+                                mappings[norm_ws] = str(pid)
+                except Exception:
+                    pass
 
     # Update runtime cache in-place
     KNOWN_PROJECT_MAPPINGS.update(mappings)
@@ -288,11 +331,12 @@ def ensure_project_configs(
     workspace_uris: Optional[List[str]] = None,
 ) -> None:
     """
-    Ensures authentic project JSON definitions exist in ~/.gemini/config/projects/.
+    Ensures authentic project JSON definitions exist in config/projects/.
     Generates authentic project configs for missing workspace roots dynamically.
     """
     home = user_home or get_user_home()
-    projects_dir = home / ".gemini" / "config" / "projects"
+    gdirs = get_candidate_gemini_dirs(home)
+    projects_dir = gdirs[0] / "config" / "projects"
     try:
         projects_dir.mkdir(parents=True, exist_ok=True)
 
