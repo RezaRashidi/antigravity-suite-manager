@@ -94,8 +94,9 @@ def get_db_step_count(db_path):
 # Safety Backup & Snapshot Functions
 # ==============================================================================
 def create_safety_backup(category="history", label="pre_change"):
-    """Creates a local timestamped safety snapshot before any state modification."""
-    if not MASTER_GEMINI or "/tmp" in os.path.realpath(str(MASTER_GEMINI)):
+    if not MASTER_GEMINI or not os.path.exists(MASTER_GEMINI):
+        return None
+    if os.environ.get("ANTIGRAVITY_TEST_MODE") == "1" or os.environ.get("ANTIGRAVITY_SKIP_SAFETY_BACKUP") == "1":
         return None
     cat_dir = os.path.join(BACKUPS_DIR, category)
     os.makedirs(cat_dir, exist_ok=True)
@@ -586,10 +587,11 @@ def export_all(output_path=None):
 
 # ==============================================================================
 # Import Functions
-# ==============================================================================
 def trigger_history_merge():
     """Runs antigravity-merge-history.py to update indexes and IDE state."""
-    if not MASTER_GEMINI or "/tmp" in os.path.realpath(str(MASTER_GEMINI)):
+    if not MASTER_GEMINI or not os.path.exists(MASTER_GEMINI):
+        return
+    if os.environ.get("ANTIGRAVITY_TEST_MODE") == "1" or os.environ.get("ANTIGRAVITY_SKIP_SAFETY_BACKUP") == "1":
         return
 
     merge_script = os.path.join(LOCAL_BIN, "antigravity-merge-history.py")

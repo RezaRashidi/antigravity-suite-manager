@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import getpass
 import glob
+import json
 import os
 import re
 from pathlib import Path
@@ -205,8 +206,9 @@ def discover_pinned_conversation_ids(user_home: Optional[Path] = None) -> Set[st
     """
     home = Path(user_home).resolve() if user_home else Path.home().resolve()
     pinned_ids: Set[str] = set()
+    found_app_storage = False
 
-    # 1. Search candidate app_storage.json locations
+    # 1. Search candidate app_storage.json locations (authoritative for Desktop UI)
     candidate_app_storages = [
         home / ".config" / "Antigravity" / "app_storage.json",
         home / ".config" / "Antigravity IDE" / "app_storage.json",
@@ -216,6 +218,7 @@ def discover_pinned_conversation_ids(user_home: Optional[Path] = None) -> Set[st
 
     for app_store in candidate_app_storages:
         if app_store.is_file():
+            found_app_storage = True
             try:
                 with open(app_store, "r", encoding="utf-8") as f:
                     data = json.load(f)
@@ -232,23 +235,24 @@ def discover_pinned_conversation_ids(user_home: Optional[Path] = None) -> Set[st
             except Exception:
                 pass
 
-    # 2. Search candidate annotations directories
-    anno_dirs = [
-        home / ".gemini" / "antigravity" / "annotations",
-        home / ".gemide" / "antigravity-ide" / "annotations",
-    ]
-    for p in home.glob(".antigravity-profile*/.gemini/antigravity/annotations"):
-        anno_dirs.append(p)
+    # 2. Search candidate annotations directories only as fallback if no app_storage.json exists
+    if not found_app_storage:
+        anno_dirs = [
+            home / ".gemini" / "antigravity" / "annotations",
+            home / ".gemide" / "antigravity-ide" / "annotations",
+        ]
+        for p in home.glob(".antigravity-profile*/.gemini/antigravity/annotations"):
+            anno_dirs.append(p)
 
-    for ad in anno_dirs:
-        if ad.is_dir():
-            for pbtxt in ad.glob("*.pbtxt"):
-                try:
-                    with open(pbtxt, "r", encoding="utf-8", errors="ignore") as f:
-                        if re.search(r"pinned\s*:\s*true", f.read(), re.IGNORECASE):
-                            pinned_ids.add(pbtxt.stem.strip())
-                except Exception:
-                    pass
+        for ad in anno_dirs:
+            if ad.is_dir():
+                for pbtxt in ad.glob("*.pbtxt"):
+                    try:
+                        with open(pbtxt, "r", encoding="utf-8", errors="ignore") as f:
+                            if re.search(r"pinned\s*:\s*true", f.read(), re.IGNORECASE):
+                                pinned_ids.add(pbtxt.stem.strip())
+                    except Exception:
+                        pass
 
     return pinned_ids
 
@@ -258,11 +262,9 @@ def replicate_pinned_conversations_order(
     user_home: Optional[Path] = None,
 ) -> None:
     """
-    Ensures all discovered app_storage.json files contain the complete set of
-    pinned conversation IDs in pinned_conversations_order.
+    Ensures all discovered app_storage.json files accurately reflect the complete
+    set of pinned conversation IDs, adding new pins and removing unpinned ones.
     """
-    if not pinned_ids:
-        return
     home = Path(user_home).resolve() if user_home else Path.home().resolve()
     candidate_app_storages = [
         home / ".config" / "Antigravity" / "app_storage.json",
@@ -287,14 +289,14 @@ def replicate_pinned_conversations_order(
                 else:
                     existing = []
 
-                merged = list(existing)
-                changed = False
+                # Preserve order of existing pinned items that remain pinned,
+                # drop items that were unpinned, and append any new pinned_ids
+                merged = [pid for pid in existing if pid in pinned_ids]
                 for pid in sorted(pinned_ids):
                     if pid not in merged:
                         merged.append(pid)
-                        changed = True
 
-                if changed:
+                if merged != existing:
                     data["pinned_conversations_order"] = json.dumps(merged) if was_str else merged
                     with open(app_store, "w", encoding="utf-8") as f:
                         json.dump(data, f, indent=2)

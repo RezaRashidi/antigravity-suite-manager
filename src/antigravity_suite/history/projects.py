@@ -32,7 +32,6 @@ PROJECT_CONTAINERS: Set[str] = {
     "workspaces",
     "repos",
     "repo",
-    "src",
     "dev",
     "code",
     "development",
@@ -336,62 +335,66 @@ def ensure_project_configs(
     """
     home = user_home or get_user_home()
     gdirs = get_candidate_gemini_dirs(home)
-    projects_dir = gdirs[0] / "config" / "projects"
-    try:
-        projects_dir.mkdir(parents=True, exist_ok=True)
+    if not gdirs:
+        return
 
-        if workspace_uris is not None:
-            targets = set(workspace_uris)
-        else:
-            targets = set(discover_workspace_roots(home))
+    if workspace_uris is not None:
+        targets = set(workspace_uris)
+    else:
+        targets = set(discover_workspace_roots(home))
 
-        existing_folder_uris = set()
-        for fpath in projects_dir.glob("*.json"):
-            if fpath.name in ("outside-of-project.json", "default-cli-project.json"):
-                continue
-            try:
-                with open(fpath, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                for r in data.get("projectResources", {}).get("resources", []):
-                    u = r.get("folderUri") or r.get("gitFolder", {}).get("folderUri")
-                    if u:
-                        existing_folder_uris.add(u)
-            except Exception:
-                pass
+    for gdir in gdirs:
+        projects_dir = gdir / "config" / "projects"
+        try:
+            projects_dir.mkdir(parents=True, exist_ok=True)
 
-        for ws in targets:
-            if not ws or ws in existing_folder_uris:
-                continue
-            if not ws.startswith("file://") or any(k in ws for k in [".gemini", "/tmp"]) or is_container_or_system_root(ws):
-                continue
-            parsed = urlsplit(ws)
-            path_str = unquote(parsed.path)
-            pname = PurePosixPath(path_str).name or "project"
-            pid = get_project_id_for_workspace(ws, user_home=home)
-            proj_def = {
-                "id": pid,
-                "name": pname,
-                "projectResources": {
-                    "resources": [
-                        {
-                            "gitFolder": {
-                                "folderUri": ws,
-                                "defaultBranch": "main",
+            existing_folder_uris = set()
+            for fpath in projects_dir.glob("*.json"):
+                if fpath.name in ("outside-of-project.json", "default-cli-project.json"):
+                    continue
+                try:
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    for r in data.get("projectResources", {}).get("resources", []):
+                        u = r.get("folderUri") or r.get("gitFolder", {}).get("folderUri")
+                        if u:
+                            existing_folder_uris.add(u)
+                except Exception:
+                    pass
+
+            for ws in targets:
+                if not ws or ws in existing_folder_uris:
+                    continue
+                if not ws.startswith("file://") or any(k in ws for k in [".gemini", "/tmp"]) or is_container_or_system_root(ws):
+                    continue
+                parsed = urlsplit(ws)
+                path_str = unquote(parsed.path)
+                pname = PurePosixPath(path_str).name or "project"
+                pid = get_project_id_for_workspace(ws, user_home=home)
+                proj_def = {
+                    "id": pid,
+                    "name": pname,
+                    "projectResources": {
+                        "resources": [
+                            {
+                                "gitFolder": {
+                                    "folderUri": ws,
+                                    "defaultBranch": "main",
+                                }
                             }
-                        }
-                    ]
-                },
-                "permissionGrants": {"v2Migrated": True},
-                "settings": {},
-                "isWorkspaceOnly": False,
-            }
-            fpath = projects_dir / f"{pid}.json"
-            if not fpath.exists():
-                with open(fpath, "w", encoding="utf-8") as f:
-                    json.dump(proj_def, f, indent=2)
-                existing_folder_uris.add(ws)
-    except Exception:
-        pass
+                        ]
+                    },
+                    "permissionGrants": {"v2Migrated": True},
+                    "settings": {},
+                    "isWorkspaceOnly": False,
+                }
+                fpath = projects_dir / f"{pid}.json"
+                if not fpath.exists():
+                    with open(fpath, "w", encoding="utf-8") as f:
+                        json.dump(proj_def, f, indent=2)
+                    existing_folder_uris.add(ws)
+        except Exception:
+            pass
 
 
 def get_project_id_for_workspace(

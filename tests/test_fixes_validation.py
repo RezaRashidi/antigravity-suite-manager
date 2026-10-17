@@ -9,6 +9,7 @@ import zlib
 import colorsys
 import re
 import sys
+from pathlib import Path
 
 # Import functions to test
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "bin"))
@@ -354,11 +355,86 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             mock_bin = build_cascade_summary(mock_cid, "Test Chat", "Preview", 5)
             write_vscdb_unified_state(discovered, {mock_cid: mock_bin})
 
-            for target_db in [global_db, ws_db]:
-                with sqlite3.connect(str(target_db)) as con:
-                    row = con.cursor().execute("SELECT value FROM ItemTable WHERE key = 'antigravityUnifiedStateSync.trajectorySummaries';").fetchone()
-                    self.assertIsNotNone(row)
-                    self.assertIsNotNone(row[0])
+            # Verify globalStorage database is populated with unified state
+            with sqlite3.connect(str(global_db)) as con:
+                row = con.cursor().execute("SELECT value FROM ItemTable WHERE key = 'antigravityUnifiedStateSync.trajectorySummaries';").fetchone()
+                self.assertIsNotNone(row)
+                self.assertIsNotNone(row[0])
+
+            # Verify workspace-scoped database is NOT bloated with global unified state
+            with sqlite3.connect(str(ws_db)) as con:
+                row = con.cursor().execute("SELECT value FROM ItemTable WHERE key = 'antigravityUnifiedStateSync.trajectorySummaries';").fetchone()
+                self.assertIsNone(row)
+
+    def test_discovery_has_json_and_handles_pinned_unpinned(self):
+        import antigravity_suite.history.discovery as disc
+        self.assertTrue(hasattr(disc, "json"))
+
+        with tempfile.TemporaryDirectory() as td:
+            u_home = Path(td)
+            app_cfg = u_home / ".config" / "Antigravity"
+            app_cfg.mkdir(parents=True)
+            app_json = app_cfg / "app_storage.json"
+
+            # 1. Pinned
+            with open(app_json, "w") as f:
+                disc.json.dump({"pinned_conversations_order": ["00000000-1111-2222-3333-444444444444"]}, f)
+
+            pinned = disc.discover_pinned_conversation_ids(user_home=u_home)
+            self.assertEqual(pinned, {"00000000-1111-2222-3333-444444444444"})
+
+            # 2. Unpin and verify replication drops it
+            disc.replicate_pinned_conversations_order(set(), user_home=u_home)
+            with open(app_json) as f:
+                data = disc.json.load(f)
+            self.assertEqual(data["pinned_conversations_order"], [])
+
+    def test_annotation_sync_removes_unpinned_and_unarchived_flags(self):
+        from antigravity_suite.history.extractor import sync_annotation_file
+
+        with tempfile.TemporaryDirectory() as td:
+            cid = "22222222-3333-4444-5555-666666666666"
+            # Pin and archive
+            sync_annotation_file(td, cid, "Active Title", pinned=True, archived=True)
+            anno_f = Path(td) / "annotations" / f"{cid}.pbtxt"
+            self.assertTrue(anno_f.is_file())
+            content = anno_f.read_text()
+            self.assertIn("pinned:true", content)
+            self.assertIn("archived:true", content)
+
+            # Unpin and unarchive
+            sync_annotation_file(td, cid, "Active Title", pinned=False, archived=False)
+            content_updated = anno_f.read_text()
+            self.assertNotIn("pinned:true", content_updated)
+            self.assertNotIn("archived:true", content_updated)
+
+    def test_src_not_truncated_as_project_container(self):
+        from antigravity_suite.history.projects import PROJECT_CONTAINERS, normalize_workspace_uri
+        self.assertNotIn("src", PROJECT_CONTAINERS)
+        raw_uri = "file:///home/developer/app-server/src/controllers/auth"
+        norm = normalize_workspace_uri(raw_uri)
+        self.assertNotEqual(norm, "file:///home/developer/app-server/src/controllers")
+        self.assertEqual(norm, raw_uri)
+
+    def test_ensure_project_configs_populates_all_gemini_dirs(self):
+        from antigravity_suite.history.projects import ensure_project_configs
+
+        with tempfile.TemporaryDirectory() as td:
+            u_home = Path(td)
+            g1 = u_home / ".gemini"
+            g2 = u_home / ".gemide"
+            g1.mkdir(parents=True)
+            g2.mkdir(parents=True)
+
+            ws_target = "file:///home/developer/cool-service"
+            ensure_project_configs(user_home=u_home, workspace_uris=[ws_target])
+
+            # Both g1 and g2 config/projects/ must have the generated project file
+            p1_files = list((g1 / "config" / "projects").glob("*.json"))
+            p2_files = list((g2 / "config" / "projects").glob("*.json"))
+            self.assertTrue(len(p1_files) > 0)
+            self.assertTrue(len(p2_files) > 0)
+            self.assertEqual(p1_files[0].name, p2_files[0].name)
 
 if __name__ == "__main__":
     unittest.main()

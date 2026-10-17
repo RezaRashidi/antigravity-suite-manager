@@ -121,14 +121,23 @@ def sync_annotation_file(
             else:
                 new_content = f"{title_line}  {content}".strip()
 
-            if pinned and not re.search(r'pinned\s*:\s*true', new_content, re.IGNORECASE):
-                new_content = new_content.strip() + "  pinned:true"
-            if archived and not re.search(r'archived\s*:\s*true', new_content, re.IGNORECASE):
-                new_content = new_content.strip() + "  archived:true"
+            if pinned:
+                if not re.search(r'pinned\s*:\s*true', new_content, re.IGNORECASE):
+                    new_content = new_content.strip() + "  pinned:true"
+            else:
+                new_content = re.sub(r'\s*pinned\s*:\s*true', '', new_content, flags=re.IGNORECASE)
 
-            if new_content != content:
+            if archived:
+                if not re.search(r'archived\s*:\s*true', new_content, re.IGNORECASE):
+                    new_content = new_content.strip() + "  archived:true"
+            else:
+                new_content = re.sub(r'\s*archived\s*:\s*true', '', new_content, flags=re.IGNORECASE)
+
+            new_content = re.sub(r'[ \t]+', ' ', new_content).strip()
+
+            if new_content != content.strip():
                 with open(anno_file, "w", encoding="utf-8") as f:
-                    f.write(f"{new_content.strip()}\n")
+                    f.write(f"{new_content}\n")
                 return True
         except Exception:
             return False

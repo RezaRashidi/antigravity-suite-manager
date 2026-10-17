@@ -194,6 +194,9 @@ def write_vscdb_unified_state(
     for vscdb_p in candidate_vscdbs:
         if not vscdb_p.is_file():
             continue
+        # Only write unified state to globalStorage/state.vscdb, skip workspace-scoped databases
+        if "globalstorage" not in str(vscdb_p).lower():
+            continue
         v_con = None
         try:
             v_con = sqlite3.connect(str(vscdb_p), timeout=15.0)
