@@ -352,7 +352,11 @@ def resolve_conversation_item(
     curr_raw_pid = parsed_raw.get("project_id") or ""
     existing_row_pid = existing_proj or ""
     target_pid = proj_id or ""
-    needs_proj_rebuild = bool(target_pid and (target_pid != curr_raw_pid or target_pid != existing_row_pid))
+    needs_proj_rebuild = bool(
+        (target_pid != curr_raw_pid)
+        or (target_pid != existing_row_pid)
+        or (target_pid and not parsed_raw.get("has_tag_18", False))
+    )
 
     curr_raw_title = parsed_raw.get("title") or parsed_raw.get("summary")
     has_dirty_title = bool("@[" in (curr_raw_title or "") or "@[" in (curr_title or "") or "@[" in final_title)

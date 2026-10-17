@@ -307,8 +307,13 @@ def parse_cascade_summary(data: bytes) -> Dict[Any, Any]:
                             l17, p17 = read_varint(val_bytes, p17)
                             b17 = val_bytes[p17 : p17 + l17]
                             p17 += l17
-                            if t17 in (14, 18):
+                            if t17 == 18:
                                 res["project_id"] = b17.decode("utf-8", "ignore")
+                                res["has_tag_18"] = True
+                            elif t17 == 14:
+                                if "project_id" not in res:
+                                    res["project_id"] = b17.decode("utf-8", "ignore")
+                                res["has_tag_14"] = True
                             elif t17 == 7:
                                 uri_str = b17.decode("utf-8", "ignore")
                                 if "workspace_uri" not in res:

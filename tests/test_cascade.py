@@ -372,6 +372,36 @@ class TestCascadeAndTrajectory(unittest.TestCase):
         self.assertTrue(tag15_found)
 
 
+    def test_tag18_and_tag14_parsing_and_healing(self):
+        # 1. Summary built with build_cascade_summary has both Tag 18 and Tag 14
+        uuid = "88673ac6-58b3-4bbe-81b1-3de273d68bab"
+        data = build_cascade_summary(
+            uuid=uuid,
+            title="Number 6565 Meaning",
+            summary="Prompt text",
+            step_count=10,
+            project_id="247e98f3-52b3-41c9-aebb-1732fb2b7070",
+            workspace_uri="file:///home/reza/Music/lede",
+        )
+        parsed = parse_cascade_summary(data)
+        self.assertEqual(parsed.get("project_id"), "247e98f3-52b3-41c9-aebb-1732fb2b7070")
+        self.assertTrue(parsed.get("has_tag_18"))
+        self.assertTrue(parsed.get("has_tag_14"))
+
+        # 2. Synthesize legacy binary that ONLY has Tag 14
+        from antigravity_suite.proto.cascade import encode_tag_bytes, encode_tag_uint
+        legacy_sub17 = bytearray()
+        legacy_sub17 += encode_tag_bytes(14, "247e98f3-52b3-41c9-aebb-1732fb2b7070".encode("utf-8"))
+        legacy_bin = bytearray()
+        legacy_bin += encode_tag_bytes(4, uuid.encode("utf-8"))
+        legacy_bin += encode_tag_bytes(17, bytes(legacy_sub17))
+
+        parsed_legacy = parse_cascade_summary(bytes(legacy_bin))
+        self.assertEqual(parsed_legacy.get("project_id"), "247e98f3-52b3-41c9-aebb-1732fb2b7070")
+        self.assertTrue(parsed_legacy.get("has_tag_14"))
+        self.assertFalse(parsed_legacy.get("has_tag_18", False))
+
+
 if __name__ == "__main__":
     unittest.main()
 
