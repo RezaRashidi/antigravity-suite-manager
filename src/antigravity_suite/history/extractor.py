@@ -391,38 +391,7 @@ def extract_conv_text(
                 if title:
                     break
 
-    # 2. Prompt Fallback: if no authentic H1 title could be derived from artifacts
     preview = latest_user_prompt or first_user_prompt or ""
-    if not title and first_user_prompt:
-        clean_first = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", first_user_prompt).strip()
-        lines = [line.strip() for line in clean_first.split("\n") if line.strip()]
-        if not lines and latest_user_prompt:
-            clean_latest = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", latest_user_prompt).strip()
-            lines = [line.strip() for line in clean_latest.split("\n") if line.strip()]
-        if not lines:
-            lines = [line.strip() for line in first_user_prompt.split("\n") if line.strip()]
-
-        for line in lines:
-            cand = line.strip()
-            # Clean terminal characters / shell prompt prefixes like ╰─❯, ❯, $, #, root@..., etc.
-            cand = re.sub(
-                r"^(?:[╰╭│├└─\s]*[❯>$#%]\s*|root@[^:]+:[^\s#$]+[#$]\s*|[a-zA-Z0-9_-]+@[^:]+:[^\s#$]+[#$]\s*)",
-                "",
-                cand,
-            ).strip()
-            if not cand:
-                continue
-            # Skip code blocks, raw commands, JSON, URLs, or shell execution lines
-            if cand.startswith(("{", "[", "http://", "https://", "curl ", "git ", "docker ", "ssh ", "sudo ", "cd ", "npm ", "cat ", "ls ", "export ")):
-                continue
-            if len(cand) > 80:
-                cand = cand[:77] + "..."
-            if cand.lower() not in ["hi", "hello", "hey", "conversation", "untitled conversation"]:
-                title = cand
-                break
-
-    if not preview and title:
-        preview = title
 
     res = (title, preview)
     if len(_EXTRACT_CACHE) > 5000:

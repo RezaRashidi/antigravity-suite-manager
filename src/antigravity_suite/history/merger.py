@@ -354,26 +354,38 @@ def resolve_conversation_item(
     ext_t, ext_p = extract_conv_text(db_file, transcript_file)
     clean_ext_t = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", ext_t or "").strip()
 
+    prompt_cands = set()
+    for raw_p in [ext_p]:
+        if raw_p:
+            p_clean = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", raw_p).strip()
+            if p_clean:
+                prompt_cands.add(p_clean)
+                lines = [l.strip() for l in p_clean.split("\n") if l.strip()]
+                if lines:
+                    prompt_cands.add(lines[0])
+            if raw_p.strip():
+                prompt_cands.add(raw_p.strip())
+
     # 1. Check existing titles (anno_title, curr_title, raw_title)
     existing_clean_title = ""
     for cand in [anno_title, curr_title, raw_title]:
-        if is_clean_title(cand) and cand != clean_ext_t:
+        if cand and is_clean_title(cand) and cand.strip() not in prompt_cands:
             existing_clean_title = cand.strip()
             break
 
     # 2. Check LLM summaries (raw_summary, parsed_sql summary, curr_prev)
     llm_title = ""
     for cand in [raw_summary, parsed_sql.get("summary", ""), curr_prev]:
-        if is_clean_title(cand) and cand != clean_ext_t:
+        if cand and is_clean_title(cand) and cand.strip() not in prompt_cands:
             llm_title = cand.strip()
             break
 
-    # Priority: Existing clean title > Authentic LLM summary > Clean artifact title (not equal to prompt) > "Conversation"
+    # Priority: Existing clean title > Authentic LLM summary > Clean artifact title > "Conversation"
     if existing_clean_title:
         final_title = existing_clean_title
     elif llm_title:
         final_title = llm_title
-    elif clean_ext_t and is_clean_title(clean_ext_t) and (not ext_p or clean_ext_t != ext_p):
+    elif clean_ext_t and is_clean_title(clean_ext_t) and clean_ext_t not in prompt_cands:
         final_title = clean_ext_t
     else:
         final_title = "Conversation"
@@ -412,16 +424,17 @@ def resolve_conversation_item(
         or (target_pid and not parsed_raw.get("has_tag_18", False))
     )
 
-    curr_raw_title = parsed_raw.get("title") or parsed_raw.get("summary")
-    has_dirty_title = bool("@[" in (curr_raw_title or "") or "@[" in (curr_title or "") or "@[" in final_title)
+    curr_raw_sum = (parsed_raw.get("summary") or "").strip()
+    curr_raw_tit = (parsed_raw.get("title") or "").strip()
+    expected_proto_sum = final_title if (is_clean_title(final_title) and final_title != "Conversation") else "---"
+
+    has_dirty_title = bool("@[" in (curr_raw_tit or "") or "@[" in (curr_raw_sum or "") or "@[" in final_title)
     needs_title_rebuild = bool(
-        final_title
-        and (
-            not curr_raw_title
-            or curr_raw_title in ["Conversation", "Untitled Conversation"]
-            or has_dirty_title
-            or curr_raw_title != final_title
-        )
+        curr_raw_tit != final_title
+        or curr_raw_sum != expected_proto_sum
+        or (curr_raw_sum in prompt_cands)
+        or (curr_raw_tit in prompt_cands)
+        or has_dirty_title
     )
     needs_ws_rebuild = bool(ws_uri and ws_uri != parsed_raw.get("workspace_uri"))
     has_bad_timestamps = bool(
@@ -523,10 +536,11 @@ def resolve_conversation_item(
             if sql_user_step >= 0
             else get_last_user_step_index(db_file, target_step_cnt)
         )
+        proto_summary = final_title if (is_clean_title(final_title) and final_title != "Conversation") else "---"
         raw_to_store = build_cascade_summary(
             conv_id,
             final_title,
-            final_prev,
+            proto_summary,
             target_step_cnt,
             last_modified_iso=final_modified_iso,
             last_user_step=user_step,

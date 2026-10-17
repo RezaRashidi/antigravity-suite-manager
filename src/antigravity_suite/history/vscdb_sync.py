@@ -130,27 +130,37 @@ def ingest_vscdb_summaries(
                     ide_summary = (parsed.get("summary") or "").strip()
                     ide_annot_title = (parsed.get("title") or "").strip()
 
-                    # Prefer authentic summary (Tag 1), which holds LLM-generated title
+                    db_p = master_conv_dir / f"{u_id}.db"
+                    tr_p = master_conv_dir.parent / "brain" / u_id / ".system_generated" / "logs" / "transcript.jsonl"
+                    prompt_t, prompt_prev = extract_conv_text(db_p, tr_p)
+                    clean_prompts = set()
+                    for p_raw in [prompt_t, prompt_prev]:
+                        if p_raw:
+                            clean_p = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", p_raw).strip()
+                            if clean_p:
+                                clean_prompts.add(clean_p)
+                                lines = [l.strip() for l in clean_p.split("\n") if l.strip()]
+                                if lines:
+                                    clean_prompts.add(lines[0])
+                            if p_raw.strip():
+                                clean_prompts.add(p_raw.strip())
+
+                    # Prefer authentic title that is NOT the raw user prompt
                     ide_title = ""
-                    if is_clean_title(ide_summary):
-                        ide_title = ide_summary
-                    elif is_clean_title(ide_annot_title):
-                        ide_title = ide_annot_title
+                    for cand in [ide_annot_title, ide_summary]:
+                        if cand and is_clean_title(cand) and cand.strip() not in clean_prompts:
+                            ide_title = cand.strip()
+                            break
 
                     if u_id in all_summaries:
                         curr_parsed = parse_cascade_summary(all_summaries[u_id])
                         curr_t = (curr_parsed.get("title") or curr_parsed.get("summary") or "").strip()
                         should_update = False
                         if ide_title:
-                            if not curr_t or not is_clean_title(curr_t):
+                            if not curr_t or not is_clean_title(curr_t) or curr_t in clean_prompts:
                                 should_update = True
                             elif curr_t != ide_title:
-                                db_p = master_conv_dir / f"{u_id}.db"
-                                tr_p = master_conv_dir.parent / "brain" / u_id / ".system_generated" / "logs" / "transcript.jsonl"
-                                prompt_t, _ = extract_conv_text(db_p, tr_p)
-                                clean_prompt = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", prompt_t or "").strip()
-                                if not clean_prompt or curr_t == clean_prompt or ide_title != clean_prompt:
-                                    should_update = True
+                                should_update = True
 
                         if should_update:
                             db_p = master_conv_dir / f"{u_id}.db"
@@ -258,25 +268,6 @@ def write_vscdb_unified_state(
             old_traj_b64 = old_traj_row[0] if old_traj_row else None
 
             state_summaries = dict(all_summaries)
-            if old_traj_b64:
-                try:
-                    old_entries = extract_entries_from_proto(base64.b64decode(old_traj_b64))
-                    for u_id, p_bin in old_entries.items():
-                        old_raw = extract_pure_binary_summary(p_bin)
-                        if old_raw:
-                            old_p = parse_cascade_summary(old_raw)
-                            old_sum = (old_p.get("summary") or "").strip()
-                            if is_clean_title(old_sum):
-                                if u_id in state_summaries:
-                                    curr_p = parse_cascade_summary(state_summaries[u_id])
-                                    curr_t = (curr_p.get("title") or curr_p.get("summary") or "").strip()
-                                    if not is_clean_title(curr_t):
-                                        state_summaries[u_id] = old_raw
-                                else:
-                                    state_summaries[u_id] = old_raw
-                except Exception:
-                    pass
-
             val_wrap_b64 = build_summaries_state(state_summaries)
             outer_b64 = build_unified_state_sync(state_summaries, existing_raw_b64=old_sync_b64)
 

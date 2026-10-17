@@ -82,7 +82,7 @@ class TestExtractor(unittest.TestCase):
             conn.close()
 
             title, preview = extract_conv_text(f.name, "")
-            self.assertEqual(title, "User prompt message #1")
+            self.assertEqual(title, "")
             self.assertEqual(preview, "User prompt message #10")
 
     def test_extract_conv_text_strips_context_mentions(self):
@@ -97,7 +97,7 @@ class TestExtractor(unittest.TestCase):
                 f.write('{"source":"USER_EXPLICIT","type":"USER_INPUT","content":"<USER_REQUEST>@[/home/user/Downloads/project-config/settings.yml:L2-L13]\\nبه سرور قدیمی دسترسی دارم\\nچطوری پیدا کنم</USER_REQUEST>"}\n')
 
             title, preview = extract_conv_text("", transcript_file)
-            self.assertEqual(title, "به سرور قدیمی دسترسی دارم")
+            self.assertEqual(title, "")
             self.assertIn("به سرور قدیمی دسترسی دارم", preview)
 
 
