@@ -14,6 +14,7 @@ import sqlite3
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from antigravity_suite.history.projects import get_project_id_for_workspace, normalize_workspace_uri
 from antigravity_suite.history.sqlite_store import get_actual_steps_count
 from antigravity_suite.proto.cascade import build_cascade_summary, get_last_user_step_index, parse_cascade_summary
 from antigravity_suite.proto.trajectory import parse_trajectory_metadata_blob
@@ -122,6 +123,10 @@ def ingest_vscdb_summaries(
                         ):
                             db_p = master_conv_dir / f"{u_id}.db"
                             db_ws_uri, db_proj_id = get_db_trajectory_meta(db_p)
+                            raw_ws = db_ws_uri or curr_parsed.get("workspace_uri")
+                            norm_ws = normalize_workspace_uri(raw_ws)
+                            mapped_pid = get_project_id_for_workspace(norm_ws) if norm_ws else None
+                            effective_pid = mapped_pid or db_proj_id or curr_parsed.get("project_id") or ""
                             sc = max(get_actual_steps_count(db_p), curr_parsed.get("step_count", 0), curr_parsed.get(2, 0), 1)
                             user_step = get_last_user_step_index(db_p, sc)
                             new_bin = build_cascade_summary(
@@ -131,8 +136,8 @@ def ingest_vscdb_summaries(
                                 sc,
                                 last_modified_iso=curr_parsed.get("last_modified_iso") or curr_parsed.get("ts_3"),
                                 last_user_step=user_step,
-                                workspace_uri=db_ws_uri or curr_parsed.get("workspace_uri"),
-                                project_id=db_proj_id or curr_parsed.get("project_id"),
+                                workspace_uri=norm_ws,
+                                project_id=effective_pid,
                                 created_iso=curr_parsed.get("created_iso") or curr_parsed.get("ts_7"),
                                 last_user_input_iso=curr_parsed.get("last_user_input_iso") or curr_parsed.get("ts_10"),
                             )

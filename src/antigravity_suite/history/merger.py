@@ -37,6 +37,13 @@ from antigravity_suite.history.sqlite_store import (
     load_existing_summaries,
     upsert_summary,
 )
+from antigravity_suite.history.projects import (
+    KNOWN_PROJECT_MAPPINGS,
+    KNOWN_ROOTS,
+    ensure_project_configs,
+    get_project_id_for_workspace,
+    normalize_workspace_uri,
+)
 from antigravity_suite.history.vscdb_sync import (
     discover_candidate_vscdbs,
     get_db_trajectory_meta,
@@ -48,17 +55,21 @@ from antigravity_suite.proto.cascade import (
     get_last_user_step_index,
     parse_cascade_summary,
 )
+from antigravity_suite.proto.trajectory import build_trajectory_metadata_blob
 from antigravity_suite.proto.wire import (
     encode_tag_bytes,
     extract_entries_from_proto,
     extract_pure_binary_summary,
 )
 
-# Re-export get_db_trajectory_meta for backward compatibility
+# Re-export get_db_trajectory_meta and project helpers for backward compatibility
 __all__ = [
+    "ensure_project_configs",
     "get_db_trajectory_meta",
+    "get_project_id_for_workspace",
     "get_transcript_timestamps",
     "merge_histories",
+    "normalize_workspace_uri",
     "setup_master_directories",
     "collect_all_conversation_ids",
     "synchronize_master_summaries",
@@ -194,39 +205,6 @@ def collect_all_conversation_ids(
     return all_conv_ids
 
 
-def normalize_workspace_uri(uri: Optional[str]) -> Optional[str]:
-    """Normalizes subfolder workspace paths to their respective root workspace URIs."""
-    if not uri:
-        return None
-    uri_str = str(uri).strip()
-    if uri_str.startswith("["):
-        try:
-            arr = json.loads(uri_str)
-            if arr:
-                uri_str = arr[0]
-        except Exception:
-            pass
-    if not uri_str.startswith("file://"):
-        return uri_str
-
-    known_roots = [
-        "file:///home/reza/PhpstormProjects/Odirect",
-        "file:///home/reza/Music/lede",
-        "file:///home/reza/PhpstormProjects/k6",
-        "file:///home/reza/Library/nokia_modem",
-        "file:///home/reza/Music/irankhodro",
-        "file:///home/reza/Downloads/cloudflare",
-        "file:///home/reza/Downloads/dragonfly-ansible-main",
-        "file:///home/reza/Downloads/minio-ansible-main",
-        "file:///home/reza/.config/mihomo-party/profiles",
-        "file:///home/reza/.antigravity-suite-manager",
-    ]
-    for root in known_roots:
-        if uri_str == root or uri_str.startswith(root + "/") or uri_str.startswith(root + "\\"):
-            return root
-    return uri_str
-
-
 def resolve_conversation_item(
     conv_id: str,
     effective_master: Path,
@@ -332,7 +310,17 @@ def resolve_conversation_item(
 
     raw_ws = db_ws_uri or parsed_raw.get("workspace_uri") or existing_ws
     ws_uri = normalize_workspace_uri(raw_ws)
-    proj_id = db_proj_id or parsed_raw.get("project_id") or existing_proj
+
+    # Resolve project_id from authentic workspace mapping
+    mapped_pid = get_project_id_for_workspace(ws_uri) if ws_uri else None
+    proj_id = mapped_pid or db_proj_id or parsed_raw.get("project_id") or existing_proj or ""
+    if not proj_id and ws_uri:
+        proj_id = "outside-of-project"
+
+    curr_raw_pid = parsed_raw.get("project_id") or ""
+    existing_row_pid = existing_proj or ""
+    target_pid = proj_id or ""
+    needs_proj_rebuild = bool(target_pid and (target_pid != curr_raw_pid or target_pid != existing_row_pid))
 
     curr_raw_title = parsed_raw.get("title") or parsed_raw.get("summary")
     has_dirty_title = bool("@[" in (curr_raw_title or "") or "@[" in (curr_title or "") or "@[" in final_title)
@@ -371,6 +359,7 @@ def resolve_conversation_item(
         and not needs_steps_rebuild
         and not is_not_in_sqlite
         and not needs_ws_rebuild
+        and not needs_proj_rebuild
     ):
         all_summaries[conv_id] = curr_raw
         if curr_title != final_title or curr_prev != final_prev:
@@ -389,6 +378,7 @@ def resolve_conversation_item(
         and not is_corrupt_raw
         and not needs_steps_rebuild
         and not needs_ws_rebuild
+        and not needs_proj_rebuild
     ):
         raw_to_store = curr_raw
         user_step = (
@@ -435,6 +425,17 @@ def resolve_conversation_item(
     )
     upsert_summary(con, summary_model)
     sync_annotation_file(effective_master, conv_id, final_title)
+
+    # Keep conversation db trajectory_metadata_blob in sync if present
+    if has_db and ws_uri and (ws_uri != db_ws_uri or proj_id != db_proj_id):
+        try:
+            with sqlite3.connect(str(db_file), timeout=5.0) as conv_conn:
+                new_blob = build_trajectory_metadata_blob(conv_id, ws_uri, proj_id)
+                conv_conn.execute("INSERT OR REPLACE INTO trajectory_metadata_blob (id, data) VALUES ('main', ?);", (new_blob,))
+                conv_conn.commit()
+        except Exception:
+            pass
+
     if is_not_in_sqlite:
         stats.summaries_backfilled += 1
     else:
@@ -569,6 +570,9 @@ def merge_histories(
             )
         ).resolve()
     )
+
+    # 0. Ensure authentic project JSON configs exist in ~/.gemini/config/projects/
+    ensure_project_configs(user_home=home)
 
     # 1. Setup master directories & symlinks
     (

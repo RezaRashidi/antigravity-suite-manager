@@ -225,6 +225,84 @@ class TestCascadeAndTrajectory(unittest.TestCase):
             "file:///home/reza/PhpstormProjects/Odirect",
         )
 
+    def test_project_id_tag18_and_tag14(self):
+        from antigravity_suite.proto.wire import read_varint
+
+        data = build_cascade_summary(
+            uuid="c0a80101-0000-0000-0000-000000000001",
+            title="Project Tag Test",
+            summary="Testing Tag 18 and Tag 14",
+            step_count=3,
+            workspace_uri="file:///home/reza/PhpstormProjects/Odirect",
+            project_id="7bc454c1-6ec0-4ab3-b5eb-09fb9887e76f",
+        )
+        parsed = parse_cascade_summary(data)
+        self.assertEqual(parsed.get("project_id"), "7bc454c1-6ec0-4ab3-b5eb-09fb9887e76f")
+
+        # Verify wire-level presence of Tag 17 submessage containing Tag 18 and Tag 14
+        pos = 0
+        tag17_data = None
+        while pos < len(data):
+            tag_wire, pos = read_varint(data, pos)
+            wire_type = tag_wire & 7
+            tag_num = tag_wire >> 3
+            if wire_type == 2:
+                length, pos = read_varint(data, pos)
+                val_bytes = data[pos : pos + length]
+                pos += length
+                if tag_num == 17:
+                    tag17_data = val_bytes
+                    break
+            elif wire_type == 0:
+                _, pos = read_varint(data, pos)
+            elif wire_type == 1:
+                pos += 8
+            elif wire_type == 5:
+                pos += 4
+
+        self.assertIsNotNone(tag17_data)
+        sub_tags = []
+        p17 = 0
+        while p17 < len(tag17_data):
+            tw, p17 = read_varint(tag17_data, p17)
+            wt = tw & 7
+            tn = tw >> 3
+            if wt == 2:
+                l, p17 = read_varint(tag17_data, p17)
+                v = tag17_data[p17 : p17 + l]
+                p17 += l
+                sub_tags.append((tn, v))
+            elif wt == 0:
+                _, p17 = read_varint(tag17_data, p17)
+
+        tag_nums = [t[0] for t in sub_tags]
+        self.assertIn(18, tag_nums, "Tag 18 (project_id for Go CortexTrajectoryMetadata) must be present")
+        self.assertIn(14, tag_nums, "Tag 14 (legacy project_id) must be present")
+
+    def test_get_project_id_for_workspace(self):
+        from antigravity_suite.history.projects import get_project_id_for_workspace
+
+        self.assertEqual(
+            get_project_id_for_workspace("file:///home/reza/PhpstormProjects/Odirect"),
+            "7bc454c1-6ec0-4ab3-b5eb-09fb9887e76f",
+        )
+        self.assertEqual(
+            get_project_id_for_workspace("file:///home/reza/PhpstormProjects/Odirect/.github/workflows"),
+            "7bc454c1-6ec0-4ab3-b5eb-09fb9887e76f",
+        )
+        self.assertEqual(
+            get_project_id_for_workspace("file:///home/reza/Music/lede"),
+            "247e98f3-52b3-41c9-aebb-1732fb2b7070",
+        )
+        self.assertEqual(
+            get_project_id_for_workspace("file:///home/reza/Library/nokia_modem"),
+            "1c547948-02a7-481b-b9f6-1218b789cbde",
+        )
+        self.assertEqual(
+            get_project_id_for_workspace("file:///home/reza/PhpstormProjects/k6"),
+            "9e1a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

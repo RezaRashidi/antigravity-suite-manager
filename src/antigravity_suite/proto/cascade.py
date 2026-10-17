@@ -143,7 +143,8 @@ def build_cascade_summary(
         sub_17 += encode_tag_bytes(7, str(ws_list[0]).encode("utf-8"))
     sub_17 += encode_tag_bytes(2, ts_created)
     sub_17 += encode_tag_bytes(6, uuid.encode("utf-8"))
-    if project_id and project_id != "outside-of-project":
+    if project_id:
+        sub_17 += encode_tag_bytes(18, project_id.encode("utf-8"))
         sub_17 += encode_tag_bytes(14, project_id.encode("utf-8"))
     out += encode_tag_bytes(17, bytes(sub_17))
 
@@ -296,7 +297,7 @@ def parse_cascade_summary(data: bytes) -> Dict[Any, Any]:
                             l17, p17 = read_varint(val_bytes, p17)
                             b17 = val_bytes[p17 : p17 + l17]
                             p17 += l17
-                            if t17 == 14:
+                            if t17 in (14, 18):
                                 res["project_id"] = b17.decode("utf-8", "ignore")
                             elif t17 == 7:
                                 uri_str = b17.decode("utf-8", "ignore")
