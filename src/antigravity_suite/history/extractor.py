@@ -13,7 +13,7 @@ import os
 import re
 import sqlite3
 from pathlib import Path
-from typing import Optional, Tuple, Union
+from typing import Dict, Optional, Tuple, Union
 
 from antigravity_suite.history.synthesizer import parse_step14_user_prompt
 
@@ -90,6 +90,24 @@ def get_annotation_info(gemini_dir: Union[str, Path], conv_id: str) -> dict:
     return info
 
 
+def is_clean_title(val: Optional[str]) -> bool:
+    """Returns True if the string is an authentic, human-readable conversation title."""
+    if not val or not isinstance(val, str):
+        return False
+    s = val.strip()
+    if not s or s in ["Conversation", "IDE Conversation", "Untitled Conversation", "---"]:
+        return False
+    if s.startswith("@[") or s.startswith("{") or s.startswith("[") or s.startswith("<USER_REQUEST>") or s.startswith("<ADDITIONAL_METADATA>"):
+        return False
+    # Check for terminal/shell prompt indicators like ╰─❯, ❯, $, #, root@..., user@host...
+    if re.match(r"^(?:[╰╭│├└─\s]*[❯>$#%]\s*|root@[^:]+:[^\s#$]+[#$]\s*|[a-zA-Z0-9_-]+@[^:]+:[^\s#$]+[#$]\s*)", s):
+        return False
+    # Check for raw terminal/CLI command lines, code blocks, or URLs
+    if s.startswith(("curl ", "docker ", "git ", "ssh ", "sudo ", "cd ", "npm ", "cat ", "ls ", "export ", "bash ", "python ", "systemctl ", "journalctl ", "grep ", "http://", "https://", "```", "<?php", "import ", "def ", "class ")):
+        return False
+    return True
+
+
 def get_annotation_title(gemini_dir: Union[str, Path], conv_id: str) -> Optional[str]:
     """Reads authentic title from annotations/<conv_id>.pbtxt if present."""
     return get_annotation_info(gemini_dir, conv_id).get("title")
@@ -104,18 +122,14 @@ def sync_annotation_file(
     force: bool = False,
 ) -> bool:
     """Ensures annotations/<conv_id>.pbtxt exists, has title, and preserves pinned/archived states."""
-    if not title or title.strip() in ["", "Conversation", "Untitled Conversation"]:
-        return False
-
     anno_dir = os.path.join(str(master_gemini), "annotations")
     os.makedirs(anno_dir, exist_ok=True)
     anno_file = os.path.join(anno_dir, f"{conv_id}.pbtxt")
 
-    clean_title = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", title).strip()
+    clean_title = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", title or "").strip()
     clean_title = clean_title.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
-    if not clean_title or clean_title in ["", "Conversation", "Untitled Conversation"]:
-        clean_title = "Conversation"
-    title_line = f'title: "{clean_title}"'
+    is_valid_title = is_clean_title(clean_title)
+    title_line = f'title: "{clean_title}"' if is_valid_title else ""
 
     if os.path.isfile(anno_file):
         try:
@@ -124,12 +138,21 @@ def sync_annotation_file(
             m = re.search(r'title\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', content)
             if m:
                 existing_t = m.group(1).strip()
-                if force or not existing_t or existing_t in ["Conversation", "Untitled Conversation"] or "@[" in existing_t:
+                if not is_clean_title(existing_t):
+                    # Existing title is dirty or shell prompt. Replace or remove it.
+                    if is_valid_title:
+                        new_content = re.sub(r'title\s*:\s*"[^"\\]*(?:\\.[^"\\]*)*"', title_line, content)
+                    else:
+                        new_content = re.sub(r'\s*title\s*:\s*"[^"\\]*(?:\\.[^"\\]*)*"', '', content)
+                elif force and is_valid_title:
                     new_content = re.sub(r'title\s*:\s*"[^"\\]*(?:\\.[^"\\]*)*"', title_line, content)
                 else:
                     new_content = content
             else:
-                new_content = f"{title_line}  {content}".strip()
+                if is_valid_title:
+                    new_content = f"{title_line}  {content}".strip()
+                else:
+                    new_content = content
 
             if pinned is True:
                 if not re.search(r'pinned\s*:\s*true', new_content, re.IGNORECASE):
@@ -145,6 +168,17 @@ def sync_annotation_file(
 
             new_content = re.sub(r'[ \t]+', ' ', new_content).strip()
 
+            has_pinned = bool(re.search(r'pinned\s*:\s*true', new_content, re.IGNORECASE))
+            has_archived = bool(re.search(r'archived\s*:\s*true', new_content, re.IGNORECASE))
+            has_title = bool(re.search(r'title\s*:\s*"[^"\\]*(?:\\.[^"\\]*)*"', new_content))
+
+            if not has_pinned and not has_archived and not has_title:
+                try:
+                    os.remove(anno_file)
+                    return True
+                except Exception:
+                    pass
+
             if new_content != content.strip():
                 with open(anno_file, "w", encoding="utf-8") as f:
                     f.write(f"{new_content}\n")
@@ -152,12 +186,19 @@ def sync_annotation_file(
         except Exception:
             return False
     else:
+        if not is_valid_title and not pinned and not archived:
+            return False
         try:
-            body = title_line
+            body_parts = []
+            if is_valid_title:
+                body_parts.append(title_line)
             if pinned is True:
-                body += "  pinned:true"
+                body_parts.append("pinned:true")
             if archived is True:
-                body += "  archived:true"
+                body_parts.append("archived:true")
+            body = "  ".join(body_parts)
+            if not body:
+                return False
             with open(anno_file, "w", encoding="utf-8") as f:
                 f.write(f"{body}\n")
             return True
@@ -166,20 +207,53 @@ def sync_annotation_file(
     return False
 
 
+_EXTRACT_CACHE: Dict[Tuple[str, int, int, str, int, int], Tuple[str, str]] = {}
+
+
+def _get_file_stat(p: Union[str, Path, None]) -> Tuple[int, int]:
+    if not p:
+        return (0, 0)
+    try:
+        st = os.stat(str(p))
+        return (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return (0, 0)
+
+
 def extract_conv_text(
     db_path: Union[str, Path],
     transcript_path: Union[str, Path],
 ) -> Tuple[str, str]:
     """Extracts (title, preview) from transcript, artifacts, and sqlite steps."""
+    db_stat = _get_file_stat(db_path)
+    tr_stat = _get_file_stat(transcript_path)
+    cache_key = (
+        str(db_path) if db_path else "",
+        db_stat[0],
+        db_stat[1],
+        str(transcript_path) if transcript_path else "",
+        tr_stat[0],
+        tr_stat[1],
+    )
+    if cache_key in _EXTRACT_CACHE:
+        return _EXTRACT_CACHE[cache_key]
+
     first_user_prompt = ""
     latest_user_prompt = ""
 
     t_candidates = []
     t_str = str(transcript_path) if transcript_path else ""
     if t_str:
-        t_candidates.append(t_str)
-        if "transcript.jsonl" in t_str:
-            t_candidates.insert(0, t_str.replace("transcript.jsonl", "transcript_full.jsonl"))
+        if "transcript_full.jsonl" in t_str:
+            t_candidates.append(t_str)
+            t_short = t_str.replace("transcript_full.jsonl", "transcript.jsonl")
+            if os.path.isfile(t_short):
+                t_candidates.insert(0, t_short)
+        else:
+            t_candidates.append(t_str)
+            t_full = t_str.replace("transcript.jsonl", "transcript_full.jsonl")
+            if not os.path.isfile(t_str) and os.path.isfile(t_full):
+                t_candidates.append(t_full)
 
     for tf in t_candidates:
         if os.path.isfile(tf):
@@ -328,14 +402,30 @@ def extract_conv_text(
         if not lines:
             lines = [line.strip() for line in first_user_prompt.split("\n") if line.strip()]
 
-        if lines:
-            t_cand = lines[0]
-            if len(t_cand) > 80:
-                t_cand = t_cand[:77] + "..."
-            if t_cand and t_cand.lower() not in ["hi", "hello", "hey", "conversation", "untitled conversation"]:
-                title = t_cand
+        for line in lines:
+            cand = line.strip()
+            # Clean terminal characters / shell prompt prefixes like ╰─❯, ❯, $, #, root@..., etc.
+            cand = re.sub(
+                r"^(?:[╰╭│├└─\s]*[❯>$#%]\s*|root@[^:]+:[^\s#$]+[#$]\s*|[a-zA-Z0-9_-]+@[^:]+:[^\s#$]+[#$]\s*)",
+                "",
+                cand,
+            ).strip()
+            if not cand:
+                continue
+            # Skip code blocks, raw commands, JSON, URLs, or shell execution lines
+            if cand.startswith(("{", "[", "http://", "https://", "curl ", "git ", "docker ", "ssh ", "sudo ", "cd ", "npm ", "cat ", "ls ", "export ")):
+                continue
+            if len(cand) > 80:
+                cand = cand[:77] + "..."
+            if cand.lower() not in ["hi", "hello", "hey", "conversation", "untitled conversation"]:
+                title = cand
+                break
 
     if not preview and title:
         preview = title
 
-    return title, preview
+    res = (title, preview)
+    if len(_EXTRACT_CACHE) > 5000:
+        _EXTRACT_CACHE.clear()
+    _EXTRACT_CACHE[cache_key] = res
+    return res

@@ -9,6 +9,7 @@ from antigravity_suite.history.extractor import (
     extract_conv_text,
     get_annotation_info,
     get_annotation_title,
+    is_clean_title,
     sync_annotation_file,
 )
 from antigravity_suite.history.merger import merge_histories

@@ -1074,7 +1074,99 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             self.assertTrue(anno_file.exists())
             self.assertIn("Typo or Nonsense Input", anno_file.read_text())
 
+    def test_is_clean_title_validation(self):
+        from antigravity_suite.history.extractor import is_clean_title
+
+        # Dirty cases
+        self.assertFalse(is_clean_title(""))
+        self.assertFalse(is_clean_title("Conversation"))
+        self.assertFalse(is_clean_title("Untitled Conversation"))
+        self.assertFalse(is_clean_title("---"))
+        self.assertFalse(is_clean_title("@[/path/file.py:L1-10]"))
+        self.assertFalse(is_clean_title("<USER_REQUEST>help</USER_REQUEST>"))
+        self.assertFalse(is_clean_title("╰─❯ curl -X POST http://localhost:8080/api"))
+        self.assertFalse(is_clean_title("root@cp1:/var/log# cat error.log"))
+        self.assertFalse(is_clean_title("reza@vm-control-plane:~$ sudo tail -f /var/log/nginx/stream_error.log"))
+        self.assertFalse(is_clean_title("docker exec -it galera1 bash"))
+        self.assertFalse(is_clean_title("git status"))
+        self.assertFalse(is_clean_title("http://localhost:3000"))
+        self.assertFalse(is_clean_title("https://api.github.com"))
+
+        # Clean authentic titles
+        self.assertTrue(is_clean_title("Creating A New VM In HiWeb"))
+        self.assertTrue(is_clean_title("Typo or Nonsense Input"))
+        self.assertTrue(is_clean_title("Scanning Database Routing Rules"))
+        self.assertTrue(is_clean_title("Building Authentication Microservice"))
+        self.assertTrue(is_clean_title("به سرور قدیمی دسترسی دارم"))
+
+    def test_sync_annotation_file_cleans_dirty_shell_titles(self):
+        from antigravity_suite.history.extractor import sync_annotation_file
+
+        with tempfile.TemporaryDirectory() as td:
+            master = Path(td)
+            conv_id = "77777777-7777-7777-7777-777777777777"
+            anno_dir = master / "annotations"
+            anno_dir.mkdir(parents=True)
+            anno_file = anno_dir / f"{conv_id}.pbtxt"
+            # Pre-seed with dirty shell title and pinned:true
+            anno_file.write_text('title: "reza@vm-control-plane:~$ sudo tail -f /var/log/nginx/stream_error.log"  pinned:true\n')
+
+            # Sync with generic "Conversation": dirty title should be stripped, pinned preserved
+            sync_annotation_file(master, conv_id, "Conversation", pinned=True, force=False)
+            content = anno_file.read_text()
+            self.assertNotIn("reza@vm-control-plane", content)
+            self.assertNotIn("title:", content)
+            self.assertIn("pinned:true", content)
+
+            # Sync with new clean title: should replace cleanly
+            sync_annotation_file(master, conv_id, "Investigating Nginx Stream Logs", pinned=True, force=True)
+            content2 = anno_file.read_text()
+            self.assertIn('title: "Investigating Nginx Stream Logs"', content2)
+            self.assertIn("pinned:true", content2)
+
+    def test_merger_does_not_set_raw_prompt_as_final_title(self):
+        from antigravity_suite.history.merger import synchronize_master_summaries, SyncStats
+        from antigravity_suite.history.sqlite_store import ensure_summaries_schema
+
+        with tempfile.TemporaryDirectory() as td:
+            import sqlite3
+            master = Path(td)
+            conv_id = "88888888-8888-8888-8888-888888888888"
+            master_conv_dir = master / "conversations"
+            master_conv_dir.mkdir(parents=True)
+            master_brain_dir = master / "brain"
+            master_brain_dir.mkdir(parents=True)
+            master_sum_db = master / "conversation_summaries.db"
+            master_proto = master / "agyhub_summaries_proto.pb"
+
+            # Create transcript with prompt "988کمکم"
+            t_log_dir = master_brain_dir / conv_id / ".system_generated" / "logs"
+            t_log_dir.mkdir(parents=True)
+            t_file = t_log_dir / "transcript.jsonl"
+            t_file.write_text('{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","content":"988کمکم"}\n')
+
+            db_file = master_conv_dir / f"{conv_id}.db"
+            db_file.touch()
+
+            with sqlite3.connect(str(master_sum_db)) as c:
+                ensure_summaries_schema(c)
+
+            con, all_sums = synchronize_master_summaries(
+                master, master_conv_dir, master_brain_dir, master_sum_db, master_proto, SyncStats()
+            )
+            row = con.execute("SELECT title, preview FROM conversation_summaries WHERE conversation_id = ?;", (conv_id,)).fetchone()
+            con.close()
+
+            # Title must be "Conversation" (not raw prompt), preview must be "988کمکم"
+            self.assertEqual(row[0], "Conversation")
+            self.assertEqual(row[1], "988کمکم")
+
+            # Annotations file must NOT be created with raw prompt title
+            anno_file = master / "annotations" / f"{conv_id}.pbtxt"
+            self.assertFalse(anno_file.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

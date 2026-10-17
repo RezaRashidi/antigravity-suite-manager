@@ -59,36 +59,13 @@ def replicate_to_ide_profiles(
                         except Exception:
                             pass
 
-            # 2. Maintain conversation_summaries.db inside conversations/ subfolder (Bug 16)
-            # Must strictly symlink to avoid dual-path database desync
+            # Ensure conversations/ contains ONLY conversation databases (Issue 3 in forensics)
             t_sum_db = os.path.join(tgt_conv_dir, "conversation_summaries.db")
-            if not os.path.islink(t_sum_db) and not (
-                os.path.exists(t_sum_db) and os.path.samefile(str(master_sum_db), t_sum_db)
-            ):
-                dest_c = None
+            if os.path.islink(t_sum_db) or os.path.exists(t_sum_db):
                 try:
-                    if os.path.exists(tgt_root_sum_db):
-                        if os.path.exists(t_sum_db):
-                            try:
-                                os.remove(t_sum_db)
-                            except Exception:
-                                pass
-                        try:
-                            os.symlink("../conversation_summaries.db", t_sum_db)
-                        except Exception:
-                            dest_c = sqlite3.connect(t_sum_db, timeout=15.0)
-                            con.backup(dest_c)
-                    else:
-                        dest_c = sqlite3.connect(t_sum_db, timeout=15.0)
-                        con.backup(dest_c)
+                    os.remove(t_sum_db)
                 except Exception:
                     pass
-                finally:
-                    if dest_c:
-                        try:
-                            dest_c.close()
-                        except Exception:
-                            pass
 
             # 3. Replicate trajectory .db files with strict step precedence
             if not os.path.islink(tgt_conv_dir) and not os.path.samefile(str(master_conv_dir), tgt_conv_dir):

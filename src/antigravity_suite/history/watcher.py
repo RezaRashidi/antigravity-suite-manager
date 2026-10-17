@@ -149,6 +149,18 @@ class LinuxInotifyWatcher:
 
         return changed_paths
 
+    def drain_events(self) -> None:
+        """Flushes and discards pending inotify events (e.g. self-generated writes during merge)."""
+        if not self.available or self._fd < 0:
+            return
+        try:
+            while True:
+                data = os.read(self._fd, 65536)
+                if not data:
+                    break
+        except (BlockingIOError, OSError):
+            pass
+
     def close(self) -> None:
         if self._epoll:
             try:
@@ -270,12 +282,17 @@ def watch_mode(
                         if os.path.isdir(logs_d):
                             inotify.add_watch_dir(logs_d)
                     base = os.path.basename(ev_path)
-                    if not base or base.startswith("conversation_summaries"):
+                    if (
+                        not base
+                        or base.startswith("conversation_summaries")
+                        or base.endswith(".pbtxt")
+                        or base.endswith(".pb")
+                        or base == "transcript_full.jsonl"
+                    ):
                         continue
                     if (
                         base.endswith(".db")
                         or base.endswith(".jsonl")
-                        or base.endswith(".pbtxt")
                         or base.endswith(".md")
                     ):
                         has_changes = True
@@ -307,14 +324,14 @@ def watch_mode(
             if first_change_time is not None and last_change_time is not None:
                 quiet_duration = now - last_change_time
                 total_duration = now - first_change_time
-                required_quiet = debounce_seconds if burst_count <= 1 else min(debounce_seconds * 2.5, 8.0)
+                required_quiet = debounce_seconds if burst_count <= 1 else min(debounce_seconds * 2.0, 6.0)
 
                 if quiet_duration >= required_quiet:
                     should_trigger = True
                     trigger_reason = f"quiet period settled ({quiet_duration:.1f}s >= {required_quiet:.1f}s, bursts={burst_count})"
-                elif total_duration >= 15.0:
+                elif total_duration >= 45.0:
                     should_trigger = True
-                    trigger_reason = f"hard deadline ceiling reached ({total_duration:.1f}s >= 15.0s, bursts={burst_count})"
+                    trigger_reason = f"hard deadline ceiling reached ({total_duration:.1f}s >= 45.0s, bursts={burst_count})"
 
             if should_trigger:
                 print(
@@ -327,6 +344,7 @@ def watch_mode(
                     print(f"[Antigravity Watcher] Merge error: {e}", flush=True)
 
                 if inotify.available:
+                    inotify.drain_events()
                     inotify.sync_watch_targets(watch_conv_dirs, watch_brain_dirs)
                 else:
                     last_snapshot = _get_mtime_snapshot(watch_conv_dirs, watch_brain_dirs)

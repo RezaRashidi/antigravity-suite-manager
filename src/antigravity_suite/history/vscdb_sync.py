@@ -15,7 +15,11 @@ import sqlite3
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-from antigravity_suite.history.extractor import extract_conv_text, sync_annotation_file
+from antigravity_suite.history.extractor import (
+    extract_conv_text,
+    is_clean_title,
+    sync_annotation_file,
+)
 from antigravity_suite.history.projects import get_project_id_for_workspace, normalize_workspace_uri
 from antigravity_suite.history.sqlite_store import get_actual_steps_count
 from antigravity_suite.proto.cascade import build_cascade_summary, get_last_user_step_index, parse_cascade_summary
@@ -128,19 +132,9 @@ def ingest_vscdb_summaries(
 
                     # Prefer authentic summary (Tag 1), which holds LLM-generated title
                     ide_title = ""
-                    if (
-                        ide_summary
-                        and ide_summary not in ["", "Conversation", "IDE Conversation", "Untitled Conversation", "---"]
-                        and not ide_summary.startswith("@[")
-                        and not ide_summary.startswith("{")
-                    ):
+                    if is_clean_title(ide_summary):
                         ide_title = ide_summary
-                    elif (
-                        ide_annot_title
-                        and ide_annot_title not in ["", "Conversation", "IDE Conversation", "Untitled Conversation", "---"]
-                        and not ide_annot_title.startswith("@[")
-                        and not ide_annot_title.startswith("{")
-                    ):
+                    elif is_clean_title(ide_annot_title):
                         ide_title = ide_annot_title
 
                     if u_id in all_summaries:
@@ -148,14 +142,14 @@ def ingest_vscdb_summaries(
                         curr_t = (curr_parsed.get("title") or curr_parsed.get("summary") or "").strip()
                         should_update = False
                         if ide_title:
-                            if not curr_t or curr_t in ["Conversation", "IDE Conversation", "Untitled Conversation"]:
+                            if not curr_t or not is_clean_title(curr_t):
                                 should_update = True
                             elif curr_t != ide_title:
                                 db_p = master_conv_dir / f"{u_id}.db"
                                 tr_p = master_conv_dir.parent / "brain" / u_id / ".system_generated" / "logs" / "transcript.jsonl"
                                 prompt_t, _ = extract_conv_text(db_p, tr_p)
                                 clean_prompt = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", prompt_t or "").strip()
-                                if clean_prompt and curr_t == clean_prompt and ide_title != clean_prompt:
+                                if not clean_prompt or curr_t == clean_prompt or ide_title != clean_prompt:
                                     should_update = True
 
                         if should_update:
@@ -263,8 +257,28 @@ def write_vscdb_unified_state(
             ).fetchone()
             old_traj_b64 = old_traj_row[0] if old_traj_row else None
 
-            val_wrap_b64 = build_summaries_state(all_summaries)
-            outer_b64 = build_unified_state_sync(all_summaries, existing_raw_b64=old_sync_b64)
+            state_summaries = dict(all_summaries)
+            if old_traj_b64:
+                try:
+                    old_entries = extract_entries_from_proto(base64.b64decode(old_traj_b64))
+                    for u_id, p_bin in old_entries.items():
+                        old_raw = extract_pure_binary_summary(p_bin)
+                        if old_raw:
+                            old_p = parse_cascade_summary(old_raw)
+                            old_sum = (old_p.get("summary") or "").strip()
+                            if is_clean_title(old_sum):
+                                if u_id in state_summaries:
+                                    curr_p = parse_cascade_summary(state_summaries[u_id])
+                                    curr_t = (curr_p.get("title") or curr_p.get("summary") or "").strip()
+                                    if not is_clean_title(curr_t):
+                                        state_summaries[u_id] = old_raw
+                                else:
+                                    state_summaries[u_id] = old_raw
+                except Exception:
+                    pass
+
+            val_wrap_b64 = build_summaries_state(state_summaries)
+            outer_b64 = build_unified_state_sync(state_summaries, existing_raw_b64=old_sync_b64)
 
             # Ensure sidebarWorkspaces includes all active workspaces
             old_ws_row = v_cur.execute(

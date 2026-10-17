@@ -158,10 +158,11 @@ def discover_workspace_roots(user_home: Optional[Path] = None) -> List[str]:
                 except Exception:
                     pass
 
-    # 2. Candidate IDE workspaceStorage
+    # 2. Candidate Antigravity IDE workspaceStorage only
     for pat in [
-        os.path.join(str(home), ".config", "*", "User", "workspaceStorage", "*", "workspace.json"),
-        os.path.join(str(home), ".antigravity*", ".config", "*", "User", "workspaceStorage", "*", "workspace.json"),
+        os.path.join(str(home), ".config", "Antigravity*", "User", "workspaceStorage", "*", "workspace.json"),
+        os.path.join(str(home), ".config", "antigravity*", "User", "workspaceStorage", "*", "workspace.json"),
+        os.path.join(str(home), ".antigravity*", "User", "workspaceStorage", "*", "workspace.json"),
     ]:
         for wp in glob.glob(pat):
             try:
@@ -352,7 +353,7 @@ def ensure_project_configs(
     if workspace_uris is not None:
         targets = set(workspace_uris)
     else:
-        targets = set(discover_workspace_roots(home))
+        targets = set()
 
     for gdir in gdirs:
         projects_dir = gdir / "config" / "projects"

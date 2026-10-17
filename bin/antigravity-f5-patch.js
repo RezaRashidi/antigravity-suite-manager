@@ -28,14 +28,18 @@ const lsPath = path.join(dir, 'dist', 'languageServer.js');
 if (fs.existsSync(lsPath)) {
     let lsCode = fs.readFileSync(lsPath, 'utf8');
     if (!lsCode.includes('exports.restartLanguageServer = restartLanguageServer;')) {
-        const varsDeclaration = `
-let _lsPort = 0;
+        let varsDeclaration = `
 let _lastPort = 0;
 let _lastCsrf = '';
 let _lastOptions = null;
 let _isRestarting = false;
-let _restartCount = 0;
 `;
+        if (!lsCode.includes('let _lsPort')) {
+            varsDeclaration += `let _lsPort = 0;\n`;
+        }
+        if (!lsCode.includes('let _restartCount')) {
+            varsDeclaration += `let _restartCount = 0;\n`;
+        }
         const restartFunc = varsDeclaration + `
 async function restartLanguageServer() {
     if (_isRestarting) return;
@@ -232,20 +236,10 @@ if (fs.existsSync(utilsPath)) {
                     void win.webContents.executeJavaScript("(() => { if (document.getElementById('__antigravity_sync_toast__')) return; const t = document.createElement('div'); t.id = '__antigravity_sync_toast__'; t.innerText = 'Syncing...'; t.style.cssText = 'position:fixed;top:20px;right:20px;background:rgba(0,0,0,0.85);color:#fff;padding:8px 16px;border-radius:8px;z-index:999999;font-family:sans-serif;font-size:13px;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,0.3);'; document.body.appendChild(t); })()");
                 } catch (_) {}
             }
-            const languageServer = require('./languageServer');
-            if (languageServer && languageServer.restartLanguageServer) {
-                try {
-                    await languageServer.restartLanguageServer();
-                } catch (_) {}
-            }
             if (win && !win.isDestroyed() && win.webContents) {
-                setTimeout(() => {
-                    try {
-                        if (win && !win.isDestroyed() && win.webContents) {
-                            win.webContents.reload();
-                        }
-                    } catch (_) {}
-                }, 300);
+                try {
+                    win.webContents.reload();
+                } catch (_) {}
             }
         },`;
         utilsCode = utilsCode.replace(target, replacement);

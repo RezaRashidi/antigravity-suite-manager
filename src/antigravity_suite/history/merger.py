@@ -31,6 +31,7 @@ from antigravity_suite.history.extractor import (
     extract_conv_text,
     get_annotation_info,
     get_annotation_title,
+    is_clean_title,
     sync_annotation_file,
 )
 from antigravity_suite.history.models import ConversationSummary, SyncStats
@@ -202,7 +203,7 @@ def setup_master_directories(effective_master: Path) -> Tuple[Path, Path, Path, 
     master_anno.mkdir(parents=True, exist_ok=True)
 
     # Ensure master_conv_dir / conversation_summaries.db never exists (prevents Go language server version crash)
-    if sub_sum_db.exists():
+    if sub_sum_db.exists() or sub_sum_db.is_symlink():
         if not master_sum_db.exists() and not sub_sum_db.is_symlink():
             try:
                 shutil.move(str(sub_sum_db), str(master_sum_db))
@@ -350,64 +351,34 @@ def resolve_conversation_item(
     curr_prev = existing_rows[conv_id][1] if conv_id in existing_rows else ""
     curr_step_cnt = existing_rows[conv_id][2] if conv_id in existing_rows else parsed_raw.get("step_count", 0)
 
-    def _is_clean_title(val: Optional[str]) -> bool:
-        if not val or not isinstance(val, str):
-            return False
-        s = val.strip()
-        if not s or s in ["Conversation", "IDE Conversation", "Untitled Conversation", "---"]:
-            return False
-        if s.startswith("@[") or s.startswith("{") or s.startswith("<USER_REQUEST>"):
-            return False
-        return True
-
     ext_t, ext_p = extract_conv_text(db_file, transcript_file)
     clean_ext_t = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", ext_t or "").strip()
 
     # 1. Check existing titles (anno_title, curr_title, raw_title)
     existing_clean_title = ""
     for cand in [anno_title, curr_title, raw_title]:
-        if _is_clean_title(cand):
+        if is_clean_title(cand) and cand != clean_ext_t:
             existing_clean_title = cand.strip()
             break
 
-    # If existing title is non-empty and NOT the raw prompt, it is already an authentic or user-renamed title
-    if existing_clean_title and (not clean_ext_t or existing_clean_title != clean_ext_t):
+    # 2. Check LLM summaries (raw_summary, parsed_sql summary, curr_prev)
+    llm_title = ""
+    for cand in [raw_summary, parsed_sql.get("summary", ""), curr_prev]:
+        if is_clean_title(cand) and cand != clean_ext_t:
+            llm_title = cand.strip()
+            break
+
+    # Priority: Existing clean title > Authentic LLM summary > Clean artifact title (not equal to prompt) > "Conversation"
+    if existing_clean_title:
         final_title = existing_clean_title
-        final_prev = ext_p or curr_prev or raw_summary or final_title
+    elif llm_title:
+        final_title = llm_title
+    elif clean_ext_t and is_clean_title(clean_ext_t) and (not ext_p or clean_ext_t != ext_p):
+        final_title = clean_ext_t
     else:
-        # Existing title is either empty/generic or equals the raw user prompt.
-        # Check if raw_summary, parsed_sql.get("summary"), or curr_prev has an authentic LLM-generated title
-        llm_title = ""
-        for cand in [raw_summary, parsed_sql.get("summary", ""), curr_prev]:
-            if (
-                _is_clean_title(cand)
-                and cand != clean_ext_t
-                and not cand.startswith("root@")
-                and not cand.startswith("http")
-            ):
-                llm_title = cand.strip()
-                break
+        final_title = "Conversation"
 
-        if llm_title:
-            final_title = llm_title
-            final_prev = ext_p or clean_ext_t or llm_title
-        elif clean_ext_t:
-            final_title = clean_ext_t
-            final_prev = ext_p or final_title
-        elif existing_clean_title:
-            final_title = existing_clean_title
-            final_prev = ext_p or curr_prev or raw_summary or final_title
-        else:
-            final_title = "Conversation"
-            final_prev = curr_prev or raw_summary or final_title
-
-    if not final_title or final_title.strip() in ["", "Conversation", "Untitled Conversation"]:
-        cand_text = curr_prev if (curr_prev and curr_prev.strip() not in ["", "Conversation", "Untitled Conversation"]) else (raw_summary or "")
-        clean_cand = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", cand_text).strip()
-        lines = [l.strip() for l in clean_cand.split("\n") if l.strip()]
-        if lines:
-            final_title = lines[0][:80]
-
+    final_prev = ext_p or curr_prev or raw_summary or clean_ext_t or final_title
     if not final_title:
         final_title = "Conversation"
     if not final_prev:
@@ -587,7 +558,29 @@ def resolve_conversation_item(
         source="",
     )
     upsert_summary(con, summary_model)
-    sync_annotation_file(effective_master, conv_id, final_title, pinned=is_pinned, archived=is_archived, force=True)
+    if final_title and is_clean_title(final_title) and (not clean_ext_t or final_title != clean_ext_t):
+        sync_annotation_file(effective_master, conv_id, final_title, pinned=is_pinned, archived=is_archived, force=True)
+    else:
+        # No authentic title: clean up stale prompt annotation file if present
+        anno_file = effective_master / "annotations" / f"{conv_id}.pbtxt"
+        if anno_file.is_file():
+            try:
+                content = anno_file.read_text(encoding="utf-8", errors="ignore")
+                m = re.search(r'title\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', content)
+                if m:
+                    existing_t = m.group(1).strip()
+                    if not is_clean_title(existing_t) or existing_t == clean_ext_t:
+                        new_content = re.sub(r'\s*title\s*:\s*"[^"\\]*(?:\\.[^"\\]*)*"', '', content).strip()
+                        has_pin = bool(re.search(r'pinned\s*:\s*true', new_content, re.IGNORECASE))
+                        has_arc = bool(re.search(r'archived\s*:\s*true', new_content, re.IGNORECASE))
+                        if not has_pin and not has_arc and not re.search(r'title\s*:\s*"[^"]+"', new_content):
+                            os.remove(str(anno_file))
+                        else:
+                            anno_file.write_text(new_content + "\n", encoding="utf-8")
+            except Exception:
+                pass
+        elif is_pinned or is_archived:
+            sync_annotation_file(effective_master, conv_id, "Conversation", pinned=is_pinned, archived=is_archived, force=False)
 
     # Keep conversation db trajectory_metadata_blob in sync if present
     if has_db and (needs_blob_repair or (ws_uri and (ws_uri != db_ws_uri or proj_id != db_proj_id))):
@@ -757,7 +750,17 @@ def sync_annotation_files(
                 is_arc = bool(parsed.get("archived", False))
             except Exception:
                 is_arc = False
-        sync_annotation_file(effective_master, c_id, c_title, pinned=is_pin, archived=is_arc, force=True)
+        if is_clean_title(c_title):
+            sync_annotation_file(effective_master, c_id, c_title, pinned=is_pin, archived=is_arc, force=True)
+        elif is_pin or is_arc:
+            sync_annotation_file(effective_master, c_id, "Conversation", pinned=is_pin, archived=is_arc, force=False)
+        else:
+            a_file = os.path.join(str(effective_master), "annotations", f"{c_id}.pbtxt")
+            if os.path.isfile(a_file):
+                try:
+                    os.remove(a_file)
+                except Exception:
+                    pass
 
 
 def merge_histories(

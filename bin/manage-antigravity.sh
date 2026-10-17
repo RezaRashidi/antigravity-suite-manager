@@ -819,7 +819,7 @@ fi
 if ! pgrep -f "antigravity-merge-history.py" >/dev/null 2>&1; then
     python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
 fi
-disown
+disown -a 2>/dev/null || true
 
 # SUID sandbox verification guard: prevent fatal crash if chrome-sandbox lacks 4755 root permissions
 SANDBOX_FLAG=""
@@ -969,7 +969,7 @@ fi
 if ! pgrep -f "antigravity-merge-history.py" >/dev/null 2>&1; then
     python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
 fi
-disown
+disown -a 2>/dev/null || true
 
 # SUID sandbox verification guard: prevent fatal crash if chrome-sandbox lacks 4755 root permissions
 SANDBOX_FLAG=""
@@ -1056,7 +1056,7 @@ fi
 if ! pgrep -f "antigravity-merge-history.py" >/dev/null 2>&1; then
     python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
 fi
-disown
+disown -a 2>/dev/null || true
 
 # SUID sandbox verification guard: prevent fatal crash if chrome-sandbox lacks 4755 root permissions
 SANDBOX_FLAG=""
@@ -1396,7 +1396,7 @@ cd "\${REAL_HOME}" || cd /tmp
 if ! pgrep -f "antigravity-apply-icon.py --daemon" >/dev/null 2>&1; then
     python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
 fi
-disown
+disown -a 2>/dev/null || true
 
 # SUID sandbox verification guard: prevent fatal crash if chrome-sandbox lacks 4755 root permissions
 SANDBOX_FLAG=""
@@ -1487,7 +1487,7 @@ fi
 if ! pgrep -f "antigravity-merge-history.py" >/dev/null 2>&1; then
     python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
 fi
-disown
+disown -a 2>/dev/null || true
 
 # SUID sandbox verification guard: prevent fatal crash if chrome-sandbox lacks 4755 root permissions
 SANDBOX_FLAG=""
