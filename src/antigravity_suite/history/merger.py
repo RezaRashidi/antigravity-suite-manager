@@ -16,7 +16,7 @@ import shutil
 import sqlite3
 import time
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 
 from antigravity_suite.auth.token import refresh_ide_oauth_token
 from antigravity_suite.config import DEFAULT_CONFIG, SuiteConfig, get_user_home
@@ -399,7 +399,7 @@ def resolve_conversation_item(
 
     # Priority: Existing DB row PID > Authentic mapped PID > Trajectory meta PID > Raw proto PID
     proj_id = clean_existing or clean_mapped or clean_db or clean_raw or ""
-    if not proj_id and ws_uri:
+    if not proj_id:
         proj_id = "outside-of-project"
 
     curr_raw_pid = parsed_raw.get("project_id") or ""
@@ -457,6 +457,22 @@ def resolve_conversation_item(
     curr_clean = extract_pure_binary_summary(curr_raw) if curr_raw else None
     needs_sql_sync = bool(is_not_in_sqlite or (sql_clean != curr_clean))
 
+    needs_blob_repair = False
+    if has_db:
+        try:
+            with sqlite3.connect(str(db_file), timeout=0.5) as check_conn:
+                row = check_conn.execute("SELECT data FROM trajectory_metadata_blob WHERE id = 'main'").fetchone()
+                bdata = row[0] if row else None
+                if not bdata or len(bdata) < 10 or bdata.startswith(b"de0c") or bdata.startswith(b"770a"):
+                    needs_blob_repair = True
+        except Exception:
+            needs_blob_repair = True
+
+    needs_source_rebuild = bool(
+        parsed_raw.get("source") == 1
+        or parsed_raw.get(20) == 1
+    )
+
     # If summary exists, is valid, is in SQLite, and doesn't need rebuild:
     if (
         curr_raw
@@ -469,6 +485,8 @@ def resolve_conversation_item(
         and not needs_proj_rebuild
         and not needs_pinned_rebuild
         and not needs_sql_sync
+        and not needs_blob_repair
+        and not needs_source_rebuild
     ):
         all_summaries[conv_id] = curr_raw
         if curr_title != final_title or curr_prev != final_prev:
@@ -489,6 +507,7 @@ def resolve_conversation_item(
         and not needs_steps_rebuild
         and not needs_ws_rebuild
         and not needs_proj_rebuild
+        and not needs_source_rebuild
         and (is_pinned == raw_pinned and is_archived == raw_archived)
     ):
         raw_to_store = curr_raw
@@ -535,17 +554,18 @@ def resolve_conversation_item(
         raw_summary=raw_to_store,
         workspace_uris=ws_str,
         project_id=proj_id or "",
+        source="",
     )
     upsert_summary(con, summary_model)
     sync_annotation_file(effective_master, conv_id, final_title, pinned=is_pinned, archived=is_archived)
 
     # Keep conversation db trajectory_metadata_blob in sync if present
-    if has_db and ws_uri and (ws_uri != db_ws_uri or proj_id != db_proj_id):
+    if has_db and (needs_blob_repair or (ws_uri and (ws_uri != db_ws_uri or proj_id != db_proj_id))):
         try:
             with sqlite3.connect(str(db_file), timeout=1.0) as conv_conn:
                 conv_conn.execute("PRAGMA busy_timeout = 1000;")
                 conv_conn.execute("CREATE TABLE IF NOT EXISTS trajectory_metadata_blob (id text DEFAULT 'main', data blob, PRIMARY KEY (id));")
-                new_blob = build_trajectory_metadata_blob(conv_id, ws_uri, proj_id)
+                new_blob = build_trajectory_metadata_blob(conv_id, ws_uri or "file:///tmp", proj_id or "outside-of-project")
                 conv_conn.execute("INSERT OR REPLACE INTO trajectory_metadata_blob (id, data) VALUES ('main', ?);", (new_blob,))
                 conv_conn.commit()
         except sqlite3.OperationalError:
@@ -582,6 +602,8 @@ def synchronize_master_summaries(
     con = sqlite3.connect(str(master_sum_db), timeout=15.0)
     ensure_summaries_schema(con)
     cur = con.cursor()
+    cur.execute("UPDATE conversation_summaries SET source='' WHERE source='CORTEX_TRAJECTORY_SOURCE_CASCADE_CLIENT';")
+    con.commit()
     existing_rows = load_existing_summaries(master_sum_db)
 
     # Ingest existing valid summaries from SQLite

@@ -73,6 +73,7 @@ def build_cascade_summary(
     last_user_input_iso: Optional[Union[str, datetime.datetime, int, float]] = None,
     pinned: bool = False,
     archived: bool = False,
+    source: int = 0,
 ) -> bytes:
     """
     Serializes conversation metadata into authentic Antigravity CascadeTrajectorySummary binary protobuf.
@@ -154,8 +155,12 @@ def build_cascade_summary(
         sub_17 += encode_tag_bytes(14, project_id.encode("utf-8"))
     out += encode_tag_bytes(17, bytes(sub_17))
 
-    # Tag 20: source (1)
-    out += encode_tag_uint(20, 1)
+    # Tag 20: source (CortexTrajectorySource: 0 = UNSPECIFIED / local, 18 = JETBOX)
+    # Native Antigravity omits tag 20 for local conversations so mna(source) is True.
+    # Emitting tag 20 as 1 (CASCADE_CLIENT) causes Antigravity UI to classify it as external
+    # and drop it from the sidebar conversation list!
+    if source != 0:
+        out += encode_tag_uint(20, source)
 
     # Tag 22: trajectory_type (4)
     out += encode_tag_uint(22, 4)
@@ -194,6 +199,8 @@ def parse_cascade_summary(data: bytes) -> Dict[Any, Any]:
                 res["status"] = val
             elif tag_num == 16:
                 res["last_user_step"] = val
+            elif tag_num == 20:
+                res["source"] = val
             elif tag_num == 22:
                 res["trajectory_type"] = val
         elif wire_type == 2:  # Length-delimited

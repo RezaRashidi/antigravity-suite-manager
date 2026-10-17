@@ -149,10 +149,15 @@ def upsert_summary(conn: sqlite3.Connection, summary: ConversationSummary) -> No
         step_count = CASE WHEN excluded.step_count > 0 THEN excluded.step_count ELSE conversation_summaries.step_count END,
         last_modified_time = CASE WHEN excluded.last_modified_time != '' THEN excluded.last_modified_time ELSE conversation_summaries.last_modified_time END,
         workspace_uris = CASE WHEN excluded.workspace_uris != '' THEN excluded.workspace_uris ELSE conversation_summaries.workspace_uris END,
-        project_id = CASE WHEN excluded.project_id != '' AND excluded.project_id != 'outside-of-project' THEN excluded.project_id ELSE conversation_summaries.project_id END,
+        project_id = CASE WHEN excluded.project_id != '' AND (conversation_summaries.project_id = '' OR excluded.project_id != 'outside-of-project') THEN excluded.project_id ELSE conversation_summaries.project_id END,
         last_user_input_time = CASE WHEN excluded.last_user_input_time != '' THEN excluded.last_user_input_time ELSE conversation_summaries.last_user_input_time END,
         last_user_input_step_index = CASE WHEN excluded.last_user_input_step_index >= 0 THEN excluded.last_user_input_step_index ELSE conversation_summaries.last_user_input_step_index END,
-        raw_summary = CASE WHEN excluded.raw_summary IS NOT NULL THEN excluded.raw_summary ELSE conversation_summaries.raw_summary END;""", (
+        raw_summary = CASE WHEN excluded.raw_summary IS NOT NULL THEN excluded.raw_summary ELSE conversation_summaries.raw_summary END,
+        source = CASE
+            WHEN conversation_summaries.source = 'CORTEX_TRAJECTORY_SOURCE_CASCADE_CLIENT' THEN ''
+            WHEN excluded.source != '' AND excluded.source != 'CORTEX_TRAJECTORY_SOURCE_CASCADE_CLIENT' THEN excluded.source
+            ELSE conversation_summaries.source
+        END;""", (
         summary.conversation_id,
         summary.title,
         summary.preview,
