@@ -57,43 +57,42 @@ class TestProjectMappingAndGrouping(unittest.TestCase):
             self.assertEqual(normalize_workspace_uri(sub_path), expected_root)
 
     def test_known_projects_resolve_to_registered_ids(self):
-        """Verifies all registered workspace roots resolve to authentic project IDs."""
-        self.assertEqual(
-            get_project_id_for_workspace("file:///home/reza/PhpstormProjects/Odirect", user_home=self.temp_dir),
-            "7bc454c1-6ec0-4ab3-b5eb-09fb9887e76f",
-        )
-        self.assertEqual(
-            get_project_id_for_workspace("file:///home/reza/Music/lede", user_home=self.temp_dir),
-            "247e98f3-52b3-41c9-aebb-1732fb2b7070",
-        )
-        self.assertEqual(
-            get_project_id_for_workspace("file:///home/reza/Library/nokia_modem", user_home=self.temp_dir),
-            "1c547948-02a7-481b-b9f6-1218b789cbde",
-        )
-        self.assertEqual(
-            get_project_id_for_workspace("file:///home/reza/Music/irankhodro", user_home=self.temp_dir),
-            "23773526-c9f9-4e44-b037-c47941ed0160",
-        )
-        self.assertEqual(
-            get_project_id_for_workspace("file:///home/reza/PhpstormProjects/api", user_home=self.temp_dir),
-            "3ee949ba-1b1a-4941-a05a-282d79f5636b",
-        )
+        """Verifies projects resolve to stable, deterministic IDs and subfolders match roots."""
+        odirect_root = "file:///home/reza/PhpstormProjects/Odirect"
+        odirect_sub = "file:///home/reza/PhpstormProjects/Odirect/.github/workflows"
+        root_pid = get_project_id_for_workspace(odirect_root, user_home=self.temp_dir)
+        sub_pid = get_project_id_for_workspace(odirect_sub, user_home=self.temp_dir)
+        self.assertIsNotNone(root_pid)
+        self.assertEqual(root_pid, sub_pid)
+
+        lede_pid = get_project_id_for_workspace("file:///home/reza/Music/lede", user_home=self.temp_dir)
+        self.assertIsNotNone(lede_pid)
+        self.assertNotEqual(root_pid, lede_pid)
 
     def test_ensure_project_configs_creation(self):
-        """Verifies missing project JSON definitions are properly created."""
-        ensure_project_configs(user_home=self.temp_dir)
+        """Verifies missing project JSON definitions are properly created dynamically."""
+        test_workspaces = [
+            "file:///home/user/PhpstormProjects/k6",
+            "file:///home/user/Downloads/cloudflare",
+        ]
+        ensure_project_configs(user_home=self.temp_dir, workspace_uris=test_workspaces)
         projects_dir = self.temp_dir / ".gemini" / "config" / "projects"
         self.assertTrue(projects_dir.is_dir())
 
         created_files = list(projects_dir.glob("*.json"))
-        self.assertGreaterEqual(len(created_files), 6)
+        self.assertEqual(len(created_files), 2)
 
-        k6_file = projects_dir / "9e1a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8.json"
+        k6_pid = get_project_id_for_workspace("file:///home/user/PhpstormProjects/k6", user_home=self.temp_dir)
+        k6_file = projects_dir / f"{k6_pid}.json"
         self.assertTrue(k6_file.is_file())
         with open(k6_file, "r", encoding="utf-8") as f:
             k6_data = json.load(f)
         self.assertEqual(k6_data["name"], "k6")
-        self.assertEqual(k6_data["id"], "9e1a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8")
+        self.assertEqual(k6_data["id"], k6_pid)
+        self.assertEqual(
+            k6_data["projectResources"]["resources"][0]["gitFolder"]["folderUri"],
+            "file:///home/user/PhpstormProjects/k6",
+        )
 
     def test_dynamic_project_discovery(self):
         """Verifies new project JSONs in ~/.gemini/config/projects are dynamically resolved."""

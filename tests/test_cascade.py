@@ -282,26 +282,20 @@ class TestCascadeAndTrajectory(unittest.TestCase):
     def test_get_project_id_for_workspace(self):
         from antigravity_suite.history.projects import get_project_id_for_workspace
 
-        self.assertEqual(
-            get_project_id_for_workspace("file:///home/reza/PhpstormProjects/Odirect"),
-            "7bc454c1-6ec0-4ab3-b5eb-09fb9887e76f",
-        )
-        self.assertEqual(
-            get_project_id_for_workspace("file:///home/reza/PhpstormProjects/Odirect/.github/workflows"),
-            "7bc454c1-6ec0-4ab3-b5eb-09fb9887e76f",
-        )
-        self.assertEqual(
-            get_project_id_for_workspace("file:///home/reza/Music/lede"),
-            "247e98f3-52b3-41c9-aebb-1732fb2b7070",
-        )
-        self.assertEqual(
-            get_project_id_for_workspace("file:///home/reza/Library/nokia_modem"),
-            "1c547948-02a7-481b-b9f6-1218b789cbde",
-        )
-        self.assertEqual(
-            get_project_id_for_workspace("file:///home/reza/PhpstormProjects/k6"),
-            "9e1a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8",
-        )
+        odirect_root = "file:///home/reza/PhpstormProjects/Odirect"
+        odirect_sub = "file:///home/reza/PhpstormProjects/Odirect/.github/workflows"
+        root_pid = get_project_id_for_workspace(odirect_root)
+        sub_pid = get_project_id_for_workspace(odirect_sub)
+        self.assertIsNotNone(root_pid)
+        self.assertEqual(root_pid, sub_pid)
+
+        lede_pid = get_project_id_for_workspace("file:///home/reza/Music/lede")
+        self.assertIsNotNone(lede_pid)
+        self.assertNotEqual(root_pid, lede_pid)
+
+        k6_pid = get_project_id_for_workspace("file:///home/reza/PhpstormProjects/k6")
+        self.assertIsNotNone(k6_pid)
+        self.assertNotEqual(lede_pid, k6_pid)
 
 
 if __name__ == "__main__":

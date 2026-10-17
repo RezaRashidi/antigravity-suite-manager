@@ -3,7 +3,7 @@ Project Mapping and Configuration Manager for Antigravity Suite.
 
 Maps workspace URIs to authentic project UUIDs registered in
 ~/.gemini/config/projects/ so conversations group correctly in Desktop App and IDE.
-Dynamically detects workspace roots and project IDs without hardcoding machine-specific paths.
+Dynamically detects workspace roots and project IDs without hardcoding machine-specific paths or mappings.
 """
 
 from __future__ import annotations
@@ -48,110 +48,20 @@ PROJECT_CONTAINERS: Set[str] = {
 # Runtime list of discovered / registered workspace roots
 KNOWN_ROOTS: List[str] = []
 
-# Fallback known project mappings for cross-environment / test compatibility
-KNOWN_PROJECT_MAPPINGS: Dict[str, str] = {
-    "file:///home/reza/PhpstormProjects/Odirect": "7bc454c1-6ec0-4ab3-b5eb-09fb9887e76f",
-    "file:///home/reza/Music/lede": "247e98f3-52b3-41c9-aebb-1732fb2b7070",
-    "file:///home/reza/Library/nokia_modem": "1c547948-02a7-481b-b9f6-1218b789cbde",
-    "file:///home/reza/Music/irankhodro": "23773526-c9f9-4e44-b037-c47941ed0160",
-    "file:///home/reza/PhpstormProjects/api": "3ee949ba-1b1a-4941-a05a-282d79f5636b",
-    "file:///home/reza/.antigravity-suite-manager": "efb93ebc-8770-4ba1-8d2f-6c926542ce1d",
-    "file:///home/reza/Downloads": "bd4178e9-ff45-4242-bdb2-468b862ab37f",
-    "file:///home/reza": "a676f0ce-29be-4ab0-a684-2d48e6e6ca17",
-    "file:///home/reza/PhpstormProjects/k6": "9e1a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8",
-    "file:///home/reza/Downloads/cloudflare": "c3b8e9f1-5a2d-418b-8732-7a12d345b602",
-    "file:///home/reza/Downloads/dragonfly-ansible-main": "e4c9f0a2-6b3e-429c-9843-8b23e456c703",
-    "file:///home/reza/Downloads/minio-ansible-main": "f5d0a1b3-7c4f-430d-a954-9c34f567d804",
-    "file:///home/reza/.config/mihomo-party/profiles": "a6e1b2c4-8d5a-441e-ba65-0d45a678e905",
-    "file:///home/reza/Documents/nokia": "b7f2c3d5-9e6b-452f-cb76-1e56b789fa06",
-}
-
-# Seed definitions for project creation
-SEED_PROJECT_CONFIGS: List[Dict[str, Any]] = [
-    {
-        "id": "9e1a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8",
-        "name": "k6",
-        "projectResources": {
-            "resources": [
-                {
-                    "gitFolder": {
-                        "folderUri": "file:///home/reza/PhpstormProjects/k6",
-                        "defaultBranch": "master",
-                    }
-                }
-            ]
-        },
-        "permissionGrants": {"v2Migrated": True},
-        "settings": {},
-        "isWorkspaceOnly": False,
-    },
-    {
-        "id": "c3b8e9f1-5a2d-418b-8732-7a12d345b602",
-        "name": "cloudflare",
-        "projectResources": {
-            "resources": [
-                {"folderUri": "file:///home/reza/Downloads/cloudflare"}
-            ]
-        },
-        "permissionGrants": {"v2Migrated": True},
-        "settings": {},
-        "isWorkspaceOnly": False,
-    },
-    {
-        "id": "e4c9f0a2-6b3e-429c-9843-8b23e456c703",
-        "name": "dragonfly-ansible",
-        "projectResources": {
-            "resources": [
-                {"folderUri": "file:///home/reza/Downloads/dragonfly-ansible-main"}
-            ]
-        },
-        "permissionGrants": {"v2Migrated": True},
-        "settings": {},
-        "isWorkspaceOnly": False,
-    },
-    {
-        "id": "f5d0a1b3-7c4f-430d-a954-9c34f567d804",
-        "name": "minio-ansible",
-        "projectResources": {
-            "resources": [
-                {"folderUri": "file:///home/reza/Downloads/minio-ansible-main"}
-            ]
-        },
-        "permissionGrants": {"v2Migrated": True},
-        "settings": {},
-        "isWorkspaceOnly": False,
-    },
-    {
-        "id": "a6e1b2c4-8d5a-441e-ba65-0d45a678e905",
-        "name": "mihomo-party",
-        "projectResources": {
-            "resources": [
-                {"folderUri": "file:///home/reza/.config/mihomo-party/profiles"}
-            ]
-        },
-        "permissionGrants": {"v2Migrated": True},
-        "settings": {},
-        "isWorkspaceOnly": False,
-    },
-    {
-        "id": "b7f2c3d5-9e6b-452f-cb76-1e56b789fa06",
-        "name": "nokia",
-        "projectResources": {
-            "resources": [
-                {"folderUri": "file:///home/reza/Documents/nokia"}
-            ]
-        },
-        "permissionGrants": {"v2Migrated": True},
-        "settings": {},
-        "isWorkspaceOnly": False,
-    },
-]
+# Dynamic runtime cache of workspace-to-project-id mappings
+KNOWN_PROJECT_MAPPINGS: Dict[str, str] = {}
 
 
 def register_known_root(root_uri: str) -> None:
     """Registers a root workspace URI into the active KNOWN_ROOTS cache."""
     if root_uri and root_uri not in KNOWN_ROOTS:
         KNOWN_ROOTS.append(root_uri)
+
+
+def register_project_mapping(workspace_uri: str, project_id: str) -> None:
+    """Registers a workspace-to-project-id mapping in the active runtime cache."""
+    if workspace_uri and project_id:
+        KNOWN_PROJECT_MAPPINGS[workspace_uri] = project_id
 
 
 def is_container_or_system_root(uri_str: str) -> bool:
@@ -166,7 +76,6 @@ def is_container_or_system_root(uri_str: str) -> bool:
         return True
     p = PurePosixPath(path_str)
     parts = p.parts
-    # e.g. ('/', 'home', 'user', 'PhpstormProjects') -> container
     if len(parts) == 4 and parts[1].lower() in ("home", "users") and parts[3].lower() in PROJECT_CONTAINERS:
         return True
     return False
@@ -320,12 +229,66 @@ def normalize_workspace_uri(
     return uri_str
 
 
+def discover_project_mappings(user_home: Optional[Path] = None) -> Dict[str, str]:
+    """
+    Dynamically discovers all project mappings from:
+      1. Registered JSON project files in ~/.gemini/config/projects/*.json
+      2. Active conversation_summaries.db (workspace_uris -> project_id)
+      3. Existing runtime KNOWN_PROJECT_MAPPINGS
+    """
+    home = user_home or get_user_home()
+    mappings: Dict[str, str] = dict(KNOWN_PROJECT_MAPPINGS)
+
+    # 1. Read authentic project definitions in ~/.gemini/config/projects/
+    projects_dir = home / ".gemini" / "config" / "projects"
+    if projects_dir.is_dir():
+        for fpath in projects_dir.glob("*.json"):
+            if fpath.name in ("outside-of-project.json", "default-cli-project.json"):
+                continue
+            try:
+                with open(fpath, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                pid = data.get("id")
+                pname = data.get("name", "")
+                resources = data.get("projectResources", {}).get("resources", [])
+                for r in resources:
+                    furi = r.get("folderUri") or r.get("gitFolder", {}).get("folderUri")
+                    if furi and pid and str(furi).startswith("file://"):
+                        if furi not in mappings or not pname.startswith("/"):
+                            mappings[str(furi)] = str(pid)
+            except Exception:
+                pass
+
+    # 2. Read previous authentic associations from conversation_summaries.db
+    db_path = home / ".gemini" / "antigravity" / "conversation_summaries.db"
+    if db_path.is_file():
+        try:
+            with sqlite3.connect(db_path, timeout=2.0) as con:
+                cur = con.cursor()
+                for row in cur.execute(
+                    "SELECT DISTINCT workspace_uris, project_id FROM conversation_summaries "
+                    "WHERE workspace_uris IS NOT NULL AND workspace_uris != '' "
+                    "AND project_id IS NOT NULL AND project_id != '' "
+                    "AND project_id != 'outside-of-project';"
+                ):
+                    raw_ws, pid = row[0], row[1]
+                    norm_ws = normalize_workspace_uri(raw_ws, user_home=home)
+                    if norm_ws and pid and norm_ws not in mappings:
+                        mappings[norm_ws] = str(pid)
+        except Exception:
+            pass
+
+    # Update runtime cache in-place
+    KNOWN_PROJECT_MAPPINGS.update(mappings)
+    return mappings
+
+
 def ensure_project_configs(
     user_home: Optional[Path] = None,
     workspace_uris: Optional[List[str]] = None,
 ) -> None:
     """
-    Ensures registered project JSON definitions exist in ~/.gemini/config/projects/.
+    Ensures authentic project JSON definitions exist in ~/.gemini/config/projects/.
     Generates authentic project configs for missing workspace roots dynamically.
     """
     home = user_home or get_user_home()
@@ -333,17 +296,10 @@ def ensure_project_configs(
     try:
         projects_dir.mkdir(parents=True, exist_ok=True)
 
-        # 1. Seed definitions for test and legacy compatibility
-        for p in SEED_PROJECT_CONFIGS:
-            fpath = projects_dir / f"{p['id']}.json"
-            if not fpath.exists():
-                with open(fpath, "w", encoding="utf-8") as f:
-                    json.dump(p, f, indent=2)
-
-        # 2. Dynamic generation for active workspace roots without configs
-        targets = set(workspace_uris or [])
-        for r in discover_workspace_roots(home):
-            targets.add(r)
+        if workspace_uris is not None:
+            targets = set(workspace_uris)
+        else:
+            targets = set(discover_workspace_roots(home))
 
         existing_folder_uris = set()
         for fpath in projects_dir.glob("*.json"):
@@ -367,7 +323,7 @@ def ensure_project_configs(
             parsed = urlsplit(ws)
             path_str = unquote(parsed.path)
             pname = PurePosixPath(path_str).name or "project"
-            pid = KNOWN_PROJECT_MAPPINGS.get(ws) or str(uuid.uuid5(uuid.NAMESPACE_URL, ws))
+            pid = get_project_id_for_workspace(ws, user_home=home)
             proj_def = {
                 "id": pid,
                 "name": pname,
@@ -399,8 +355,10 @@ def get_project_id_for_workspace(
     user_home: Optional[Path] = None,
 ) -> Optional[str]:
     """
-    Resolves canonical project_id for a workspace URI by querying
-    ~/.gemini/config/projects/ and authentic project definitions.
+    Resolves canonical project_id for a workspace URI dynamically:
+      1. Scans ~/.gemini/config/projects/*.json and conversation_summaries.db
+      2. Resolves subfolder to normalized root project
+      3. Generates deterministic UUID5 for any unregistered project root
     """
     if not ws_uri:
         return None
@@ -409,28 +367,13 @@ def get_project_id_for_workspace(
         return None
 
     home = user_home or get_user_home()
-    projects_dir = home / ".gemini" / "config" / "projects"
+    mappings = discover_project_mappings(home)
 
-    mappings = dict(KNOWN_PROJECT_MAPPINGS)
+    if ws_norm in mappings:
+        return mappings[ws_norm]
 
-    if projects_dir.is_dir():
-        for fpath in projects_dir.glob("*.json"):
-            fname = fpath.name
-            if fname in ("outside-of-project.json", "default-cli-project.json"):
-                continue
-            try:
-                with open(fpath, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                pid = data.get("id")
-                pname = data.get("name", "")
-                resources = data.get("projectResources", {}).get("resources", [])
-                for r in resources:
-                    furi = r.get("folderUri") or r.get("gitFolder", {}).get("folderUri")
-                    if furi and pid and furi == ws_norm:
-                        if not pname.startswith("/"):
-                            return pid
-                        mappings.setdefault(furi, pid)
-            except Exception:
-                pass
-
-    return mappings.get(ws_norm)
+    # Generate a deterministic UUID5 for authentic, stable project identification
+    deterministic_id = str(uuid.uuid5(uuid.NAMESPACE_URL, ws_norm))
+    mappings[ws_norm] = deterministic_id
+    KNOWN_PROJECT_MAPPINGS[ws_norm] = deterministic_id
+    return deterministic_id
