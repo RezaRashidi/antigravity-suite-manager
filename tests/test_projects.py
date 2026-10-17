@@ -33,24 +33,24 @@ class TestProjectMappingAndGrouping(unittest.TestCase):
         """Verifies subfolders correctly normalize to their canonical project root."""
         test_cases = [
             (
-                "file:///home/reza/PhpstormProjects/Odirect/.github/workflows",
-                "file:///home/reza/PhpstormProjects/Odirect",
+                "file:///home/user/PhpstormProjects/Odirect/.github/workflows",
+                "file:///home/user/PhpstormProjects/Odirect",
             ),
             (
-                "file:///home/reza/PhpstormProjects/Odirect/instasi-backend/src",
-                "file:///home/reza/PhpstormProjects/Odirect",
+                "file:///home/user/PhpstormProjects/Odirect/instasi-backend/src",
+                "file:///home/user/PhpstormProjects/Odirect",
             ),
             (
-                "file:///home/reza/Music/lede/package/kernel/mac80211",
-                "file:///home/reza/Music/lede",
+                "file:///home/user/Music/lede/package/kernel/mac80211",
+                "file:///home/user/Music/lede",
             ),
             (
-                '["file:///home/reza/PhpstormProjects/k6/load-tests"]',
-                "file:///home/reza/PhpstormProjects/k6",
+                '["file:///home/user/PhpstormProjects/k6/load-tests"]',
+                "file:///home/user/PhpstormProjects/k6",
             ),
             (
-                "file:///home/reza/Downloads/cloudflare/workers",
-                "file:///home/reza/Downloads/cloudflare",
+                "file:///home/user/Downloads/cloudflare/workers",
+                "file:///home/user/Downloads/cloudflare",
             ),
         ]
         for sub_path, expected_root in test_cases:
@@ -58,14 +58,14 @@ class TestProjectMappingAndGrouping(unittest.TestCase):
 
     def test_known_projects_resolve_to_registered_ids(self):
         """Verifies projects resolve to stable, deterministic IDs and subfolders match roots."""
-        odirect_root = "file:///home/reza/PhpstormProjects/Odirect"
-        odirect_sub = "file:///home/reza/PhpstormProjects/Odirect/.github/workflows"
+        odirect_root = "file:///home/user/PhpstormProjects/Odirect"
+        odirect_sub = "file:///home/user/PhpstormProjects/Odirect/.github/workflows"
         root_pid = get_project_id_for_workspace(odirect_root, user_home=self.temp_dir)
         sub_pid = get_project_id_for_workspace(odirect_sub, user_home=self.temp_dir)
         self.assertIsNotNone(root_pid)
         self.assertEqual(root_pid, sub_pid)
 
-        lede_pid = get_project_id_for_workspace("file:///home/reza/Music/lede", user_home=self.temp_dir)
+        lede_pid = get_project_id_for_workspace("file:///home/user/Music/lede", user_home=self.temp_dir)
         self.assertIsNotNone(lede_pid)
         self.assertNotEqual(root_pid, lede_pid)
 
@@ -100,7 +100,7 @@ class TestProjectMappingAndGrouping(unittest.TestCase):
         projects_dir.mkdir(parents=True)
 
         custom_pid = "d8e7f6a5-b4c3-2109-8765-fedcba987654"
-        custom_uri = "file:///home/reza/custom/project"
+        custom_uri = "file:///home/user/custom/project"
         custom_def = {
             "id": custom_pid,
             "name": "custom-project",

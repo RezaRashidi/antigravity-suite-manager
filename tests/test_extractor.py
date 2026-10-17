@@ -94,7 +94,7 @@ class TestExtractor(unittest.TestCase):
             os.makedirs(logs_dir, exist_ok=True)
             transcript_file = os.path.join(logs_dir, "transcript.jsonl")
             with open(transcript_file, "w", encoding="utf-8") as f:
-                f.write('{"source":"USER_EXPLICIT","type":"USER_INPUT","content":"<USER_REQUEST>@[/home/reza/Downloads/minio-ansible-main/group_vars/all.yml:L2-L13]\\nبه سرور قدیمی دسترسی دارم\\nچطوری پیدا کنم</USER_REQUEST>"}\n')
+                f.write('{"source":"USER_EXPLICIT","type":"USER_INPUT","content":"<USER_REQUEST>@[/home/user/Downloads/minio-ansible-main/group_vars/all.yml:L2-L13]\\nبه سرور قدیمی دسترسی دارم\\nچطوری پیدا کنم</USER_REQUEST>"}\n')
 
             title, preview = extract_conv_text("", transcript_file)
             self.assertEqual(title, "به سرور قدیمی دسترسی دارم")
