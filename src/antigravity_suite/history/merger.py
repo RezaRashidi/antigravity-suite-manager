@@ -201,25 +201,19 @@ def setup_master_directories(effective_master: Path) -> Tuple[Path, Path, Path, 
     master_brain_dir.mkdir(parents=True, exist_ok=True)
     master_anno.mkdir(parents=True, exist_ok=True)
 
-    # Maintain symlink: master_conv_dir / conversation_summaries.db -> ../conversation_summaries.db
-    if sub_sum_db.exists() and not sub_sum_db.is_symlink():
-        if not master_sum_db.exists():
+    # Ensure master_conv_dir / conversation_summaries.db never exists (prevents Go language server version crash)
+    if sub_sum_db.exists():
+        if not master_sum_db.exists() and not sub_sum_db.is_symlink():
             try:
                 shutil.move(str(sub_sum_db), str(master_sum_db))
             except Exception:
                 pass
-        try:
-            if not sub_sum_db.is_symlink():
-                if sub_sum_db.exists():
+        else:
+            try:
+                if sub_sum_db.is_symlink() or sub_sum_db.is_file():
                     os.remove(str(sub_sum_db))
-                sub_sum_db.symlink_to("../conversation_summaries.db")
-        except Exception:
-            pass
-    elif not sub_sum_db.exists() and master_sum_db.exists():
-        try:
-            sub_sum_db.symlink_to("../conversation_summaries.db")
-        except Exception:
-            pass
+            except Exception:
+                pass
 
     return master_conv_dir, master_brain_dir, master_sum_db, master_proto, master_anno
 
@@ -356,20 +350,56 @@ def resolve_conversation_item(
     curr_prev = existing_rows[conv_id][1] if conv_id in existing_rows else ""
     curr_step_cnt = existing_rows[conv_id][2] if conv_id in existing_rows else parsed_raw.get("step_count", 0)
 
-    final_title = anno_title or curr_title or raw_title
-    final_prev = curr_prev or raw_summary
+    def _is_clean_title(val: Optional[str]) -> bool:
+        if not val or not isinstance(val, str):
+            return False
+        s = val.strip()
+        if not s or s in ["Conversation", "IDE Conversation", "Untitled Conversation", "---"]:
+            return False
+        if s.startswith("@[") or s.startswith("{") or s.startswith("<USER_REQUEST>"):
+            return False
+        return True
 
-    # Strip @[...] context mentions or resolve clean prompt title
     ext_t, ext_p = extract_conv_text(db_file, transcript_file)
-    if ext_t:
-        if not final_title or final_title.strip() in ["", "Conversation", "Untitled Conversation"] or "@[" in final_title:
-            final_title = ext_t
-            final_prev = ext_p or final_prev
-        elif ext_t.startswith(final_title) and len(ext_t) > len(final_title):
-            final_title = ext_t
-            final_prev = ext_p or final_prev
-    elif "@[" in final_title:
-        final_title = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", final_title).strip()
+    clean_ext_t = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", ext_t or "").strip()
+
+    # 1. Check existing titles (anno_title, curr_title, raw_title)
+    existing_clean_title = ""
+    for cand in [anno_title, curr_title, raw_title]:
+        if _is_clean_title(cand):
+            existing_clean_title = cand.strip()
+            break
+
+    # If existing title is non-empty and NOT the raw prompt, it is already an authentic or user-renamed title
+    if existing_clean_title and (not clean_ext_t or existing_clean_title != clean_ext_t):
+        final_title = existing_clean_title
+        final_prev = ext_p or curr_prev or raw_summary or final_title
+    else:
+        # Existing title is either empty/generic or equals the raw user prompt.
+        # Check if raw_summary, parsed_sql.get("summary"), or curr_prev has an authentic LLM-generated title
+        llm_title = ""
+        for cand in [raw_summary, parsed_sql.get("summary", ""), curr_prev]:
+            if (
+                _is_clean_title(cand)
+                and cand != clean_ext_t
+                and not cand.startswith("root@")
+                and not cand.startswith("http")
+            ):
+                llm_title = cand.strip()
+                break
+
+        if llm_title:
+            final_title = llm_title
+            final_prev = ext_p or clean_ext_t or llm_title
+        elif clean_ext_t:
+            final_title = clean_ext_t
+            final_prev = ext_p or final_title
+        elif existing_clean_title:
+            final_title = existing_clean_title
+            final_prev = ext_p or curr_prev or raw_summary or final_title
+        else:
+            final_title = "Conversation"
+            final_prev = curr_prev or raw_summary or final_title
 
     if not final_title or final_title.strip() in ["", "Conversation", "Untitled Conversation"]:
         cand_text = curr_prev if (curr_prev and curr_prev.strip() not in ["", "Conversation", "Untitled Conversation"]) else (raw_summary or "")
@@ -557,7 +587,7 @@ def resolve_conversation_item(
         source="",
     )
     upsert_summary(con, summary_model)
-    sync_annotation_file(effective_master, conv_id, final_title, pinned=is_pinned, archived=is_archived)
+    sync_annotation_file(effective_master, conv_id, final_title, pinned=is_pinned, archived=is_archived, force=True)
 
     # Keep conversation db trajectory_metadata_blob in sync if present
     if has_db and (needs_blob_repair or (ws_uri and (ws_uri != db_ws_uri or proj_id != db_proj_id))):
@@ -727,7 +757,7 @@ def sync_annotation_files(
                 is_arc = bool(parsed.get("archived", False))
             except Exception:
                 is_arc = False
-        sync_annotation_file(effective_master, c_id, c_title, pinned=is_pin, archived=is_arc)
+        sync_annotation_file(effective_master, c_id, c_title, pinned=is_pin, archived=is_arc, force=True)
 
 
 def merge_histories(

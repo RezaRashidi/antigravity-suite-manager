@@ -10,10 +10,12 @@ from __future__ import annotations
 import base64
 import glob
 import os
+import re
 import sqlite3
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
+from antigravity_suite.history.extractor import extract_conv_text, sync_annotation_file
 from antigravity_suite.history.projects import get_project_id_for_workspace, normalize_workspace_uri
 from antigravity_suite.history.sqlite_store import get_actual_steps_count
 from antigravity_suite.proto.cascade import build_cascade_summary, get_last_user_step_index, parse_cascade_summary
@@ -121,13 +123,42 @@ def ingest_vscdb_summaries(
                     if not raw:
                         continue
                     parsed = parse_cascade_summary(raw)
-                    ide_title = parsed.get("title") or parsed.get("summary")
+                    ide_summary = (parsed.get("summary") or "").strip()
+                    ide_annot_title = (parsed.get("title") or "").strip()
+
+                    # Prefer authentic summary (Tag 1), which holds LLM-generated title
+                    ide_title = ""
+                    if (
+                        ide_summary
+                        and ide_summary not in ["", "Conversation", "IDE Conversation", "Untitled Conversation", "---"]
+                        and not ide_summary.startswith("@[")
+                        and not ide_summary.startswith("{")
+                    ):
+                        ide_title = ide_summary
+                    elif (
+                        ide_annot_title
+                        and ide_annot_title not in ["", "Conversation", "IDE Conversation", "Untitled Conversation", "---"]
+                        and not ide_annot_title.startswith("@[")
+                        and not ide_annot_title.startswith("{")
+                    ):
+                        ide_title = ide_annot_title
+
                     if u_id in all_summaries:
                         curr_parsed = parse_cascade_summary(all_summaries[u_id])
-                        curr_t = curr_parsed.get("title") or curr_parsed.get("summary")
-                        if ide_title and (
-                            not curr_t or curr_t in ["Conversation", "IDE Conversation", "Untitled Conversation"]
-                        ):
+                        curr_t = (curr_parsed.get("title") or curr_parsed.get("summary") or "").strip()
+                        should_update = False
+                        if ide_title:
+                            if not curr_t or curr_t in ["Conversation", "IDE Conversation", "Untitled Conversation"]:
+                                should_update = True
+                            elif curr_t != ide_title:
+                                db_p = master_conv_dir / f"{u_id}.db"
+                                tr_p = master_conv_dir.parent / "brain" / u_id / ".system_generated" / "logs" / "transcript.jsonl"
+                                prompt_t, _ = extract_conv_text(db_p, tr_p)
+                                clean_prompt = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", prompt_t or "").strip()
+                                if clean_prompt and curr_t == clean_prompt and ide_title != clean_prompt:
+                                    should_update = True
+
+                        if should_update:
                             db_p = master_conv_dir / f"{u_id}.db"
                             db_ws_uri, db_proj_id = get_db_trajectory_meta(db_p)
                             raw_ws = db_ws_uri or curr_parsed.get("workspace_uri")
@@ -168,6 +199,14 @@ def ingest_vscdb_summaries(
                             cur.execute(
                                 "UPDATE conversation_summaries SET title=?, raw_summary=? WHERE conversation_id=?",
                                 (ide_title, new_bin, u_id),
+                            )
+                            sync_annotation_file(
+                                master_conv_dir.parent,
+                                u_id,
+                                ide_title,
+                                pinned=is_pin,
+                                archived=is_arc,
+                                force=True,
                             )
                             ide_ingested_total += 1
             con.commit()

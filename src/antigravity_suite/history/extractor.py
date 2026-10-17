@@ -101,6 +101,7 @@ def sync_annotation_file(
     title: str,
     pinned: Optional[bool] = None,
     archived: Optional[bool] = None,
+    force: bool = False,
 ) -> bool:
     """Ensures annotations/<conv_id>.pbtxt exists, has title, and preserves pinned/archived states."""
     if not title or title.strip() in ["", "Conversation", "Untitled Conversation"]:
@@ -123,7 +124,7 @@ def sync_annotation_file(
             m = re.search(r'title\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', content)
             if m:
                 existing_t = m.group(1).strip()
-                if not existing_t or existing_t in ["Conversation", "Untitled Conversation"] or "@[" in existing_t:
+                if force or not existing_t or existing_t in ["Conversation", "Untitled Conversation"] or "@[" in existing_t:
                     new_content = re.sub(r'title\s*:\s*"[^"\\]*(?:\\.[^"\\]*)*"', title_line, content)
                 else:
                     new_content = content

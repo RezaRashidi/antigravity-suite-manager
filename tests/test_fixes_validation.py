@@ -1007,6 +1007,74 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             self.assertNotIn("@[", content)
             self.assertIn("Refactor auth", content)
 
+    def test_sync_annotation_file_force_overwrites_stale_title(self):
+        from antigravity_suite.history.extractor import sync_annotation_file
+
+        with tempfile.TemporaryDirectory() as td:
+            master = Path(td)
+            conv_id = "55555555-5555-5555-5555-555555555555"
+            anno_dir = master / "annotations"
+            anno_dir.mkdir(parents=True)
+            anno_file = anno_dir / f"{conv_id}.pbtxt"
+            anno_file.write_text('title: "Old Stale Prompt"\n')
+
+            # Without force: does not overwrite existing custom title
+            ok = sync_annotation_file(master, conv_id, "New LLM Title", force=False)
+            self.assertFalse(ok)
+            self.assertIn("Old Stale Prompt", anno_file.read_text())
+
+            # With force=True: overwrites stale title
+            ok = sync_annotation_file(master, conv_id, "New LLM Title", force=True)
+            self.assertTrue(ok)
+            self.assertIn("New LLM Title", anno_file.read_text())
+            self.assertNotIn("Old Stale Prompt", anno_file.read_text())
+
+    def test_title_precedence_rescues_llm_summary_when_title_equals_prompt(self):
+        from antigravity_suite.history.merger import synchronize_master_summaries, SyncStats
+        from antigravity_suite.history.sqlite_store import ensure_summaries_schema
+        from antigravity_suite.proto.cascade import build_cascade_summary
+
+        with tempfile.TemporaryDirectory() as td:
+            import sqlite3
+            master = Path(td)
+            conv_id = "66666666-6666-6666-6666-666666666666"
+            master_conv_dir = master / "conversations"
+            master_conv_dir.mkdir(parents=True)
+            master_brain_dir = master / "brain"
+            master_brain_dir.mkdir(parents=True)
+            master_sum_db = master / "conversation_summaries.db"
+            master_proto = master / "agyhub_summaries_proto.pb"
+
+            # Create transcript with prompt "554 sgj"
+            t_log_dir = master_brain_dir / conv_id / ".system_generated" / "logs"
+            t_log_dir.mkdir(parents=True)
+            t_file = t_log_dir / "transcript.jsonl"
+            t_file.write_text('{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","content":"554 sgj"}\n')
+
+            # Pre-seed SQLite with title = "554 sgj" and preview = "Typo or Nonsense Input"
+            with sqlite3.connect(str(master_sum_db)) as c:
+                ensure_summaries_schema(c)
+                raw_bin = build_cascade_summary(conv_id, "554 sgj", "Typo or Nonsense Input", 2)
+                c.execute(
+                    "INSERT INTO conversation_summaries (conversation_id, title, preview, step_count, last_modified_time, last_user_input_time, raw_summary) VALUES (?, ?, ?, ?, ?, ?, ?);",
+                    (conv_id, "554 sgj", "Typo or Nonsense Input", 2, "2026-10-18 01:00:00+00:00", "2026-10-18 01:00:00+00:00", raw_bin),
+                )
+                c.commit()
+
+            con, all_sums = synchronize_master_summaries(
+                master, master_conv_dir, master_brain_dir, master_sum_db, master_proto, SyncStats()
+            )
+            row = con.execute("SELECT title, preview FROM conversation_summaries WHERE conversation_id = ?;", (conv_id,)).fetchone()
+            con.close()
+
+            # Title must be rescued to "Typo or Nonsense Input"
+            self.assertEqual(row[0], "Typo or Nonsense Input")
+            # Annotations file must also have "Typo or Nonsense Input"
+            anno_file = master / "annotations" / f"{conv_id}.pbtxt"
+            self.assertTrue(anno_file.exists())
+            self.assertIn("Typo or Nonsense Input", anno_file.read_text())
+
+
 if __name__ == "__main__":
     unittest.main()
 
