@@ -1296,6 +1296,8 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
 
             cid_keep = "11111111-1111-1111-1111-111111111111"
             cid_del = "22222222-2222-2222-2222-222222222222"
+            (conv_dir / f"{cid_keep}.db").write_text("keep")
+            (conv_dir / f"{cid_del}.db").write_text("del")
 
             # 1. Setup SQLite (App) - user deleted cid_del from App, so only cid_keep is present
             with sqlite3.connect(str(db_p)) as con:
@@ -1370,7 +1372,8 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             cid_keep = "11111111-1111-1111-1111-111111111111"
             cid_del = "22222222-2222-2222-2222-222222222222"
 
-            # Create disk database for deleted chat
+            # Create disk database for deleted chat and keep chat
+            (conv_dir / f"{cid_keep}.db").write_text("keep")
             (conv_dir / f"{cid_del}.db").write_text("test")
 
             # 1. Setup SQLite (App) - still has BOTH cid_keep and cid_del

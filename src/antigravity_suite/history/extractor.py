@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Dict, Optional, Set, Tuple, Union
 
 from antigravity_suite.history.synthesizer import parse_step14_user_prompt
+from antigravity_suite.proto.wire import read_varint
 
 
 def decode_pbtxt_string(s: str) -> str:
@@ -328,6 +329,57 @@ def is_prompt_text(cand: Optional[str], prompt_cands: Optional[Set[str]]) -> boo
     return False
 
 
+def parse_step23_checkpoint_title(payload: bytes) -> Optional[str]:
+    """Extracts authentic checkpoint title (Tag 30 -> Tag 4) from step_type = 23 binary payload."""
+    if not payload:
+        return None
+    pos = 0
+    data_len = len(payload)
+    while pos < data_len:
+        tw, pos = read_varint(payload, pos)
+        wt = tw & 7
+        tag = tw >> 3
+        if wt == 2:
+            l, pos = read_varint(payload, pos)
+            val = payload[pos : pos + l]
+            pos += l
+            if tag == 30:
+                p30 = 0
+                val_len = len(val)
+                while p30 < val_len:
+                    tw30, p30 = read_varint(val, p30)
+                    wt30 = tw30 & 7
+                    tag30 = tw30 >> 3
+                    if wt30 == 2:
+                        l30, p30 = read_varint(val, p30)
+                        v30 = val[p30 : p30 + l30]
+                        p30 += l30
+                        if tag30 == 4:
+                            try:
+                                cand = v30.decode("utf-8", errors="ignore").strip()
+                                if cand and is_clean_title(cand):
+                                    return cand
+                            except Exception:
+                                pass
+                    elif wt30 == 0:
+                        _, p30 = read_varint(val, p30)
+                    elif wt30 == 1:
+                        p30 += 8
+                    elif wt30 == 5:
+                        p30 += 4
+                    else:
+                        break
+        elif wt == 0:
+            _, pos = read_varint(payload, pos)
+        elif wt == 1:
+            pos += 8
+        elif wt == 5:
+            pos += 4
+        else:
+            break
+    return None
+
+
 def extract_conv_text(
     db_path: Union[str, Path],
     transcript_path: Union[str, Path],
@@ -399,24 +451,39 @@ def extract_conv_text(
             except Exception:
                 pass
 
-    # Inspect SQLite database if transcript was not enough
+    # Inspect SQLite database for authentic checkpoint title and user prompts
+    checkpoint_title = ""
     db_str = str(db_path) if db_path else ""
-    if (not first_user_prompt or not latest_user_prompt) and os.path.isfile(db_str):
+    if os.path.isfile(db_str):
         conn = None
         try:
             conn = sqlite3.connect(db_str, timeout=15.0)
             cur = conn.cursor()
-            # First prompt for title
-            cur.execute("SELECT step_payload FROM steps WHERE step_type = 14 ORDER BY idx ASC LIMIT 1;")
-            f_row = cur.fetchone()
-            if f_row and f_row[0]:
-                first_user_prompt = parse_step14_user_prompt(f_row[0]) or ""
 
-            # Latest prompt for preview
-            cur.execute("SELECT step_payload FROM steps WHERE step_type = 14 ORDER BY idx DESC LIMIT 1;")
-            l_row = cur.fetchone()
-            if l_row and l_row[0]:
-                latest_user_prompt = parse_step14_user_prompt(l_row[0]) or ""
+            # Check for authentic CORTEX_STEP_TYPE_CHECKPOINT (step_type = 23 -> Tag 30 -> Tag 4)
+            try:
+                cur.execute("SELECT step_payload FROM steps WHERE step_type = 23 ORDER BY idx DESC LIMIT 5;")
+                for cp_row in cur.fetchall():
+                    if cp_row and cp_row[0]:
+                        t_cand = parse_step23_checkpoint_title(cp_row[0])
+                        if t_cand:
+                            checkpoint_title = t_cand
+                            break
+            except Exception:
+                pass
+
+            if not first_user_prompt or not latest_user_prompt:
+                # First prompt for title
+                cur.execute("SELECT step_payload FROM steps WHERE step_type = 14 ORDER BY idx ASC LIMIT 1;")
+                f_row = cur.fetchone()
+                if f_row and f_row[0]:
+                    first_user_prompt = parse_step14_user_prompt(f_row[0]) or ""
+
+                # Latest prompt for preview
+                cur.execute("SELECT step_payload FROM steps WHERE step_type = 14 ORDER BY idx DESC LIMIT 1;")
+                l_row = cur.fetchone()
+                if l_row and l_row[0]:
+                    latest_user_prompt = parse_step14_user_prompt(l_row[0]) or ""
         except Exception:
             pass
         finally:
@@ -465,8 +532,8 @@ def extract_conv_text(
                 brain_folder = cand_bf2
 
     # 1. Authentic H1 Document Title Extraction Pipeline (SKILL.md 7.3)
-    title = ""
-    if brain_folder and os.path.isdir(brain_folder):
+    title = checkpoint_title or ""
+    if not title and brain_folder and os.path.isdir(brain_folder):
         for art_name in ["task.md", "implementation_plan.md", "architecture.md"]:
             art_file = os.path.join(brain_folder, art_name)
             if os.path.isfile(art_file):

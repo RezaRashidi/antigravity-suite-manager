@@ -256,10 +256,11 @@ def notify_language_servers_deletion(conv_id: str, effective_master: Optional[Pa
                 pass
 
 
-def get_active_ide_ids(candidate_vscdbs: List[Path]) -> Set[str]:
+def get_active_ide_ids(candidate_vscdbs: List[Union[Path, str]]) -> Set[str]:
     """Extracts all conversation IDs currently active in IDE state.vscdb storage."""
     ide_ids: Set[str] = set()
-    for vscdb_p in candidate_vscdbs:
+    for vscdb in candidate_vscdbs:
+        vscdb_p = Path(vscdb)
         if not vscdb_p.is_file():
             continue
         conn = None
@@ -703,7 +704,7 @@ def detect_and_sync_deletions(
         all_brain_dirs = [master_brain_dir] + [Path(p) for p in brain_pools]
 
         for c_id in current_app_ids:
-            if c_id in tombstones or c_id in current_ide_ids or c_id in all_summaries:
+            if c_id in tombstones:
                 continue
             has_db = any((d / f"{c_id}.db").is_file() for d in all_conv_dirs)
             if not has_db:

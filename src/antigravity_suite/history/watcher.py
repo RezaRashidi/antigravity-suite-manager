@@ -20,6 +20,7 @@ from typing import Dict, List, Optional, Set, Union
 
 from antigravity_suite.config import DEFAULT_CONFIG, get_user_home
 from antigravity_suite.history.discovery import discover_all_history_sources
+from antigravity_suite.history.vscdb_sync import discover_candidate_vscdbs
 from antigravity_suite.history.merger import merge_histories
 
 
@@ -250,9 +251,22 @@ def watch_mode(
                         pass
         return snapshot
 
-    conv_pools, brain_pools, candidate_vscdbs = discover_all_history_sources(user_home=home)
-    extra_dirs = list(set([str(Path(p).parent) for p in candidate_vscdbs if os.path.isdir(Path(p).parent)] + [str(home / ".config" / "Antigravity")]))
-    extra_files = list(candidate_vscdbs) + [str(home / ".config" / "Antigravity" / "app_storage.json")]
+    conv_pools, brain_pools, ide_candidates = discover_all_history_sources(user_home=home)
+    candidate_vscdbs = discover_candidate_vscdbs(home, ide_candidates)
+    extra_dirs = list(set(
+        [str(Path(p).parent) for p in candidate_vscdbs if os.path.isdir(Path(p).parent)]
+        + [str(home / ".config" / "Antigravity")]
+        + [str(home / ".config" / "Antigravity IDE")]
+        + [str(p / ".config" / "Antigravity") for p in home.glob(".antigravity-profile*") if os.path.isdir(p / ".config" / "Antigravity")]
+        + [str(p / ".config" / "Antigravity IDE") for p in home.glob(".antigravity-profile*") if os.path.isdir(p / ".config" / "Antigravity IDE")]
+    ))
+    extra_files = [str(p) for p in candidate_vscdbs] + [
+        str(home / ".config" / "Antigravity" / "app_storage.json")
+    ]
+    for p in home.glob(".antigravity-profile*/.config/Antigravity/app_storage.json"):
+        if p.is_file():
+            extra_files.append(str(p))
+
     watch_conv_dirs = list(set([str(effective_master / "conversations")] + conv_pools))
     watch_brain_dirs = list(set([str(effective_master / "brain")] + brain_pools))
     last_snapshot = _get_mtime_snapshot(watch_conv_dirs, watch_brain_dirs, extra_files=extra_files)
@@ -275,9 +289,22 @@ def watch_mode(
         try:
             now = time.time()
             if (now - last_discovery_time) >= 60.0:
-                conv_pools, brain_pools, candidate_vscdbs = discover_all_history_sources(user_home=home)
-                extra_dirs = list(set([str(Path(p).parent) for p in candidate_vscdbs if os.path.isdir(Path(p).parent)] + [str(home / ".config" / "Antigravity")]))
-                extra_files = list(candidate_vscdbs) + [str(home / ".config" / "Antigravity" / "app_storage.json")]
+                conv_pools, brain_pools, ide_candidates = discover_all_history_sources(user_home=home)
+                candidate_vscdbs = discover_candidate_vscdbs(home, ide_candidates)
+                extra_dirs = list(set(
+                    [str(Path(p).parent) for p in candidate_vscdbs if os.path.isdir(Path(p).parent)]
+                    + [str(home / ".config" / "Antigravity")]
+                    + [str(home / ".config" / "Antigravity IDE")]
+                    + [str(p / ".config" / "Antigravity") for p in home.glob(".antigravity-profile*") if os.path.isdir(p / ".config" / "Antigravity")]
+                    + [str(p / ".config" / "Antigravity IDE") for p in home.glob(".antigravity-profile*") if os.path.isdir(p / ".config" / "Antigravity IDE")]
+                ))
+                extra_files = [str(p) for p in candidate_vscdbs] + [
+                    str(home / ".config" / "Antigravity" / "app_storage.json")
+                ]
+                for p in home.glob(".antigravity-profile*/.config/Antigravity/app_storage.json"):
+                    if p.is_file():
+                        extra_files.append(str(p))
+
                 watch_conv_dirs = list(set([str(effective_master / "conversations")] + conv_pools))
                 watch_brain_dirs = list(set([str(effective_master / "brain")] + brain_pools))
                 last_discovery_time = now
