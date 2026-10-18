@@ -90,8 +90,8 @@ class LinuxInotifyWatcher:
             pass
         return False
 
-    def sync_watch_targets(self, conv_dirs: List[str], brain_dirs: List[str]) -> None:
-        """Adds watches for conv directories, brain root directories, and active log directories."""
+    def sync_watch_targets(self, conv_dirs: List[str], brain_dirs: List[str], extra_dirs: Optional[List[str]] = None) -> None:
+        """Adds watches for conv directories, brain root directories, active log directories, and state storage."""
         if not self.available:
             return
         for cd in conv_dirs:
@@ -109,6 +109,10 @@ class LinuxInotifyWatcher:
                             self.add_watch_dir(logs_d)
             except Exception:
                 pass
+        if extra_dirs:
+            for ed in extra_dirs:
+                if os.path.isdir(ed):
+                    self.add_watch_dir(ed)
 
     def wait_for_events(self, timeout_sec: float = 2.0) -> List[str]:
         """Waits using epoll on the inotify file descriptor. Zero CPU when idle."""
@@ -212,7 +216,7 @@ def watch_mode(
     except Exception as e:
         print(f"[Antigravity Watcher] Warning: Initial merge encountered error: {e}", flush=True)
 
-    def _get_mtime_snapshot(conv_dirs: List[str], brain_dirs: List[str]) -> Dict[str, float]:
+    def _get_mtime_snapshot(conv_dirs: List[str], brain_dirs: List[str], extra_files: Optional[List[str]] = None) -> Dict[str, float]:
         snapshot: Dict[str, float] = {}
         for d in conv_dirs:
             if not os.path.isdir(d):
@@ -237,17 +241,26 @@ def watch_mode(
                         snapshot[f] = os.path.getmtime(f)
                     except Exception:
                         pass
+        if extra_files:
+            for ef in extra_files:
+                if os.path.isfile(ef):
+                    try:
+                        snapshot[ef] = os.path.getmtime(ef)
+                    except Exception:
+                        pass
         return snapshot
 
-    conv_pools, brain_pools, _ = discover_all_history_sources(user_home=home)
+    conv_pools, brain_pools, candidate_vscdbs = discover_all_history_sources(user_home=home)
+    extra_dirs = list(set([str(Path(p).parent) for p in candidate_vscdbs if os.path.isdir(Path(p).parent)] + [str(home / ".config" / "Antigravity")]))
+    extra_files = list(candidate_vscdbs) + [str(home / ".config" / "Antigravity" / "app_storage.json")]
     watch_conv_dirs = list(set([str(effective_master / "conversations")] + conv_pools))
     watch_brain_dirs = list(set([str(effective_master / "brain")] + brain_pools))
-    last_snapshot = _get_mtime_snapshot(watch_conv_dirs, watch_brain_dirs)
+    last_snapshot = _get_mtime_snapshot(watch_conv_dirs, watch_brain_dirs, extra_files=extra_files)
     last_merge_time = time.time()
 
     inotify = LinuxInotifyWatcher()
     if inotify.available:
-        inotify.sync_watch_targets(watch_conv_dirs, watch_brain_dirs)
+        inotify.sync_watch_targets(watch_conv_dirs, watch_brain_dirs, extra_dirs=extra_dirs)
         print(f"[Antigravity Watcher] Linux inotify kernel monitoring enabled (0% idle CPU).", flush=True)
 
     print(f"[Antigravity Watcher] Actively monitoring conversation directories for modifications...", flush=True)
@@ -262,12 +275,14 @@ def watch_mode(
         try:
             now = time.time()
             if (now - last_discovery_time) >= 60.0:
-                conv_pools, brain_pools, _ = discover_all_history_sources(user_home=home)
+                conv_pools, brain_pools, candidate_vscdbs = discover_all_history_sources(user_home=home)
+                extra_dirs = list(set([str(Path(p).parent) for p in candidate_vscdbs if os.path.isdir(Path(p).parent)] + [str(home / ".config" / "Antigravity")]))
+                extra_files = list(candidate_vscdbs) + [str(home / ".config" / "Antigravity" / "app_storage.json")]
                 watch_conv_dirs = list(set([str(effective_master / "conversations")] + conv_pools))
                 watch_brain_dirs = list(set([str(effective_master / "brain")] + brain_pools))
                 last_discovery_time = now
                 if inotify.available:
-                    inotify.sync_watch_targets(watch_conv_dirs, watch_brain_dirs)
+                    inotify.sync_watch_targets(watch_conv_dirs, watch_brain_dirs, extra_dirs=extra_dirs)
 
             has_changes = False
             changed_file = None
@@ -294,6 +309,9 @@ def watch_mode(
                         base.endswith(".db")
                         or base.endswith(".jsonl")
                         or base.endswith(".md")
+                        or base.endswith(".vscdb")
+                        or base.endswith(".vscdb-wal")
+                        or base == "app_storage.json"
                     ):
                         has_changes = True
                         changed_file = (ev_path, None, time.time())

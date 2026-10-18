@@ -187,6 +187,12 @@ def sync_annotation_file(
     for extra in extra_fields:
         lines.append(extra)
 
+    # Check if logically equivalent before touching disk to avoid triggering Language Server annotation watcher
+    existing_pinned = bool(re.search(r'pinned\s*:\s*true', existing_content, re.IGNORECASE))
+    existing_archived = bool(re.search(r'archived\s*:\s*true', existing_content, re.IGNORECASE))
+    if existing_content and existing_t == final_t and existing_pinned == bool(is_pinned) and existing_archived == bool(is_archived):
+        return False
+
     new_content = "\n".join(lines) + "\n"
     if new_content != existing_content:
         try:

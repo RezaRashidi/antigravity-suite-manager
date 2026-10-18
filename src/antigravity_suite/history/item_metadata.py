@@ -7,6 +7,7 @@ Extracts timestamps, actual steps, trajectory metadata, and UI flags (pinned, ar
 from __future__ import annotations
 
 import datetime
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, Tuple
 
@@ -27,7 +28,7 @@ def resolve_item_metadata(
 ) -> Dict[str, Any]:
     """Resolves and validates timestamps, step counts, and flags for a conversation."""
     has_db = db_file.is_file() and db_file.stat().st_size > 0
-    file_mtime = db_file.stat().st_mtime if has_db else 0
+    file_mtime = db_file.stat().st_mtime if has_db else time.time()
     file_mtime_iso = datetime.datetime.fromtimestamp(file_mtime, tz=datetime.timezone.utc).strftime(
         "%Y-%m-%d %H:%M:%S.000000+00:00"
     )
@@ -49,9 +50,13 @@ def resolve_item_metadata(
     t_clean_user_input = clean_iso_ts(t_user_input)
     t_clean_modified = clean_iso_ts(t_modified)
 
-    final_modified_iso = t_clean_modified or sql_mtime or file_mtime_iso
-    final_user_input_iso = t_clean_user_input or sql_user_input or final_modified_iso
-    final_created_iso = t_clean_created or final_user_input_iso or final_modified_iso
+    parsed_modified = clean_iso_ts(parsed_raw.get("last_modified_iso"))
+    parsed_user_input = clean_iso_ts(parsed_raw.get("last_user_input_iso"))
+    parsed_created = clean_iso_ts(parsed_raw.get("created_iso"))
+
+    final_modified_iso = t_clean_modified or parsed_modified or sql_mtime or file_mtime_iso
+    final_user_input_iso = t_clean_user_input or parsed_user_input or sql_user_input or final_modified_iso
+    final_created_iso = t_clean_created or parsed_created or final_user_input_iso or final_modified_iso
 
     anno_info = get_annotation_info(effective_master, conv_id)
     raw_pinned = bool(parsed_raw.get("pinned", False))

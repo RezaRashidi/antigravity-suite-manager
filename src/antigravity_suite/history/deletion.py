@@ -175,9 +175,35 @@ def notify_language_servers_deletion(conv_id: str, effective_master: Optional[Pa
             try:
                 conv_dir.mkdir(parents=True, exist_ok=True)
                 with sqlite3.connect(str(db_f)) as t_con:
-                    t_con.execute("CREATE TABLE IF NOT EXISTS steps (id INTEGER PRIMARY KEY, type TEXT, content TEXT, timestamp TEXT);")
-                    t_con.execute("CREATE TABLE IF NOT EXISTS gen_metadata (id INTEGER PRIMARY KEY, metadata TEXT);")
-                    t_con.execute("CREATE TABLE IF NOT EXISTS trajectory_metadata_blob (id text DEFAULT 'main', data blob, PRIMARY KEY (id));")
+                    t_con.execute("""
+                        CREATE TABLE IF NOT EXISTS steps (
+                            idx INTEGER PRIMARY KEY,
+                            step_type INTEGER NOT NULL DEFAULT 0,
+                            status INTEGER NOT NULL DEFAULT 0,
+                            has_subtrajectory NUMERIC NOT NULL DEFAULT false,
+                            metadata BLOB,
+                            error_details BLOB,
+                            permissions BLOB,
+                            task_details BLOB,
+                            render_info BLOB,
+                            step_payload BLOB,
+                            step_format INTEGER NOT NULL DEFAULT 0
+                        );
+                    """)
+                    t_con.execute("""
+                        CREATE TABLE IF NOT EXISTS trajectory_meta (
+                            trajectory_id TEXT PRIMARY KEY,
+                            cascade_id TEXT,
+                            trajectory_type INTEGER,
+                            source INTEGER
+                        );
+                    """)
+                    t_con.execute("""
+                        CREATE TABLE IF NOT EXISTS trajectory_metadata_blob (
+                            id TEXT PRIMARY KEY DEFAULT 'main',
+                            data BLOB
+                        );
+                    """)
                     t_con.commit()
                 temp_db_path = db_f
             except Exception:
@@ -186,43 +212,42 @@ def notify_language_servers_deletion(conv_id: str, effective_master: Optional[Pa
     ctx = ssl._create_unverified_context()
     payload = json.dumps({"cascadeId": conv_id}).encode("utf-8")
 
+    def _call_rpc(port: int, method: str, csrf_token: str) -> bool:
+        headers = {
+            "Content-Type": "application/json",
+            "x-codeium-csrf-token": csrf_token,
+            "Connect-Protocol-Version": "1",
+        }
+        # Try HTTPS first
+        https_url = f"https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/{method}"
+        try:
+            req = urllib.request.Request(https_url, data=payload, headers=headers)
+            with urllib.request.urlopen(req, context=ctx, timeout=1.5):
+                return True
+        except Exception as e:
+            err_msg = str(e)
+            if "WRONG_VERSION_NUMBER" in err_msg or "SSL" in str(type(e).__name__):
+                try:
+                    http_url = f"http://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/{method}"
+                    req = urllib.request.Request(http_url, data=payload, headers=headers)
+                    with urllib.request.urlopen(req, timeout=1.5):
+                        return True
+                except Exception:
+                    pass
+        return False
+
     try:
         for s in servers:
             csrf = s.get("csrf")
             if not csrf:
                 continue
             for port in s.get("ports", []):
-                headers = {
-                    "Content-Type": "application/json",
-                    "x-codeium-csrf-token": csrf,
-                    "Connect-Protocol-Version": "1",
-                }
                 # 1. DeleteCascadeTrajectory (Both IDE and Hub)
-                url_del = f"https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/DeleteCascadeTrajectory"
-                try:
-                    req = urllib.request.Request(url_del, data=payload, headers=headers)
-                    with urllib.request.urlopen(req, context=ctx, timeout=1.0):
-                        pass
-                except Exception:
-                    pass
-
+                _call_rpc(port, "DeleteCascadeTrajectory", csrf)
                 # 2. JetboxDeleteSummary (Desktop App Hub)
-                url_jetbox = f"https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/JetboxDeleteSummary"
-                try:
-                    req = urllib.request.Request(url_jetbox, data=payload, headers=headers)
-                    with urllib.request.urlopen(req, context=ctx, timeout=1.0):
-                        pass
-                except Exception:
-                    pass
-
+                _call_rpc(port, "JetboxDeleteSummary", csrf)
                 # 3. DeleteCascadeMemory (Evict associated context memories)
-                url_mem = f"https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/DeleteCascadeMemory"
-                try:
-                    req = urllib.request.Request(url_mem, data=payload, headers=headers)
-                    with urllib.request.urlopen(req, context=ctx, timeout=1.0):
-                        pass
-                except Exception:
-                    pass
+                _call_rpc(port, "DeleteCascadeMemory", csrf)
     finally:
         if temp_db_path and temp_db_path.exists():
             try:
@@ -341,8 +366,11 @@ def purge_conversation_from_app_storage(conv_id: str, user_home: Optional[Path] 
     home = user_home or get_user_home()
     candidates = [
         home / ".config" / "Antigravity" / "app_storage.json",
-        home / ".antigravity-profile2" / ".config" / "Antigravity" / "app_storage.json",
+        home / ".config" / "Antigravity IDE" / "app_storage.json",
     ]
+    for p in home.glob(".antigravity-profile*/.config/Antigravity/app_storage.json"):
+        if p not in candidates:
+            candidates.append(p)
     for cand in candidates:
         if not cand.is_file():
             continue
@@ -351,10 +379,48 @@ def purge_conversation_from_app_storage(conv_id: str, user_home: Optional[Path] 
             if not isinstance(data, dict):
                 continue
             modified = False
+
+            # 1. Remove from pinned lists without destroying the key
+            for p_key in ["pinned_conversations_order", "pinnedConversations", "pinned_conversations"]:
+                if p_key in data:
+                    val = data[p_key]
+                    is_str = isinstance(val, str)
+                    try:
+                        lst = json.loads(val) if is_str else val
+                    except Exception:
+                        lst = []
+                    if isinstance(lst, list) and conv_id in lst:
+                        lst = [x for x in lst if x != conv_id]
+                        data[p_key] = json.dumps(lst) if is_str else lst
+                        modified = True
+
+            # 2. Remove from conversationTitles dictionary
+            if "conversationTitles" in data and isinstance(data["conversationTitles"], dict):
+                if conv_id in data["conversationTitles"]:
+                    data["conversationTitles"].pop(conv_id, None)
+                    modified = True
+
+            # 3. Remove from aux pane sessions
+            for a_key in ["aux-pane-session", "aux-pane-v2-session"]:
+                if a_key in data:
+                    val = data[a_key]
+                    is_str = isinstance(val, str)
+                    try:
+                        sess = json.loads(val) if is_str else val
+                    except Exception:
+                        sess = {}
+                    if isinstance(sess, dict) and "conversationPanes" in sess and isinstance(sess["conversationPanes"], dict):
+                        if conv_id in sess["conversationPanes"]:
+                            sess["conversationPanes"].pop(conv_id, None)
+                            data[a_key] = json.dumps(sess) if is_str else sess
+                            modified = True
+
+            # 4. Remove multi-conversation layout keys referencing conv_id
             for k in list(data.keys()):
-                if conv_id in k or conv_id in str(data[k]):
+                if k.startswith("antigravity-multi-conversation-layout-v3-") and conv_id in k:
                     data.pop(k, None)
                     modified = True
+
             if modified:
                 cand.write_text(json.dumps(data, indent=2), encoding="utf-8")
         except Exception:
@@ -500,7 +566,7 @@ def purge_conversation(
     # 3. Desktop App electron storage
     purge_conversation_from_app_storage(conv_id, user_home=user_home)
 
-    # 4. Master SQLite tables
+    # 4. Master and secondary profile SQLite tables
     cur = con.cursor()
     cur.execute("DELETE FROM conversation_summaries WHERE conversation_id = ?;", (conv_id,))
     try:
@@ -508,6 +574,21 @@ def purge_conversation(
     except Exception:
         pass
     con.commit()
+
+    # Also clean secondary profile summary databases if present
+    home_dir = user_home or get_user_home()
+    for prof_db in home_dir.glob(".antigravity-profile*/conversation_summaries.db"):
+        if prof_db.is_file() and prof_db.resolve() != (effective_master / "conversation_summaries.db").resolve():
+            try:
+                with sqlite3.connect(str(prof_db), timeout=5.0) as p_con:
+                    p_con.execute("DELETE FROM conversation_summaries WHERE conversation_id = ?;", (conv_id,))
+                    try:
+                        p_con.execute("DELETE FROM conversations_fts WHERE conversation_id = ?;", (conv_id,))
+                    except Exception:
+                        pass
+                    p_con.commit()
+            except Exception:
+                pass
 
     # 5. Memory summaries dictionary
     all_summaries.pop(conv_id, None)
@@ -614,7 +695,23 @@ def detect_and_sync_deletions(
         else:
             deleted_in_ide = (prev_ide - current_ide_ids) - tombstones
 
-        to_purge = deleted_in_app | deleted_in_ide
+        # 3. Orphaned ghost trajectories: present in SQLite, but absent on disk (.db missing) AND brain folder missing/empty
+        ghost_ids: Set[str] = set()
+        master_conv_dir = effective_master / "conversations"
+        master_brain_dir = effective_master / "brain"
+        all_conv_dirs = [master_conv_dir] + [Path(p) for p in conv_pools]
+        all_brain_dirs = [master_brain_dir] + [Path(p) for p in brain_pools]
+
+        for c_id in current_app_ids:
+            if c_id in tombstones or c_id in current_ide_ids or c_id in all_summaries:
+                continue
+            has_db = any((d / f"{c_id}.db").is_file() for d in all_conv_dirs)
+            if not has_db:
+                has_transcript = any((b / c_id / ".system_generated" / "logs" / "transcript.jsonl").is_file() for b in all_brain_dirs)
+                if not has_transcript:
+                    ghost_ids.add(c_id)
+
+        to_purge = deleted_in_app | deleted_in_ide | ghost_ids
         if not to_purge:
             manifest["known_app_ids"] = sorted(list(current_app_ids - tombstones))
             manifest["known_ide_ids"] = sorted(list(current_ide_ids - tombstones))
