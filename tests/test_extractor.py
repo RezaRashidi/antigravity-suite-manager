@@ -95,11 +95,11 @@ class TestExtractor(unittest.TestCase):
             transcript_file = os.path.join(logs_dir, "transcript.jsonl")
             fake_file = os.path.join(td, "settings.yml")
             with open(transcript_file, "w", encoding="utf-8") as f:
-                f.write(f'{{"source":"USER_EXPLICIT","type":"USER_INPUT","content":"<USER_REQUEST>@[{fake_file}:L2-L13]\\nبه سرور قدیمی دسترسی دارم\\nچطوری پیدا کنم</USER_REQUEST>"}}\n')
+                f.write(f'{{"source":"USER_EXPLICIT","type":"USER_INPUT","content":"<USER_REQUEST>@[{fake_file}:L2-L13]\\nHow do I configure the legacy cluster?\\nWhere are the connection strings?</USER_REQUEST>"}}\n')
 
             title, preview = extract_conv_text("", transcript_file)
             self.assertEqual(title, "")
-            self.assertIn("به سرور قدیمی دسترسی دارم", preview)
+            self.assertIn("How do I configure the legacy cluster?", preview)
 
 
 if __name__ == "__main__":

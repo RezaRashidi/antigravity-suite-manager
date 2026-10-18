@@ -1105,7 +1105,7 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
         self.assertTrue(is_clean_title("Typo or Nonsense Input"))
         self.assertTrue(is_clean_title("Scanning Database Routing Rules"))
         self.assertTrue(is_clean_title("Building Authentication Microservice"))
-        self.assertTrue(is_clean_title("به سرور قدیمی دسترسی دارم"))
+        self.assertTrue(is_clean_title("Verifying Legacy Server Connectivity"))
 
     def test_sync_annotation_file_cleans_dirty_shell_titles(self):
         from antigravity_suite.history.extractor import sync_annotation_file
@@ -1147,11 +1147,12 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             master_sum_db = master / "conversation_summaries.db"
             master_proto = master / "agyhub_summaries_proto.pb"
 
-            # Create transcript with prompt "988کمکم"
+            # Create transcript with short raw prompt
+            raw_prompt = "Quick debugging question"
             t_log_dir = master_brain_dir / conv_id / ".system_generated" / "logs"
             t_log_dir.mkdir(parents=True)
             t_file = t_log_dir / "transcript.jsonl"
-            t_file.write_text('{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","content":"988کمکم"}\n')
+            t_file.write_text(f'{{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","content":"{raw_prompt}"}}\n')
 
             db_file = master_conv_dir / f"{conv_id}.db"
             db_file.touch()
@@ -1165,9 +1166,9 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             row = con.execute("SELECT title, preview FROM conversation_summaries WHERE conversation_id = ?;", (conv_id,)).fetchone()
             con.close()
 
-            # Title must be "Conversation" (not raw prompt), preview must be "988کمکم"
+            # Title must be "Conversation" (not raw prompt), preview must be raw prompt
             self.assertEqual(row[0], "Conversation")
-            self.assertEqual(row[1], "988کمکم")
+            self.assertEqual(row[1], raw_prompt)
 
             # Annotations file must NOT be created with raw prompt title
             anno_file = master / "annotations" / f"{conv_id}.pbtxt"
@@ -1175,18 +1176,17 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
 
     def test_is_prompt_text_prefix_and_truncation(self):
         from antigravity_suite.history.extractor import is_prompt_text
-        prompt_cands = {
-            "می خواهم یک سناریو واقعی برای تست k6 بنویسم فقط بک اند وصل شو به گرافنا افرانت و سناریو رو برام آماده کن",
-        }
+        full_prompt = "I want to design a production grade load test scenario connecting to telemetry backend and prepare test files"
+        prompt_cands = {full_prompt}
         # Exact match
-        self.assertTrue(is_prompt_text("می خواهم یک سناریو واقعی برای تست k6 بنویسم فقط بک اند وصل شو به گرافنا افرانت و سناریو رو برام آماده کن", prompt_cands))
+        self.assertTrue(is_prompt_text(full_prompt, prompt_cands))
         # 80-char prefix truncation
-        truncated = "می خواهم یک سناریو واقعی برای تست k6 بنویسم فقط بک اند وصل شو به گرافنا افرانت و"
+        truncated = full_prompt[:80]
         self.assertTrue(is_prompt_text(truncated, prompt_cands))
         # 40-char prefix truncation
         self.assertTrue(is_prompt_text(truncated[:40], prompt_cands))
         # Authentic title must NOT match
-        self.assertFalse(is_prompt_text("طراحی سناریو تست بارگیری", prompt_cands))
+        self.assertFalse(is_prompt_text("Load Test Scenario Design", prompt_cands))
 
     def test_sync_annotation_multiline_with_last_user_view_time(self):
         from antigravity_suite.history.extractor import sync_annotation_file
@@ -1198,11 +1198,11 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             # Pre-existing pbtxt with last_user_view_time
             anno_file.write_text('title: "Old Title"\nlast_user_view_time:{seconds:1792305404 nanos:509000000}\n')
 
-            sync_annotation_file(td, cid, "طراحی سناریو تست بارگیری", pinned=True, force=True)
+            sync_annotation_file(td, cid, "Load Test Scenario Design", pinned=True, force=True)
 
             content = anno_file.read_text()
             lines = [l.strip() for l in content.splitlines() if l.strip()]
-            self.assertIn('title: "طراحی سناریو تست بارگیری"', lines)
+            self.assertIn('title: "Load Test Scenario Design"', lines)
             self.assertIn('pinned:true', lines)
             self.assertIn('last_user_view_time:{seconds:1792305404 nanos:509000000}', lines)
             # Ensure each field is on its own line

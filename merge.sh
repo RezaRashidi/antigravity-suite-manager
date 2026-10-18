@@ -23,4 +23,4 @@ find "$SOURCE_DIR" \
     printf '\n' >> "$OUTPUT_ABS"
 done
 
-printf "عملیات تکمیل شد. فایل خروجی: %s\n" "$OUTPUT_FILE"
+printf "Operation completed. Output file: %s\n" "$OUTPUT_FILE"

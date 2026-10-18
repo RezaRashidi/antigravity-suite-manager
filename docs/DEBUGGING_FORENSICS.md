@@ -249,7 +249,7 @@ print("Tag 2 (summary.preview):", parsed.get("preview"))
 print("Tag 15 (annotations.title):", parsed.get("title"))
 ```
 **Result**:
-- `Tag 1 (summary.summary)` was populated with `ext_p` (the user's first prompt text, e.g., `"curl -s http://..."` or `"چرا چت های من..."`)!
+- `Tag 1 (summary.summary)` was populated with `ext_p` (the user's first prompt text, e.g., `"curl -s http://..."` or `"why are my chats not syncing..."`)!
 - When no markdown summary existed in `~/.gemini/antigravity/brain/<uuid>/*.md`, the legacy resolver fell back to assigning the user prompt to Tag 1.
 - Because Tag 1 took precedence in `main.js`, the entire IDE rendered the raw prompt as the title.
 

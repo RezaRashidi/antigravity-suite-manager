@@ -141,7 +141,7 @@ def ingest_vscdb_summaries(
                         curr_parsed = parse_cascade_summary(all_summaries[u_id])
                         curr_t = (curr_parsed.get("title") or curr_parsed.get("summary") or "").strip()
                         # Fast path: If master already has an authentic title, skip expensive prompt extraction
-                        if curr_t and is_clean_title(curr_t) and curr_t not in ["Conversation", "Untitled Conversation"] and not any(k in curr_t for k in ["@[", " بعد از", "چطور"]):
+                        if curr_t and is_clean_title(curr_t) and curr_t not in ["Conversation", "Untitled Conversation"] and "@[" not in curr_t:
                             continue
 
                     db_p = master_conv_dir / f"{u_id}.db"
