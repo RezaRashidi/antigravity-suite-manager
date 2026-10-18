@@ -1,0 +1,73 @@
+"""
+Interactive Control Center terminal loop for Antigravity Suite Manager.
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+from typing import Any, Dict, List
+
+from antigravity_suite.detect.configure_unified import configure_unified_instance
+from antigravity_suite.detect.constants import BLUE, BOLD, CYAN, GREEN, NC, REAL_HOME, RED, YELLOW
+from antigravity_suite.detect.control_center_actions import (
+    handle_control_center_backups,
+    handle_control_center_clone,
+    handle_control_center_export_import,
+    handle_control_center_install,
+    handle_control_center_steps,
+)
+from antigravity_suite.detect.paths_config import save_paths_config
+from antigravity_suite.detect.unified import get_unified_instances
+
+
+def render_control_center_overview(unified: List[Dict[str, Any]]) -> None:
+    print(f"\n{CYAN}========================================================================================{NC}")
+    print(f"{BOLD}{CYAN}                     Antigravity Suite Manager - Control Center                         {NC}")
+    print(f"{CYAN}========================================================================================{NC}")
+    print(f"{BOLD}{BLUE}[ DETECTED ANTIGRAVITY SUITE INSTANCES ({len(unified)}) ]{NC}")
+    print("----------------------------------------------------------------------------------------")
+    for idx, item in enumerate(unified, 1):
+        v_str = f"v{item['version']}" if item["version"] != "Unknown" else "Unknown"
+        lnch = os.path.basename(item["launcher"]) if item["launcher"] else "None"
+        h_mode, k_mode = item["history_mode"], item["keyring_mode"]
+        h_tag = f"{GREEN}{h_mode:<18}{NC}" if ("Shared" in h_mode or "Master" in h_mode) else (f"{YELLOW}{h_mode:<18}{NC}" if h_mode != "N/A" else f"{BLUE}{h_mode:<18}{NC}")
+        k_tag = f"{GREEN}Normal{NC}" if "Normal" in k_mode else f"{BLUE}GNOME {NC}"
+        print(f"  [{idx}] {item['name']:<35} {v_str:<9} in {item['engine_path']:<18} History: {h_tag} | Keyring: {k_tag} | {lnch}")
+    print("----------------------------------------------------------------------------------------")
+    print(f"{BOLD}Select an installation or clone [1-{len(unified)}] to EDIT its settings.{NC}")
+    print("  [N] Install New Binary   [C] Create Clone Profile   [R] Apply RTL Patch")
+    print("  [E] Export Archive       [I] Import Archive         [B] History Backups")
+    print("  [W] Run Setup Wizard     [S] Run Setup Step         [Q] Exit Setup")
+    print(f"{CYAN}========================================================================================{NC}")
+
+
+def run_control_center() -> None:
+    local_bin = os.path.join(REAL_HOME, ".local", "bin")
+    manage_sh = os.path.join(local_bin, "manage-antigravity.sh")
+    if not os.path.isfile(manage_sh):
+        manage_sh = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "bin", "manage-antigravity.sh")
+    installer_sh = os.path.join(os.path.dirname(manage_sh), "..", "install.sh")
+
+    while True:
+        unified, curr_app, curr_ide, custom_paths = get_unified_instances()
+        render_control_center_overview(unified)
+        try: choice = input(f"Select option [1-{len(unified)}, N, C, R, E, I, B, W, S, Q, Default: Q]: ").strip()
+        except (KeyboardInterrupt, EOFError): break
+
+        if choice in ["0", "", "q", "Q", "exit"]: break
+        elif choice.upper() == "N": handle_control_center_install(manage_sh)
+        elif choice.upper() == "C": handle_control_center_clone(manage_sh)
+        elif choice.upper() == "R":
+            r_tgt = input("Select RTL target [1: All, 2: App, 3: IDE, Default: 1]: ").strip()
+            subprocess.run(["bash", manage_sh, "rtl", "all" if r_tgt in ["1", ""] else ("app" if r_tgt == "2" else "ide")], check=False)
+        elif choice.upper() in ["E", "I"]: handle_control_center_export_import(choice, local_bin)
+        elif choice.upper() == "B": handle_control_center_backups(local_bin)
+        elif choice.upper() == "W": sys.exit(10)
+        elif choice.upper() == "S": handle_control_center_steps(manage_sh, installer_sh)
+        elif choice.isdigit() and 1 <= int(choice) <= len(unified):
+            curr_app, curr_ide = configure_unified_instance(unified[int(choice) - 1], curr_app, curr_ide, custom_paths)
+            save_paths_config(curr_app, curr_ide, custom_paths)
+        else:
+            print(f"{RED}[ERROR] Unrecognized option '{choice}'.{NC}")
