@@ -3,6 +3,8 @@
 // Antigravity F5 Manual Backend Sync & Profile Isolation Patcher
 // ==============================================================================
 
+// Reference: execFile('xprop', ['-id', String(xid), '-f', 'WM_CLASS', '8s', '-set', 'WM_CLASS', wmClass]
+// Reference: let _lsPort = 0;
 const fs = require('fs');
 const { patchLanguageServer } = require('./lib/patch/patch_ls');
 const { patchIpcHandlers } = require('./lib/patch/patch_ipc');
