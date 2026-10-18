@@ -1,0 +1,26 @@
+# Antigravity Suite: Comprehensive Debugging & Forensics Guide
+
+This document records the end-to-end diagnostic methodology, reverse-engineering techniques, root causes, and verification steps used to solve the Antigravity Suite conversation synchronization, empty sidebar, and profile disparity anomalies.
+
+---
+
+
+## Modular Index
+
+- [1. Architectural Overview & Telemetry Chain](01_architectural_overview_telemetry_chain.md)
+- [2. Issue 1: Empty Sidebar (0 Chats Rendered) — The Protobuf Tag 20 Gate](02_empty_sidebar_0_chats_rendered_the_protobuf_t.md)
+- [3. Issue 2: Account 1 "Flash & Collapse" (Visible for 2s, Then Only Old Chats)](03_account_1_flash_collapse_visible_for_2s_then.md)
+- [4. Issue 3: Rogue Symlink Causing Schema Version Crash](04_rogue_symlink_causing_schema_version_crash.md)
+- [5. Issue 4: Metadata Inode Stagnation in Fast-Path Caching](05_metadata_inode_stagnation_in_fast_path_cachin.md)
+- [7. Issue 5: User Prompt Leaking into Conversation Titles & Bubbles](06_user_prompt_leaking_into_conversation_titles.md)
+- [8. Issue 6: App (Hub) Showing IDE Chats & Disappearing on Click](07_app_hub_showing_ide_chats_disappearing_on_cli.md)
+- [9. Issue 7: Hardcoded Prompt Maps & Privacy Violations](08_hardcoded_prompt_maps_privacy_violations.md)
+- [10. Issue 8: Audit Trail Deficit & Daemon Race Conditions](09_audit_trail_deficit_daemon_race_conditions.md)
+- [11. Issue 9: Pinned Chats Displaying "2027y" (Year-1 / Epoch 0 Timestamp Bug)](10_pinned_chats_displaying_2027y_year_1_epoch_0.md)
+- [12. Issue 10: Asymmetric Chat Deletion & Infinite Loading Spinner](11_asymmetric_chat_deletion_infinite_loading_spi.md)
+- [13. Issue 11: IDE vs. App Title Discrepancy (Language Server Checkpoint Step 23)](12_ide_vs_app_title_discrepancy_language_server.md)
+- [14. Issue 12: Orphaned Ghost Conversations Cleanup](13_orphaned_ghost_conversations_cleanup.md)
+- [15. Issue 13: Antigravity 1 White System Tray Icon Disparity](14_antigravity_1_white_system_tray_icon_disparit.md)
+- [16. Issue 14: Dynamic Workspace Discovery & Elimination of Static Container Assumptions](15_dynamic_workspace_discovery_elimination_of_st.md)
+- [17. Issue 15: Decoupling Hardcoded System Paths: Default `/opt/*`, Account 2 Profile, Chromium Tray Temp Cache](16_decoupling_hardcoded_system_paths_default_opt.md)
+- [18. Summary Checklist for Future Diagnostics](17_summary_checklist_for_future_diagnostics.md)

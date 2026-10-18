@@ -22,6 +22,21 @@ prompt_accent_hue() {
     case "$h_choice" in 2) echo "0.33" ;; 3) echo "0.12" ;; 4) echo "0.60" ;; 5) echo "0.85" ;; 6) echo "0.45" ;; 7) echo "" ;; *) echo "0.52" ;; esac
 }
 
+get_next_instance_id() {
+    local itype="${1:-app}" max_id=1
+    local p2="${PROFILE2_DIR:-${REAL_HOME}/.antigravity-profile2}"
+    [ -d "$p2" ] && max_id=2
+    for p in "${REAL_HOME}/.antigravity-profile-${itype}-"* "${REAL_HOME}/.antigravity-${itype}-profile-"*; do
+        if [ -d "$p" ]; then
+            local num="${p##*-}"
+            if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -gt "$max_id" ]; then
+                max_id="$num"
+            fi
+        fi
+    done
+    echo "$((max_id + 1))"
+}
+
 create_instance() {
     local itype="$1" iid="$2" imode="$3" itheme="${4:-black}" ihue="$5"
     auto_detect_installations
@@ -36,7 +51,10 @@ create_instance() {
     fi
 
     if [ -z "$iid" ]; then
-        read -rp "Enter instance name or number (e.g. 3, 4, client, work, dev): " iid
+        local next_id
+        next_id=$(get_next_instance_id "$itype")
+        read -rp "Enter instance name or number [default: ${next_id}]: " iid
+        iid="${iid:-$next_id}"
     fi
     iid=$(echo "$iid" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_-]+/-/g; s/^-+|-+$//g')
     [ -z "$iid" ] && { log_err "Instance name cannot be empty."; return 1; }
@@ -52,9 +70,13 @@ create_instance() {
         create_ide_instance "$iid" "$imode" "$itheme" "$ihue"
     fi
 
+    local prof_display="${REAL_HOME}/.antigravity-profile-app-${iid}"
+    [ "$itype" = "ide" ] && prof_display="${REAL_HOME}/.antigravity-ide-profile-${iid}"
+    [ "$itype" = "app" ] && [ "$iid" = "2" ] && prof_display="${PROFILE2_DIR}"
+
     log_success "Instance '${iid}' (${itype^^}) created successfully!"
     echo -e "  • Launcher:       ${BOLD}${LOCAL_BIN}/antigravity-${itype}-${iid}${NC}"
     echo -e "  • Desktop Entry:  ${BOLD}${LOCAL_APPS}/antigravity-${itype}-${iid}.desktop${NC}"
-    echo -e "  • Profile Dir:    ${BOLD}${REAL_HOME}/.antigravity-${itype}-profile-${iid}${NC}"
+    echo -e "  • Profile Dir:    ${BOLD}${prof_display}${NC}"
     echo -e "  • History Mode:   ${BOLD}${imode^^}${NC}"
 }

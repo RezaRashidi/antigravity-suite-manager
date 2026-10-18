@@ -688,8 +688,10 @@ antigravity-suite-manager/
 ├── src/
 │   └── scale_icon.c                 # Catmull-Rom bicubic image resampler (C)
 ├── docs/
-│   ├── DEBUGGING_FORENSICS.md                       # Comprehensive diagnostic report & forensic logs
-│   └── STORAGE_ARCHITECTURE_AND_CODE_EXAMPLES.md   # Storage architecture & reverse-engineered code catalog
+│   ├── forensics/                                   # Decomposed diagnostic & forensics chapters (17 files)
+│   ├── architecture/                                # Decomposed storage architecture specifications (11 files)
+│   ├── DEBUGGING_FORENSICS.md                       # Master index & monolithic diagnostics guide
+│   └── STORAGE_ARCHITECTURE_AND_CODE_EXAMPLES.md   # Master index & monolithic architecture catalog
 ├── assets/
 │   ├── antigravity-master-black.png # Official 1024x1024 Black icon asset
 │   └── antigravity-master-white.png # Official 1024x1024 White tray asset

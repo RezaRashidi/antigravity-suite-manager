@@ -1876,8 +1876,27 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
                     os.environ["ANTIGRAVITY_PROFILE2_DIR"] = old_p2
 
 
+    def test_resolve_app_icon_arbitrary_instances(self):
+        """Verifies _resolve_app_icon dynamically maps arbitrary instances."""
+        from antigravity_suite.icon.tray_sync import _resolve_app_icon
+        with tempfile.TemporaryDirectory() as td:
+            icons_dir = os.path.join(td, ".local", "share", "icons")
+            os.makedirs(icons_dir)
+            custom_tray = os.path.join(icons_dir, "antigravity-app-3-tray.png")
+            with open(custom_tray, "w") as f:
+                f.write("icon")
+            
+            with unittest.mock.patch("os.path.expanduser", return_value=icons_dir):
+                res = _resolve_app_icon("--class=antigravity-app-3 --user-data-dir=/foo")
+                self.assertEqual(res, custom_tray)
+
+            acc2_res = _resolve_app_icon("--class=antigravity-2")
+            self.assertTrue("acc2" in acc2_res.lower() or "profile2" in acc2_res.lower() or "tray" in acc2_res.lower())
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

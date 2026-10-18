@@ -31,8 +31,22 @@ def _get_temp_dirs() -> List[str]:
     return valid
 
 
+def _resolve_app_icon(cmd_low: str) -> str:
+    import re
+    m = re.search(r"antigravity-app-([a-z0-9_-]+)", cmd_low)
+    if m:
+        iid = m.group(1)
+        icons = os.path.expanduser("~/.local/share/icons")
+        for cand in [f"antigravity-app-{iid}-tray.png", f"antigravity-app-{iid}.png"]:
+            p = os.path.join(icons, cand)
+            if os.path.isfile(p): return p
+    if any(k in cmd_low for k in ["profile2", "antigravity-2", "account2"]):
+        return ACC2_TRAY_PATH if os.path.isfile(ACC2_TRAY_PATH) else ACC2_ICON_PATH
+    return ACC1_TRAY_PATH if os.path.isfile(ACC1_TRAY_PATH) else ACC1_ICON_PATH
+
+
 def _collect_processes():
-    acc1_p, acc2_p, other_p = [], [], []
+    app_p, other_p = [], []
     for pid_str in os.listdir("/proc"):
         if not pid_str.isdigit(): continue
         try:
@@ -45,23 +59,19 @@ def _collect_processes():
             if "antigravity" not in cmd_low:
                 if any(x in cmd_low for x in ["chromium", "chrome", "code", "slack", "discord", "electron"]):
                     other_p.append((pid, proc_time))
-            elif "antigravity-ide" in cmd_low or "antigravity_ide" in cmd_low or "/antigravity-ide" in cmd_low:
+            elif any(x in cmd_low for x in ["antigravity-ide", "antigravity_ide", "/antigravity-ide"]):
                 other_p.append((pid, proc_time))
-            elif any(k in cmd_low for k in ["profile2", "antigravity-2", "account2"]):
-                acc2_p.append((pid, proc_time))
             else:
-                acc1_p.append((pid, proc_time))
+                app_p.append((pid, proc_time, _resolve_app_icon(cmd_low)))
         except Exception:
             pass
-    return acc1_p, acc2_p, other_p
+    return app_p, other_p
 
 
 def sync_tray_cache() -> None:
     """Overwrites temporary Chromium tray cache with corresponding account icons."""
-    eff_acc1 = ACC1_TRAY_PATH if os.path.isfile(ACC1_TRAY_PATH) else ACC1_ICON_PATH
-    eff_acc2 = ACC2_TRAY_PATH if os.path.isfile(ACC2_TRAY_PATH) else ACC2_ICON_PATH
-    acc1_p, acc2_p, other_p = _collect_processes()
-    if not acc1_p and not acc2_p: return
+    app_p, other_p = _collect_processes()
+    if not app_p: return
 
     chromium_dirs: List[str] = []
     for tdir in _get_temp_dirs():
@@ -72,19 +82,15 @@ def sync_tray_cache() -> None:
         try: dir_ctime = os.path.getctime(d)
         except Exception: continue
 
-        diff1 = min((abs(dir_ctime - t) for _, t in acc1_p), default=float("inf"))
-        diff2 = min((abs(dir_ctime - t) for _, t in acc2_p), default=float("inf"))
         diffo = min((abs(dir_ctime - t) for _, t in other_p), default=float("inf"))
+        closest = min(app_p, key=lambda p: abs(dir_ctime - p[1]))
+        diff_app = abs(dir_ctime - closest[1])
 
-        target = None
-        if diff1 < diff2 and diff1 < diffo: target = eff_acc1
-        elif diff2 < diff1 and diff2 < diffo: target = eff_acc2
-        elif diff1 != float("inf") and not acc2_p and diff1 <= diffo: target = eff_acc1
-        elif diff2 != float("inf") and not acc1_p and diff2 <= diffo: target = eff_acc2
-
-        if target and os.path.isfile(target):
+        if diff_app < diffo and os.path.isfile(closest[2]):
+            target = closest[2]
             for icon_file in glob.glob(os.path.join(d, "status_icon_*.png")):
                 try:
                     if not os.path.isfile(icon_file) or os.path.getsize(icon_file) != os.path.getsize(target):
                         shutil.copyfile(target, icon_file)
                 except Exception: pass
+
