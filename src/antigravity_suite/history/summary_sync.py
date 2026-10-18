@@ -37,6 +37,12 @@ def synchronize_master_summaries(
     ensure_summaries_schema(con)
     cur = con.cursor()
     cur.execute("UPDATE conversation_summaries SET source='' WHERE source='CORTEX_TRAJECTORY_SOURCE_CASCADE_CLIENT';")
+    if tombstones:
+        cur.executemany("DELETE FROM conversation_summaries WHERE conversation_id = ?;", [(t,) for t in tombstones])
+        try:
+            cur.executemany("DELETE FROM conversations_fts WHERE conversation_id = ?;", [(t,) for t in tombstones])
+        except Exception:
+            pass
     con.commit()
     existing_rows = load_existing_summaries(master_sum_db)
 
@@ -82,5 +88,6 @@ def synchronize_master_summaries(
             project_mappings=project_mappings,
         )
 
+    all_summaries = {cid: raw for cid, raw in all_summaries.items() if cid in all_conv_ids}
     con.commit()
     return con, all_summaries

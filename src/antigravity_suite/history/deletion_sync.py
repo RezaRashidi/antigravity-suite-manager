@@ -59,6 +59,8 @@ def detect_and_sync_deletions(
 
         del_app = set() if (not cur_app or (len(prev_app) > 5 and len(cur_app) < len(prev_app) * 0.5)) else ((prev_app - cur_app) - tombstones)
         del_ide = set() if (not candidate_vscdbs or not cur_ide or (len(prev_ide) > 5 and len(cur_ide) < len(prev_ide) * 0.5)) else ((prev_ide - cur_ide) - tombstones)
+        all_conv = [effective_master / "conversations"] + [Path(p) for p in conv_pools]
+        del_ide = {c for c in del_ide if not any((d / f"{c}.db").is_file() and (d / f"{c}.db").stat().st_size > 100 for d in all_conv)}
         ghost_ids = _find_ghost_ids(cur_app, tombstones, effective_master, conv_pools, brain_pools)
         to_purge = del_app | del_ide | ghost_ids
 

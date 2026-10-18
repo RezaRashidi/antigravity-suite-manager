@@ -26,7 +26,8 @@ def upsert_summary(conn: sqlite3.Connection, summary: ConversationSummary) -> No
         step_count = CASE WHEN excluded.step_count > 0 THEN excluded.step_count ELSE conversation_summaries.step_count END,
         last_modified_time = CASE
             WHEN excluded.last_modified_time != '' AND excluded.last_modified_time > '1980-01-01' THEN excluded.last_modified_time
-            ELSE conversation_summaries.last_modified_time
+            WHEN conversation_summaries.last_modified_time != '' AND conversation_summaries.last_modified_time > '1980-01-01' THEN conversation_summaries.last_modified_time
+            ELSE strftime('%Y-%m-%d %H:%M:%S.000000+00:00', 'now')
         END,
         workspace_uris = CASE WHEN excluded.workspace_uris != '' THEN excluded.workspace_uris ELSE conversation_summaries.workspace_uris END,
         project_id = CASE
@@ -36,7 +37,8 @@ def upsert_summary(conn: sqlite3.Connection, summary: ConversationSummary) -> No
         END,
         last_user_input_time = CASE
             WHEN excluded.last_user_input_time != '' AND excluded.last_user_input_time > '1980-01-01' THEN excluded.last_user_input_time
-            ELSE conversation_summaries.last_user_input_time
+            WHEN conversation_summaries.last_user_input_time != '' AND conversation_summaries.last_user_input_time > '1980-01-01' THEN conversation_summaries.last_user_input_time
+            ELSE strftime('%Y-%m-%d %H:%M:%S.000000+00:00', 'now')
         END,
         last_user_input_step_index = CASE WHEN excluded.last_user_input_step_index >= 0 THEN excluded.last_user_input_step_index ELSE conversation_summaries.last_user_input_step_index END,
         raw_summary = CASE WHEN excluded.raw_summary IS NOT NULL THEN excluded.raw_summary ELSE conversation_summaries.raw_summary END,

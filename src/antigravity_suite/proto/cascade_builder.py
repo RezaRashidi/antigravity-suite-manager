@@ -31,9 +31,12 @@ def build_cascade_summary(
 ) -> bytes:
     """Serializes conversation metadata into authentic Antigravity CascadeTrajectorySummary binary."""
     now_iso = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S.000000+00:00")
-    last_modified_iso = last_modified_iso or now_iso
-    created_iso = created_iso or last_modified_iso
-    last_user_input_iso = last_user_input_iso or last_modified_iso
+    if not last_modified_iso or str(last_modified_iso).startswith("0001"):
+        last_modified_iso = now_iso
+    if not created_iso or str(created_iso).startswith("0001"):
+        created_iso = last_modified_iso
+    if not last_user_input_iso or str(last_user_input_iso).startswith("0001"):
+        last_user_input_iso = last_modified_iso
 
     if last_user_step < 0 and step_count > 0:
         last_user_step = max(0, step_count - 1)

@@ -12,9 +12,11 @@ from typing import Optional
 
 
 def _parse_nanos(iso_str: Optional[str]) -> int:
-    if iso_str:
+    if iso_str and not str(iso_str).startswith("0001"):
         try:
-            return int(datetime.datetime.fromisoformat(str(iso_str).replace("Z", "+00:00")).timestamp() * 1e9)
+            dt = datetime.datetime.fromisoformat(str(iso_str).replace("Z", "+00:00"))
+            if dt.year > 2000:
+                return int(dt.timestamp() * 1e9)
         except Exception:
             pass
     return int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1e9)
@@ -65,7 +67,7 @@ def repair_fts_zero_timestamps(conn: sqlite3.Connection) -> int:
     try:
         if not cur.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='conversations_fts';").fetchone():
             return 0
-        rows = cur.execute("SELECT rowid, conversation_id, step_count FROM conversations_fts WHERE chunk_index = -1 AND (last_modified_time = 0 OR last_modified_time IS NULL);").fetchall()
+        rows = cur.execute("SELECT rowid, conversation_id, step_count FROM conversations_fts WHERE chunk_index = -1 AND (last_modified_time <= 0 OR last_modified_time IS NULL);").fetchall()
         if not rows:
             return 0
         repaired = 0

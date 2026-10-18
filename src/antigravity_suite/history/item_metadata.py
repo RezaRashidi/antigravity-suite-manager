@@ -55,8 +55,14 @@ def resolve_item_metadata(
     parsed_created = clean_iso_ts(parsed_raw.get("created_iso"))
 
     final_modified_iso = t_clean_modified or parsed_modified or sql_mtime or file_mtime_iso
+    if not final_modified_iso or final_modified_iso.startswith("0001"):
+        final_modified_iso = file_mtime_iso
     final_user_input_iso = t_clean_user_input or parsed_user_input or sql_user_input or final_modified_iso
+    if not final_user_input_iso or final_user_input_iso.startswith("0001"):
+        final_user_input_iso = final_modified_iso
     final_created_iso = t_clean_created or parsed_created or final_user_input_iso or final_modified_iso
+    if not final_created_iso or final_created_iso.startswith("0001"):
+        final_created_iso = final_modified_iso
 
     anno_info = get_annotation_info(effective_master, conv_id)
     raw_pinned = bool(parsed_raw.get("pinned", False))
