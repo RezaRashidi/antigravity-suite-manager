@@ -7,9 +7,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 from typing import List, Optional
 
-from antigravity_suite.config import DEFAULT_CONFIG
+from antigravity_suite.config import DEFAULT_CONFIG, get_user_home
 from antigravity_suite.history.backup import HistoryBackupManager
 from antigravity_suite.history.merger import merge_histories
 from antigravity_suite.history.watcher import watch_mode
@@ -72,6 +73,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip automatic pre-merge backup snapshot",
     )
+    parser.add_argument(
+        "--restore-chat",
+        metavar="CONVERSATION_ID",
+        default=None,
+        help="Restore a deleted conversation from the trash archive and exit",
+    )
+    parser.add_argument(
+        "--list-trash",
+        action="store_true",
+        help="List conversations currently stored in the trash archive and exit",
+    )
     return parser
 
 
@@ -128,6 +140,56 @@ def handle_restore_backup(backup_id: str) -> int:
         return 1
 
 
+def handle_list_trash(user_home: Optional[Path] = None) -> int:
+    """Lists conversations currently stored in the safety trash archive."""
+    home = user_home or get_user_home()
+    trash_root = home / ".config" / "antigravity" / "backups" / "trash"
+    if not trash_root.is_dir():
+        print("Trash archive is empty.")
+        return 0
+    items = sorted(trash_root.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not items:
+        print("Trash archive is empty.")
+        return 0
+    print("=" * 88)
+    print("                      Antigravity Conversation Trash Archive                      ")
+    print("=" * 88)
+    print(f" {'CONVERSATION ID':<38} | {'TITLE'}")
+    print("-" * 88)
+    for it in items:
+        if not it.is_dir():
+            continue
+        title = "Conversation"
+        sum_f = it / "summary.json"
+        if sum_f.is_file():
+            try:
+                s_data = json.loads(sum_f.read_text(encoding="utf-8"))
+                title = s_data.get("title") or title
+            except Exception:
+                pass
+        print(f" {it.name:<38} | {title}")
+    print("=" * 88)
+    print("To restore a chat, run: antigravity-merge-history --restore-chat <ID>")
+    return 0
+
+
+def handle_restore_chat(conv_id: str, master_gemini: Optional[Path] = None, user_home: Optional[Path] = None) -> int:
+    """Restores a deleted conversation from trash archive and un-tombstones it."""
+    home = user_home or get_user_home()
+    effective_master = Path(master_gemini).resolve() if master_gemini else (home / ".gemini" / "antigravity")
+    from antigravity_suite.history.deletion import restore_chat_from_trash
+    success = restore_chat_from_trash(conv_id, effective_master=effective_master, user_home=home)
+    if success:
+        print(f"✓ Successfully restored conversation '{conv_id}' from trash archive!")
+        print("  - Database, annotations, and brain folder restored. Tombstone removed.")
+        print("  - Running sync cycle to propagate back to App and IDE...")
+        merge_histories(master_gemini=effective_master, user_home=home, quiet=True)
+        return 0
+    else:
+        print(f"✗ Conversation '{conv_id}' not found in trash archive.", file=sys.stderr)
+        return 1
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     """CLI runner main entry point."""
     parser = build_parser()
@@ -138,6 +200,12 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.restore:
         return handle_restore_backup(args.restore)
+
+    if args.list_trash:
+        return handle_list_trash()
+
+    if args.restore_chat:
+        return handle_restore_chat(args.restore_chat, master_gemini=args.master)
 
     if args.watch:
         try:

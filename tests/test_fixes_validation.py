@@ -1457,6 +1457,111 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
                 fts_row = con.execute("SELECT last_modified_time FROM conversations_fts WHERE conversation_id = ? AND chunk_index = -1;", (cid,)).fetchone()
                 self.assertEqual(fts_row[0], 1792243041000000000)
 
+    def test_trash_archive_and_restore(self):
+        """Tests that deleted chats are safely archived to trash and can be restored with tombstone removal."""
+        from antigravity_suite.history.deletion import (
+            archive_deleted_conversation,
+            restore_chat_from_trash,
+            load_manifest,
+            save_manifest,
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            master = Path(td)
+            home = master / "home"
+            home.mkdir()
+            conv_dir = master / "conversations"
+            conv_dir.mkdir()
+            anno_dir = master / "annotations"
+            anno_dir.mkdir()
+
+            cid = "33333333-3333-3333-3333-333333333333"
+            db_p = conv_dir / f"{cid}.db"
+            db_p.write_text("sqlite dummy")
+            anno_p = anno_dir / f"{cid}.pbtxt"
+            anno_p.write_text('title: "Trash Test"')
+
+            save_manifest(master, {
+                "version": 2,
+                "known_ids": [cid],
+                "known_app_ids": [cid],
+                "known_ide_ids": [cid],
+                "tombstones": {cid: {"deleted_at": "2026-10-18T00:00:00Z", "source": "app"}},
+            })
+
+            # Archive to trash
+            trash_dir = archive_deleted_conversation(cid, master, user_home=home)
+            self.assertTrue(trash_dir.is_dir())
+            self.assertTrue((trash_dir / f"{cid}.db").is_file())
+            self.assertTrue((trash_dir / f"{cid}.pbtxt").is_file())
+
+            # Simulate purge
+            db_p.unlink()
+            anno_p.unlink()
+            self.assertFalse(db_p.exists())
+
+            # Restore from trash
+            success = restore_chat_from_trash(cid, master, user_home=home)
+            self.assertTrue(success)
+            self.assertTrue(db_p.is_file())
+            self.assertTrue(anno_p.is_file())
+
+            # Verify tombstone was removed
+            m_after = load_manifest(master)
+            self.assertNotIn(cid, m_after["tombstones"])
+            self.assertIn(cid, m_after["known_ids"])
+
+    def test_backup_and_restore_manifest_tombstones(self):
+        """Tests that pre-merge backup captures sync_manifest.json and backup restoration untombstones conversations."""
+        from antigravity_suite.history.backup import HistoryBackupManager
+        from antigravity_suite.history.deletion import load_manifest, save_manifest
+        import sqlite3
+
+        with tempfile.TemporaryDirectory() as td:
+            master = Path(td)
+            home = master / "home"
+            home.mkdir()
+            s_db = master / "conversation_summaries.db"
+            cid = "44444444-4444-4444-4444-444444444444"
+
+            with sqlite3.connect(str(s_db)) as con:
+                con.execute("CREATE TABLE conversation_summaries (conversation_id text PRIMARY KEY, title text);")
+                con.execute("INSERT INTO conversation_summaries VALUES (?, ?);", (cid, "Backup Chat"))
+                con.commit()
+
+            save_manifest(master, {
+                "version": 2,
+                "known_ids": [cid],
+                "known_app_ids": [cid],
+                "known_ide_ids": [cid],
+                "tombstones": {},
+            })
+
+            # Create backup
+            b_entry = HistoryBackupManager.create_pre_merge_backup(
+                effective_master=master,
+                candidate_vscdbs=[],
+                user_home=home,
+                description="Test manifest backup",
+            )
+            self.assertIsNotNone(b_entry)
+            self.assertIn("sync_manifest.json", b_entry.files)
+
+            # Now simulate that cid was tombstoned
+            save_manifest(master, {
+                "version": 2,
+                "known_ids": [],
+                "tombstones": {cid: {"deleted_at": "2026-10-18T00:00:00Z", "source": "app"}},
+            })
+
+            # Restore backup
+            success = HistoryBackupManager.restore_backup(b_entry.backup_id, user_home=home)
+            self.assertTrue(success)
+
+            # Verify manifest was restored without tombstone
+            m_restored = load_manifest(master)
+            self.assertNotIn(cid, m_restored["tombstones"])
+
 
 if __name__ == "__main__":
     unittest.main()

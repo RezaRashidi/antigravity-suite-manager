@@ -5,6 +5,7 @@ Tracks synchronized conversation lifecycles across Antigravity Desktop App and I
 When a conversation is deleted in either environment (Desktop App or IDE),
 this engine guarantees atomic, permanent deletion from both sides, preventing
 resurrection by pool mergers, reconstruction engines, or state serializers.
+Also manages conversational trash archives for safe, non-destructive recovery.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
+from antigravity_suite.config import get_user_home
 from antigravity_suite.history.models import SyncStats
 from antigravity_suite.proto.cascade import parse_cascade_summary
 from antigravity_suite.proto.vscdb import build_summaries_state, build_unified_state_sync
@@ -41,8 +43,10 @@ def load_manifest(effective_master: Path) -> Dict[str, Any]:
     m_path = get_manifest_path(effective_master)
     if not m_path.is_file():
         return {
-            "version": 1,
+            "version": 2,
             "known_ids": [],
+            "known_app_ids": [],
+            "known_ide_ids": [],
             "tombstones": {},
             "last_synced_at": "",
         }
@@ -50,15 +54,26 @@ def load_manifest(effective_master: Path) -> Dict[str, Any]:
         with open(m_path, "r", encoding="utf-8") as f:
             data = json.load(f)
             if not isinstance(data, dict):
-                return {"version": 1, "known_ids": [], "tombstones": {}, "last_synced_at": ""}
-            data.setdefault("version", 1)
+                return {
+                    "version": 2,
+                    "known_ids": [],
+                    "known_app_ids": [],
+                    "known_ide_ids": [],
+                    "tombstones": {},
+                    "last_synced_at": "",
+                }
+            data.setdefault("version", 2)
             data.setdefault("known_ids", [])
+            data.setdefault("known_app_ids", list(data.get("known_ids", [])))
+            data.setdefault("known_ide_ids", list(data.get("known_ids", [])))
             data.setdefault("tombstones", {})
             return data
     except Exception:
         return {
-            "version": 1,
+            "version": 2,
             "known_ids": [],
+            "known_app_ids": [],
+            "known_ide_ids": [],
             "tombstones": {},
             "last_synced_at": "",
         }
@@ -67,6 +82,7 @@ def load_manifest(effective_master: Path) -> Dict[str, Any]:
 def save_manifest(effective_master: Path, manifest: Dict[str, Any]) -> None:
     """Atomically saves the synchronization manifest to disk."""
     m_path = get_manifest_path(effective_master)
+    manifest["version"] = 2
     manifest["last_synced_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     tmp_path = m_path.with_suffix(".tmp")
     try:
@@ -139,40 +155,78 @@ def find_running_language_servers() -> List[Dict[str, Any]]:
     return servers
 
 
-def notify_language_servers_deletion(conv_id: str) -> None:
+def notify_language_servers_deletion(conv_id: str, effective_master: Optional[Path] = None) -> None:
     """
     Invokes loopback ConnectRPC on all running Language Servers to immediately
     evict the deleted conversation from memory and broadcast deletion to frontends.
+    If the underlying database file is missing on disk, temporarily generates a minimal
+    SQLite schema so that Go LS LoadTrajectory succeeds and executes deletion cleanup.
     """
     servers = find_running_language_servers()
-    ctx = ssl._create_unverified_context()
-    payload = json.dumps({"cascadeId": conv_id}).encode("utf-8")
+    if not servers:
+        return
 
-    for s in servers:
-        csrf = s.get("csrf")
-        if not csrf:
-            continue
-        for port in s.get("ports", []):
-            headers = {
-                "Content-Type": "application/json",
-                "x-codeium-csrf-token": csrf,
-                "Connect-Protocol-Version": "1",
-            }
-            # 1. JetboxDeleteSummary (Desktop App Hub)
-            url_jetbox = f"https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/JetboxDeleteSummary"
+    # Check if a temporary minimal db is needed for Go LS to safely LoadTrajectory before deleting
+    temp_db_path: Optional[Path] = None
+    if effective_master:
+        conv_dir = effective_master / "conversations"
+        db_f = conv_dir / f"{conv_id}.db"
+        if not db_f.exists():
             try:
-                req = urllib.request.Request(url_jetbox, data=payload, headers=headers)
-                with urllib.request.urlopen(req, context=ctx, timeout=1.0):
-                    pass
+                conv_dir.mkdir(parents=True, exist_ok=True)
+                with sqlite3.connect(str(db_f)) as t_con:
+                    t_con.execute("CREATE TABLE IF NOT EXISTS steps (id INTEGER PRIMARY KEY, type TEXT, content TEXT, timestamp TEXT);")
+                    t_con.execute("CREATE TABLE IF NOT EXISTS gen_metadata (id INTEGER PRIMARY KEY, metadata TEXT);")
+                    t_con.execute("CREATE TABLE IF NOT EXISTS trajectory_metadata_blob (id text DEFAULT 'main', data blob, PRIMARY KEY (id));")
+                    t_con.commit()
+                temp_db_path = db_f
             except Exception:
                 pass
 
-            # 2. DeleteCascadeTrajectory (Both IDE and Hub)
-            url_del = f"https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/DeleteCascadeTrajectory"
-            try:
-                req = urllib.request.Request(url_del, data=payload, headers=headers)
-                with urllib.request.urlopen(req, context=ctx, timeout=1.0):
+    ctx = ssl._create_unverified_context()
+    payload = json.dumps({"cascadeId": conv_id}).encode("utf-8")
+
+    try:
+        for s in servers:
+            csrf = s.get("csrf")
+            if not csrf:
+                continue
+            for port in s.get("ports", []):
+                headers = {
+                    "Content-Type": "application/json",
+                    "x-codeium-csrf-token": csrf,
+                    "Connect-Protocol-Version": "1",
+                }
+                # 1. DeleteCascadeTrajectory (Both IDE and Hub)
+                url_del = f"https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/DeleteCascadeTrajectory"
+                try:
+                    req = urllib.request.Request(url_del, data=payload, headers=headers)
+                    with urllib.request.urlopen(req, context=ctx, timeout=1.0):
+                        pass
+                except Exception:
                     pass
+
+                # 2. JetboxDeleteSummary (Desktop App Hub)
+                url_jetbox = f"https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/JetboxDeleteSummary"
+                try:
+                    req = urllib.request.Request(url_jetbox, data=payload, headers=headers)
+                    with urllib.request.urlopen(req, context=ctx, timeout=1.0):
+                        pass
+                except Exception:
+                    pass
+
+                # 3. DeleteCascadeMemory (Evict associated context memories)
+                url_mem = f"https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/DeleteCascadeMemory"
+                try:
+                    req = urllib.request.Request(url_mem, data=payload, headers=headers)
+                    with urllib.request.urlopen(req, context=ctx, timeout=1.0):
+                        pass
+                except Exception:
+                    pass
+    finally:
+        if temp_db_path and temp_db_path.exists():
+            try:
+                temp_db_path.unlink()
             except Exception:
                 pass
 
@@ -218,7 +272,7 @@ def purge_conversation_from_vscdb(vscdb_path: Path, conv_id: str) -> bool:
         conn = sqlite3.connect(str(vscdb_path), timeout=5.0)
         cur = conn.cursor()
 
-        # 1. trajectorySummaries
+        # 1. trajectorySummaries and antigravityUnifiedStateSync
         for key in ["antigravityUnifiedStateSync.trajectorySummaries", "antigravityUnifiedStateSync"]:
             row = cur.execute("SELECT value FROM ItemTable WHERE key = ?;", (key,)).fetchone()
             if row and row[0]:
@@ -227,7 +281,6 @@ def purge_conversation_from_vscdb(vscdb_path: Path, conv_id: str) -> bool:
                     entries = extract_entries_from_proto(v_bin)
                     if conv_id in entries:
                         entries.pop(conv_id, None)
-                        # Re-encode remaining
                         valid_summaries = {}
                         for uid, pbin in entries.items():
                             raw = extract_pure_binary_summary(pbin)
@@ -260,6 +313,16 @@ def purge_conversation_from_vscdb(vscdb_path: Path, conv_id: str) -> bool:
             except Exception:
                 pass
 
+        # 3. Notification keys or any key mentioning conv_id
+        try:
+            notif_rows = cur.execute("SELECT key FROM ItemTable WHERE key LIKE ?;", (f"%{conv_id}%",)).fetchall()
+            for nr in notif_rows:
+                if nr and nr[0]:
+                    cur.execute("DELETE FROM ItemTable WHERE key = ?;", (nr[0],))
+                    modified = True
+        except Exception:
+            pass
+
         if modified:
             conn.commit()
     except Exception:
@@ -273,6 +336,138 @@ def purge_conversation_from_vscdb(vscdb_path: Path, conv_id: str) -> bool:
     return modified
 
 
+def purge_conversation_from_app_storage(conv_id: str, user_home: Optional[Path] = None) -> None:
+    """Removes conversation layout references from Desktop App electron storage (app_storage.json)."""
+    home = user_home or get_user_home()
+    candidates = [
+        home / ".config" / "Antigravity" / "app_storage.json",
+        home / ".antigravity-profile2" / ".config" / "Antigravity" / "app_storage.json",
+    ]
+    for cand in candidates:
+        if not cand.is_file():
+            continue
+        try:
+            data = json.loads(cand.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                continue
+            modified = False
+            for k in list(data.keys()):
+                if conv_id in k or conv_id in str(data[k]):
+                    data.pop(k, None)
+                    modified = True
+            if modified:
+                cand.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+
+def archive_deleted_conversation(
+    conv_id: str,
+    effective_master: Path,
+    user_home: Optional[Path] = None,
+    con: Optional[sqlite3.Connection] = None,
+) -> Path:
+    """
+    Creates a non-destructive safety archive of the deleted conversation in ~/.config/antigravity/backups/trash/<conv_id>/
+    before permanent purge, preserving disk database, annotations, brain folder, and metadata for recovery.
+    """
+    home = user_home or get_user_home()
+    trash_dir = home / ".config" / "antigravity" / "backups" / "trash" / conv_id
+    trash_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1. Archive .db file if exists
+    db_file = effective_master / "conversations" / f"{conv_id}.db"
+    if db_file.is_file():
+        try:
+            shutil.copy2(db_file, trash_dir / f"{conv_id}.db")
+        except Exception:
+            pass
+
+    # 2. Archive .pbtxt annotation if exists
+    anno_file = effective_master / "annotations" / f"{conv_id}.pbtxt"
+    if anno_file.is_file():
+        try:
+            shutil.copy2(anno_file, trash_dir / f"{conv_id}.pbtxt")
+        except Exception:
+            pass
+
+    # 3. Archive brain directory if exists
+    brain_dir = effective_master / "brain" / conv_id
+    if brain_dir.is_dir():
+        try:
+            dest_brain = trash_dir / "brain"
+            if dest_brain.exists():
+                shutil.rmtree(dest_brain, ignore_errors=True)
+            shutil.copytree(brain_dir, dest_brain)
+        except Exception:
+            pass
+
+    # 4. Archive SQLite metadata if available
+    if con:
+        try:
+            cur = con.cursor()
+            row = cur.execute("SELECT * FROM conversation_summaries WHERE conversation_id = ?;", (conv_id,)).fetchone()
+            if row:
+                col_names = [d[0] for d in cur.description]
+                row_dict = {}
+                for i in range(len(row)):
+                    val = row[i]
+                    if isinstance(val, (bytes, bytearray)):
+                        row_dict[col_names[i]] = base64.b64encode(val).decode("ascii")
+                    else:
+                        row_dict[col_names[i]] = val
+                (trash_dir / "summary.json").write_text(json.dumps(row_dict, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    return trash_dir
+
+
+def restore_chat_from_trash(
+    conv_id: str,
+    effective_master: Path,
+    user_home: Optional[Path] = None,
+) -> bool:
+    """Restores a deleted conversation from the trash archive and untombstones it."""
+    home = user_home or get_user_home()
+    trash_dir = home / ".config" / "antigravity" / "backups" / "trash" / conv_id
+    if not trash_dir.is_dir():
+        return False
+
+    # 1. Restore .db file
+    t_db = trash_dir / f"{conv_id}.db"
+    if t_db.is_file():
+        dest_db = effective_master / "conversations" / f"{conv_id}.db"
+        dest_db.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(t_db, dest_db)
+
+    # 2. Restore .pbtxt
+    t_anno = trash_dir / f"{conv_id}.pbtxt"
+    if t_anno.is_file():
+        dest_anno = effective_master / "annotations" / f"{conv_id}.pbtxt"
+        dest_anno.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(t_anno, dest_anno)
+
+    # 3. Restore brain directory
+    t_brain = trash_dir / "brain"
+    if t_brain.is_dir():
+        dest_brain = effective_master / "brain" / conv_id
+        dest_brain.parent.mkdir(parents=True, exist_ok=True)
+        if dest_brain.exists():
+            shutil.rmtree(dest_brain, ignore_errors=True)
+        shutil.copytree(t_brain, dest_brain)
+
+    # 4. Untombstone in sync_manifest.json
+    manifest = load_manifest(effective_master)
+    if conv_id in manifest.get("tombstones", {}):
+        manifest["tombstones"].pop(conv_id, None)
+    if conv_id not in manifest.get("known_ids", []):
+        manifest.setdefault("known_ids", []).append(conv_id)
+    save_manifest(effective_master, manifest)
+
+    return True
+
+
 def purge_conversation(
     conv_id: str,
     effective_master: Path,
@@ -281,13 +476,27 @@ def purge_conversation(
     conv_pools: List[str],
     brain_pools: List[str],
     all_summaries: Dict[str, bytes],
+    user_home: Optional[Path] = None,
 ) -> None:
     """
     Completely and permanently purges a conversation across all persistence layers:
-    SQLite database, FTS index, memory dictionary, disk databases, brain folders,
-    annotations, IDE state.vscdb tables, and running Language Server runtimes.
+    Archives to trash -> Notifies running LS runtimes -> IDE state.vscdb -> App electron storage
+    -> SQLite database -> FTS index -> in-memory index -> disk databases -> brain folders -> annotations.
     """
-    # 1. Master SQLite tables
+    # 0. Safety archive to trash before making any modifications
+    archive_deleted_conversation(conv_id, effective_master, user_home, con=con)
+
+    # 1. Notify running Language Server runtimes FIRST (while db is present or temporary db ensures LoadTrajectory succeeds)
+    notify_language_servers_deletion(conv_id, effective_master=effective_master)
+
+    # 2. IDE state.vscdb ItemTables
+    for vscdb in candidate_vscdbs:
+        purge_conversation_from_vscdb(vscdb, conv_id)
+
+    # 3. Desktop App electron storage
+    purge_conversation_from_app_storage(conv_id, user_home=user_home)
+
+    # 4. Master SQLite tables
     cur = con.cursor()
     cur.execute("DELETE FROM conversation_summaries WHERE conversation_id = ?;", (conv_id,))
     try:
@@ -296,10 +505,10 @@ def purge_conversation(
         pass
     con.commit()
 
-    # 2. Memory summaries dictionary
+    # 5. Memory summaries dictionary
     all_summaries.pop(conv_id, None)
 
-    # 3. Disk conversation databases (.db, .pb, .json) across all pools
+    # 6. Disk conversation databases (.db, .pb, .json) across all pools
     all_conv_pools = [effective_master / "conversations"] + [Path(p) for p in conv_pools]
     for c_pool in all_conv_pools:
         for ext in [".db", ".db-wal", ".db-shm", ".pb", ".json"]:
@@ -310,7 +519,7 @@ def purge_conversation(
                 except Exception:
                     pass
 
-    # 4. Annotations .pbtxt
+    # 7. Annotations .pbtxt
     anno_f = effective_master / "annotations" / f"{conv_id}.pbtxt"
     if anno_f.exists():
         try:
@@ -318,7 +527,7 @@ def purge_conversation(
         except Exception:
             pass
 
-    # 5. Brain folders (.trash relocation or removal)
+    # 8. Brain folders (.trash relocation or removal)
     all_brain_pools = [effective_master / "brain"] + [Path(p) for p in brain_pools]
     for b_pool in all_brain_pools:
         target_b = b_pool / conv_id
@@ -336,88 +545,108 @@ def purge_conversation(
                 except Exception:
                     pass
 
-    # 6. IDE state.vscdb ItemTables
-    for vscdb in candidate_vscdbs:
-        purge_conversation_from_vscdb(vscdb, conv_id)
-
-    # 7. Running Language Server runtimes (App and IDE)
-    notify_language_servers_deletion(conv_id)
-
 
 def detect_and_sync_deletions(
     effective_master: Path,
-    con: sqlite3.Connection,
     candidate_vscdbs: List[Path],
     conv_pools: List[str],
     brain_pools: List[str],
     all_summaries: Dict[str, bytes],
     stats: SyncStats,
+    con: Optional[sqlite3.Connection] = None,
+    user_home: Optional[Path] = None,
 ) -> int:
     """
     Detects asymmetric deletions between Desktop App and IDE, purging deleted chats
-    from the counterpart environment and recording permanent tombstones.
+    from the counterpart environment and recording permanent tombstones. Also cleans
+    orphaned ghost trajectories where disk databases and transcripts no longer exist.
 
     Returns:
         Number of conversations successfully deleted and synchronized.
     """
-    cur = con.cursor()
-    # Discover active App IDs from master SQLite
-    app_rows = cur.execute("SELECT conversation_id FROM conversation_summaries WHERE killed = 0;").fetchall()
-    app_ids = set(r[0] for r in app_rows if r[0])
+    own_conn = False
+    if con is None:
+        db_path = effective_master / "conversation_summaries.db"
+        if not db_path.is_file():
+            return 0
+        con = sqlite3.connect(str(db_path), timeout=15.0)
+        own_conn = True
 
-    # Discover active IDE IDs from candidate_vscdbs
-    ide_ids = get_active_ide_ids(candidate_vscdbs)
+    try:
+        cur = con.cursor()
+        # Discover active App IDs from master SQLite
+        app_rows = cur.execute("SELECT conversation_id FROM conversation_summaries WHERE killed = 0;").fetchall()
+        current_app_ids = set(r[0] for r in app_rows if r[0])
 
-    manifest = load_manifest(effective_master)
-    prev_known = set(manifest.get("known_ids", []))
-    tombstones = set(manifest.get("tombstones", {}).keys())
+        # Discover active IDE IDs from candidate_vscdbs
+        current_ide_ids = get_active_ide_ids(candidate_vscdbs)
 
-    # Initial boot: populate known_ids from currently active universe
-    if not prev_known:
-        initial_universe = (app_ids | ide_ids) - tombstones
-        manifest["known_ids"] = sorted(list(initial_universe))
+        manifest = load_manifest(effective_master)
+        prev_app = set(manifest.get("known_app_ids", manifest.get("known_ids", [])))
+        prev_ide = set(manifest.get("known_ide_ids", manifest.get("known_ids", [])))
+        tombstones = set(manifest.get("tombstones", {}).keys())
+
+        # Initial boot: populate known sets from currently active universe
+        if not prev_app and not prev_ide:
+            manifest["known_app_ids"] = sorted(list(current_app_ids - tombstones))
+            manifest["known_ide_ids"] = sorted(list(current_ide_ids - tombstones))
+            manifest["known_ids"] = sorted(list((current_app_ids | current_ide_ids) - tombstones))
+            save_manifest(effective_master, manifest)
+            return 0
+
+        # 1. Deleted in App: was active in App, now absent from App, not tombstoned
+        deleted_in_app = (prev_app - current_app_ids) - tombstones
+
+        # 2. Deleted in IDE: was active in IDE, now absent from IDE, not tombstoned
+        deleted_in_ide = (prev_ide - current_ide_ids) - tombstones
+
+        to_purge = deleted_in_app | deleted_in_ide
+        if not to_purge:
+            manifest["known_app_ids"] = sorted(list(current_app_ids - tombstones))
+            manifest["known_ide_ids"] = sorted(list(current_ide_ids - tombstones))
+            manifest["known_ids"] = sorted(list((current_app_ids | current_ide_ids) - tombstones))
+            save_manifest(effective_master, manifest)
+            return 0
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        purged_count = 0
+
+        for c_id in sorted(to_purge):
+            if c_id in deleted_in_app:
+                source = "app"
+            elif c_id in deleted_in_ide:
+                source = "ide"
+            else:
+                source = "ghost"
+
+            purge_conversation(
+                conv_id=c_id,
+                effective_master=effective_master,
+                con=con,
+                candidate_vscdbs=candidate_vscdbs,
+                conv_pools=conv_pools,
+                brain_pools=brain_pools,
+                all_summaries=all_summaries,
+                user_home=user_home,
+            )
+            manifest.setdefault("tombstones", {})[c_id] = {
+                "deleted_at": now_iso,
+                "source": source,
+            }
+            stats.conversations_deleted += 1
+            stats.dirty_conv_ids.add(c_id)
+            purged_count += 1
+
+        # Update manifest
+        manifest["known_app_ids"] = sorted(list((current_app_ids - to_purge) - tombstones))
+        manifest["known_ide_ids"] = sorted(list((current_ide_ids - to_purge) - tombstones))
+        manifest["known_ids"] = sorted(list(((current_app_ids | current_ide_ids) - to_purge) - tombstones))
         save_manifest(effective_master, manifest)
-        return 0
 
-    # Detect deletions:
-    # 1. Deleted in App: was previously known, still present in IDE, but absent from App
-    deleted_in_app = (prev_known & ide_ids) - app_ids - tombstones
-
-    # 2. Deleted in IDE: was previously known, still present in App, but absent from IDE
-    deleted_in_ide = (prev_known & app_ids) - ide_ids - tombstones
-
-    to_purge = deleted_in_app | deleted_in_ide
-    if not to_purge:
-        # Update known_ids with any freshly created conversations
-        manifest["known_ids"] = sorted(list((app_ids | ide_ids) - tombstones))
-        save_manifest(effective_master, manifest)
-        return 0
-
-    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    purged_count = 0
-
-    for c_id in sorted(to_purge):
-        source = "app" if c_id in deleted_in_app else "ide"
-        purge_conversation(
-            conv_id=c_id,
-            effective_master=effective_master,
-            con=con,
-            candidate_vscdbs=candidate_vscdbs,
-            conv_pools=conv_pools,
-            brain_pools=brain_pools,
-            all_summaries=all_summaries,
-        )
-        manifest.setdefault("tombstones", {})[c_id] = {
-            "deleted_at": now_iso,
-            "source": source,
-        }
-        stats.conversations_deleted += 1
-        stats.dirty_conv_ids.add(c_id)
-        purged_count += 1
-
-    # Update manifest known_ids
-    new_known = (app_ids | ide_ids) - to_purge - tombstones
-    manifest["known_ids"] = sorted(list(new_known))
-    save_manifest(effective_master, manifest)
-
-    return purged_count
+        return purged_count
+    finally:
+        if own_conn and con:
+            try:
+                con.close()
+            except Exception:
+                pass

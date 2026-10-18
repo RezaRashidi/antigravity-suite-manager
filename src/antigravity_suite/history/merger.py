@@ -231,8 +231,9 @@ def collect_all_conversation_ids(
     existing_rows: Dict[str, Tuple],
     extra_ids: Optional[Iterable[str]] = None,
     tombstones: Optional[Set[str]] = None,
+    master_brain_dir: Optional[Path] = None,
 ) -> Set[str]:
-    """Scans databases, protobufs, in-memory protobuf entries, and existing table rows for 36-char UUIDs, skipping tombstones."""
+    """Scans databases, protobufs, in-memory protobuf entries, and existing table rows for 36-char UUIDs, skipping tombstones and ghosts."""
     all_conv_ids: Set[str] = set()
     uuid_pattern = re.compile(r"^[0-9a-fA-F-]{36}$")
 
@@ -689,6 +690,7 @@ def synchronize_master_summaries(
         existing_rows=existing_rows,
         extra_ids=all_summaries.keys(),
         tombstones=tombstones,
+        master_brain_dir=master_brain_dir,
     )
 
     # Pre-discover project mappings once in memory (O(1) resolution)
@@ -861,7 +863,16 @@ def merge_histories(
         if backup_entry:
             stats.backup_id = backup_entry.backup_id
 
-    # 3.5. Load permanent tombstones to prevent resurrection of deleted chats
+    # 3.5. Detect and synchronize bi-directional deletions across App and IDE before any merging
+    stats.conversations_deleted = detect_and_sync_deletions(
+        effective_master=effective_master,
+        candidate_vscdbs=candidate_vscdbs,
+        conv_pools=conv_pools,
+        brain_pools=brain_pools,
+        all_summaries={},
+        stats=stats,
+        user_home=home,
+    )
     tombstones = get_tombstones(effective_master)
 
     # 4. Merge raw .db and .pb pools into master
@@ -898,17 +909,6 @@ def merge_histories(
 
     try:
         cur = con.cursor()
-
-        # 7.5. Detect and synchronize bi-directional deletions across App and IDE
-        stats.conversations_deleted = detect_and_sync_deletions(
-            effective_master=effective_master,
-            con=con,
-            candidate_vscdbs=candidate_vscdbs,
-            conv_pools=conv_pools,
-            brain_pools=brain_pools,
-            all_summaries=all_summaries,
-            stats=stats,
-        )
 
         # 8. Enrich summaries with authentic titles from VS Code state.vscdb
         stats.ide_state_ingested = ingest_vscdb_summaries(

@@ -145,6 +145,13 @@ class HistoryBackupManager:
                     json.dump(vscdb_data, vf, indent=2)
                 backed_up_files.append("vscdb_keys.json")
 
+            # 5. Backup sync_manifest.json
+            sync_manifest_f = effective_master / "sync_manifest.json"
+            if sync_manifest_f.is_file():
+                dest_sync_manifest = snapshot_dir / "sync_manifest.json"
+                shutil.copy2(sync_manifest_f, dest_sync_manifest)
+                backed_up_files.append("sync_manifest.json")
+
             manifest = BackupEntry(
                 backup_id=backup_id,
                 timestamp=now.isoformat(),
@@ -298,6 +305,29 @@ class HistoryBackupManager:
                                 v_con.close()
                             except Exception:
                                 pass
+
+            # 5. Restore sync_manifest.json or clear tombstones for restored conversations
+            src_sync_manifest = candidate_dir / "sync_manifest.json"
+            if src_sync_manifest.is_file():
+                shutil.copy2(src_sync_manifest, target_master / "sync_manifest.json")
+            else:
+                if dest_db.is_file():
+                    try:
+                        from antigravity_suite.history.deletion import load_manifest, save_manifest
+                        with sqlite3.connect(str(dest_db)) as r_con:
+                            restored_ids = set(r[0] for r in r_con.execute("SELECT conversation_id FROM conversation_summaries;").fetchall())
+                        cur_manifest = load_manifest(target_master)
+                        tombstones = cur_manifest.get("tombstones", {})
+                        cleared = False
+                        for rid in restored_ids:
+                            if rid in tombstones:
+                                tombstones.pop(rid, None)
+                                cleared = True
+                        if cleared:
+                            cur_manifest["tombstones"] = tombstones
+                            save_manifest(target_master, cur_manifest)
+                    except Exception:
+                        pass
 
             return True
         except Exception:
