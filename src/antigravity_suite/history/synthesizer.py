@@ -221,6 +221,111 @@ def parse_step14_user_prompt(payload: bytes) -> str:
     return raw_res.strip()
 
 
+def extract_workspace_from_transcript(
+    transcript_path: Union[str, Path],
+    project_id: Optional[str] = None,
+    user_home: Optional[Path] = None,
+) -> Optional[str]:
+    """
+    Extracts authentic, validated workspace URI from project configuration,
+    transcript logs, or tool execution directories.
+    """
+    from antigravity_suite.history.projects import (
+        get_workspace_for_project_id,
+        is_valid_workspace_uri,
+        normalize_workspace_uri,
+    )
+    from urllib.parse import urlsplit, unquote
+
+    home = user_home or get_user_home()
+
+    # 1. Authoritative project configuration lookup
+    if project_id and str(project_id).strip() not in ("outside-of-project", "default-cli-project"):
+        proj_ws = get_workspace_for_project_id(str(project_id).strip(), user_home=home)
+        if proj_ws and is_valid_workspace_uri(proj_ws, user_home=home):
+            return proj_ws
+
+    tf_str = str(transcript_path)
+    if not os.path.isfile(tf_str):
+        return None
+
+    # 2. Parse transcript JSON entries (scan first 300 entries)
+    try:
+        with open(tf_str, "r", encoding="utf-8", errors="ignore") as tf_f:
+            for line_idx, line in enumerate(tf_f):
+                if line_idx > 300:
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except Exception:
+                    continue
+
+                content = entry.get("content", "")
+                if isinstance(content, str) and content:
+                    # Look for explicit system prompt headers
+                    if "Active Workspaces:" in content:
+                        m = re.search(r"Active Workspaces:\s*(?:\n|\r\n)?\s*[-*]\s*([^\s\n\r`\"'>]+)", content)
+                        if m:
+                            cand = m.group(1).strip().rstrip("`\"';,")
+                            cand_uri = cand if cand.startswith("file://") else ("file://" + cand)
+                            norm = normalize_workspace_uri(cand_uri, user_home=home)
+                            if is_valid_workspace_uri(norm, user_home=home):
+                                return norm
+
+                    if "Command Working Directory:" in content:
+                        m = re.search(r"Command Working Directory:\s*([^\s\n\r`\"'>]+)", content)
+                        if m:
+                            cand = m.group(1).strip().rstrip("`\"';,")
+                            cand_uri = cand if cand.startswith("file://") else ("file://" + cand)
+                            norm = normalize_workspace_uri(cand_uri, user_home=home)
+                            if is_valid_workspace_uri(norm, user_home=home):
+                                return norm
+
+                    if "Active Document:" in content:
+                        m = re.search(r"Active Document:\s*([^\s\n\r`\"'>]+)", content)
+                        if m:
+                            doc_p = m.group(1).strip().rstrip("`\"';,")
+                            doc_p = unquote(urlsplit(doc_p).path) if doc_p.startswith("file://") else doc_p
+                            parent_dir = os.path.dirname(doc_p)
+                            if os.path.isdir(parent_dir):
+                                norm = normalize_workspace_uri("file://" + parent_dir, user_home=home)
+                                if is_valid_workspace_uri(norm, user_home=home):
+                                    return norm
+
+                # Inspect tool calls for authentic working directory
+                tool_calls = entry.get("tool_calls", [])
+                if isinstance(tool_calls, list):
+                    for tc in tool_calls:
+                        args = tc.get("args") or {}
+                        if isinstance(args, dict):
+                            cwd = args.get("Cwd")
+                            if cwd and isinstance(cwd, str):
+                                cwd_clean = cwd.strip().rstrip("`\"';,")
+                                if os.path.isdir(cwd_clean):
+                                    norm = normalize_workspace_uri("file://" + cwd_clean, user_home=home)
+                                    if is_valid_workspace_uri(norm, user_home=home):
+                                        return norm
+
+                            for k in ("AbsolutePath", "TargetFile"):
+                                fpath = args.get(k)
+                                if fpath and isinstance(fpath, str):
+                                    fpath_clean = unquote(urlsplit(fpath).path) if fpath.startswith("file://") else fpath
+                                    fpath_clean = fpath_clean.strip().strip('"`\'')
+                                    if os.path.isfile(fpath_clean) or os.path.isdir(fpath_clean):
+                                        p_dir = fpath_clean if os.path.isdir(fpath_clean) else os.path.dirname(fpath_clean)
+                                        if os.path.isdir(p_dir):
+                                            norm = normalize_workspace_uri("file://" + p_dir, user_home=home)
+                                            if is_valid_workspace_uri(norm, user_home=home):
+                                                return norm
+    except Exception:
+        pass
+
+    return None
+
+
 def synthesize_db_from_transcript(
     conv_id: str,
     db_path: Union[str, Path],
@@ -263,30 +368,7 @@ def synthesize_db_from_transcript(
 
         # Extract workspace if not provided
         if not workspace_uri:
-            user_home = str(get_user_home())
-            with open(tf_str, "r", encoding="utf-8", errors="ignore") as tf_f:
-                for line in tf_f:
-                    if "Active Document:" in line:
-                        m = re.search(r"Active Document:\s*([^\s\n\r]+)", line)
-                        if m:
-                            doc_p = m.group(1).strip()
-                            workspace_uri = "file://" + os.path.dirname(doc_p)
-                            break
-                    elif "Active Workspaces:" in line or "Workspace" in line:
-                        m = re.search(r"file:///[^\s\n\r\"'>]+", line)
-                        if m:
-                            workspace_uri = m.group(0).strip()
-                            break
-                    elif "file:///" in line:
-                        m = re.search(r"file://(/[^/][^\s\n\r\"'>]+)", line)
-                        if m:
-                            p_cand = m.group(1).rstrip(",.;'\"")
-                            if os.path.isdir(p_cand):
-                                workspace_uri = "file://" + p_cand
-                                break
-                            elif os.path.isfile(p_cand) or "/" in p_cand:
-                                workspace_uri = "file://" + os.path.dirname(p_cand)
-                                break
+            workspace_uri = extract_workspace_from_transcript(tf_str, project_id=project_id, user_home=get_user_home())
 
         ws_blob = build_trajectory_metadata_blob(conv_id, workspace_uri, project_id)
         cur.execute("INSERT OR REPLACE INTO trajectory_meta VALUES (?, ?, 4, 1);", (conv_id, conv_id))

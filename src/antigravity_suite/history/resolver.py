@@ -10,7 +10,13 @@ from antigravity_suite.history.item_metadata import resolve_item_metadata
 from antigravity_suite.history.item_persistence import persist_conversation_item
 from antigravity_suite.history.journal import get_sync_journal
 from antigravity_suite.history.models import SyncStats
-from antigravity_suite.history.projects import get_project_id_for_workspace, normalize_workspace_uri
+from antigravity_suite.history.projects import (
+    get_project_id_for_workspace,
+    get_workspace_for_project_id,
+    is_valid_workspace_uri,
+    normalize_workspace_uri,
+)
+from antigravity_suite.history.synthesizer import extract_workspace_from_transcript
 from antigravity_suite.history.title_resolver import resolve_best_title
 from antigravity_suite.history.transcript_info import clean_iso_ts, get_transcript_timestamps
 from antigravity_suite.proto.cascade import get_last_user_step_index, parse_cascade_summary
@@ -51,6 +57,19 @@ def resolve_conversation_item(
     existing_proj = existing_rows[conv_id][8] if conv_id in existing_rows and len(existing_rows[conv_id]) > 8 else None
     raw_ws = meta["db_ws_uri"] or parsed_raw.get("workspace_uri") or existing_ws
     ws_uri = normalize_workspace_uri(raw_ws)
+
+    # Validate workspace URI; heal poisoned or non-existent workspace URIs (e.g. mock test diffs)
+    if not is_valid_workspace_uri(ws_uri):
+        effective_pid = existing_proj or meta.get("db_proj_id") or parsed_raw.get("project_id")
+        healed_ws = None
+        if effective_pid:
+            healed_ws = get_workspace_for_project_id(effective_pid)
+        if not healed_ws and meta.get("transcript_file"):
+            healed_ws = extract_workspace_from_transcript(meta["transcript_file"], project_id=effective_pid)
+        if healed_ws and is_valid_workspace_uri(healed_ws):
+            ws_uri = healed_ws
+        elif not is_valid_workspace_uri(ws_uri):
+            ws_uri = ""
 
     # Unified partition: 'antigravity' ensures Language Server queries
     # (WHERE app_data_dir = ?) return all conversations in both Desktop App and IDE

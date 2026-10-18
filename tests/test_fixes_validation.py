@@ -1662,9 +1662,63 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
                 parsed = parse_cascade_summary(extract_pure_binary_summary(entries[cid]))
                 self.assertEqual(parsed.get("step_count"), 500)
 
+    def test_workspace_validation_and_healing(self):
+        from antigravity_suite.history.projects import (
+            is_valid_workspace_uri,
+            get_workspace_for_project_id,
+            clear_workspace_caches,
+        )
+        from antigravity_suite.history.synthesizer import extract_workspace_from_transcript
+
+        clear_workspace_caches()
+        with tempfile.TemporaryDirectory() as td:
+            fake_home = Path(td)
+            real_proj = fake_home / "PhpstormProjects" / "real-project"
+            real_proj.mkdir(parents=True)
+            non_existent_proj = fake_home / "PhpstormProjects" / "Odirect"
+
+            # 1. Validation checks
+            self.assertTrue(is_valid_workspace_uri(f"file://{real_proj}", user_home=fake_home))
+            self.assertFalse(is_valid_workspace_uri(f"file://{non_existent_proj}", user_home=fake_home))
+            self.assertFalse(is_valid_workspace_uri("file:///home/reza/`\nTotal", user_home=fake_home))
+            self.assertFalse(is_valid_workspace_uri("file:///tmp", user_home=fake_home))
+            self.assertFalse(is_valid_workspace_uri(f"file://{fake_home}/PhpstormProjects", user_home=fake_home))
+
+            # 2. Project ID lookup
+            proj_id = "test-proj-uuid-1234"
+            p_dir = fake_home / ".gemini" / "config" / "projects"
+            p_dir.mkdir(parents=True)
+            with open(p_dir / f"{proj_id}.json", "w") as f:
+                json.dump({
+                    "id": proj_id,
+                    "name": "real-project",
+                    "projectResources": {"resources": [{"folderUri": f"file://{real_proj}"}]}
+                }, f)
+
+            resolved_ws = get_workspace_for_project_id(proj_id, user_home=fake_home)
+            self.assertEqual(resolved_ws, f"file://{real_proj}")
+
+            # 3. Transcript extraction avoids mock code diffs and picks authentic tool Cwd
+            t_file = fake_home / "transcript.jsonl"
+            with open(t_file, "w") as f:
+                # Step 0: prompt with code discussion mentioning mock Workspace
+                f.write(json.dumps({
+                    "step_index": 0, "type": "USER_INPUT",
+                    "content": 'Check this diff:\n- get_project_id_for_workspace("file:///home/reza/PhpstormProjects/Odirect")'
+                }) + "\n")
+                # Step 1: tool execution with authentic Cwd
+                f.write(json.dumps({
+                    "step_index": 1, "type": "PLANNER_RESPONSE",
+                    "tool_calls": [{"name": "run_command", "args": {"CommandLine": "ls", "Cwd": str(real_proj)}}]
+                }) + "\n")
+
+            extracted = extract_workspace_from_transcript(t_file, user_home=fake_home)
+            self.assertEqual(extracted, f"file://{real_proj}")
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

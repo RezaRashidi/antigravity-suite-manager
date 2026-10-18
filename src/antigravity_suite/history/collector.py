@@ -2,7 +2,7 @@
 from __future__ import annotations
 import glob, os, re, shutil, sqlite3
 from pathlib import Path
-from typing import Dict, Iterable, Optional, Set, Tuple
+from typing import Dict, Iterable, Optional, Set, Tuple, Union
 
 def setup_master_directories(effective_master: Path) -> Tuple[Path, Path, Path, Path, Path]:
     """Creates canonical directories and resolves master database symlinks."""
@@ -53,9 +53,10 @@ def collect_all_conversation_ids(
     return all_conv_ids
 
 
-def get_db_trajectory_meta(db_path: Path) -> Tuple[Optional[str], Optional[str]]:
+def get_db_trajectory_meta(db_path: Union[str, Path]) -> Tuple[Optional[str], Optional[str]]:
     """Reads workspace_uri and project_id from trajectory_metadata_blob if present."""
-    if not db_path.is_file():
+    p = Path(db_path)
+    if not p.is_file():
         return None, None
     conn = None
     try:

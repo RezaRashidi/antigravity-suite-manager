@@ -35,7 +35,14 @@ from antigravity_suite.history.sqlite_store import (
     sync_conversations_fts,
     upsert_summary,
 )
+from antigravity_suite.history.projects import (
+    get_project_id_for_workspace,
+    get_workspace_for_project_id,
+    is_valid_workspace_uri,
+    normalize_workspace_uri,
+)
 from antigravity_suite.history.synthesizer import (
+    extract_workspace_from_transcript,
     is_synthesized_db_incomplete,
     parse_step14_user_prompt,
     repair_database_step_gaps,
@@ -95,5 +102,10 @@ __all__ = [
     "get_tombstones",
     "purge_conversation",
     "detect_and_sync_deletions",
+    "get_project_id_for_workspace",
+    "get_workspace_for_project_id",
+    "is_valid_workspace_uri",
+    "normalize_workspace_uri",
+    "extract_workspace_from_transcript",
 ]
 

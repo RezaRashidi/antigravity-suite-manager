@@ -85,7 +85,51 @@ def is_container_or_system_root(uri_str: str) -> bool:
     parts = path_str.split("/")
     if len(parts) == 4 and parts[1].lower() in ("home", "users") and parts[3].lower() in PROJECT_CONTAINERS:
         return True
+    if len(parts) >= 2 and parts[-1].lower() in PROJECT_CONTAINERS and not (Path(path_str) / ".git").exists():
+        return True
     return False
+
+
+@lru_cache(maxsize=2048)
+def is_valid_workspace_uri(
+    uri: Optional[str],
+    user_home: Optional[Path] = None,
+) -> bool:
+    """
+    Validates if a workspace URI is syntactically well-formed, points to an
+    actual project directory, and does not refer to non-existent local paths
+    or system container roots.
+    """
+    if not uri or not isinstance(uri, str):
+        return False
+    u = uri.strip().rstrip("`\"';,")
+    if not u.startswith("file://"):
+        return False
+    if any(c in u for c in ("\n", "\r", "`", "<", ">", '"', "'")):
+        return False
+    if any(k in u for k in ("outside-of-project", ".gemini/antigravity/brain", ".config/Antigravity")):
+        return False
+
+    parsed = urlsplit(u)
+    path_str = unquote(parsed.path)
+    if not path_str or path_str in ("/", "\\"):
+        return False
+
+    # Container or system roots alone are not authentic project workspaces
+    if is_container_or_system_root(u):
+        return False
+
+    home = (user_home or get_user_home()).resolve()
+    p = Path(path_str)
+    try:
+        if str(home) in path_str:
+            return p.is_dir()
+        if p.exists():
+            return p.is_dir()
+    except Exception:
+        pass
+
+    return True
 
 
 def get_candidate_gemini_dirs(user_home: Optional[Path] = None) -> List[Path]:
@@ -204,6 +248,7 @@ def normalize_workspace_uri(
                 uri_str = str(arr[0]).strip()
         except Exception:
             pass
+    uri_str = uri_str.rstrip("`\"';,")
     if not uri_str.startswith("file://"):
         return uri_str
 
@@ -266,6 +311,7 @@ def clear_workspace_caches() -> None:
     _PROJECT_MAPPINGS_CACHE = None
     _LAST_MAPPINGS_DISCOVERY_TIME = 0.0
     is_container_or_system_root.cache_clear()
+    is_valid_workspace_uri.cache_clear()
     normalize_workspace_uri.cache_clear()
 
 
@@ -326,7 +372,8 @@ def discover_project_mappings(
                             raw_ws, pid = row[0], row[1]
                             norm_ws = normalize_workspace_uri(raw_ws, user_home=home)
                             if norm_ws and pid and norm_ws not in mappings:
-                                mappings[norm_ws] = str(pid)
+                                if is_valid_workspace_uri(norm_ws, user_home=home):
+                                    mappings[norm_ws] = str(pid)
                 except Exception:
                     pass
 
@@ -458,3 +505,46 @@ def get_project_id_for_workspace(
     if _PROJECT_MAPPINGS_CACHE is not None:
         _PROJECT_MAPPINGS_CACHE[ws_norm] = deterministic_id
     return deterministic_id
+
+
+def get_workspace_for_project_id(
+    project_id: Optional[str],
+    user_home: Optional[Path] = None,
+) -> Optional[str]:
+    """
+    Resolves the canonical workspace URI for a given project UUID:
+      1. Reads authentic project configuration from ~/.gemini/config/projects/{project_id}.json
+      2. Scans other candidate gemini config/projects directories
+      3. Checks runtime project mappings for a registered workspace
+    """
+    if not project_id or str(project_id).strip() in ("outside-of-project", "default-cli-project"):
+        return None
+
+    home = user_home or get_user_home()
+    clean_pid = str(project_id).strip()
+
+    # 1. Search authentic project definitions in config/projects/
+    for gdir in get_candidate_gemini_dirs(home):
+        projects_dir = gdir / "config" / "projects"
+        if not projects_dir.is_dir():
+            continue
+        p_file = projects_dir / f"{clean_pid}.json"
+        if p_file.is_file():
+            try:
+                with open(p_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                resources = data.get("projectResources", {}).get("resources", [])
+                for r in resources:
+                    furi = r.get("folderUri") or r.get("gitFolder", {}).get("folderUri")
+                    if furi and str(furi).startswith("file://"):
+                        return str(furi).strip().rstrip("`\"';,")
+            except Exception:
+                pass
+
+    # 2. Check KNOWN_PROJECT_MAPPINGS reverse lookup
+    for ws, pid in KNOWN_PROJECT_MAPPINGS.items():
+        if pid == clean_pid and ws.startswith("file://"):
+            return ws
+
+    return None
+

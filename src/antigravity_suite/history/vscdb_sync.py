@@ -13,7 +13,7 @@ import os
 import re
 import sqlite3
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 from antigravity_suite.history.extractor import (
     extract_conv_prompts,
@@ -22,7 +22,11 @@ from antigravity_suite.history.extractor import (
     is_prompt_text,
     sync_annotation_file,
 )
-from antigravity_suite.history.projects import get_project_id_for_workspace, normalize_workspace_uri
+from antigravity_suite.history.projects import (
+    get_project_id_for_workspace,
+    is_valid_workspace_uri,
+    normalize_workspace_uri,
+)
 from antigravity_suite.history.sqlite_store import get_actual_steps_count
 from antigravity_suite.proto.cascade import build_cascade_summary, get_last_user_step_index, parse_cascade_summary
 from antigravity_suite.proto.trajectory import parse_trajectory_metadata_blob
@@ -34,9 +38,10 @@ from antigravity_suite.proto.vscdb import (
 from antigravity_suite.proto.wire import extract_entries_from_proto, extract_pure_binary_summary
 
 
-def get_db_trajectory_meta(db_path: Path) -> Tuple[Optional[str], Optional[str]]:
+def get_db_trajectory_meta(db_path: Union[str, Path]) -> Tuple[Optional[str], Optional[str]]:
     """Reads workspace_uri and project_id from trajectory_metadata_blob if present."""
-    if not db_path.is_file():
+    p = Path(db_path)
+    if not p.is_file():
         return None, None
     conn = None
     try:
@@ -247,9 +252,9 @@ def write_vscdb_unified_state(
         try:
             parsed = parse_cascade_summary(raw)
             ws = parsed.get("workspace_uri")
-            if ws and str(ws).startswith("file://") and not any(k in str(ws) for k in [".gemini", ".config/Antigravity", "AppData"]):
+            if ws and str(ws).startswith("file://") and is_valid_workspace_uri(str(ws)):
                 norm_w = normalize_workspace_uri(str(ws))
-                if norm_w:
+                if norm_w and is_valid_workspace_uri(norm_w):
                     active_workspaces.add(str(norm_w))
         except Exception:
             pass
@@ -288,9 +293,44 @@ def write_vscdb_unified_state(
                                 curr_parsed = parse_cascade_summary(state_summaries[e_cid])
                                 curr_sc = curr_parsed.get("step_count", 0)
                                 if e_sc > curr_sc:
-                                    state_summaries[e_cid] = e_raw
+                                    # Preserve higher step count from active IDE session,
+                                    # but retain validated workspace_uri and project_id from state_summaries
+                                    valid_ws = curr_parsed.get("workspace_uri") if is_valid_workspace_uri(curr_parsed.get("workspace_uri")) else None
+                                    if not valid_ws and is_valid_workspace_uri(e_parsed.get("workspace_uri")):
+                                        valid_ws = e_parsed.get("workspace_uri")
+                                    valid_pid = curr_parsed.get("project_id") or e_parsed.get("project_id")
+                                    state_summaries[e_cid] = build_cascade_summary(
+                                        e_cid,
+                                        curr_parsed.get("title") or e_parsed.get("title", ""),
+                                        curr_parsed.get("summary") or e_parsed.get("summary", ""),
+                                        e_sc,
+                                        last_modified_iso=e_parsed.get("last_modified_iso") or curr_parsed.get("last_modified_iso"),
+                                        last_user_step=e_parsed.get("last_user_step") or curr_parsed.get("last_user_step", -1),
+                                        workspace_uri=valid_ws,
+                                        project_id=valid_pid,
+                                        created_iso=curr_parsed.get("created_iso") or e_parsed.get("created_iso"),
+                                        last_user_input_iso=e_parsed.get("last_user_input_iso") or curr_parsed.get("last_user_input_iso"),
+                                        pinned=curr_parsed.get("pinned", False),
+                                        archived=curr_parsed.get("archived", False),
+                                    )
                             else:
-                                state_summaries[e_cid] = e_raw
+                                if is_valid_workspace_uri(e_parsed.get("workspace_uri")):
+                                    state_summaries[e_cid] = e_raw
+                                else:
+                                    state_summaries[e_cid] = build_cascade_summary(
+                                        e_cid,
+                                        e_parsed.get("title", ""),
+                                        e_parsed.get("summary", ""),
+                                        e_sc,
+                                        last_modified_iso=e_parsed.get("last_modified_iso"),
+                                        last_user_step=e_parsed.get("last_user_step", -1),
+                                        workspace_uri=None,
+                                        project_id=e_parsed.get("project_id"),
+                                        created_iso=e_parsed.get("created_iso"),
+                                        last_user_input_iso=e_parsed.get("last_user_input_iso"),
+                                        pinned=e_parsed.get("pinned", False),
+                                        archived=e_parsed.get("archived", False),
+                                    )
                 except Exception:
                     pass
 
