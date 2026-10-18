@@ -3,7 +3,7 @@ Antigravity Conversation History, Summaries, and Synchronization Package.
 """
 
 from antigravity_suite.history.backup import BackupEntry, HistoryBackupManager
-from antigravity_suite.history.discovery import discover_all_history_sources
+from antigravity_suite.history.discovery import discover_all_history_sources, replicate_projects_order
 from antigravity_suite.history.distribution import replicate_to_ide_profiles
 from antigravity_suite.history.extractor import (
     extract_conv_text,
@@ -107,5 +107,6 @@ __all__ = [
     "is_valid_workspace_uri",
     "normalize_workspace_uri",
     "extract_workspace_from_transcript",
+    "replicate_projects_order",
 ]
 

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Dict, List, Set
 
 from antigravity_suite.history.annotation_sync import sync_annotation_files
+from antigravity_suite.history.discovery import replicate_projects_order
 from antigravity_suite.history.distribution import replicate_to_ide_profiles
 from antigravity_suite.history.models import SyncStats
 from antigravity_suite.history.proto_sync import serialize_master_proto
@@ -31,6 +32,7 @@ def finalize_and_distribute_history(
     tombstones: Set[str],
     force_rebuild: bool,
     stats: SyncStats,
+    user_home: Optional[Path] = None,
 ) -> None:
     """Enriches state.vscdb, serializes Hub proto, replicates profiles, and writes annotations."""
     try:
@@ -47,6 +49,7 @@ def finalize_and_distribute_history(
         serialize_master_proto(master_proto, all_summaries)
 
         write_vscdb_unified_state(candidate_vscdbs, all_summaries)
+        replicate_projects_order(user_home=user_home)
 
         try:
             cur.execute("PRAGMA wal_checkpoint(TRUNCATE);")

@@ -87,7 +87,8 @@ def merge_histories(
 
     finalize_and_distribute_history(
         con, all_summaries, candidate_vscdbs, ide_candidates, effective_master,
-        m_sum_db, m_conv_dir, m_proto, pinned_ids, tombstones, force_rebuild, stats
+        m_sum_db, m_conv_dir, m_proto, pinned_ids, tombstones, force_rebuild, stats,
+        user_home=home,
     )
 
     for ide_dir in SuiteConfig(user_home=home).ide_dirs:

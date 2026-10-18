@@ -8,7 +8,9 @@ unified Protobuf state sync back to IDE globalStorage databases.
 from __future__ import annotations
 
 import base64
+import datetime
 import glob
+import json
 import os
 import re
 import sqlite3
@@ -22,12 +24,13 @@ from antigravity_suite.history.extractor import (
     is_prompt_text,
     sync_annotation_file,
 )
+from antigravity_suite.history.models import ConversationSummary
 from antigravity_suite.history.projects import (
     get_project_id_for_workspace,
     is_valid_workspace_uri,
     normalize_workspace_uri,
 )
-from antigravity_suite.history.sqlite_store import get_actual_steps_count
+from antigravity_suite.history.sqlite_store import get_actual_steps_count, upsert_summary
 from antigravity_suite.proto.cascade import build_cascade_summary, get_last_user_step_index, parse_cascade_summary
 from antigravity_suite.proto.trajectory import parse_trajectory_metadata_blob
 from antigravity_suite.proto.vscdb import (
@@ -103,6 +106,7 @@ def ingest_vscdb_summaries(
     master_conv_dir: Path,
     con: sqlite3.Connection,
     pinned_set: Optional[Set[str]] = None,
+    clean_prompts: Optional[Set[str]] = None,
     tombstones: Optional[Set[str]] = None,
 ) -> int:
     """
@@ -146,6 +150,7 @@ def ingest_vscdb_summaries(
 
                     db_p = master_conv_dir / f"{u_id}.db"
                     tr_p = master_conv_dir.parent / "brain" / u_id / ".system_generated" / "logs" / "transcript.jsonl"
+                    conv_prompts = clean_prompts if clean_prompts is not None else extract_conv_prompts(db_p, tr_p)
                     ide_summary = (parsed.get("summary") or "").strip()
                     ide_annot_title = (parsed.get("title") or "").strip()
 
@@ -156,7 +161,7 @@ def ingest_vscdb_summaries(
                         if (
                             cand
                             and is_clean_title(cand)
-                            and not is_prompt_text(cand, clean_prompts)
+                            and not is_prompt_text(cand, conv_prompts)
                             and cand.strip() not in ["Conversation", "Untitled Conversation"]
                         ):
                             ide_title = cand.strip()
@@ -170,13 +175,12 @@ def ingest_vscdb_summaries(
                             if (
                                 not curr_t
                                 or not is_clean_title(curr_t)
-                                or is_prompt_text(curr_t, clean_prompts)
+                                or is_prompt_text(curr_t, conv_prompts)
                                 or curr_t in ["Conversation", "Untitled Conversation"]
                             ):
                                 should_update = True
 
                         if should_update:
-                            db_p = master_conv_dir / f"{u_id}.db"
                             db_ws_uri, db_proj_id = get_db_trajectory_meta(db_p)
                             raw_ws = db_ws_uri or curr_parsed.get("workspace_uri")
                             norm_ws = normalize_workspace_uri(raw_ws)
@@ -226,6 +230,74 @@ def ingest_vscdb_summaries(
                                 force=True,
                             )
                             ide_ingested_total += 1
+                    else:
+                        # Conversation exists in IDE state.vscdb, but not in all_summaries
+                        db_ws_uri, db_proj_id = get_db_trajectory_meta(db_p)
+                        raw_ws = db_ws_uri or parsed.get("workspace_uri")
+                        norm_ws = normalize_workspace_uri(raw_ws)
+                        mapped_pid = get_project_id_for_workspace(norm_ws) if norm_ws else None
+                        clean_mapped = mapped_pid if mapped_pid and mapped_pid != "outside-of-project" else ""
+                        clean_parsed = parsed.get("project_id") if parsed.get("project_id") and parsed.get("project_id") != "outside-of-project" else ""
+                        clean_db = db_proj_id if db_proj_id and db_proj_id != "outside-of-project" else ""
+                        effective_pid = clean_mapped or clean_db or clean_parsed or ""
+
+                        sc = max(get_actual_steps_count(db_p), parsed.get("step_count", 0), parsed.get(2, 0), 1)
+                        user_step = get_last_user_step_index(db_p, sc)
+                        is_pin = bool((pinned_set and u_id in pinned_set) or parsed.get("pinned", False))
+                        is_arc = bool(parsed.get("archived", False))
+
+                        now_iso = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+                        last_mod_iso = parsed.get("last_modified_iso") or parsed.get("ts_3") or now_iso
+                        created_iso = parsed.get("created_iso") or parsed.get("ts_7") or last_mod_iso
+                        last_user_input_iso = parsed.get("last_user_input_iso") or parsed.get("ts_10") or last_mod_iso
+
+                        title_to_use = ide_title or ide_summary or ide_annot_title or "Conversation"
+
+                        new_bin = build_cascade_summary(
+                            u_id,
+                            title_to_use,
+                            title_to_use,
+                            sc,
+                            last_modified_iso=last_mod_iso,
+                            last_user_step=user_step,
+                            workspace_uri=norm_ws,
+                            project_id=effective_pid,
+                            created_iso=created_iso,
+                            last_user_input_iso=last_user_input_iso,
+                            pinned=is_pin,
+                            archived=is_arc,
+                        )
+                        all_summaries[u_id] = new_bin
+
+                        ws_str = ""
+                        if norm_ws:
+                            ws_str = str(norm_ws) if str(norm_ws).startswith("[") else json.dumps([str(norm_ws)])
+
+                        model = ConversationSummary(
+                            conversation_id=u_id,
+                            title=title_to_use,
+                            preview=title_to_use,
+                            step_count=sc,
+                            last_modified_time=last_mod_iso.replace("T", " ").replace("Z", "+00:00"),
+                            last_user_input_time=last_user_input_iso.replace("T", " ").replace("Z", "+00:00"),
+                            last_user_input_step_index=user_step,
+                            raw_summary=new_bin,
+                            workspace_uris=ws_str,
+                            project_id=effective_pid or "",
+                            source="",
+                            app_data_dir="antigravity",
+                        )
+                        upsert_summary(con, model)
+
+                        sync_annotation_file(
+                            master_conv_dir.parent,
+                            u_id,
+                            title_to_use,
+                            pinned=is_pin,
+                            archived=is_arc,
+                            force=True,
+                        )
+                        ide_ingested_total += 1
             con.commit()
         except Exception:
             pass

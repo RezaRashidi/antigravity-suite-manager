@@ -309,3 +309,74 @@ def replicate_pinned_conversations_order(
             except Exception:
                 pass
 
+
+def replicate_projects_order(
+    user_home: Optional[Path] = None,
+    extra_project_ids: Optional[Set[str]] = None,
+) -> None:
+    """
+    Ensures all discovered app_storage.json files across profiles contain the
+    complete set of authentic project UUIDs, preventing Hub double-elimination
+    filtering from hiding conversations belonging to projects opened in other profiles or IDE.
+    """
+    home = Path(user_home).resolve() if user_home else Path.home().resolve()
+    candidate_app_storages = [
+        home / ".config" / "Antigravity" / "app_storage.json",
+    ]
+    for p in home.glob(".antigravity-profile*/.config/Antigravity/app_storage.json"):
+        candidate_app_storages.append(p)
+
+    all_known_projects: Set[str] = set(extra_project_ids or [])
+
+    # 1. Collect project IDs from authentic config/projects directories
+    for gdir in [home / ".gemini", home / ".gemide"]:
+        for pjson in (gdir / "config" / "projects").glob("*.json"):
+            stem = pjson.stem.strip()
+            if stem and stem not in ("outside-of-project", "default-cli-project"):
+                all_known_projects.add(stem)
+    for p in home.glob(".antigravity-profile*/.gemini/config/projects/*.json"):
+        stem = p.stem.strip()
+        if stem and stem not in ("outside-of-project", "default-cli-project"):
+            all_known_projects.add(stem)
+
+    # 2. Collect existing project IDs from all app_storage.json files
+    loaded_storages: List[Tuple[Path, dict, List[str], bool]] = []
+    for app_store in candidate_app_storages:
+        if app_store.is_file():
+            try:
+                with open(app_store, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                raw_val = data.get("projectsOrder", [])
+                was_str = isinstance(raw_val, str)
+                if was_str:
+                    try:
+                        existing = json.loads(raw_val)
+                    except Exception:
+                        existing = []
+                elif isinstance(raw_val, list):
+                    existing = raw_val
+                else:
+                    existing = []
+                all_known_projects.update(existing)
+                loaded_storages.append((app_store, data, existing, was_str))
+            except Exception:
+                pass
+
+    if not all_known_projects:
+        return
+
+    # 3. Replicate complete merged projectsOrder to every app_storage.json
+    for app_store, data, existing, was_str in loaded_storages:
+        try:
+            merged = list(existing)
+            for pid in sorted(all_known_projects):
+                if pid not in merged:
+                    merged.append(pid)
+            if merged != existing:
+                data["projectsOrder"] = json.dumps(merged) if was_str else merged
+                with open(app_store, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2)
+        except Exception:
+            pass
+
+

@@ -302,9 +302,9 @@ def extract_conv_prompts(
     return signatures
 
 
-def is_prompt_text(cand: Optional[str], prompt_cands: Set[str]) -> bool:
+def is_prompt_text(cand: Optional[str], prompt_cands: Optional[Set[str]]) -> bool:
     """Returns True if candidate string matches any prompt variant or prefix."""
-    if not cand or not isinstance(cand, str):
+    if not cand or not isinstance(cand, str) or not prompt_cands:
         return False
     cand_s = cand.strip()
     if not cand_s:

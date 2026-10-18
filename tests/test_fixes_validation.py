@@ -1723,6 +1723,94 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             extracted = extract_workspace_from_transcript(t_file, user_home=fake_home)
             self.assertEqual(extracted, f"file://{real_proj}")
 
+    def test_replicate_projects_order(self):
+        """Verifies replicate_projects_order discovers and propagates all project IDs across profiles."""
+        from antigravity_suite.history.discovery import replicate_projects_order
+        with tempfile.TemporaryDirectory() as td:
+            fake_home = Path(td)
+            prof1_store = fake_home / ".config" / "Antigravity" / "app_storage.json"
+            prof1_store.parent.mkdir(parents=True)
+            with open(prof1_store, "w") as f:
+                json.dump({"projectsOrder": json.dumps(["proj-1", "proj-2"])}, f)
+
+            prof2_store = fake_home / ".antigravity-profile2" / ".config" / "Antigravity" / "app_storage.json"
+            prof2_store.parent.mkdir(parents=True)
+            with open(prof2_store, "w") as f:
+                json.dump({"projectsOrder": json.dumps(["proj-2", "proj-3"])}, f)
+
+            gemini_proj = fake_home / ".gemini" / "config" / "projects"
+            gemini_proj.mkdir(parents=True)
+            with open(gemini_proj / "proj-4.json", "w") as f:
+                json.dump({"id": "proj-4"}, f)
+
+            replicate_projects_order(user_home=fake_home)
+
+            with open(prof1_store) as f:
+                d1 = json.load(f)
+            with open(prof2_store) as f:
+                d2 = json.load(f)
+
+            p1 = set(json.loads(d1["projectsOrder"]))
+            p2 = set(json.loads(d2["projectsOrder"]))
+
+            self.assertEqual(p1, {"proj-1", "proj-2", "proj-3", "proj-4"})
+            self.assertEqual(p2, {"proj-1", "proj-2", "proj-3", "proj-4"})
+
+    def test_ingest_vscdb_new_ide_conversations(self):
+        """Verifies that ingest_vscdb_summaries ingests new conversations from state.vscdb into master SQLite and dict."""
+        import base64
+        import sqlite3
+        from antigravity_suite.history.vscdb_sync import ingest_vscdb_summaries
+        from antigravity_suite.proto.cascade import build_cascade_summary, parse_cascade_summary
+        from antigravity_suite.proto.vscdb import build_unified_state_sync
+        from antigravity_suite.history.sqlite_store import ensure_summaries_schema
+
+        with tempfile.TemporaryDirectory() as td:
+            base_dir = Path(td)
+            master_conv = base_dir / "conversations"
+            master_conv.mkdir(parents=True)
+            master_db = base_dir / "conversation_summaries.db"
+            con = sqlite3.connect(str(master_db))
+            ensure_summaries_schema(con)
+
+            vscdb_dir = base_dir / "globalStorage"
+            vscdb_dir.mkdir(parents=True)
+            vscdb_path = vscdb_dir / "state.vscdb"
+            v_con = sqlite3.connect(str(vscdb_path))
+            v_con.execute("CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value TEXT);")
+
+            conv_id = "11111111-2222-3333-4444-555555555555"
+            proto_bin = build_cascade_summary(
+                conv_id,
+                title="Authentic IDE Title",
+                summary="Authentic IDE Title",
+                step_count=5,
+                workspace_uri="file:///home/user/myproject",
+                project_id="proj-uuid-999",
+            )
+            b64_sync = build_unified_state_sync({conv_id: proto_bin})
+            v_con.execute("INSERT INTO ItemTable VALUES ('antigravityUnifiedStateSync.trajectorySummaries', ?);", (b64_sync,))
+            v_con.commit()
+            v_con.close()
+
+            all_summaries = {}
+            count = ingest_vscdb_summaries(
+                candidate_vscdbs=[vscdb_path],
+                all_summaries=all_summaries,
+                master_conv_dir=master_conv,
+                con=con,
+            )
+
+            self.assertEqual(count, 1)
+            self.assertIn(conv_id, all_summaries)
+            parsed = parse_cascade_summary(all_summaries[conv_id])
+            self.assertEqual(parsed.get("title"), "Authentic IDE Title")
+
+            row = con.execute("SELECT title, project_id FROM conversation_summaries WHERE conversation_id = ?;", (conv_id,)).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(row[0], "Authentic IDE Title")
+            con.close()
+
 
 if __name__ == "__main__":
     unittest.main()

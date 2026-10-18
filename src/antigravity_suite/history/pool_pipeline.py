@@ -16,6 +16,7 @@ from antigravity_suite.history.models import SyncStats
 from antigravity_suite.history.discovery import (
     discover_pinned_conversation_ids,
     replicate_pinned_conversations_order,
+    replicate_projects_order,
 )
 from antigravity_suite.history.pool_merger import merge_brain_folders, merge_raw_db_pools
 from antigravity_suite.history.reconstruction import reconstruct_missing_databases
@@ -67,5 +68,6 @@ def prepare_and_merge_pools(
 
     pinned_ids = discover_pinned_conversation_ids(user_home=home)
     replicate_pinned_conversations_order(pinned_ids, user_home=home)
+    replicate_projects_order(user_home=home)
 
     return tombstones, pinned_ids
