@@ -201,7 +201,7 @@ def restore_backup(backup_path):
 
     import tempfile
     with tempfile.TemporaryDirectory() as tmpdir:
-        with tarfile.open(backup_path, "r:gz") as tar:
+        with tarfile.open(backup_path, "r:*") as tar:
             safe_extract_tar(tar, path=tmpdir)
 
         # Restore History (support both history/ subfolder and root-level export)
@@ -636,7 +636,7 @@ def import_history(archive_path=None, extracted_dir=None):
         else:
             import tempfile
             with tempfile.TemporaryDirectory() as tmp:
-                with tarfile.open(archive_path, "r:gz") as tar:
+                with tarfile.open(archive_path, "r:*") as tar:
                     safe_extract_tar(tar, path=tmp)
                 yield tmp
 
@@ -767,7 +767,7 @@ def import_suite(archive_path=None, extracted_dir=None):
         else:
             import tempfile
             with tempfile.TemporaryDirectory() as tmp:
-                with tarfile.open(archive_path, "r:gz") as tar:
+                with tarfile.open(archive_path, "r:*") as tar:
                     safe_extract_tar(tar, path=tmp)
                 yield tmp
 
@@ -903,7 +903,7 @@ def import_all(archive_path):
 
     manifest = None
     try:
-        with tarfile.open(archive_path, "r:gz") as tar:
+        with tarfile.open(archive_path, "r:*") as tar:
             try:
                 mf = tar.extractfile("manifest.json")
                 if mf:
@@ -935,7 +935,7 @@ def import_all(archive_path):
     elif exp_type in ["all", "full"]:
         import tempfile
         with tempfile.TemporaryDirectory() as tmpdir:
-            with tarfile.open(archive_path, "r:gz") as tar:
+            with tarfile.open(archive_path, "r:*") as tar:
                 safe_extract_tar(tar, path=tmpdir)
             h_ok = import_history(extracted_dir=tmpdir)
             s_ok = import_suite(extracted_dir=tmpdir)

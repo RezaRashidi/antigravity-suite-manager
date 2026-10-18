@@ -463,6 +463,10 @@ def restore_chat_from_trash(
         manifest["tombstones"].pop(conv_id, None)
     if conv_id not in manifest.get("known_ids", []):
         manifest.setdefault("known_ids", []).append(conv_id)
+    if conv_id not in manifest.get("known_app_ids", []):
+        manifest.setdefault("known_app_ids", []).append(conv_id)
+    if conv_id not in manifest.get("known_ide_ids", []):
+        manifest.setdefault("known_ide_ids", []).append(conv_id)
     save_manifest(effective_master, manifest)
 
     return True
@@ -595,10 +599,20 @@ def detect_and_sync_deletions(
             return 0
 
         # 1. Deleted in App: was active in App, now absent from App, not tombstoned
-        deleted_in_app = (prev_app - current_app_ids) - tombstones
+        if not current_app_ids:
+            deleted_in_app = set()
+        elif len(prev_app) > 5 and len(current_app_ids) < len(prev_app) * 0.5:
+            deleted_in_app = set()
+        else:
+            deleted_in_app = (prev_app - current_app_ids) - tombstones
 
         # 2. Deleted in IDE: was active in IDE, now absent from IDE, not tombstoned
-        deleted_in_ide = (prev_ide - current_ide_ids) - tombstones
+        if not candidate_vscdbs or not current_ide_ids:
+            deleted_in_ide = set()
+        elif len(prev_ide) > 5 and len(current_ide_ids) < len(prev_ide) * 0.5:
+            deleted_in_ide = set()
+        else:
+            deleted_in_ide = (prev_ide - current_ide_ids) - tombstones
 
         to_purge = deleted_in_app | deleted_in_ide
         if not to_purge:

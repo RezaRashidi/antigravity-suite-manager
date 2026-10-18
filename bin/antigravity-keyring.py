@@ -12,6 +12,7 @@ import json
 import argparse
 import subprocess
 import re
+import glob
 
 GREEN = '\033[1;32m'
 YELLOW = '\033[1;33m'
@@ -21,7 +22,7 @@ RED = '\033[1;31m'
 NC = '\033[0m'
 BOLD = '\033[1m'
 
-REAL_USER = os.environ.get("SUDO_USER") or os.environ.get("USER") or os.environ.get("LOGNAME")
+REAL_USER = os.environ.get("REAL_USER") or os.environ.get("SUDO_USER") or os.environ.get("USER") or os.environ.get("LOGNAME")
 REAL_HOME = os.environ.get("REAL_HOME")
 if not REAL_HOME:
     if REAL_USER and REAL_USER != "root":
@@ -40,7 +41,7 @@ LOCAL_BIN = os.path.join(REAL_HOME, ".local", "bin")
 PROFILE2_DIR = os.path.join(REAL_HOME, ".antigravity-profile2")
 
 def load_config():
-    cfg = {"app1": "gnome", "app2": "normal", "ide": "gnome"}
+    cfg = {"app1": "normal", "app2": "normal", "ide": "normal"}
     if os.path.isfile(KEYRING_CONF):
         try:
             with open(KEYRING_CONF, "r", encoding="utf-8") as f:
@@ -395,6 +396,54 @@ if __name__ == "__main__":
             cfg["ide"] = mode_normalized
             apply_mode_for_ide(mode_normalized)
             print(f"{GREEN}[OK]{NC} Switched Antigravity IDE to {mode_normalized.upper()} mode.")
+
+        if target in ["all"]:
+            for p in sorted(glob.glob(os.path.join(REAL_HOME, '.antigravity-profile-app-*'))):
+                if '.bak' in p or '.removed' in p:
+                    continue
+                cname = os.path.basename(p).replace('.antigravity-profile-app-', '')
+                c_cache = os.path.join(p, '.gemini', 'cache', 'antigravity-keyring-unavailable')
+                c_launcher = os.path.join(LOCAL_BIN, f'antigravity-app-{cname}')
+                if not os.path.isfile(c_launcher):
+                    alt_l = os.path.join(LOCAL_BIN, f'antigravity-{cname}')
+                    if os.path.isfile(alt_l):
+                        c_launcher = alt_l
+                if mode_normalized == "normal":
+                    os.makedirs(os.path.dirname(c_cache), exist_ok=True)
+                    with open(c_cache, "a"):
+                        os.utime(c_cache, None)
+                    update_launcher_password_store(c_launcher, "normal")
+                else:
+                    if os.path.isfile(c_cache):
+                        try: os.remove(c_cache)
+                        except Exception: pass
+                    update_launcher_password_store(c_launcher, "gnome")
+                print(f"{GREEN}[OK]{NC} Switched App Clone '{cname}' to {mode_normalized.upper()} mode.")
+
+            for p in sorted(glob.glob(os.path.join(REAL_HOME, '.antigravity-ide-profile-*'))):
+                if '.bak' in p or '.removed' in p:
+                    continue
+                cname = os.path.basename(p).replace('.antigravity-ide-profile-', '')
+                c_launcher = os.path.join(LOCAL_BIN, f'antigravity-ide-{cname}')
+                ide_caches = [
+                    os.path.join(p, '.gemide', 'cache', 'antigravity-keyring-unavailable'),
+                    os.path.join(p, '.gemini', 'antigravity-ide', 'cache', 'antigravity-keyring-unavailable')
+                ]
+                if mode_normalized == "normal":
+                    for cf in ide_caches:
+                        try:
+                            os.makedirs(os.path.dirname(cf), exist_ok=True)
+                            with open(cf, "a"):
+                                os.utime(cf, None)
+                        except Exception: pass
+                    update_launcher_password_store(c_launcher, "normal")
+                else:
+                    for cf in ide_caches:
+                        if os.path.isfile(cf):
+                            try: os.remove(cf)
+                            except Exception: pass
+                    update_launcher_password_store(c_launcher, "gnome")
+                print(f"{GREEN}[OK]{NC} Switched IDE Clone '{cname}' to {mode_normalized.upper()} mode.")
 
         save_config(cfg)
 

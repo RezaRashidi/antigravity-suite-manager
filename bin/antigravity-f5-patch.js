@@ -178,7 +178,7 @@ if (fs.existsSync(utilsPath)) {
     }
 
     // 4.3 Native X11 WM_CLASS assignment on BrowserWindow creation
-    if (!utilsCode.includes('xprop -id ${xid} -f WM_CLASS 8s')) {
+    if (!utilsCode.includes("execFile('xprop'")) {
         const overlayTarget = '(0, loadingOverlay_1.attachLoadingOverlay)(win, foregroundColor, backgroundColor);';
         const overlayReplacement = overlayTarget + `
     if (process.env.ANTIGRAVITY_APP_NAME || process.env.ANTIGRAVITY_DESKTOP_NAME) {
@@ -188,7 +188,7 @@ if (fs.existsSync(utilsPath)) {
                 const xid = handle.readUInt32LE(0);
                 if (xid) {
                     const wmClass = (process.env.ANTIGRAVITY_APP_NAME || process.env.ANTIGRAVITY_DESKTOP_NAME).replace(/\\.desktop$/i, '');
-                    require('child_process').exec(\`xprop -id \${xid} -f WM_CLASS 8s -set WM_CLASS "\${wmClass}"\`);
+                    require('child_process').execFile('xprop', ['-id', String(xid), '-f', 'WM_CLASS', '8s', '-set', 'WM_CLASS', wmClass]);
                 }
             }
         } catch (_) {}
@@ -236,6 +236,12 @@ if (fs.existsSync(utilsPath)) {
                     void win.webContents.executeJavaScript("(() => { if (document.getElementById('__antigravity_sync_toast__')) return; const t = document.createElement('div'); t.id = '__antigravity_sync_toast__'; t.innerText = 'Syncing...'; t.style.cssText = 'position:fixed;top:20px;right:20px;background:rgba(0,0,0,0.85);color:#fff;padding:8px 16px;border-radius:8px;z-index:999999;font-family:sans-serif;font-size:13px;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,0.3);'; document.body.appendChild(t); })()");
                 } catch (_) {}
             }
+            try {
+                const ls = require('./languageServer');
+                if (ls && typeof ls.restartLanguageServer === 'function') {
+                    await ls.restartLanguageServer();
+                }
+            } catch (_) {}
             if (win && !win.isDestroyed() && win.webContents) {
                 try {
                     win.webContents.reload();

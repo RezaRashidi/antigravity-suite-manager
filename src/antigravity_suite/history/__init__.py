@@ -48,11 +48,21 @@ from antigravity_suite.history.vscdb_sync import (
 )
 from antigravity_suite.history.watcher import watch_mode
 
+from antigravity_suite.history.audit import HistoryAuditLogger, get_audit_logger
+from antigravity_suite.history.title_sanitizer import (
+    is_raw_prompt_sentence,
+    sanitize_topic_title,
+)
+
 __all__ = [
     "BackupEntry",
     "HistoryBackupManager",
     "ConversationSummary",
     "SyncStats",
+    "HistoryAuditLogger",
+    "get_audit_logger",
+    "is_raw_prompt_sentence",
+    "sanitize_topic_title",
     "discover_all_history_sources",
     "extract_conv_text",
     "get_annotation_info",

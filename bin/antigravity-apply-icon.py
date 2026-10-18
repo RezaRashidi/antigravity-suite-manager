@@ -152,7 +152,10 @@ def reconstruct_png(png_path):
 
         with open(png_path, "rb") as f:
             f.seek(16)
-            w, h, bit_depth, color_type = struct.unpack(">IIBB", f.read(10))
+            w, h, bit_depth, color_type, comp_method, filter_method, interlace_method = struct.unpack(">IIBBBBB", f.read(13))
+            if interlace_method != 0:
+                print(f"[WARN] Interlaced PNG '{png_path}' is not supported directly. Please use a non-interlaced PNG.")
+                return None, None, None
 
         raw = zlib.decompress(bytes(idat))
 

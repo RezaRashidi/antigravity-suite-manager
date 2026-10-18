@@ -186,9 +186,9 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
         with open(patch_path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        # Bug 3.1: No comma after WM_CLASS in xprop command
+        # Bug 3.1: No comma after WM_CLASS in xprop command and secure execFile used
         self.assertNotIn('WM_CLASS,', content)
-        self.assertIn('WM_CLASS "\\${wmClass}"', content)
+        self.assertIn("execFile('xprop', ['-id', String(xid), '-f', 'WM_CLASS', '8s', '-set', 'WM_CLASS', wmClass]", content)
 
         # Bug 3.2: _lsPort declared
         self.assertIn("let _lsPort = 0;", content)

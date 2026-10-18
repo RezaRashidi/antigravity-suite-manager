@@ -132,13 +132,17 @@ def ingest_vscdb_summaries(
                     if not raw:
                         continue
                     parsed = parse_cascade_summary(raw)
-                    ide_summary = (parsed.get("summary") or "").strip()
-                    ide_annot_title = (parsed.get("title") or "").strip()
-
+                    if u_id in all_summaries:
+                        curr_parsed = parse_cascade_summary(all_summaries[u_id])
+                        curr_t = (curr_parsed.get("title") or curr_parsed.get("summary") or "").strip()
+                        # Fast path: If master already has an authentic title, skip expensive prompt extraction
+                        if curr_t and is_clean_title(curr_t) and curr_t not in ["Conversation", "Untitled Conversation"] and not any(k in curr_t for k in ["@[", " بعد از", "چطور"]):
+                            continue
 
                     db_p = master_conv_dir / f"{u_id}.db"
                     tr_p = master_conv_dir.parent / "brain" / u_id / ".system_generated" / "logs" / "transcript.jsonl"
-                    clean_prompts = extract_conv_prompts(db_p, tr_p)
+                    ide_summary = (parsed.get("summary") or "").strip()
+                    ide_annot_title = (parsed.get("title") or "").strip()
 
                     # Prefer authentic summary (Tag 1), which holds LLM-generated title
                     # Tag 15 (title) is only user prompt fallback
@@ -158,8 +162,6 @@ def ingest_vscdb_summaries(
                         curr_t = (curr_parsed.get("title") or curr_parsed.get("summary") or "").strip()
                         should_update = False
                         if ide_title:
-                            # Never overwrite an existing authentic title in master!
-                            # Only update if master title is missing, generic, or dirty/polluted by prompt
                             if (
                                 not curr_t
                                 or not is_clean_title(curr_t)

@@ -74,7 +74,10 @@ def is_acc1_running(real_home=None):
 
 def is_main_ide_running(real_home=None):
     home = real_home or REAL_HOME
-    target_udd = os.path.realpath(f"{home}/.antigravity-ide")
+    target_udds = {
+        os.path.realpath(f"{home}/.config/Antigravity IDE"),
+        os.path.realpath(f"{home}/.antigravity-ide")
+    }
     try:
         pids = subprocess.run(["pgrep", "-f", "antigravity-ide"], capture_output=True, text=True).stdout.strip().split()
         for pid in pids:
@@ -92,7 +95,7 @@ def is_main_ide_running(real_home=None):
                             udd = part.split("=", 1)[1]
                             break
                     if udd:
-                        if os.path.realpath(os.path.expanduser(udd)) == target_udd:
+                        if os.path.realpath(os.path.expanduser(udd)) in target_udds:
                             return True
                     else:
                         return True
@@ -363,17 +366,6 @@ def print_table(installs):
         p = item['path']
         print(f"{t:<20} {v:<11} {w:<20} {exe_base:<27} {p}")
     print(f"{CYAN}========================================================================================{NC}")
-
-REAL_HOME = os.environ.get("REAL_HOME", "")
-if not REAL_HOME:
-    try:
-        import pwd
-        user = os.environ.get("SUDO_USER") or os.environ.get("USER") or pwd.getpwuid(os.getuid()).pw_name
-        REAL_HOME = pwd.getpwnam(user).pw_dir
-    except Exception:
-        REAL_HOME = os.path.expanduser("~")
-CONF_DIR = os.path.join(REAL_HOME, ".config", "antigravity")
-PATHS_CONF = os.path.join(CONF_DIR, "paths.conf")
 
 def get_launcher_binary(launcher_path):
     if not os.path.isfile(launcher_path):
@@ -859,6 +851,20 @@ def get_db_step_count(db_path):
     except Exception:
         return -1
 
+def copy_sqlite_db_safely(src_db, dst_db):
+    """Safely copies a SQLite database along with its WAL and SHM sidecars to prevent malformed disk image."""
+    shutil.copy2(src_db, dst_db)
+    for ext in ["-wal", "-shm"]:
+        s_side = f"{src_db}{ext}"
+        d_side = f"{dst_db}{ext}"
+        if os.path.exists(s_side):
+            shutil.copy2(s_side, d_side)
+        elif os.path.exists(d_side):
+            try:
+                os.remove(d_side)
+            except Exception:
+                pass
+
 def safe_toggle_history_mode(is_ide, is_acc1, is_shared, p_dir, local_bin, REAL_HOME, name=""):
     """Safely toggles between Shared and Isolated history with automated backup and zero data loss."""
     if is_acc1:
@@ -898,7 +904,7 @@ def safe_toggle_history_mode(is_ide, is_acc1, is_shared, p_dir, local_bin, REAL_
 
             copied = 0
             for db in glob.glob(os.path.join(shared_pool, "conversations", "*.db")):
-                shutil.copy2(db, os.path.join(ide_conv, os.path.basename(db)))
+                copy_sqlite_db_safely(db, os.path.join(ide_conv, os.path.basename(db)))
                 copied += 1
 
             if os.path.islink(ide_brain):
@@ -912,7 +918,9 @@ def safe_toggle_history_mode(is_ide, is_acc1, is_shared, p_dir, local_bin, REAL_
                     try: os.unlink(s_path)
                     except Exception: pass
             for sum_f in glob.glob(os.path.join(shared_pool, "*summaries*")):
-                try: shutil.copy2(sum_f, os.path.join(ide_root, os.path.basename(sum_f)))
+                if sum_f.endswith("-wal") or sum_f.endswith("-shm"):
+                    continue
+                try: copy_sqlite_db_safely(sum_f, os.path.join(ide_root, os.path.basename(sum_f)))
                 except Exception: pass
 
             print(f"{GREEN}[SUCCESS] Antigravity IDE history set to Isolated Private.{NC}")
@@ -934,7 +942,7 @@ def safe_toggle_history_mode(is_ide, is_acc1, is_shared, p_dir, local_bin, REAL_
                         elif c_steps == dst_steps and os.path.getmtime(db) > os.path.getmtime(dst):
                             should_copy = True
                     if should_copy:
-                        shutil.copy2(db, dst)
+                        copy_sqlite_db_safely(db, dst)
                         copied += 1
                 try:
                     os.rename(ide_conv, f"{ide_conv}.bak_{ts}")
@@ -987,11 +995,13 @@ def safe_toggle_history_mode(is_ide, is_acc1, is_shared, p_dir, local_bin, REAL_
 
             copied = 0
             for db in glob.glob(os.path.join(shared_pool, "conversations", "*.db")):
-                shutil.copy2(db, os.path.join(iso_conv, os.path.basename(db)))
+                copy_sqlite_db_safely(db, os.path.join(iso_conv, os.path.basename(db)))
                 copied += 1
 
             for sum_f in glob.glob(os.path.join(shared_pool, "*summaries*")):
-                shutil.copy2(sum_f, os.path.join(target_link, os.path.basename(sum_f)))
+                if sum_f.endswith("-wal") or sum_f.endswith("-shm"):
+                    continue
+                copy_sqlite_db_safely(sum_f, os.path.join(target_link, os.path.basename(sum_f)))
 
             print(f"{GREEN}[SUCCESS] Clone history set to Isolated Private.{NC}")
             print(f"  • Existing {copied} conversations cloned locally to {iso_conv}.")
@@ -1014,7 +1024,7 @@ def safe_toggle_history_mode(is_ide, is_acc1, is_shared, p_dir, local_bin, REAL_
                             elif c_steps == dst_steps and os.path.getmtime(db) > os.path.getmtime(dst):
                                 should_copy = True
                         if should_copy:
-                            shutil.copy2(db, dst)
+                            copy_sqlite_db_safely(db, dst)
                             copied += 1
                 c_brain = os.path.join(target_link, "brain")
                 if os.path.isdir(c_brain):

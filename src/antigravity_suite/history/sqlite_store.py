@@ -230,6 +230,10 @@ def upsert_summary(conn: sqlite3.Connection, summary: ConversationSummary) -> No
             WHEN conversation_summaries.source = 'CORTEX_TRAJECTORY_SOURCE_CASCADE_CLIENT' THEN ''
             WHEN excluded.source != '' AND excluded.source != 'CORTEX_TRAJECTORY_SOURCE_CASCADE_CLIENT' THEN excluded.source
             ELSE conversation_summaries.source
+        END,
+        app_data_dir = CASE
+            WHEN excluded.app_data_dir != '' THEN excluded.app_data_dir
+            ELSE conversation_summaries.app_data_dir
         END;""", (
         summary.conversation_id,
         summary.title,

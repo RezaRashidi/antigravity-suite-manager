@@ -193,13 +193,138 @@ graph TD
 
 ---
 
-## 6. Summary Checklist for Future Diagnostics
+## 7. Issue 5: User Prompt Leaking into Conversation Titles & Bubbles
+
+### Symptoms
+* Conversation titles in IDE displayed raw user prompts or shell commands (e.g., `curl ...`, raw multi-line questions) instead of clean topic titles.
+* Renaming or re-opening conversations in the IDE reverted them back to the raw prompt text.
+
+### Diagnostic Methodology & Execution (Step-by-Step Investigation)
+
+#### Step 1: Discovering the Active Webview Server Port & CSRF Token
+The IDE UI does not load local disk HTML/JS directly; it proxies through a local loopback TLS server hosted by `language_server_linux_x64.bin`:
+```bash
+ps aux | grep -E "language_server.*antigravity-ide" | grep -v grep
+```
+Extracted arguments:
+- `--extension_server_port=34823`
+- `--csrf_token=940dddbd-4458-4df4-91c9-9517bfc2560d`
+- `--app_data_dir=antigravity-ide`
+
+#### Step 2: Extracting the Live Frontend JavaScript Bundle (`main.js`)
+Downloaded the active React Webview bundle directly from the Go Language Server loopback HTTP listener:
+```bash
+curl -k -s -H "x-codeium-csrf-token: 940dddbd-4458-4df4-91c9-9517bfc2560d" \
+  https://127.0.0.1:34823/jetskiAgent/main.js -o /tmp/jetski_main.js
+```
+
+#### Step 3: Deminifying and Tracing the Title Rendering AST
+Searched `/tmp/jetski_main.js` for conversation title resolution patterns:
+```bash
+grep -o -E '.{0,50}(annotations\.title|summary\.summary).{0,50}' /tmp/jetski_main.js
+```
+Discovered the core title selector expression inside the Redux UI renderer:
+```javascript
+// Extracted from jetskiAgent/main.js
+const displayTitle = (item.summary && item.summary.summary) 
+  || (item.annotations && item.annotations.title) 
+  || "Untitled Conversation";
+```
+**The Critical Revelation**:
+The UI prioritizes **`summary.summary` (Protobuf Tag 1)** ABOVE **`annotations.title` (Protobuf Tag 15)**.
+Even if `annotations.title` contained a clean title, if `summary.summary` contained ANY string, the UI displayed `summary.summary`!
+
+#### Step 4: Dissecting the Binary Wire Format (`raw_summary`)
+Inspected how `raw_summary` in SQLite `conversation_summaries.db` was being assembled:
+```python
+import sqlite3
+from antigravity_suite.proto.cascade import parse_cascade_summary
+
+con = sqlite3.connect("/home/reza/.gemini/antigravity/conversation_summaries.db")
+row = con.execute("SELECT conversation_id, raw_summary FROM conversation_summaries WHERE app_data_dir = 'antigravity-ide' LIMIT 1").fetchone()
+parsed = parse_cascade_summary(row[1])
+print("Tag 1 (summary.summary):", parsed.get("summary"))
+print("Tag 2 (summary.preview):", parsed.get("preview"))
+print("Tag 15 (annotations.title):", parsed.get("title"))
+```
+**Result**:
+- `Tag 1 (summary.summary)` was populated with `ext_p` (the user's first prompt text, e.g., `"curl -s http://..."` or `"چرا چت های من..."`)!
+- When no markdown summary existed in `~/.gemini/antigravity/brain/<uuid>/*.md`, the legacy resolver fell back to assigning the user prompt to Tag 1.
+- Because Tag 1 took precedence in `main.js`, the entire IDE rendered the raw prompt as the title.
+
+### Solution Applied
+* Implemented generic title resolution in [src/antigravity_suite/history/title_sanitizer.py](file:///home/reza/PhpstormProjects/antigravity-suite-manager/src/antigravity_suite/history/title_sanitizer.py):
+  1. Priority order: Existing clean title > Authentic LLM summary > Clean artifact title > Workspace-derived title (`<WorkspaceName> Chat`) > `"Conversation"`.
+  2. Strips Markdown context tokens (`@[filename]` and `in @[filepath]`).
+  3. **Strict separation of Protobuf fields**:
+     - **Protobuf Tag 1 (`summary.summary`)**: Receives ONLY the clean sanitized title (e.g., `"Optimizing Ansible Dragonfly Role"`).
+     - **Protobuf Tag 2 (`summary.preview`)**: Strictly reserved for user prompt previews.
+     - **Protobuf Tag 15 (`annotations.title`)**: Synchronized with the clean title.
+
+---
+
+## 8. Issue 6: App (Hub) Showing IDE Chats & Disappearing on Click
+
+### Symptoms
+* Antigravity Desktop App (Hub) showed IDE workspace chats in its sidebar.
+* Clicking on any IDE chat opened the conversation once, but immediately removed it from the sidebar history list upon loading.
+
+### Diagnostic Methodology & Execution
+* Analyzed Go Language Server startup flags and GORM SQLite queries:
+  * Hub runs: `--app_data_dir=antigravity`
+  * IDE runs: `--app_data_dir=antigravity-ide`
+* In `merger.py`, the merger previously forced `app_data_dir = 'antigravity'` for all 308 chats and wrote all chats into `agyhub_summaries_proto.pb`.
+* When Hub opened an IDE chat, Hub's Electron renderer inspected `workspace_uris` (`file:///home/reza/...`). Because Hub is a standalone launcher without an active IDE workspace, Hub dynamically filtered out the workspace conversation, purging it from view.
+* In SQLite `conversation_summaries.db`, `upsert_summary()` lacked `app_data_dir` in `ON CONFLICT(conversation_id) DO UPDATE SET`, preventing partition migration.
+
+### Solution Applied
+* **Dual-Partition Isolation**:
+  1. Updated `upsert_summary()` in [src/antigravity_suite/history/sqlite_store.py](file:///home/reza/PhpstormProjects/antigravity-suite-manager/src/antigravity_suite/history/sqlite_store.py) to update `app_data_dir` on conflict.
+  2. Partitioned SQLite records: Conversations bound to an IDE workspace URI are marked `app_data_dir = 'antigravity-ide'` (257 chats). Standalone conversations are marked `app_data_dir = 'antigravity'` (53 chats).
+  3. `serialize_master_proto()` now writes ONLY Hub-scoped chats (`app_data_dir == 'antigravity'`) into `agyhub_summaries_proto.pb`. Hub never loads IDE chats, completely eliminating ghost disappearing chats.
+  4. IDE reads all workspace conversations via `state.vscdb` (`trajectorySummaries`, 309 chats).
+
+---
+
+## 9. Issue 7: Hardcoded Prompt Maps & Privacy Violations
+
+### Symptoms
+* Temporary static map `KNOWN_PROMPT_TITLE_MAP` and regex `PROMPT_PREFIX_PATTERNS` contained raw user prompts.
+
+### Root Cause
+* Hardcoded strings were introduced to bypass prompt-as-title bugs without solving the root Protobuf Tag 1 mapping.
+
+### Solution Applied
+* Completely purged all hardcoded prompt maps and dictionaries from the entire codebase.
+* Replaced with generic algorithmic sanitation in `title_sanitizer.py`.
+
+---
+
+## 10. Issue 8: Audit Trail Deficit & Daemon Race Conditions
+
+### Symptoms
+* `antigravity-sync.service` ran every 50 seconds in the background, making it impossible to determine what changed between runs.
+
+### Solution Applied
+* Created [src/antigravity_suite/history/audit.py](file:///home/reza/PhpstormProjects/antigravity-suite-manager/src/antigravity_suite/history/audit.py) logging structured JSONL events to `~/.gemini/antigravity/history_merger_audit.log`:
+  * `TITLE_CHANGED`: Old title vs new title, reason.
+  * `WORKSPACE_CHANGED`: Rebinding workspace URIs.
+  * `PARTITION_CHANGED`: Partition transitions between `antigravity` and `antigravity-ide`.
+  * `RUN_COMPLETE`: Detailed counts per run.
+
+---
+
+## 11. Summary Checklist for Future Diagnostics
 
 | Checkpoint | Target Path / Command | Expected Healthy State |
 | :--- | :--- | :--- |
 | **Protobuf Tag 20** | `src/antigravity_suite/proto/cascade.py` | Must NOT emit Tag 20 when `source == 0` |
+| **Protobuf Tag 1 vs 2** | `src/antigravity_suite/proto/cascade.py` | Tag 1 = Clean Title, Tag 2 = Preview Prompt |
+| **Hub vs IDE Partition** | `conversation_summaries.db` | `app_data_dir`: `antigravity` (Hub) vs `antigravity-ide` (IDE) |
+| **Hub Binary Proto** | `agyhub_summaries_proto.pb` | Contains ONLY Hub partition chats (~53), NOT IDE workspace chats |
+| **IDE State** | `state.vscdb` (`trajectorySummaries`) | Contains ALL workspace chats (309) |
+| **Audit Log** | `~/.gemini/antigravity/history_merger_audit.log` | JSONL records for all mutations |
 | **Sidebar Grouping** | `~/.config/Antigravity/app_storage.json` | `"projectsGroupBy": "none"` |
 | **Conversations Folder** | `~/.gemini/antigravity/conversations/` | Contains ONLY `<UUID>.db` files (no `conversation_summaries.db`) |
 | **Language Server Health** | `~/.config/Antigravity/logs/language_server.log` | `reconcile checked N, restored 0, cached N, dropped 0` |
-| **SQLite User Version** | `PRAGMA user_version` on `conversations/*.db` | Must be `1` |
-| **Unit Test Suite** | `python3 -m unittest discover tests` | All 87 tests passing |
+| **Unit Test Suite** | `python3 -m unittest discover tests` | All 104 tests passing |
