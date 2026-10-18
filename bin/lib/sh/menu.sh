@@ -41,7 +41,7 @@ interactive_menu() {
         6) resolve_dynamic_urls && check_status ;;
         7) setup_account_2 ;;
         8) update_rtl ;;
-        9) patch_f5_reload ;;
+        9) FORCE_INSTALL=true patch_f5_reload ;;
         10) configure_icons_interactive ;;
         11) merge_history ;;
         12) create_instance ;;

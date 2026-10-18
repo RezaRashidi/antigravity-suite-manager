@@ -2,6 +2,7 @@
 # RTL integration for Antigravity App and IDE via mmnaderi/antigravity-rtl.
 
 patch_rtl_app() {
+    for arg in "$@"; do [ "$arg" = "--force" ] || [ "$arg" = "-f" ] && FORCE_INSTALL=true; done
     local asar="${APP_INSTALL_DIR}/resources/app.asar"
     [ ! -f "$asar" ] && { log_warn "app.asar not found at ${asar}. Skipping RTL app patch."; return 0; }
 
@@ -28,6 +29,7 @@ patch_rtl_app() {
 }
 
 patch_rtl_ide() {
+    for arg in "$@"; do [ "$arg" = "--force" ] || [ "$arg" = "-f" ] && FORCE_INSTALL=true; done
     [ ! -d "${IDE_INSTALL_DIR}" ] && { log_warn "IDE dir not found at ${IDE_INSTALL_DIR}. Skipping RTL IDE patch."; return 0; }
 
     local main_js="${IDE_INSTALL_DIR}/resources/app/out/main.js"
@@ -51,9 +53,9 @@ patch_rtl_ide() {
 }
 
 patch_rtl_all() {
-    patch_rtl_app
-    patch_rtl_ide
-    patch_f5_reload
+    patch_rtl_app "$@"
+    patch_rtl_ide "$@"
+    patch_f5_reload "$@"
 }
 
 update_rtl() {

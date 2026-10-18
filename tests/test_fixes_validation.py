@@ -1894,8 +1894,28 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             self.assertTrue("acc2" in acc2_res.lower() or "profile2" in acc2_res.lower() or "tray" in acc2_res.lower())
 
 
+    def test_unified_actions_patch_force_flags(self):
+        """Verifies handle_unified_patches_and_reinstall passes --force."""
+        from antigravity_suite.detect.unified_actions import handle_unified_patches_and_reinstall
+        with unittest.mock.patch("subprocess.run") as mock_sub:
+            u_item = {"type": "Antigravity App"}
+            handle_unified_patches_and_reinstall("F", u_item, "/opt/test", "/bin/manage.sh")
+            self.assertTrue(mock_sub.called)
+            args = mock_sub.call_args[0][0]
+            self.assertIn("--force", args)
+            self.assertIn("f5", args)
+
+            mock_sub.reset_mock()
+            handle_unified_patches_and_reinstall("R", u_item, "/opt/test", "/bin/manage.sh")
+            self.assertTrue(mock_sub.called)
+            r_args = mock_sub.call_args[0][0]
+            self.assertIn("--force", r_args)
+            self.assertIn("rtl", r_args)
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

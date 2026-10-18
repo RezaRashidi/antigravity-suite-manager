@@ -2,13 +2,15 @@
 # F5 backend reload and window/tray isolation patcher.
 
 patch_f5_reload() {
+    for arg in "$@"; do [ "$arg" = "--force" ] || [ "$arg" = "-f" ] && FORCE_INSTALL=true; done
     local asar_file="${APP_INSTALL_DIR}/resources/app.asar"
     if [ ! -f "$asar_file" ]; then
         log_warn "app.asar not found at ${asar_file}. Skipping F5 sync patch."
         return 0
     fi
 
-    if [ "$FORCE_INSTALL" != true ] && grep -qa "restartLanguageServer" "$asar_file" && grep -qa "ANTIGRAVITY_TRAY_ICON_PATH" "$asar_file"; then
+    local patch_fingerprint="ANTIGRAVITY_SUITE_F5_PATCH_V2"
+    if [ "$FORCE_INSTALL" != true ] && grep -qa "$patch_fingerprint" "$asar_file"; then
         log_info "F5 reload & profile isolation patch is already applied to app.asar. Skipping."
         return 0
     fi

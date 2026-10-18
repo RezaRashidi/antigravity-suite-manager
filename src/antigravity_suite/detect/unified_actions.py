@@ -57,10 +57,11 @@ def handle_unified_patches_and_reinstall(choice: str, u_item: Dict[str, Any], en
     flag = "--ide-dir" if c_type == "ide" else "--app-dir"
     if choice in ["8", "5"]:
         print(f"\n{CYAN}Downloading & installing fresh {u_item['type']} into {eng_p}...{NC}")
-        subprocess.run(["bash", manage_sh, "install", c_type, flag, eng_p], check=False)
+        subprocess.run(["bash", manage_sh, "install", c_type, flag, eng_p, "--force"], check=False)
     elif choice.upper() == "R":
         print(f"\n{CYAN}Applying RTL patch to {u_item['type']} at {eng_p}...{NC}")
-        subprocess.run(["bash", manage_sh, "rtl", c_type, flag, eng_p], check=False)
+        subprocess.run(["bash", manage_sh, "rtl", c_type, flag, eng_p, "--force"], check=False)
     elif choice.upper() == "F" and "IDE" not in u_item.get("type", ""):
         print(f"\n{CYAN}Applying F5 reload & isolation patch to {eng_p}...{NC}")
-        subprocess.run(["bash", manage_sh, "f5", "--app-dir", eng_p], check=False)
+        subprocess.run(["bash", manage_sh, "f5", "--app-dir", eng_p, "--force"], check=False)
+

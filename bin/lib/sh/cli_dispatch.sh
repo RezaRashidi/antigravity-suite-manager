@@ -34,8 +34,8 @@ dispatch_command() {
         list-instances) list_instances ;;
         set-history) set_history_mode "${CMD_ARGS[@]}" ;;
         remove-instance) remove_instance "${CMD_ARGS[@]}" ;;
-        f5|patch-f5) patch_f5_reload ;;
-        rtl|patch-rtl) dispatch_rtl ;;
+        f5|patch-f5) FORCE_INSTALL=true patch_f5_reload ;;
+        rtl|patch-rtl) FORCE_INSTALL=true dispatch_rtl ;;
         update-rtl) update_rtl ;;
         update) update_all ;;
         clean-cache) clean_cache ;;

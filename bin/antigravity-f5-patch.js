@@ -26,4 +26,8 @@ patchKeybindings(dir);
 patchUtils(dir);
 patchTray(dir);
 patchMain(dir);
+try {
+    const markerPath = require('path').join(dir, 'dist', 'antigravity_f5_patch.marker');
+    fs.writeFileSync(markerPath, 'ANTIGRAVITY_SUITE_F5_PATCH_V2\n', 'utf8');
+} catch (_) {}
 console.log('[Patch] All patches completed successfully.');
