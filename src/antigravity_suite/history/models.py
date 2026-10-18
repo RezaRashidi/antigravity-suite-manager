@@ -53,6 +53,7 @@ class SyncStats:
     databases_reconstructed: int = 0
     summaries_backfilled: int = 0
     conversations_updated: int = 0
+    conversations_deleted: int = 0
     ide_state_ingested: int = 0
     total_active_history: int = 0
     backup_id: Optional[str] = None
@@ -67,6 +68,7 @@ class SyncStats:
             "databases_reconstructed": self.databases_reconstructed,
             "summaries_backfilled": self.summaries_backfilled,
             "conversations_updated": self.conversations_updated,
+            "conversations_deleted": self.conversations_deleted,
             "ide_state_ingested": self.ide_state_ingested,
             "total_active_history": self.total_active_history,
             "backup_id": self.backup_id,

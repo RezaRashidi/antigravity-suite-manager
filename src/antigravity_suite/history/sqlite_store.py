@@ -6,12 +6,15 @@ Handles schema migrations, transactional upserts, step counting, and index integ
 
 from __future__ import annotations
 
+import datetime
+import json
 import os
 import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from antigravity_suite.history.models import ConversationSummary
+
 
 
 def ensure_summaries_schema(conn: sqlite3.Connection) -> None:
@@ -60,6 +63,11 @@ def ensure_summaries_schema(conn: sqlite3.Connection) -> None:
             cur.execute('ALTER TABLE conversation_summaries ADD COLUMN workspace_uris text NOT NULL DEFAULT "";')
         if "project_id" not in cols:
             cur.execute('ALTER TABLE conversation_summaries ADD COLUMN project_id text NOT NULL DEFAULT "";')
+    except Exception:
+        pass
+
+    try:
+        repair_fts_zero_timestamps(conn)
     except Exception:
         pass
 
@@ -133,6 +141,67 @@ def load_existing_summaries(
                 pass
 
 
+def sync_conversations_fts(
+    conn: sqlite3.Connection,
+    conv_id: str,
+    title: str,
+    workspace_uri: Optional[str],
+    project_id: Optional[str],
+    last_modified_iso: str,
+    step_count: int,
+    archived: bool = False,
+) -> None:
+    """Synchronizes header row (chunk_index = -1) in conversations_fts with authentic nanosecond timestamp."""
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='conversations_fts';")
+        if not cur.fetchone():
+            return
+
+        nanos = 0
+        if last_modified_iso:
+            try:
+                clean_iso = str(last_modified_iso).replace("Z", "+00:00")
+                dt = datetime.datetime.fromisoformat(clean_iso)
+                nanos = int(dt.timestamp() * 1e9)
+            except Exception:
+                nanos = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1e9)
+        if nanos <= 0:
+            nanos = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1e9)
+
+        ws_name = ""
+        if workspace_uri:
+            try:
+                if str(workspace_uri).startswith("["):
+                    uris = json.loads(str(workspace_uri))
+                    w_u = uris[0] if uris else ""
+                else:
+                    w_u = str(workspace_uri)
+                ws_name = Path(w_u.replace("file://", "")).name
+            except Exception:
+                ws_name = ""
+
+        proj = project_id or ""
+        row = cur.execute("SELECT rowid FROM conversations_fts WHERE conversation_id = ? AND chunk_index = -1;", (conv_id,)).fetchone()
+        if row:
+            cur.execute("""
+                UPDATE conversations_fts
+                SET last_modified_time = ?, step_count = ?, last_step_created_at = ?, title = ?, workspace = ?, project = ?, archived = ?
+                WHERE rowid = ?;
+            """, (nanos, step_count, nanos, title or "", ws_name, proj, 1 if archived else 0, row[0]))
+        else:
+            cur.execute("""
+                INSERT INTO conversations_fts (
+                    conversation_id, chunk_index, chunk_first_step, chunk_last_step,
+                    last_modified_time, step_count, last_step_created_at, archived,
+                    user_step_byte_offsets, agent_step_byte_offsets, title, workspace, project,
+                    user_body, agent_body
+                ) VALUES (?, -1, 0, 0, ?, ?, ?, ?, '', '', ?, ?, ?, '', '');
+            """, (conv_id, nanos, step_count, nanos, 1 if archived else 0, title or "", ws_name, proj))
+    except Exception:
+        pass
+
+
 def upsert_summary(conn: sqlite3.Connection, summary: ConversationSummary) -> None:
     """Inserts or updates a conversation summary row preserving authentic metadata."""
     cur = conn.cursor()
@@ -184,6 +253,74 @@ def upsert_summary(conn: sqlite3.Connection, summary: ConversationSummary) -> No
         summary.raw_summary,
         summary.group_id,
     ))
+
+    # Synchronize FTS header index
+    sync_conversations_fts(
+        conn,
+        conv_id=summary.conversation_id,
+        title=summary.title,
+        workspace_uri=summary.workspace_uris,
+        project_id=summary.project_id,
+        last_modified_iso=summary.last_modified_time,
+        step_count=summary.step_count,
+        archived=False,
+    )
+
+
+def repair_fts_zero_timestamps(conn: sqlite3.Connection) -> int:
+    """
+    Ensures all header rows (chunk_index = -1) in conversations_fts have authentic,
+    non-zero nanosecond timestamps matching conversation_summaries or current time.
+    Prevents conversations from being sorted to Year 0001 in the Desktop App sidebar.
+    """
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='conversations_fts';")
+        if not cur.fetchone():
+            return 0
+
+        rows = cur.execute("""
+            SELECT rowid, conversation_id, title, workspace, project, step_count, archived
+            FROM conversations_fts
+            WHERE chunk_index = -1 AND (last_modified_time = 0 OR last_modified_time IS NULL);
+        """).fetchall()
+
+        if not rows:
+            return 0
+
+        repaired = 0
+        for rowid, cid, title, ws, proj, sc, arch in rows:
+            s_row = cur.execute(
+                "SELECT last_modified_time, step_count FROM conversation_summaries WHERE conversation_id = ?;",
+                (cid,)
+            ).fetchone()
+            nanos = 0
+            step_cnt = sc or 0
+            if s_row and s_row[0]:
+                try:
+                    clean_iso = str(s_row[0]).replace("Z", "+00:00")
+                    dt = datetime.datetime.fromisoformat(clean_iso)
+                    nanos = int(dt.timestamp() * 1e9)
+                    if s_row[1] and s_row[1] > step_cnt:
+                        step_cnt = s_row[1]
+                except Exception:
+                    pass
+            if nanos <= 0:
+                nanos = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1e9)
+
+            cur.execute("""
+                UPDATE conversations_fts
+                SET last_modified_time = ?, last_step_created_at = ?, step_count = ?
+                WHERE rowid = ?;
+            """, (nanos, nanos, step_cnt, rowid))
+            repaired += 1
+
+        if repaired > 0:
+            conn.commit()
+        return repaired
+    except Exception:
+        return 0
+
 
 
 _STEP_COUNT_CACHE: Dict[str, Tuple[float, int, int]] = {}  # db_str -> (mtime, size, count)

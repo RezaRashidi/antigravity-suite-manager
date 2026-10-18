@@ -21,6 +21,11 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 from antigravity_suite.auth.token import refresh_ide_oauth_token
 from antigravity_suite.config import DEFAULT_CONFIG, SuiteConfig, get_user_home
 from antigravity_suite.history.backup import HistoryBackupManager
+from antigravity_suite.history.deletion import (
+    detect_and_sync_deletions,
+    get_tombstones,
+    load_manifest,
+)
 from antigravity_suite.history.discovery import (
     discover_all_history_sources,
     discover_pinned_conversation_ids,
@@ -225,29 +230,34 @@ def collect_all_conversation_ids(
     master_conv_dir: Path,
     existing_rows: Dict[str, Tuple],
     extra_ids: Optional[Iterable[str]] = None,
+    tombstones: Optional[Set[str]] = None,
 ) -> Set[str]:
-    """Scans databases, protobufs, in-memory protobuf entries, and existing table rows for 36-char UUIDs."""
+    """Scans databases, protobufs, in-memory protobuf entries, and existing table rows for 36-char UUIDs, skipping tombstones."""
     all_conv_ids: Set[str] = set()
     uuid_pattern = re.compile(r"^[0-9a-fA-F-]{36}$")
 
     for db_f in glob.glob(os.path.join(str(master_conv_dir), "*.db")):
         cid = os.path.basename(db_f)[:-3]
         if uuid_pattern.match(cid):
-            all_conv_ids.add(cid)
+            if not (tombstones and cid in tombstones):
+                all_conv_ids.add(cid)
 
     for pb_f in glob.glob(os.path.join(str(master_conv_dir), "*.pb")):
         cid = os.path.basename(pb_f)[:-3]
         if uuid_pattern.match(cid):
-            all_conv_ids.add(cid)
+            if not (tombstones and cid in tombstones):
+                all_conv_ids.add(cid)
 
     for cid in existing_rows.keys():
         if uuid_pattern.match(cid):
-            all_conv_ids.add(cid)
+            if not (tombstones and cid in tombstones):
+                all_conv_ids.add(cid)
 
     if extra_ids:
         for cid in extra_ids:
             if uuid_pattern.match(cid):
-                all_conv_ids.add(cid)
+                if not (tombstones and cid in tombstones):
+                    all_conv_ids.add(cid)
 
     return all_conv_ids
 
@@ -635,6 +645,7 @@ def synchronize_master_summaries(
     stats: SyncStats,
     pinned_set: Optional[Set[str]] = None,
     user_home: Optional[Path] = None,
+    tombstones: Optional[Set[str]] = None,
 ) -> Tuple[sqlite3.Connection, Dict[str, bytes]]:
     """
     Connects to master SQLite database, ensures schema, ingests existing summaries,
@@ -653,6 +664,8 @@ def synchronize_master_summaries(
 
     # Ingest existing valid summaries from SQLite
     for c_id, row in existing_rows.items():
+        if tombstones and c_id in tombstones:
+            continue
         if row[4]:
             raw = extract_pure_binary_summary(row[4])
             if raw and len(raw) > 20:
@@ -664,6 +677,8 @@ def synchronize_master_summaries(
             with open(master_proto, "rb") as f:
                 proto_data = f.read()
             for c_uuid, raw in extract_entries_from_proto(proto_data).items():
+                if tombstones and c_uuid in tombstones:
+                    continue
                 if raw and len(raw) > 20 and c_uuid not in all_summaries:
                     all_summaries[c_uuid] = raw
         except Exception:
@@ -673,6 +688,7 @@ def synchronize_master_summaries(
         master_conv_dir=master_conv_dir,
         existing_rows=existing_rows,
         extra_ids=all_summaries.keys(),
+        tombstones=tombstones,
     )
 
     # Pre-discover project mappings once in memory (O(1) resolution)
@@ -845,11 +861,14 @@ def merge_histories(
         if backup_entry:
             stats.backup_id = backup_entry.backup_id
 
+    # 3.5. Load permanent tombstones to prevent resurrection of deleted chats
+    tombstones = get_tombstones(effective_master)
+
     # 4. Merge raw .db and .pb pools into master
-    stats.db_files_merged = merge_raw_db_pools(conv_pools, master_conv_dir)
+    stats.db_files_merged = merge_raw_db_pools(conv_pools, master_conv_dir, tombstones=tombstones)
 
     # 5. Merge brain folders into master
-    stats.brain_folders_merged = merge_brain_folders(brain_pools, master_brain_dir)
+    stats.brain_folders_merged = merge_brain_folders(brain_pools, master_brain_dir, tombstones=tombstones)
 
     # 6. Reconstruct missing databases from transcript logs
     stats.databases_reconstructed = reconstruct_missing_databases(
@@ -857,6 +876,7 @@ def merge_histories(
         master_brain_dir=master_brain_dir,
         master_conv_dir=master_conv_dir,
         force_rebuild=force_rebuild,
+        tombstones=tombstones,
     )
 
     # 6.5. Discover and unify all pinned conversations across Desktop App profiles
@@ -873,10 +893,22 @@ def merge_histories(
         stats=stats,
         pinned_set=pinned_ids,
         user_home=home,
+        tombstones=tombstones,
     )
 
     try:
         cur = con.cursor()
+
+        # 7.5. Detect and synchronize bi-directional deletions across App and IDE
+        stats.conversations_deleted = detect_and_sync_deletions(
+            effective_master=effective_master,
+            con=con,
+            candidate_vscdbs=candidate_vscdbs,
+            conv_pools=conv_pools,
+            brain_pools=brain_pools,
+            all_summaries=all_summaries,
+            stats=stats,
+        )
 
         # 8. Enrich summaries with authentic titles from VS Code state.vscdb
         stats.ide_state_ingested = ingest_vscdb_summaries(
@@ -885,7 +917,9 @@ def merge_histories(
             master_conv_dir=master_conv_dir,
             con=con,
             pinned_set=pinned_ids,
+            tombstones=tombstones,
         )
+
 
         # 9. Serialize and write agyhub_summaries_proto.pb
         serialize_master_proto(master_proto, all_summaries)

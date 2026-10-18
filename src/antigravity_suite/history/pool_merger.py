@@ -12,17 +12,22 @@ import os
 import re
 import shutil
 from pathlib import Path
-from typing import List, Union
+from typing import List, Optional, Set, Union
 
 from antigravity_suite.history.sqlite_store import copy_sqlite_db_safely, get_actual_steps_count
 
 
-def merge_raw_db_pools(conv_pools: List[str], master_conv_dir: Path) -> int:
+def merge_raw_db_pools(
+    conv_pools: List[str],
+    master_conv_dir: Path,
+    tombstones: Optional[Set[str]] = None,
+) -> int:
     """
     Merges raw .db and .pb files from external conversation pools into master_conv_dir.
     Updates files if destination is missing, has fewer steps, or is older.
     Strictly prioritizes step counts for SQLite databases to prevent truncated copies
     from overwriting complete conversations.
+    Skips any conversation marked in tombstones.
     Returns:
         Number of databases successfully merged or updated.
     """
@@ -35,6 +40,9 @@ def merge_raw_db_pools(conv_pools: List[str], master_conv_dir: Path) -> int:
             if not (base.endswith(".db") or base.endswith(".pb")):
                 continue
             if base == "conversation_summaries.db":
+                continue
+            cid = base.split(".")[0]
+            if tombstones and cid in tombstones:
                 continue
 
             target_file = master_conv_dir / base
@@ -82,11 +90,16 @@ def merge_raw_db_pools(conv_pools: List[str], master_conv_dir: Path) -> int:
     return db_files_merged
 
 
-def merge_brain_folders(brain_pools: List[str], master_brain_dir: Path) -> int:
+def merge_brain_folders(
+    brain_pools: List[str],
+    master_brain_dir: Path,
+    tombstones: Optional[Set[str]] = None,
+) -> int:
     """
     Merges project brain folders and transcripts from external pools into master_brain_dir.
     Recursively updates newer/larger files (e.g. transcript.jsonl and markdown artifacts)
     in existing folders.
+    Skips any conversation marked in tombstones.
     Returns:
         Number of new brain folders imported.
     """
@@ -100,8 +113,11 @@ def merge_brain_folders(brain_pools: List[str], master_brain_dir: Path) -> int:
             c_uuid = os.path.basename(b_item)
             if not re.match(r"^[0-9a-fA-F-]{36}$", c_uuid):
                 continue
+            if tombstones and c_uuid in tombstones:
+                continue
 
             target_brain_item = master_brain_dir / c_uuid
+
             if not target_brain_item.exists():
                 try:
                     shutil.copytree(b_item, target_brain_item, symlinks=True)

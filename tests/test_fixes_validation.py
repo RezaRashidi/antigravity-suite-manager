@@ -1200,9 +1200,267 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             # Ensure each field is on its own line
             self.assertEqual(len(lines), 3)
 
+    def test_sync_conversations_fts_nanoseconds(self):
+        import sqlite3
+        from antigravity_suite.history.sqlite_store import sync_conversations_fts
+
+        with tempfile.TemporaryDirectory() as td:
+            db_p = Path(td) / "test_fts.db"
+            with sqlite3.connect(str(db_p)) as con:
+                con.execute("""
+                    CREATE VIRTUAL TABLE conversations_fts USING fts5(
+                        conversation_id UNINDEXED,
+                        chunk_index UNINDEXED,
+                        chunk_first_step UNINDEXED,
+                        chunk_last_step UNINDEXED,
+                        last_modified_time UNINDEXED,
+                        step_count UNINDEXED,
+                        last_step_created_at UNINDEXED,
+                        archived UNINDEXED,
+                        user_step_byte_offsets UNINDEXED,
+                        agent_step_byte_offsets UNINDEXED,
+                        title,
+                        workspace,
+                        project,
+                        user_body,
+                        agent_body
+                    );
+                """)
+                cid = "7b382c83-e685-4637-84bc-4520cdfcb94c"
+                # Call sync_conversations_fts
+                sync_conversations_fts(
+                    con,
+                    conv_id=cid,
+                    title="Performance Engineering Strategy: Load Test Scenario Design Catalog",
+                    workspace_uri="file:///home/reza/PhpstormProjects/k6",
+                    project_id="a9b5a9cf-cfda-543d-9a7e-6cf8a15a7005",
+                    last_modified_iso="2026-10-17 13:17:21.000000+00:00",
+                    step_count=3795,
+                    archived=False,
+                )
+                con.commit()
+
+                # Verify row
+                row = con.execute("SELECT conversation_id, chunk_index, last_modified_time, step_count, title, workspace, project FROM conversations_fts WHERE conversation_id = ? AND chunk_index = -1;", (cid,)).fetchone()
+                self.assertIsNotNone(row)
+                self.assertEqual(row[0], cid)
+                self.assertEqual(row[1], -1)
+                self.assertGreater(row[2], 1000000000000000000)  # > 1e18 nanoseconds
+                self.assertEqual(row[3], 3795)
+                self.assertEqual(row[4], "Performance Engineering Strategy: Load Test Scenario Design Catalog")
+                self.assertEqual(row[5], "k6")
+                self.assertEqual(row[6], "a9b5a9cf-cfda-543d-9a7e-6cf8a15a7005")
+
+    def test_manifest_lifecycle_and_tombstones(self):
+        from antigravity_suite.history.deletion import load_manifest, save_manifest, get_tombstones
+
+        with tempfile.TemporaryDirectory() as td:
+            master = Path(td)
+            m = load_manifest(master)
+            self.assertEqual(m["known_ids"], [])
+            self.assertEqual(m["tombstones"], {})
+
+            m["known_ids"] = ["conv-1", "conv-2"]
+            m["tombstones"]["conv-dead"] = {"deleted_at": "2026-10-18T00:00:00Z", "source": "app"}
+            save_manifest(master, m)
+
+            m2 = load_manifest(master)
+            self.assertEqual(m2["known_ids"], ["conv-1", "conv-2"])
+            self.assertIn("conv-dead", m2["tombstones"])
+
+            ts = get_tombstones(master)
+            self.assertEqual(ts, {"conv-dead"})
+
+    def test_detect_and_sync_deletions_app_to_ide(self):
+        import sqlite3, base64
+        from antigravity_suite.history.deletion import detect_and_sync_deletions, load_manifest, save_manifest
+        from antigravity_suite.history.models import SyncStats
+        from antigravity_suite.proto.cascade import build_cascade_summary
+        from antigravity_suite.proto.vscdb import build_summaries_state
+        from antigravity_suite.proto.wire import extract_entries_from_proto
+
+        with tempfile.TemporaryDirectory() as td:
+            master = Path(td)
+            db_p = master / "conversation_summaries.db"
+            vscdb_p = master / "state.vscdb"
+            conv_dir = master / "conversations"
+            conv_dir.mkdir(parents=True)
+
+            cid_keep = "11111111-1111-1111-1111-111111111111"
+            cid_del = "22222222-2222-2222-2222-222222222222"
+
+            # 1. Setup SQLite (App) - user deleted cid_del from App, so only cid_keep is present
+            with sqlite3.connect(str(db_p)) as con:
+                con.execute("""CREATE TABLE conversation_summaries (
+                    conversation_id text PRIMARY KEY, title text, killed numeric DEFAULT 0
+                );""")
+                con.execute("INSERT INTO conversation_summaries (conversation_id, title, killed) VALUES (?, ?, 0);", (cid_keep, "Keep Chat"))
+                con.commit()
+
+            # 2. Setup VSCDB (IDE) - still has BOTH cid_keep and cid_del
+            raw_keep = build_cascade_summary(cid_keep, "Keep Chat", "Keep Chat", 10)
+            raw_del = build_cascade_summary(cid_del, "Deleted Chat", "Deleted Chat", 5)
+            b64_val = build_summaries_state({cid_keep: raw_keep, cid_del: raw_del})
+
+            with sqlite3.connect(str(vscdb_p)) as v_con:
+                v_con.execute("CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value TEXT);")
+                v_con.execute("INSERT INTO ItemTable VALUES ('antigravityUnifiedStateSync.trajectorySummaries', ?);", (b64_val,))
+                v_con.commit()
+
+            # 3. Setup Manifest - both were known in previous cycle
+            save_manifest(master, {
+                "version": 1,
+                "known_ids": [cid_keep, cid_del],
+                "tombstones": {}
+            })
+
+            # 4. Run detect_and_sync_deletions
+            stats = SyncStats()
+            all_summaries = {cid_keep: raw_keep, cid_del: raw_del}
+            with sqlite3.connect(str(db_p)) as con:
+                purged = detect_and_sync_deletions(
+                    effective_master=master,
+                    con=con,
+                    candidate_vscdbs=[vscdb_p],
+                    conv_pools=[],
+                    brain_pools=[],
+                    all_summaries=all_summaries,
+                    stats=stats,
+                )
+
+            self.assertEqual(purged, 1)
+            self.assertEqual(stats.conversations_deleted, 1)
+            self.assertNotIn(cid_del, all_summaries)
+
+            # 5. Verify IDE state.vscdb was updated to remove cid_del
+            with sqlite3.connect(str(vscdb_p)) as v_con:
+                val = v_con.execute("SELECT value FROM ItemTable WHERE key = 'antigravityUnifiedStateSync.trajectorySummaries';").fetchone()[0]
+                entries = extract_entries_from_proto(base64.b64decode(val))
+                self.assertNotIn(cid_del, entries)
+                self.assertIn(cid_keep, entries)
+
+            # 6. Verify tombstone was saved in manifest
+            m_after = load_manifest(master)
+            self.assertIn(cid_del, m_after["tombstones"])
+            self.assertEqual(m_after["tombstones"][cid_del]["source"], "app")
+            self.assertEqual(m_after["known_ids"], [cid_keep])
+
+    def test_detect_and_sync_deletions_ide_to_app(self):
+        import sqlite3, base64
+        from antigravity_suite.history.deletion import detect_and_sync_deletions, load_manifest, save_manifest
+        from antigravity_suite.history.models import SyncStats
+        from antigravity_suite.proto.cascade import build_cascade_summary
+        from antigravity_suite.proto.vscdb import build_summaries_state
+
+        with tempfile.TemporaryDirectory() as td:
+            master = Path(td)
+            db_p = master / "conversation_summaries.db"
+            vscdb_p = master / "state.vscdb"
+            conv_dir = master / "conversations"
+            conv_dir.mkdir(parents=True)
+
+            cid_keep = "11111111-1111-1111-1111-111111111111"
+            cid_del = "22222222-2222-2222-2222-222222222222"
+
+            # Create disk database for deleted chat
+            (conv_dir / f"{cid_del}.db").write_text("test")
+
+            # 1. Setup SQLite (App) - still has BOTH cid_keep and cid_del
+            with sqlite3.connect(str(db_p)) as con:
+                con.execute("""CREATE TABLE conversation_summaries (
+                    conversation_id text PRIMARY KEY, title text, killed numeric DEFAULT 0
+                );""")
+                con.execute("INSERT INTO conversation_summaries (conversation_id, title, killed) VALUES (?, ?, 0);", (cid_keep, "Keep Chat"))
+                con.execute("INSERT INTO conversation_summaries (conversation_id, title, killed) VALUES (?, ?, 0);", (cid_del, "Deleted in IDE"))
+                con.commit()
+
+            # 2. Setup VSCDB (IDE) - user deleted cid_del in IDE, so only cid_keep is present
+            raw_keep = build_cascade_summary(cid_keep, "Keep Chat", "Keep Chat", 10)
+            b64_val = build_summaries_state({cid_keep: raw_keep})
+
+            with sqlite3.connect(str(vscdb_p)) as v_con:
+                v_con.execute("CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value TEXT);")
+                v_con.execute("INSERT INTO ItemTable VALUES ('antigravityUnifiedStateSync.trajectorySummaries', ?);", (b64_val,))
+                v_con.commit()
+
+            # 3. Setup Manifest - both were known in previous cycle
+            save_manifest(master, {
+                "version": 1,
+                "known_ids": [cid_keep, cid_del],
+                "tombstones": {}
+            })
+
+            # 4. Run detect_and_sync_deletions
+            stats = SyncStats()
+            raw_del = build_cascade_summary(cid_del, "Deleted in IDE", "Deleted in IDE", 5)
+            all_summaries = {cid_keep: raw_keep, cid_del: raw_del}
+            with sqlite3.connect(str(db_p)) as con:
+                purged = detect_and_sync_deletions(
+                    effective_master=master,
+                    con=con,
+                    candidate_vscdbs=[vscdb_p],
+                    conv_pools=[],
+                    brain_pools=[],
+                    all_summaries=all_summaries,
+                    stats=stats,
+                )
+
+            self.assertEqual(purged, 1)
+            self.assertEqual(stats.conversations_deleted, 1)
+            self.assertNotIn(cid_del, all_summaries)
+
+            # 5. Verify App SQLite was updated to remove cid_del
+            with sqlite3.connect(str(db_p)) as con:
+                row = con.execute("SELECT 1 FROM conversation_summaries WHERE conversation_id = ?;", (cid_del,)).fetchone()
+                self.assertIsNone(row)
+                row_keep = con.execute("SELECT 1 FROM conversation_summaries WHERE conversation_id = ?;", (cid_keep,)).fetchone()
+                self.assertIsNotNone(row_keep)
+
+            # 6. Verify disk file was deleted
+            self.assertFalse((conv_dir / f"{cid_del}.db").exists())
+
+            # 7. Verify tombstone was saved in manifest
+            m_after = load_manifest(master)
+            self.assertIn(cid_del, m_after["tombstones"])
+            self.assertEqual(m_after["tombstones"][cid_del]["source"], "ide")
+            self.assertEqual(m_after["known_ids"], [cid_keep])
+
+    def test_repair_fts_zero_timestamps(self):
+        import sqlite3
+        from antigravity_suite.history.sqlite_store import repair_fts_zero_timestamps, ensure_summaries_schema
+
+        with tempfile.TemporaryDirectory() as td:
+            db_p = Path(td) / "conversation_summaries.db"
+            with sqlite3.connect(str(db_p)) as con:
+                ensure_summaries_schema(con)
+                con.execute("""
+                    CREATE VIRTUAL TABLE conversations_fts USING fts5(
+                        conversation_id UNINDEXED, chunk_index UNINDEXED, chunk_first_step UNINDEXED,
+                        chunk_last_step UNINDEXED, last_modified_time UNINDEXED, step_count UNINDEXED,
+                        last_step_created_at UNINDEXED, archived UNINDEXED, user_step_byte_offsets UNINDEXED,
+                        agent_step_byte_offsets UNINDEXED, title, workspace, project, user_body, agent_body
+                    );
+                """)
+                # Insert row with 0 timestamp
+                cid = "test-zero-fts-uuid"
+                con.execute("INSERT INTO conversation_summaries (conversation_id, title, last_modified_time, last_user_input_time) VALUES (?, ?, ?, ?);",
+                            (cid, "Target Chat", "2026-10-17 13:17:21+00:00", "2026-10-17 13:17:21+00:00"))
+                con.execute("INSERT INTO conversations_fts (conversation_id, chunk_index, last_modified_time, title) VALUES (?, -1, 0, ?);",
+                            (cid, "Target Chat"))
+                con.commit()
+
+                # Run repair
+                repaired = repair_fts_zero_timestamps(con)
+                self.assertEqual(repaired, 1)
+
+                # Verify timestamp is repaired to non-zero nanoseconds
+                fts_row = con.execute("SELECT last_modified_time FROM conversations_fts WHERE conversation_id = ? AND chunk_index = -1;", (cid,)).fetchone()
+                self.assertEqual(fts_row[0], 1792243041000000000)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

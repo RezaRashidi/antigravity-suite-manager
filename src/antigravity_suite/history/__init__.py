@@ -12,6 +12,14 @@ from antigravity_suite.history.extractor import (
     is_clean_title,
     sync_annotation_file,
 )
+from antigravity_suite.history.deletion import (
+    detect_and_sync_deletions,
+    get_manifest_path,
+    get_tombstones,
+    load_manifest,
+    purge_conversation,
+    save_manifest,
+)
 from antigravity_suite.history.merger import merge_histories
 from antigravity_suite.history.models import ConversationSummary, SyncStats
 from antigravity_suite.history.pool_merger import merge_brain_folders, merge_raw_db_pools
@@ -23,6 +31,8 @@ from antigravity_suite.history.sqlite_store import (
     ensure_summaries_schema,
     get_actual_steps_count,
     load_existing_summaries,
+    repair_fts_zero_timestamps,
+    sync_conversations_fts,
     upsert_summary,
 )
 from antigravity_suite.history.synthesizer import (
@@ -51,6 +61,8 @@ __all__ = [
     "ensure_summaries_schema",
     "load_existing_summaries",
     "upsert_summary",
+    "sync_conversations_fts",
+    "repair_fts_zero_timestamps",
     "get_actual_steps_count",
     "is_synthesized_db_incomplete",
     "parse_step14_user_prompt",
@@ -66,4 +78,10 @@ __all__ = [
     "replicate_to_ide_profiles",
     "merge_histories",
     "watch_mode",
+    "load_manifest",
+    "save_manifest",
+    "get_tombstones",
+    "purge_conversation",
+    "detect_and_sync_deletions",
 ]
+

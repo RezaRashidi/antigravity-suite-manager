@@ -11,7 +11,7 @@ import glob
 import os
 import re
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional, Set
 
 from antigravity_suite.history.synthesizer import (
     is_synthesized_db_incomplete,
@@ -22,10 +22,11 @@ from antigravity_suite.history.synthesizer import (
 def gather_candidate_transcripts(
     brain_pools: List[str],
     master_brain_dir: Path,
+    tombstones: Optional[Set[str]] = None,
 ) -> Dict[str, str]:
     """
     Scans all brain pools and gathers the single largest and most complete
-    transcript log file for every conversation UUID.
+    transcript log file for every conversation UUID, skipping tombstones.
     """
     candidate_transcripts: Dict[str, str] = {}
     all_brain_pools = [str(master_brain_dir)] + [
@@ -40,6 +41,8 @@ def gather_candidate_transcripts(
                 continue
             c_uuid = os.path.basename(b_item)
             if not re.match(r"^[0-9a-fA-F-]{36}$", c_uuid):
+                continue
+            if tombstones and c_uuid in tombstones:
                 continue
 
             tf = os.path.join(b_item, ".system_generated", "logs", "transcript_full.jsonl")
@@ -59,19 +62,24 @@ def reconstruct_missing_databases(
     master_brain_dir: Path,
     master_conv_dir: Path,
     force_rebuild: bool = False,
+    tombstones: Optional[Set[str]] = None,
 ) -> int:
     """
     Reconstructs missing or incomplete SQLite databases from authentic transcript logs.
+    Skips any conversation marked in tombstones.
     Returns:
         Number of databases successfully reconstructed.
     """
     databases_reconstructed = 0
-    candidate_transcripts = gather_candidate_transcripts(brain_pools, master_brain_dir)
+    candidate_transcripts = gather_candidate_transcripts(brain_pools, master_brain_dir, tombstones=tombstones)
 
     for c_uuid, tf in candidate_transcripts.items():
+        if tombstones and c_uuid in tombstones:
+            continue
         target_db = master_conv_dir / f"{c_uuid}.db"
         if not target_db.exists() or is_synthesized_db_incomplete(target_db) or force_rebuild:
             if synthesize_db_from_transcript(c_uuid, target_db, tf):
                 databases_reconstructed += 1
 
     return databases_reconstructed
+

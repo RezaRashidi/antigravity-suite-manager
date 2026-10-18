@@ -98,10 +98,11 @@ def ingest_vscdb_summaries(
     master_conv_dir: Path,
     con: sqlite3.Connection,
     pinned_set: Optional[Set[str]] = None,
+    tombstones: Optional[Set[str]] = None,
 ) -> int:
     """
     Reads conversation titles from VS Code state.vscdb ItemTable and enriches
-    any unassigned or generic conversation summaries.
+    any unassigned or generic conversation summaries, skipping tombstones.
     Returns:
         Number of conversations updated with authentic IDE titles.
     """
@@ -125,12 +126,15 @@ def ingest_vscdb_summaries(
                 v_bin = base64.b64decode(val)
                 entries = extract_entries_from_proto(v_bin)
                 for u_id, p_bin in entries.items():
+                    if tombstones and u_id in tombstones:
+                        continue
                     raw = extract_pure_binary_summary(p_bin)
                     if not raw:
                         continue
                     parsed = parse_cascade_summary(raw)
                     ide_summary = (parsed.get("summary") or "").strip()
                     ide_annot_title = (parsed.get("title") or "").strip()
+
 
                     db_p = master_conv_dir / f"{u_id}.db"
                     tr_p = master_conv_dir.parent / "brain" / u_id / ".system_generated" / "logs" / "transcript.jsonl"
