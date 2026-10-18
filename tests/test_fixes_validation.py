@@ -1562,6 +1562,106 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             m_restored = load_manifest(master)
             self.assertNotIn(cid, m_restored["tombstones"])
 
+    def test_repair_database_step_gaps(self):
+        import json
+        import sqlite3
+        from antigravity_suite.history.synthesizer import repair_database_step_gaps
+        from antigravity_suite.history.sqlite_store import get_actual_steps_count, clear_step_count_cache
+
+        with tempfile.TemporaryDirectory() as td:
+            db_p = Path(td) / "gap_test.db"
+            tr_p = Path(td) / "transcript.jsonl"
+            cid = "gap_test_uuid"
+
+            # Create DB with steps 0, 1, 4, 5 (missing 2 and 3)
+            with sqlite3.connect(str(db_p)) as con:
+                con.execute("CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, status INTEGER, metadata BLOB, step_payload BLOB);")
+                con.execute("INSERT INTO steps VALUES (0, 14, 3, X'00', X'00'), (1, 15, 3, X'00', X'00'), (4, 15, 3, X'00', X'00'), (5, 23, 3, X'00', X'00');")
+
+            # Create transcript with all steps 0..5
+            with open(tr_p, "w", encoding="utf-8") as f:
+                f.write(json.dumps({"step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT", "content": "hello"}) + "\n")
+                f.write(json.dumps({"step_index": 1, "source": "MODEL", "type": "PLANNER_RESPONSE", "thinking": "plan"}) + "\n")
+                f.write(json.dumps({"step_index": 2, "source": "MODEL", "type": "RUN_COMMAND", "content": "ls"}) + "\n")
+                f.write(json.dumps({"step_index": 3, "source": "MODEL", "type": "PLANNER_RESPONSE", "content": "files listed"}) + "\n")
+                f.write(json.dumps({"step_index": 4, "source": "MODEL", "type": "PLANNER_RESPONSE", "content": "done"}) + "\n")
+                f.write(json.dumps({"step_index": 5, "source": "MODEL", "type": "PLANNER_RESPONSE", "content": "goodbye"}) + "\n")
+
+            clear_step_count_cache()
+            # Before repair, max(idx) is 5, count is 4 -> actual step count calculates span = 6
+            self.assertEqual(get_actual_steps_count(db_p), 6)
+
+            # Repair gaps
+            repaired = repair_database_step_gaps(db_p, tr_p)
+            self.assertEqual(repaired, 2)
+
+            with sqlite3.connect(str(db_p)) as con:
+                rows = con.execute("SELECT idx, step_type FROM steps ORDER BY idx ASC;").fetchall()
+                indices = [r[0] for r in rows]
+                self.assertEqual(indices, [0, 1, 2, 3, 4, 5])
+                self.assertEqual(rows[2][1], 132)  # tool run_command
+                self.assertEqual(rows[3][1], 15)   # planner response
+
+    def test_is_clean_title_rejects_single_punctuation_and_braces(self):
+        from antigravity_suite.history.extractor import is_clean_title
+
+        self.assertFalse(is_clean_title("{"))
+        self.assertFalse(is_clean_title("}"))
+        self.assertFalse(is_clean_title("["))
+        self.assertFalse(is_clean_title("]"))
+        self.assertFalse(is_clean_title("---"))
+        self.assertFalse(is_clean_title("?"))
+        self.assertFalse(is_clean_title("!"))
+        self.assertFalse(is_clean_title("..."))
+        self.assertFalse(is_clean_title("def foo():"))
+        self.assertFalse(is_clean_title("curl http://example.com"))
+
+        self.assertTrue(is_clean_title("Fix Redis cache race condition"))
+        self.assertTrue(is_clean_title("Deploy to production cluster"))
+
+    def test_write_vscdb_unified_state_preserves_live_step_counts(self):
+        import base64
+        import sqlite3
+        from antigravity_suite.history.vscdb_sync import write_vscdb_unified_state
+        from antigravity_suite.proto.cascade import build_cascade_summary, parse_cascade_summary
+        from antigravity_suite.proto.vscdb import build_summaries_state, build_unified_state_sync
+        from antigravity_suite.proto.wire import extract_entries_from_proto, extract_pure_binary_summary
+
+        with tempfile.TemporaryDirectory() as td:
+            vscdb_p = Path(td) / "globalStorage" / "state.vscdb"
+            vscdb_p.parent.mkdir(parents=True, exist_ok=True)
+            cid = "live_chat_conversation"
+
+            # Simulate existing state in state.vscdb with 500 steps (user actively chatting)
+            live_bin = build_cascade_summary(cid, "Live Chat", "Live Chat", step_count=500)
+            initial_state = {cid: live_bin}
+
+            with sqlite3.connect(str(vscdb_p)) as con:
+                con.execute("CREATE TABLE ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB);")
+                con.execute(
+                    "INSERT INTO ItemTable (key, value) VALUES ('antigravityUnifiedStateSync.trajectorySummaries', ?);",
+                    (build_summaries_state(initial_state),)
+                )
+                con.execute(
+                    "INSERT INTO ItemTable (key, value) VALUES ('antigravityUnifiedStateSync', ?);",
+                    (build_unified_state_sync(initial_state),)
+                )
+
+            # Now sync runs with a summary that only had 450 steps
+            lagging_bin = build_cascade_summary(cid, "Live Chat", "Live Chat", step_count=450)
+            all_summaries = {cid: lagging_bin}
+
+            write_vscdb_unified_state([vscdb_p], all_summaries)
+
+            # Verify that state.vscdb still preserves step_count = 500
+            with sqlite3.connect(str(vscdb_p)) as con:
+                row = con.execute("SELECT value FROM ItemTable WHERE key = 'antigravityUnifiedStateSync.trajectorySummaries';").fetchone()
+                self.assertIsNotNone(row)
+                entries = extract_entries_from_proto(base64.b64decode(row[0]))
+                self.assertIn(cid, entries)
+                parsed = parse_cascade_summary(extract_pure_binary_summary(entries[cid]))
+                self.assertEqual(parsed.get("step_count"), 500)
+
 
 if __name__ == "__main__":
     unittest.main()

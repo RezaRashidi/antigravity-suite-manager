@@ -276,6 +276,24 @@ def write_vscdb_unified_state(
             old_traj_b64 = old_traj_row[0] if old_traj_row else None
 
             state_summaries = dict(all_summaries)
+            if old_traj_b64:
+                try:
+                    existing_entries = extract_entries_from_proto(base64.b64decode(old_traj_b64))
+                    for e_cid, e_bin in existing_entries.items():
+                        e_raw = extract_pure_binary_summary(e_bin)
+                        if e_raw:
+                            e_parsed = parse_cascade_summary(e_raw)
+                            e_sc = e_parsed.get("step_count", 0)
+                            if e_cid in state_summaries:
+                                curr_parsed = parse_cascade_summary(state_summaries[e_cid])
+                                curr_sc = curr_parsed.get("step_count", 0)
+                                if e_sc > curr_sc:
+                                    state_summaries[e_cid] = e_raw
+                            else:
+                                state_summaries[e_cid] = e_raw
+                except Exception:
+                    pass
+
             val_wrap_b64 = build_summaries_state(state_summaries)
             outer_b64 = build_unified_state_sync(state_summaries, existing_raw_b64=old_sync_b64)
 

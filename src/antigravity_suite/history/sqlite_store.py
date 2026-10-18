@@ -359,9 +359,14 @@ def get_actual_steps_count(db_path: Union[str, Path]) -> int:
     conn = None
     try:
         conn = sqlite3.connect(db_str, timeout=15.0)
-        cnt = int(conn.cursor().execute("SELECT count(*) FROM steps;").fetchone()[0])
-        _STEP_COUNT_CACHE[db_str] = (mtime, size, cnt)
-        return cnt
+        row = conn.cursor().execute("SELECT count(*), min(idx), max(idx) FROM steps;").fetchone()
+        cnt = row[0] if row else 0
+        min_idx = row[1] if row and row[1] is not None else 0
+        max_idx = row[2] if row and row[2] is not None else -1
+        span = max(0, max_idx + 1) if min_idx == 0 else max(0, max_idx - min_idx + 1)
+        actual_cnt = max(cnt, span)
+        _STEP_COUNT_CACHE[db_str] = (mtime, size, actual_cnt)
+        return actual_cnt
     except Exception:
         return 0
     finally:

@@ -52,9 +52,9 @@ def resolve_conversation_item(
     raw_ws = meta["db_ws_uri"] or parsed_raw.get("workspace_uri") or existing_ws
     ws_uri = normalize_workspace_uri(raw_ws)
 
-    # Classify partition: IDE workspace -> 'antigravity-ide'; standalone -> 'antigravity'
-    has_ide_ws = bool(ws_uri and ws_uri != "file:///home/reza" and not ws_uri.startswith("file:///tmp"))
-    target_app_data_dir = "antigravity-ide" if has_ide_ws else "antigravity"
+    # Unified partition: 'antigravity' ensures Language Server queries
+    # (WHERE app_data_dir = ?) return all conversations in both Desktop App and IDE
+    target_app_data_dir = "antigravity"
 
     mapped_pid = get_project_id_for_workspace(ws_uri, mappings=project_mappings) if ws_uri else None
     proj_id = mapped_pid if (mapped_pid and mapped_pid != "outside-of-project") else (existing_proj or "")
@@ -86,7 +86,7 @@ def resolve_conversation_item(
         title_source=title_source,
         old_title=curr_title,
         partition=target_app_data_dir,
-        partition_reason="ide_workspace" if has_ide_ws else "standalone_hub",
+        partition_reason="unified_history",
         step_count=target_step_cnt,
         mutations=["sqlite", "proto", "vscdb", "anno"],
     )

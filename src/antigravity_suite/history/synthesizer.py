@@ -469,3 +469,164 @@ def synthesize_db_from_transcript(
                 conn.close()
             except Exception:
                 pass
+
+
+def repair_database_step_gaps(
+    db_path: Union[str, Path],
+    transcript_path: Union[str, Path],
+) -> int:
+    """
+    Detects and repairs missing step index gaps in a conversation SQLite database
+    by synthesizing only the missing steps from transcript.jsonl.
+    Preserves all existing authentic steps, metadata, and binary blobs.
+    Returns:
+        Number of missing steps successfully backfilled.
+    """
+    db_p = str(db_path)
+    tf_str = str(transcript_path)
+    if not os.path.isfile(db_p) or not os.path.isfile(tf_str):
+        return 0
+
+    if tf_str.endswith("transcript.jsonl"):
+        full_tf = tf_str.replace("transcript.jsonl", "transcript_full.jsonl")
+        if os.path.isfile(full_tf):
+            tf_str = full_tf
+
+    conn = None
+    try:
+        conn = sqlite3.connect(db_p, timeout=15.0)
+        cur = conn.cursor()
+        cur.execute("SELECT idx FROM steps;")
+        existing_indices = set(r[0] for r in cur.fetchall())
+        if not existing_indices:
+            return 0
+        max_idx = max(existing_indices)
+        missing_indices = set(range(max_idx + 1)) - existing_indices
+        if not missing_indices:
+            return 0
+
+        conv_id = Path(db_p).stem
+        tool_types = {
+            "VIEW_FILE", "RUN_COMMAND", "GENERIC", "GREP_SEARCH", "LIST_DIRECTORY",
+            "SEARCH_WEB", "READ_URL_CONTENT", "GENERATE_IMAGE", "ASK_QUESTION",
+            "CODE_ACTION", "ERROR_MESSAGE", "WRITE_TO_FILE", "REPLACE_FILE_CONTENT",
+            "MULTI_REPLACE_FILE_CONTENT", "EDIT_FILE", "FIND_BY_NAME", "BROWSER_SUBAGENT",
+            "BROWSER_ACTION", "SCHEDULE", "INVOKE_SUBAGENT", "MANAGE_SUBAGENTS",
+            "MANAGE_TASK", "SEND_MESSAGE",
+        }
+
+        rows_to_insert = []
+        with open(tf_str, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except Exception:
+                    continue
+                step_idx = entry.get("step_index")
+                if step_idx is None or step_idx not in missing_indices:
+                    continue
+
+                src = str(entry.get("source", "")).upper()
+                typ = str(entry.get("type", "")).upper()
+                st_str = str(entry.get("status", "DONE")).upper()
+                content = entry.get("content", "")
+                thinking = entry.get("thinking", "")
+                tool_calls = entry.get("tool_calls", [])
+
+                is_tool = (
+                    typ in tool_types
+                    or bool(entry.get("tool_action") or entry.get("tool_summary"))
+                    or src in ["TOOL", "SYSTEM_TOOL"]
+                )
+
+                if is_tool:
+                    step_type = 132
+                elif typ == "USER_INPUT" or (src == "USER_EXPLICIT" and not is_tool) or (
+                    src not in ["MODEL", "TOOL", "ASSISTANT"] and isinstance(content, str) and "<USER_REQUEST>" in content
+                ):
+                    step_type = 14
+                elif typ == "PLANNER_RESPONSE" or src == "MODEL" or thinking or tool_calls:
+                    step_type = 15
+                else:
+                    step_type = 15 if src == "MODEL" else 14
+
+                status = 4 if st_str == "ERROR" else 3
+
+                meta = bytearray()
+                meta += encode_tag_bytes(12, conv_id.encode("utf-8"))
+                sub_meta = bytearray()
+                sub_meta += encode_tag_bytes(1, conv_id.encode("utf-8"))
+                sub_meta += encode_tag_bytes(4, conv_id.encode("utf-8"))
+                meta += encode_tag_bytes(20, bytes(sub_meta))
+
+                payload = bytearray()
+                payload += encode_tag_uint(1, step_type)
+                payload += encode_tag_uint(4, status)
+
+                if step_type == 14:
+                    payload += encode_tag_bytes(5, bytes(meta))
+                    clean = content
+                    if isinstance(content, str):
+                        m = re.search(r"<USER_REQUEST>(.*?)</USER_REQUEST>", content, re.DOTALL)
+                        clean = m.group(1).strip() if m else content.strip()
+                    else:
+                        clean = str(content)
+                    u_bytes = bytearray()
+                    if clean:
+                        u_bytes += encode_tag_bytes(2, clean.encode("utf-8", errors="ignore"))
+                        chunk = bytearray()
+                        chunk += encode_tag_bytes(1, clean.encode("utf-8", errors="ignore"))
+                        u_bytes += encode_tag_bytes(3, bytes(chunk))
+                    payload += encode_tag_bytes(19, bytes(u_bytes))
+
+                elif step_type == 15:
+                    payload += encode_tag_bytes(5, bytes(meta))
+                    m_bytes = bytearray()
+                    if content:
+                        m_bytes += encode_tag_bytes(1, str(content).encode("utf-8", errors="ignore"))
+                    if thinking:
+                        m_bytes += encode_tag_bytes(3, str(thinking).encode("utf-8", errors="ignore"))
+                    m_bytes += encode_tag_bytes(6, b"antigravity-agent")
+                    if content:
+                        m_bytes += encode_tag_bytes(8, str(content).encode("utf-8", errors="ignore"))
+                    m_bytes += encode_tag_uint(12, 2)
+                    payload += encode_tag_bytes(20, bytes(m_bytes))
+
+                elif step_type == 132:
+                    tc_b = bytearray()
+                    tc_name = typ.lower()
+                    tc_b += encode_tag_bytes(1, f"call_{step_idx}".encode("utf-8"))
+                    tc_b += encode_tag_bytes(2, tc_name.encode("utf-8"))
+                    tc_b += encode_tag_bytes(9, tc_name.encode("utf-8"))
+                    meta += encode_tag_bytes(4, bytes(tc_b))
+
+                    payload += encode_tag_bytes(5, bytes(meta))
+                    t_bytes = bytearray()
+                    if content:
+                        out_sub = bytearray()
+                        out_sub += encode_tag_bytes(1, str(content).encode("utf-8", errors="ignore"))
+                        t_bytes += encode_tag_bytes(2, bytes(out_sub))
+                    payload += encode_tag_bytes(140, bytes(t_bytes))
+
+                rows_to_insert.append((step_idx, step_type, status, bytes(meta), bytes(payload)))
+
+        if rows_to_insert:
+            cur.executemany(
+                "INSERT OR IGNORE INTO steps (idx, step_type, status, metadata, step_payload) VALUES (?, ?, ?, ?, ?);",
+                rows_to_insert,
+            )
+            conn.commit()
+            return len(rows_to_insert)
+        return 0
+    except Exception:
+        return 0
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+

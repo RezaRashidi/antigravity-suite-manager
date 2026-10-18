@@ -97,13 +97,17 @@ def is_clean_title(val: Optional[str]) -> bool:
     s = val.strip()
     if not s or s in ["Conversation", "IDE Conversation", "Untitled Conversation", "---"]:
         return False
-    if s.startswith("@[") or s.startswith("{") or s.startswith("[") or s.startswith("<USER_REQUEST>") or s.startswith("<ADDITIONAL_METADATA>"):
+    if len(s) < 2:
+        return False
+    if s.startswith(("@[", "{", "}", "[", "]", "<USER_REQUEST>", "<ADDITIONAL_METADATA>", "```", "<?php", "#!", "/*")):
+        return False
+    if not any(c.isalnum() for c in s):
         return False
     # Check for terminal/shell prompt indicators like ╰─❯, ❯, $, #, root@..., user@host...
     if re.match(r"^(?:[╰╭│├└─\s]*[❯>$#%]\s*|root@[^:]+:[^\s#$]+[#$]\s*|[a-zA-Z0-9_-]+@[^:]+:[^\s#$]+[#$]\s*)", s):
         return False
     # Check for raw terminal/CLI command lines, code blocks, or URLs
-    if s.startswith(("curl ", "docker ", "git ", "ssh ", "sudo ", "cd ", "npm ", "cat ", "ls ", "export ", "bash ", "python ", "systemctl ", "journalctl ", "grep ", "http://", "https://", "```", "<?php", "import ", "def ", "class ")):
+    if s.startswith(("curl ", "docker ", "git ", "ssh ", "sudo ", "cd ", "npm ", "cat ", "ls ", "export ", "bash ", "python ", "systemctl ", "journalctl ", "grep ", "http://", "https://", "import ", "def ", "class ", "return ")):
         return False
     return True
 

@@ -38,6 +38,7 @@ from antigravity_suite.history.sqlite_store import (
 from antigravity_suite.history.synthesizer import (
     is_synthesized_db_incomplete,
     parse_step14_user_prompt,
+    repair_database_step_gaps,
     synthesize_db_from_transcript,
 )
 from antigravity_suite.history.vscdb_sync import (
@@ -77,6 +78,7 @@ __all__ = [
     "is_synthesized_db_incomplete",
     "parse_step14_user_prompt",
     "synthesize_db_from_transcript",
+    "repair_database_step_gaps",
     "merge_raw_db_pools",
     "merge_brain_folders",
     "gather_candidate_transcripts",

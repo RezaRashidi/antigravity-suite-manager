@@ -66,15 +66,8 @@ def detect_partition_anomalies(
     partition: str,
     workspace_uri: Optional[str],
 ) -> List[str]:
-    """Detects misallocations between 'antigravity' (Hub) and 'antigravity-ide'."""
+    """Detects invalid partition strings. Valid standard partition is 'antigravity'."""
     anomalies: List[str] = []
-    has_ide_ws = bool(
-        workspace_uri
-        and workspace_uri != "file:///home/reza"
-        and not str(workspace_uri).startswith("file:///tmp")
-    )
-    if has_ide_ws and partition != "antigravity-ide":
-        anomalies.append("IDE_WORKSPACE_MISALLOCATED_TO_HUB")
-    elif not has_ide_ws and partition == "antigravity-ide":
-        anomalies.append("STANDALONE_CHAT_MISALLOCATED_TO_IDE")
+    if partition not in ("antigravity", "antigravity-ide"):
+        anomalies.append(f"UNKNOWN_PARTITION_{partition}")
     return anomalies

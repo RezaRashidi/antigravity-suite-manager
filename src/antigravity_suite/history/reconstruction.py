@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Set
 
 from antigravity_suite.history.synthesizer import (
     is_synthesized_db_incomplete,
+    repair_database_step_gaps,
     synthesize_db_from_transcript,
 )
 
@@ -65,10 +66,11 @@ def reconstruct_missing_databases(
     tombstones: Optional[Set[str]] = None,
 ) -> int:
     """
-    Reconstructs missing or incomplete SQLite databases from authentic transcript logs.
+    Reconstructs missing or incomplete SQLite databases from authentic transcript logs
+    and repairs any missing step index gaps in existing databases.
     Skips any conversation marked in tombstones.
     Returns:
-        Number of databases successfully reconstructed.
+        Number of databases successfully reconstructed or repaired.
     """
     databases_reconstructed = 0
     candidate_transcripts = gather_candidate_transcripts(brain_pools, master_brain_dir, tombstones=tombstones)
@@ -79,6 +81,10 @@ def reconstruct_missing_databases(
         target_db = master_conv_dir / f"{c_uuid}.db"
         if not target_db.exists() or is_synthesized_db_incomplete(target_db) or force_rebuild:
             if synthesize_db_from_transcript(c_uuid, target_db, tf):
+                databases_reconstructed += 1
+        elif target_db.exists():
+            repaired = repair_database_step_gaps(target_db, tf)
+            if repaired > 0:
                 databases_reconstructed += 1
 
     return databases_reconstructed
