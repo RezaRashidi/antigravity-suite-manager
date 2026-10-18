@@ -687,6 +687,9 @@ antigravity-suite-manager/
 │   └── antigravity-keyring.py       # GNOME Keyring & file storage switcher & migrator
 ├── src/
 │   └── scale_icon.c                 # Catmull-Rom bicubic image resampler (C)
+├── docs/
+│   ├── DEBUGGING_FORENSICS.md                       # Comprehensive diagnostic report & forensic logs
+│   └── STORAGE_ARCHITECTURE_AND_CODE_EXAMPLES.md   # Storage architecture & reverse-engineered code catalog
 ├── assets/
 │   ├── antigravity-master-black.png # Official 1024x1024 Black icon asset
 │   └── antigravity-master-white.png # Official 1024x1024 White tray asset
