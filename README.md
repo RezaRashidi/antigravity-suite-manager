@@ -18,28 +18,21 @@ Provides seamless multi-instance profile isolation (Account 1, Account 2, & Anti
 
 ---
 
-## ⚡ Quick Start
+## ⚡ Quick Install
 
-### One-Line Automated Install (Recommended)
-
-Run the automated installer directly via `curl`:
+Install the complete Antigravity Suite (App, IDE, 3-way sync, RTL, and management tools) in one command:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/RezaRashidi/antigravity-suite-manager/main/install.sh | bash
 ```
 
-Or run fully non-interactive with default settings:
+To install non-interactively with default options:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/RezaRashidi/antigravity-suite-manager/main/install.sh | bash -s -- -y
 ```
 
-> [!TIP]
-> The one-line installer automatically bootstraps the suite repository to `~/.antigravity-suite-manager`, compiles the C icon resampler, deploys tools to `~/.local/bin`, and creates the `~/manage-antigravity.sh` shortcut.
-
----
-
-### Manual Installation (Clone & Build)
+Or clone and run locally:
 
 ```bash
 git clone https://github.com/RezaRashidi/antigravity-suite-manager.git
@@ -51,11 +44,105 @@ Launch the interactive Control Center dashboard anytime:
 
 ```bash
 ~/manage-antigravity.sh center
-# Or:
-./install.sh
 ```
 
-#### Step Execution Options & Step Aliases:
+---
+
+## 🚀 Key Features at a Glance
+
+Antigravity Suite Manager is engineered to make Google Antigravity and Antigravity IDE feel like first-class, production-ready desktop citizens on Linux:
+
+### 1. 🛡️ Unlimited Multi-Account & Multi-Instance Engine (With Auto-Counter)
+- **Concurrent Independent Execution**: Run personal, work, and client Google accounts simultaneously side-by-side without Electron single-instance locks or account eviction.
+- **Dynamic Auto-Incrementing Counter**: `~/manage-antigravity.sh create-instance` automatically detects existing accounts and suggests the next numeric counter (e.g. `[default: 3]`). Arbitrary named profiles (`work`, `client-a`) are also supported.
+- **Siloed Keyrings & Secret Stores**: App 1 binds to system GNOME Keyring, App 2 runs in an isolated profile directory (`~/.antigravity-profile2`), custom instances use `~/.antigravity-profile-app-<id>`, and Antigravity IDE leverages VS Code's internal `SecretStorage`.
+- **Zero Cross-Contamination**: Cookies, OAuth refresh tokens, and active sessions are strictly quarantined per profile.
+
+### 2. 🔄 3-Way Unified Chat History & Brain Artifacts
+- **Universal Conversation Sync**: All chat history, active threads, conversation summaries, and brain artifacts are symlinked across App 1, App 2, custom accounts, and Antigravity IDE.
+- **Seamless Context Continuity**: Initiate an AI pair programming session in App 1, continue discussing in App 2, or review generated code artifacts directly in Antigravity IDE.
+- **Concurrent SQLite WAL Safety**: Operates via SQLite Write-Ahead Logging (`.db-wal`), allowing concurrent reads/writes without database locks or corruption.
+- **Configurable Isolation vs Sharing**: New instances can be spawned in either `--shared` mode (participates in 3-way history) or `--isolated` mode (private isolated database).
+
+### 3. 🖥️ Taskbar De-Grouping & Window Independence
+- **Dedicated Window Classes**: Overrides Electron's default `WM_CLASS` to bind each instance to its own unique identifier (`antigravity-1`, `antigravity-2`, `antigravity-app-<id>`, `antigravity-ide`).
+- **No More Collapsed Icons**: Ubuntu Dock, GNOME Dash to Panel, and taskbars will never stack your distinct accounts under a single generic window group.
+- **Live X11 Window Injector**: Lightweight daemon (`antigravity-apply-icon.py`) monitors window creation and dynamically applies `_NET_WM_ICON` directly onto the X11 surface.
+
+### 4. 🎨 C-Powered High-Resolution Icon Engine & Visual Theming
+- **Catmull-Rom Bicubic Scaler in Pure C**: Custom C resampler (`src/scale_icon.c`) with premultiplied alpha calculation, generating razor-sharp icons from 16×16 system trays up to 1024×1024 Retina/4K displays without blurring or dark fringes.
+- **Distinct Icon Schemes**: Choose between official Black and White themes for each application.
+- **Accent Glow for Secondary Instances**: Supports custom hue-shift tinting (e.g. Violet/Magenta glow) so you instantly recognize which account is active on your dock.
+
+### 5. 🔍 Decoupled Dynamic Installation Paths (Zero Hardcoded Assumptions)
+- **Portable & Extensible**: Fully supports non-standard installations (`~/.local/share/`, `/usr/local/`, `/var/lib/`, custom mounts).
+- **Environment Variable Overrides**: Prioritizes `ANTIGRAVITY_APP_DIR`, `ANTIGRAVITY_IDE_DIR`, and `ANTIGRAVITY_PROFILE2_DIR` over static defaults, followed by `paths.conf` and the automated filesystem scanner.
+
+### 6. 🔄 Multi-Directory Chromium Status Tray Sync
+- **Dynamic Tray Cache Matching**: `tray_sync.py` resolves active temp storage across `tempfile.gettempdir()`, `$TMPDIR`, `$XDG_RUNTIME_DIR`, `/run/user/<uid>`, `/tmp`, and `/var/tmp`.
+- **Arbitrary Account Mapping**: Automatically correlates running App instances (Account 1, 2, 3, ...) with their respective recolored status tray icon files.
+
+### 7. 🔐 Dual-Mode Credential Storage (GNOME Keyring vs Normal File Storage)
+- **Freedom from GNOME Keyring**: Easily switch Antigravity and Antigravity IDE between GNOME Keyring (D-Bus Secret Service) and clean, headless-friendly Normal file storage (`--password-store=basic` + `jetski-standalone-oauth-token`).
+- **Zero-Downtime Token Migration**: When switching from GNOME Keyring to Normal mode, active OAuth tokens are automatically extracted from GNOME Keyring into local standalone token files, preventing any re-login prompts.
+- **GNOME Keyring Purging**: Cleanly purge all Antigravity secret items, tokens, and encryption keys from GNOME Keyring with a single command.
+
+### 8. ✍️ First-Class Persian & Arabic RTL Typography
+- **Automated RTL Integration**: Embedded patch from [antigravity-rtl](https://github.com/mmnaderi/antigravity-rtl) providing correct right-to-left layout and bidirectionality for Persian and Arabic text.
+- **Vazirmatn Typography**: Injects premium Persian font rendering and provides an intuitive topbar toggle (`Alt+R` / `⌥R`).
+
+### 9. 🔁 Manual F5 Refresh & Crash Resilience
+- **No More Jarring Auto-Reloads**: Prevents intrusive background auto-restarts from breaking your active AI workflow.
+- **Native Keyboard Hook**: Hooks `F5` to trigger a clean webview reload on demand.
+
+### 10. ⚙️ Universal Config, Skills, Rules & MCP Synchronization
+- **Single Source of Truth**: All custom instructions (`GEMINI.md`), skills (`skills/`), agent rules, plugins, and MCP servers (`mcp_config.json`) are maintained in `~/.gemini` and cleanly unified across App 1, App 2, and Antigravity IDE.
+- **Dedicated Quota Preservation**: While configurations are shared, OAuth credentials and tokens remain strictly isolated (`~/.gemide` wrapper) so each account retains its dedicated Google One AI Pro quota.
+- **Automatic Rule Deduplication**: Clean symlink topology prevents duplicate `user_global` rule registration in language server ConnectRPC engines.
+
+### 11. 🌐 Dynamic Upstream Discovery & Zero-Waste Smart Caching
+- **Live Endpoint Scraping**: Automatically queries Google's official auto-updater and release endpoints on-the-fly, downloading the freshest release without hardcoded URLs.
+- **Persistent Tarball Cache**: Stores downloads in `/tmp/antigravity-cache`. Re-running installations, repairing shortcuts, or adding instances never re-downloads hundreds of megabytes.
+
+---
+
+## Table of Contents
+
+- [⚡ Quick Install](#-quick-install)
+- [🚀 Key Features at a Glance](#-key-features-at-a-glance)
+- [🛠️ Advanced Installation & Wizard Options](#️-advanced-installation--wizard-options)
+- [Overview](#overview)
+- [Usage & Commands](#usage--commands)
+  - [System Detection & Scanner](#system-detection--scanner)
+  - [Installation Paths & Target Switching](#installation-paths--instance-configuration-selection-first)
+  - [Automated Antigravity Installation](#automated-antigravity-installation)
+  - [Status Inspection](#status-inspection)
+  - [Multi-Instance Creation & Management](#multi-instance-creation--management)
+  - [Keyring & Credential Storage Switching](#keyring--credential-storage-switching)
+  - [Conversation History Merging & Sync](#conversation-history-merging--sync)
+  - [Smart Updates & Caching](#smart-updates--caching)
+  - [Customizing Icon Themes & Recolor](#customizing-icon-themes--recolor)
+  - [Component-Level Commands](#component-level-commands)
+- [Configuration](#configuration)
+- [Taskbar De-Grouping & Window Management](#taskbar-de-grouping--window-management)
+- [Patches Included](#patches-included)
+  - [Persian / Arabic RTL Support](#persian--arabic-rtl-support)
+  - [Manual F5 Reload Patch](#manual-f5-reload-patch)
+- [Architecture & Profile Isolation](#architecture--profile-isolation)
+- [Shared Chat History & Profile Isolation](#shared-chat-history--profile-isolation)
+- [📚 Technical Documentation Catalog](#-technical-documentation-catalog)
+  - [Forensics & Debugging Guide (`docs/forensics/`)](docs/forensics/README.md)
+  - [Storage Architecture & Reverse Engineering (`docs/architecture/`)](docs/architecture/README.md)
+- [Platform Compatibility & Requirements](#platform-compatibility--requirements)
+- [Project Structure](#project-structure)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## 🛠️ Advanced Installation & Wizard Options
+
+### Step Execution Options & Step Aliases:
 ```bash
 # Execute ONLY a single step by number or descriptive name:
 ./install.sh --only-step paths      # Or: -o 2
@@ -75,7 +162,7 @@ Launch the interactive Control Center dashboard anytime:
 ./install.sh -y
 ```
 
-#### Wizard Steps Overview:
+### Wizard Steps Overview:
 1. **Check Dependencies & Prerequisites** (`prereqs`, `dep`): Validates system and core build tools (`python3`, `gcc`, `tar`, `curl`).
 2. **Configure Installation Paths & Engines** (`paths`, `engines`, `detect`): Scans for installed Antigravity instances, lets you select from detected installations or specify custom directories for App and IDE.
 3. **Compile Catmull-Rom Bicubic Resampler** (`resampler`, `scale`): Builds `scale_icon` from pure C with Catmull-Rom filtering and alpha premultiplication.
@@ -85,100 +172,11 @@ Launch the interactive Control Center dashboard anytime:
 7. **Download & Install Google Antigravity Binaries** (`install`, `download`, `binary`): Automatically fetches latest releases and installs them into your configured directories.
 8. **Setup Multi-Account Launchers & 3-Way Chat Sync** (`sync`, `launchers`, `chat`): Deploys `antigravity-1`, `antigravity-acc2`, `antigravity-ide`, verifies 3-way history sync, and outputs the status report.
 
-Or build and install using GNU Make:
-
+### GNU Make Alternative:
 ```bash
 make
 make install
 ```
-
----
-
-## Table of Contents
-
-- [Quick Start](#-quick-start)
-- [Key Features](#-key-features-at-a-glance)
-- [Overview](#overview)
-- [Usage & Commands](#usage--commands)
-  - [System Detection & Scanner](#system-detection--scanner)
-  - [Installation Paths & Target Switching](#installation-paths--target-switching)
-  - [Step-by-Step Setup Wizard](#step-by-step-setup-wizard)
-  - [Automated Antigravity Installation](#automated-antigravity-installation)
-  - [Status Inspection](#status-inspection)
-  - [Multi-Instance Creation & Management](#multi-instance-creation--management)
-  - [Keyring & Credential Storage Switching](#keyring--credential-storage-switching)
-  - [Conversation History Merging & Sync](#conversation-history-merging--sync)
-  - [Smart Updates & Caching](#smart-updates--caching)
-  - [Customizing Icon Themes & Recolor](#customizing-icon-themes--recolor)
-  - [Component-Level Commands](#component-level-commands)
-- [Configuration](#configuration)
-- [Taskbar De-Grouping & Window Management](#taskbar-de-grouping--window-management)
-- [Patches Included](#patches-included)
-  - [Persian / Arabic RTL Support](#persian--arabic-rtl-support)
-  - [Manual F5 Reload Patch](#manual-f5-reload-patch)
-- [Architecture & Profile Isolation](#architecture--profile-isolation)
-- [Shared Chat History & Profile Isolation](#shared-chat-history--profile-isolation)
-- [Platform Compatibility & Requirements](#platform-compatibility--requirements)
-- [Project Structure](#project-structure)
-- [Contributing](#contributing)
-- [License](#license)
-
----
-
-## 🚀 Key Features at a Glance
-
-Antigravity Suite Manager is engineered to make Google Antigravity and Antigravity IDE feel like first-class, production-ready desktop citizens on Linux:
-
-### 1. 🛡️ True Multi-Account Isolation (No Session Logouts)
-- **Concurrent Independent Execution**: Run personal, work, and client Google accounts simultaneously side-by-side without Electron single-instance locks or account eviction.
-- **Siloed Keyrings & Secret Stores**: App 1 binds to system GNOME Keyring, App 2 runs in an isolated profile directory (`~/.antigravity-profile2`) with sandboxed keyring storage, and Antigravity IDE leverages VS Code's internal `SecretStorage`.
-- **Zero Cross-Contamination**: Cookies, OAuth refresh tokens, and active sessions are strictly quarantined per profile.
-
-### 2. 🔄 3-Way Unified Chat History & Brain Artifacts
-- **Universal Conversation Sync**: All chat history, active threads, conversation summaries, and brain artifacts are symlinked across App 1, App 2, and Antigravity IDE.
-- **Seamless Context Continuity**: Initiate an AI pair programming session in App 1, continue discussing in App 2, or review generated code artifacts directly in Antigravity IDE.
-- **Concurrent SQLite WAL Safety**: Operates via SQLite Write-Ahead Logging (`.db-wal`), allowing concurrent reads/writes without database locks or corruption.
-- **Configurable Isolation vs Sharing**: New instances can be spawned in either `--shared` mode (participates in 3-way history) or `--isolated` mode (private isolated database).
-
-### 3. 🖥️ Taskbar De-Grouping & Window Independence
-- **Dedicated Window Classes**: Overrides Electron's default `WM_CLASS` to bind each instance to its own unique identifier (`antigravity-1`, `antigravity-2`, `antigravity-ide`).
-- **No More Collapsed Icons**: Ubuntu Dock, GNOME Dash to Panel, and taskbars will never stack your distinct accounts under a single generic window group.
-- **Live X11 Window Injector**: Includes a lightweight daemon (`antigravity-apply-icon.py`) that monitors window creation and dynamically applies `_NET_WM_ICON` directly onto the X11 surface.
-
-### 4. 🎨 C-Powered High-Resolution Icon Engine & Visual Theming
-- **Catmull-Rom Bicubic Scaler in Pure C**: Includes a custom C resampler (`src/scale_icon.c`) with premultiplied alpha calculation, generating razor-sharp icons from 16×16 system trays up to 1024×1024 Retina/4K displays without blurring or dark fringes.
-- **Distinct Icon Schemes**: Choose between official Black and White themes for each application.
-- **Accent Glow for Account 2**: Supports custom hue-shift tinting (e.g. Violet/Magenta glow) so you instantly recognize which account is active on your dock.
-
-### 5. 🌐 Dynamic Upstream Discovery & Zero-Waste Smart Caching
-- **Live Endpoint Scraping**: Automatically queries Google's official auto-updater and release endpoints on-the-fly, downloading the freshest release without hardcoded URLs.
-- **Persistent Tarball Cache**: Stores downloads in `/tmp/antigravity-cache`. Re-running installations, repairing shortcuts, or adding instances never re-downloads hundreds of megabytes.
-
-### 6. ✍️ First-Class Persian & Arabic RTL Typography
-- **Automated RTL Integration**: Embedded patch from [antigravity-rtl](https://github.com/mmnaderi/antigravity-rtl) providing correct right-to-left layout and bidirectionality for Persian and Arabic text.
-- **Vazirmatn Typography**: Injects premium Persian font rendering and provides an intuitive topbar toggle (`Alt+R` / `⌥R`).
-
-### 7. 🔁 Manual F5 Refresh & Crash Resilience
-- **No More Jarring Auto-Reloads**: Prevents intrusive background auto-restarts from breaking your active AI workflow.
-- **Native Keyboard Hook**: Hooks `F5` to trigger a clean webview reload on demand.
-
-### 8. 🐧 Standard XDG Desktop Integration
-- **Native Desktop Integration**: Fully compliant with XDG Desktop standards (`~/.local/share/applications`, `~/.local/bin`, MIME scheme handlers).
-- **Rock-Solid Scheme Routing**: Binds `antigravity://` and `antigravity-ide://` protocols to their respective targets to ensure OAuth and deep links never route to the wrong app.
-
-### 9. 🔍 Deep System Installation Detection & Automated Installer
-- **Intelligent Installation Scanner**: Scans standard directories (`/opt`, `/usr/share`, `/usr/lib`, `~/.local`), PATH executables, `.desktop` launcher entries, and active process trees to discover any Antigravity App or IDE installations with exact version detection.
-- **One-Command Automated Installation**: Run `manage-antigravity.sh install all` or `./install.sh --install-antigravity` to download official upstream binaries directly from Google's release channels, extract, configure permissions, and deploy desktop entries automatically.
-
-### 10. 🔐 Dual-Mode Credential Storage (GNOME Keyring vs Normal File Storage)
-- **Freedom from GNOME Keyring**: Easily switch Antigravity and Antigravity IDE between GNOME Keyring (D-Bus Secret Service) and clean, headless-friendly Normal file storage (`--password-store=basic` + `jetski-standalone-oauth-token`).
-- **Zero-Downtime Token Migration**: When switching from GNOME Keyring to Normal mode, active OAuth tokens are automatically extracted from GNOME Keyring into local standalone token files, preventing any re-login prompts.
-- **GNOME Keyring Purging**: Cleanly purge all Antigravity secret items, tokens, and encryption keys from GNOME Keyring with a single command.
-
-### 11. ⚙️ Universal Config, Skills, Rules & MCP Synchronization
-- **Single Source of Truth**: All custom instructions (`GEMINI.md`), skills (`skills/`), agent rules, plugins, and MCP servers (`mcp_config.json`) are maintained in `~/.gemini` and cleanly unified across App 1, App 2, and Antigravity IDE.
-- **Dedicated Quota Preservation**: While configurations are shared, OAuth credentials and tokens remain strictly isolated (`~/.gemide` wrapper) so each account retains its dedicated Google One AI Pro quota.
-- **Automatic Rule Deduplication**: Clean symlink topology prevents duplicate `user_global` rule registration in language server ConnectRPC engines.
 
 ---
 
@@ -650,6 +648,17 @@ While authentication tokens and keyring secrets are strictly siloed, all 3 appli
 > [!TIP]
 > **Zero Data Overwrite**: When configuring the 3-way symlinks, the manager non-destructively merges any pre-existing conversations and brain directories using non-overwriting copy operations (`cp -a --update=none`) and preserves safety backups (`.bak`).
 > **Concurrent Safe**: All conversation stores operate via SQLite WAL mode (`.db-wal`), enabling App 1, App 2, and IDE to read and append history concurrently without database locks.
+
+---
+
+## 📚 Technical Documentation Catalog
+
+For deep engineering details, wire specifications, database schemas, and reverse-engineered diagnostics:
+
+* **[Forensics & Debugging Guide](docs/forensics/README.md)** (`docs/forensics/`):
+  17 chapter modules documenting the end-to-end investigation, Protobuf wire formats, Language Server checkpoint extraction, epoch-0 timestamp bug fix, dynamic workspace learning, and system path decoupling.
+* **[Storage Architecture & Code Catalog](docs/architecture/README.md)** (`docs/architecture/`):
+  11 chapter modules detailing the dual-layer SQLite schema, Protobuf wire reflection, React Webview Redux reducer gates, ConnectRPC loopback protocol, and F5 auto-reload suppression.
 
 ---
 
