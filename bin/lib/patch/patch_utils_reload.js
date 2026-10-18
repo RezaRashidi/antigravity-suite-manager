@@ -2,9 +2,15 @@ const fs = require('fs');
 
 function patchUtilsReload(utilsCode) {
     let code = utilsCode;
-    if (code.includes('onRestartRequested:')) return code;
+    if (code.includes('onRestartRequested:')) {
+        code = code.replace(/\s*onRestartRequested:\s*async\s*\(\)\s*=>\s*\{[\s\S]*?\n\s*\},(?=\s*\n\s*\}\);)/, '');
+    }
 
     const target = '        onQuitRequested: () => {\n            exports.showQuitConfirmation = true;\n            electron_1.app.quit();\n        },';
+    if (!code.includes(target)) {
+        return code;
+    }
+
     const replacement = target + `
         onRestartRequested: async () => {
             console.log('[Keybindings] Full backend & window sync requested via shortcut');
@@ -34,13 +40,17 @@ function patchUtilsReload(utilsCode) {
                     void win.webContents.executeJavaScript("(() => { if (document.getElementById('__antigravity_sync_toast__')) return; const t = document.createElement('div'); t.id = '__antigravity_sync_toast__'; t.innerText = 'Syncing...'; t.style.cssText = 'position:fixed;top:20px;right:20px;background:rgba(0,0,0,0.85);color:#fff;padding:8px 16px;border-radius:8px;z-index:999999;font-family:sans-serif;font-size:13px;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,0.3);'; document.body.appendChild(t); })()");
                 } catch (_) {}
             }
+            let restarted = false;
             try {
                 const ls = require('./languageServer');
                 if (ls && typeof ls.restartLanguageServer === 'function') {
                     await ls.restartLanguageServer();
+                    restarted = true;
                 }
-            } catch (_) {}
-            if (win && !win.isDestroyed() && win.webContents) {
+            } catch (err) {
+                console.error('[Keybindings] LanguageServer restart failed:', err);
+            }
+            if (!restarted && win && !win.isDestroyed() && win.webContents) {
                 try { win.webContents.reload(); } catch (_) {}
             }
         },`;

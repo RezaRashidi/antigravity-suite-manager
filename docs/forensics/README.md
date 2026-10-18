@@ -23,4 +23,5 @@ This document records the end-to-end diagnostic methodology, reverse-engineering
 - [15. Issue 13: Antigravity 1 White System Tray Icon Disparity](14_antigravity_1_white_system_tray_icon_disparit.md)
 - [16. Issue 14: Dynamic Workspace Discovery & Elimination of Static Container Assumptions](15_dynamic_workspace_discovery_elimination_of_st.md)
 - [17. Issue 15: Decoupling Hardcoded System Paths: Default `/opt/*`, Account 2 Profile, Chromium Tray Temp Cache](16_decoupling_hardcoded_system_paths_default_opt.md)
-- [18. Summary Checklist for Future Diagnostics](17_summary_checklist_for_future_diagnostics.md)
+- [18. Issue 16: F5 Backend Reload Failure (Stale Handler, Empty Try Block, and Patch Skip Guard)](17_f5_reload_stale_handler_empty_try_patch_skip.md)
+- [19. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)

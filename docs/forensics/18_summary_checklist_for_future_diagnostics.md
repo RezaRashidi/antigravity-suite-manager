@@ -16,4 +16,5 @@
 | **IDE State** | `state.vscdb` (`trajectorySummaries`) | Contains ALL workspace chats (293) |
 | **Audit Log** | `~/.gemini/antigravity/history_merger_audit.log` | JSONL records for all mutations |
 | **Language Server Health** | `~/.config/Antigravity/logs/language_server.log` | `reconcile checked N, restored 0, cached N, dropped 0` |
-| **Unit Test Suite** | `python3 -m unittest discover tests` | All 117 tests passing |
+| **F5 Backend Reload** | `src/../bin/lib/patch/patch_utils_reload.js` | Invokes `await ls.restartLanguageServer()` & strips stale handlers |
+| **Unit Test Suite** | `python3 -m unittest discover tests` | All 120 tests passing |

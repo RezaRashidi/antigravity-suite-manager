@@ -356,29 +356,32 @@ print("Tag 15 (annotations.title):", parsed.get("title"))
 
 ---
 
-## 13. Issue 11: IDE vs. App Title Discrepancy (Language Server Checkpoint Step 23)
+## 13. Issue 11: IDE vs. App Title Discrepancy & Title Instability (Language Server Checkpoint Step 23)
 
 ### Symptoms
-* For conversations without markdown artifacts (e.g. `f3c8b32d-2f3b-4691-8e3d-062bc2df9be6`), the IDE displayed authentic titles (e.g. `"Project Documentation Review And Debugging"`).
-* The Desktop App displayed generic directory fallbacks (e.g. `".Antigravity Suite Manager Chat"`).
+* For conversations without markdown artifacts (such as `0a0ae9f4-fb98-4d19-9310-43e3f8f82b15` with authentic title `"Math Calculation Error"`, or `f3c8b32d-2f3b-4691-8e3d-062bc2df9be6`), the IDE initially displayed authentic titles, while the Desktop App displayed generic directory fallbacks (e.g. `".Antigravity Suite Manager Chat"`).
+* Even within the IDE, opening, closing, or re-indexing the conversation would periodically cause the title to disappear, revert to raw user prompt text (`+9++` or shell commands), or collapse into the sanitized workspace fallback name.
 
 ### Root Cause
-* During chat generation, the Antigravity Language Server writes a checkpoint step into `<uuid>.db` with `step_type = 23` (`CORTEX_STEP_TYPE_CHECKPOINT`).
-* The Protobuf binary payload of step 23 contains:
-  ```protobuf
-  idx: 5, step_type: 23 (CORTEX_STEP_TYPE_CHECKPOINT)
-  Tag 30:
-    Tag 4: "Project Documentation Review And Debugging"  # Authentic LLM Title
-    Tag 19: "..."                                        # Initial user prompt
-  ```
-* IDE reads directly from active Language Server memory and renders `Tag 30 -> Tag 4`.
-* The Python extractor in [src/antigravity_suite/history/extractor.py](src/antigravity_suite/history/extractor.py) only inspected `brain/<uuid>/*.md` for `# H1` headings. It never inspected SQLite step 23 checkpoints. When no markdown existed, it returned an empty title, causing [title_resolver.py](src/antigravity_suite/history/title_resolver.py) to fall back to the sanitized workspace folder name `".Antigravity Suite Manager Chat"`.
+1. **Checkpoint Step 23 Storage**: During chat generation, the Antigravity Language Server writes a checkpoint step into `<uuid>.db` with `step_type = 23` (`CORTEX_STEP_TYPE_CHECKPOINT`):
+   ```protobuf
+   idx: 5, step_type: 23 (CORTEX_STEP_TYPE_CHECKPOINT)
+   Tag 30:
+     Tag 4: "Math Calculation Error"       # Authentic LLM Title
+     Tag 19: "+9++"                         # Initial user prompt
+   ```
+2. **Desktop App Disconnect**: The IDE reads directly from active Language Server memory and renders `Tag 30 -> Tag 4`. The Python extractor in [src/antigravity_suite/history/extractor.py](src/antigravity_suite/history/extractor.py) previously only inspected `brain/<uuid>/*.md` for `# H1` headings. When no markdown existed, it returned an empty title, causing [title_resolver.py](src/antigravity_suite/history/title_resolver.py) to fall back to `".Antigravity Suite Manager Chat"` in `conversation_summaries.db` and `agyhub_summaries_proto.pb`.
+3. **IDE Redux Priority & RAM vs Disk**:
+   - `jetskiAgent/main.js` prioritizes **`summary.summary` (Tag 1)** over **`annotations.title` (Tag 15)**. Older sync routines fell back to placing the initial prompt into Tag 1, causing the raw prompt to override the authentic title in the UI.
+   - On IDE reload, the IDE ingests `antigravityUnifiedStateSync.trajectorySummaries` from `state.vscdb`. If the stored protobuf blob had not been synchronized with the Step 23 title, the IDE overwrote active RAM with the disk fallback.
 
 ### Solution Applied
-* Added `parse_step23_checkpoint_title` in [src/antigravity_suite/history/extractor.py](src/antigravity_suite/history/extractor.py#L329-L377):
+* Added `parse_step23_checkpoint_title` in [src/antigravity_suite/history/extractor_checkpoint.py](src/antigravity_suite/history/extractor_checkpoint.py#L13-L56):
   1. Queries SQLite for steps with `step_type = 23` ordered by index descending.
   2. Decodes Protobuf wire format to extract Tag 30 (Checkpoint Metadata) -> Tag 4 (Conversation Title).
   3. Updates `extract_conv_text()` to prioritize step 23 checkpoint titles over directory fallbacks.
+  4. Enforced strict Protobuf field separation: Tag 1 = Clean Title, Tag 2 = Preview, Tag 15 = Annotations Title.
+  5. Synchronized state across SQLite, Protobuf files, `annotations/*.pbtxt`, and `state.vscdb`.
 
 ---
 
@@ -471,13 +474,68 @@ print("Tag 15 (annotations.title):", parsed.get("title"))
 
 ---
 
-## 18. Summary Checklist for Future Diagnostics
+## 18. Issue 16: F5 Backend Reload Failure (Stale Handler, Empty Try Block, and Patch Skip Guard)
+
+### Symptoms
+* Pressing `F5` in the Antigravity Desktop App displayed the `Syncing...` toast, but the backend Go Language Server process was never restarted, and changes to the SQLite database or conversation summaries on disk were not refreshed.
+* Running `manage-antigravity.sh f5` or `antigravity-f5-patch.js` repeatedly reported success (`[Patch] dist/utils.js already patched`), yet the reload behavior remained permanently broken.
+
+### Root Cause
+1. **Empty Try Block in `app.asar` (`dist/utils.js`)**:
+   Decompiling `/opt/Antigravity-x64/resources/app.asar` revealed that `onRestartRequested` contained an empty `try` block:
+   ```javascript
+   const languageServer = require('./languageServer');
+   if (languageServer && languageServer.restartLanguageServer) {
+       try {
+           // Completely empty: restartLanguageServer was never called!
+       } catch (_) {}
+   }
+   if (win && !win.isDestroyed() && win.webContents) {
+       setTimeout(() => {
+           try {
+               if (win && !win.isDestroyed() && win.webContents) {
+                   win.webContents.reload();
+               }
+           } catch (_) {}
+       }, 300);
+   }
+   ```
+   Only the frontend webview page reloaded; the Go Language Server (`language_server`) was never restarted.
+
+2. **Early-Exit Guard Preventing Re-Patching**:
+   In `bin/lib/patch/patch_utils_reload.js`, the patcher checked:
+   ```javascript
+   if (code.includes('onRestartRequested:')) return code;
+   ```
+   Because `onRestartRequested:` was already present in `app.asar` (holding the broken empty block), the patcher immediately exited without making changes. Re-running the patch tool had zero effect.
+
+3. **Window Reload Race Condition**:
+   In `dist/languageServer.js`, `restartLanguageServer()` triggers `onPortChanged(newPort)`, which calls `win.loadURL(newUrl)` for all windows on the newly assigned ephemeral port. Calling `win.webContents.reload()` unconditionally right after `restartLanguageServer()` aborted the in-flight `loadURL` navigation or reloaded the old dead port.
+
+### Solution Applied
+1. **Dynamic Cleanup in Patcher**:
+   Updated [bin/lib/patch/patch_utils_reload.js](src/../bin/lib/patch/patch_utils_reload.js) to strip any existing `onRestartRequested` block before injecting the fresh implementation:
+   ```javascript
+   if (code.includes('onRestartRequested:')) {
+       code = code.replace(/\s*onRestartRequested:\s*async\s*\(\)\s*=>\s*\{[\s\S]*?\n\s*\},(?=\s*\n\s*\}\);)/, '');
+   }
+   ```
+2. **Explicit Restart & Fallback Navigation**:
+   Updated the injected handler to invoke `await ls.restartLanguageServer()` and set a `restarted = true` guard, preventing conflicting reloads while preserving `win.webContents.reload()` as a fallback if the language server is unavailable.
+3. **App Patch Application & Verification**:
+   Applied the patch cleanly to `/opt/Antigravity-x64/resources/app.asar` and verified that `await ls.restartLanguageServer()` is present and active.
+4. **Automated Regression Test**:
+   Added `test_patch_utils_reload_replaces_stale_handler` in [tests/test_fixes_validation.py](tests/test_fixes_validation.py). All 120 tests passing.
+
+---
+
+## 19. Summary Checklist for Future Diagnostics
 
 | Checkpoint | Target Path / Command | Expected Healthy State |
 | :--- | :--- | :--- |
 | **Protobuf Tag 20** | `src/antigravity_suite/proto/cascade.py` | Must NOT emit Tag 20 when `source == 0` |
 | **Protobuf Tag 1 vs 2** | `src/antigravity_suite/proto/cascade.py` | Tag 1 = Clean Title, Tag 2 = Preview Prompt |
-| **Checkpoint Step 23** | `src/antigravity_suite/history/extractor.py` | Decodes `Tag 30 -> Tag 4` from `<uuid>.db` for authentic LLM title |
+| **Checkpoint Step 23** | `src/antigravity_suite/history/extractor_checkpoint.py` | Decodes `Tag 30 -> Tag 4` from `<uuid>.db` for authentic LLM title |
 | **Timestamp Floor** | `src/antigravity_suite/history/item_metadata.py` | Normalized ms > Jan 1, 2020; prevents "2027y" epoch 0 bug |
 | **Deletion Sync** | `src/antigravity_suite/history/deletion.py` | Bidirectional purge when `<uuid>.db` is removed; prevents infinite spinner |
 | **Tray Icon Paths** | `~/.local/share/icons/` | `antigravity-1-tray.png` & `antigravity-acc2-tray.png` (48x48, 32x32, 24x24) |
@@ -489,5 +547,6 @@ print("Tag 15 (annotations.title):", parsed.get("title"))
 | **IDE State** | `state.vscdb` (`trajectorySummaries`) | Contains ALL workspace chats (293) |
 | **Audit Log** | `~/.gemini/antigravity/history_merger_audit.log` | JSONL records for all mutations |
 | **Language Server Health** | `~/.config/Antigravity/logs/language_server.log` | `reconcile checked N, restored 0, cached N, dropped 0` |
-| **Unit Test Suite** | `python3 -m unittest discover tests` | All 117 tests passing |
+| **F5 Backend Reload** | `bin/lib/patch/patch_utils_reload.js` | Invokes `await ls.restartLanguageServer()` & strips stale handlers |
+| **Unit Test Suite** | `python3 -m unittest discover tests` | All 120 tests passing |
 

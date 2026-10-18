@@ -9,6 +9,7 @@ import zlib
 import colorsys
 import re
 import sys
+import subprocess
 from pathlib import Path
 
 # Import functions to test
@@ -1911,6 +1912,27 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             r_args = mock_sub.call_args[0][0]
             self.assertIn("--force", r_args)
             self.assertIn("rtl", r_args)
+
+    def test_patch_utils_reload_replaces_stale_handler(self):
+        """Verifies patchUtilsReload strips old/broken onRestartRequested and injects restartLanguageServer."""
+        script = """
+        const { patchUtilsReload } = require("./bin/lib/patch/patch_utils_reload");
+        const stale = `
+        onQuitRequested: () => {
+            exports.showQuitConfirmation = true;
+            electron_1.app.quit();
+        },
+        onRestartRequested: async () => {
+            try {} catch(_) {}
+        },
+    });`;
+        const res = patchUtilsReload(stale);
+        if (!res.includes("restartLanguageServer") || res.includes("try {} catch(_) {}")) {
+            process.exit(1);
+        }
+        """
+        proc = subprocess.run(["node", "-e", script], cwd=os.path.dirname(os.path.dirname(__file__)))
+        self.assertEqual(proc.returncode, 0)
 
 
 if __name__ == "__main__":
