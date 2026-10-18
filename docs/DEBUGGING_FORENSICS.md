@@ -315,17 +315,123 @@ print("Tag 15 (annotations.title):", parsed.get("title"))
 
 ---
 
-## 11. Summary Checklist for Future Diagnostics
+## 11. Issue 9: Pinned Chats Displaying "2027y" (Year-1 / Epoch 0 Timestamp Bug)
+
+### Symptoms
+* In Antigravity Desktop App, pinned conversations (such as "Monitoring Queue Performance Dashboard") displayed relative timestamps of "2027y" (e.g. 2027 years ago) instead of recent days.
+* Restarting Antigravity temporarily masked the issue, but subsequent history sync runs reintroduced the corrupt timestamp.
+
+### Root Cause
+* In [src/antigravity_suite/history/item_metadata.py](src/antigravity_suite/history/item_metadata.py) and [src/antigravity_suite/history/sqlite_store.py](src/antigravity_suite/history/sqlite_store.py), when a conversation was pinned or metadata was extracted:
+  - If `last_modified` was missing, 0, or evaluated as falsy in SQLite schema definitions, it defaulted or fell back to 0 or epoch seconds.
+  - When the Language Server or frontend formatted millisecond timestamps, an epoch 0 or negative relative delta was parsed as year 1 BC / 1970 relative to current year 2026/2027, displaying `2027y`.
+  - The extraction pipeline lacked a strict floor validation for timestamps.
+
+### Solution Applied
+* Implemented monotonic timestamp sanitization in [src/antigravity_suite/history/item_metadata.py](src/antigravity_suite/history/item_metadata.py#L30-L58):
+  1. Validates that `last_modified` is positive and exceeds minimum epoch threshold (`1577836800000` = Jan 1, 2020).
+  2. Falls back to transcript file `os.path.getmtime()` or current system time in milliseconds (`int(time.time() * 1000)`).
+  3. Enforced timestamp validation in SQLite updates ([src/antigravity_suite/history/sqlite_store.py](src/antigravity_suite/history/sqlite_store.py#L219-L232)).
+
+---
+
+## 12. Issue 10: Asymmetric Chat Deletion & Infinite Loading Spinner
+
+### Symptoms
+* Deleting a conversation in the Desktop App correctly propagated and removed it from IDE.
+* Deleting a conversation in the IDE did NOT remove it from the Desktop App.
+* Clicking on the deleted conversation in the Desktop App left the application in a permanent, infinite loading spinner.
+
+### Root Cause
+* Asymmetric deletion detection in [src/antigravity_suite/history/deletion.py](src/antigravity_suite/history/deletion.py) and [src/antigravity_suite/history/watcher.py](src/antigravity_suite/history/watcher.py):
+  1. Deletion handling only tracked events originating from App's `app_storage.json` or local App unlinks.
+  2. When IDE deleted a conversation, the backing `.db` file in `~/.gemini/antigravity/conversations/<uuid>.db` was deleted by the IDE Language Server.
+  3. However, `conversation_summaries.db`, `agyhub_summaries_proto.pb`, and cascade annotations retained the summary entry.
+  4. The Desktop App sidebar still rendered the conversation from `agyhub_summaries_proto.pb`. When the user clicked it, the App requested the deleted `<uuid>.db` from the Language Server, which failed silently and hung the UI in an infinite loading spinner.
+
+### Solution Applied
+* Implemented bidirectional active deletion and tombstone synchronization:
+  1. In [src/antigravity_suite/history/deletion.py](src/antigravity_suite/history/deletion.py#L705-L713), added validation that automatically purges orphaned records from `conversation_summaries.db`, `agyhub_summaries_proto.pb`, and `annotations/<uuid>.pbtxt` whenever `<uuid>.db` is absent.
+  2. Updated [src/antigravity_suite/history/watcher.py](src/antigravity_suite/history/watcher.py#L253-L270) to detect unlinks in `conversations/` and immediately broadcast removal across both App and IDE stores.
+
+---
+
+## 13. Issue 11: IDE vs. App Title Discrepancy (Language Server Checkpoint Step 23)
+
+### Symptoms
+* For conversations without markdown artifacts (e.g. `f3c8b32d-2f3b-4691-8e3d-062bc2df9be6`), the IDE displayed authentic titles (e.g. `"Project Documentation Review And Debugging"`).
+* The Desktop App displayed generic directory fallbacks (e.g. `".Antigravity Suite Manager Chat"`).
+
+### Root Cause
+* During chat generation, the Antigravity Language Server writes a checkpoint step into `<uuid>.db` with `step_type = 23` (`CORTEX_STEP_TYPE_CHECKPOINT`).
+* The Protobuf binary payload of step 23 contains:
+  ```protobuf
+  idx: 5, step_type: 23 (CORTEX_STEP_TYPE_CHECKPOINT)
+  Tag 30:
+    Tag 4: "Project Documentation Review And Debugging"  # Authentic LLM Title
+    Tag 19: "..."                                        # Initial user prompt
+  ```
+* IDE reads directly from active Language Server memory and renders `Tag 30 -> Tag 4`.
+* The Python extractor in [src/antigravity_suite/history/extractor.py](src/antigravity_suite/history/extractor.py) only inspected `brain/<uuid>/*.md` for `# H1` headings. It never inspected SQLite step 23 checkpoints. When no markdown existed, it returned an empty title, causing [title_resolver.py](src/antigravity_suite/history/title_resolver.py) to fall back to the sanitized workspace folder name `".Antigravity Suite Manager Chat"`.
+
+### Solution Applied
+* Added `parse_step23_checkpoint_title` in [src/antigravity_suite/history/extractor.py](src/antigravity_suite/history/extractor.py#L329-L377):
+  1. Queries SQLite for steps with `step_type = 23` ordered by index descending.
+  2. Decodes Protobuf wire format to extract Tag 30 (Checkpoint Metadata) -> Tag 4 (Conversation Title).
+  3. Updates `extract_conv_text()` to prioritize step 23 checkpoint titles over directory fallbacks.
+
+---
+
+## 14. Issue 12: Orphaned Ghost Conversations Cleanup
+
+### Symptoms
+* Database contained 304 conversation summaries, but disk contained only 293 valid conversation databases.
+* 11 orphaned ghost conversations lingered in SQLite and Protobuf caches.
+
+### Root Cause
+* Earlier test executions and manual deletions deleted `.db` files without cleaning `conversation_summaries.db`.
+
+### Solution Applied
+* Ran automated audit and purged 11 orphaned conversation records from `conversation_summaries.db`.
+* Synchronized `agyhub_summaries_proto.pb` and `state.vscdb`, restoring active conversation count to exactly 293 healthy records.
+
+---
+
+## 15. Issue 13: Antigravity 1 White System Tray Icon Disparity
+
+### Symptoms
+* Antigravity 2 Desktop App system tray icon displayed with its custom colored emblem (Violet/Magenta on black).
+* Antigravity 1 Desktop App system tray icon displayed as default monochrome white.
+
+### Root Cause
+* Three-fold defect across icon generation, launcher environment, and runtime synchronizer:
+  1. **Launcher Environment**: `/home/reza/.local/bin/antigravity-1` exported `ANTIGRAVITY_ICON_PATH` but omitted `ANTIGRAVITY_TRAY_ICON_PATH`. Electron's `dist/tray.js` fell back to built-in monochrome white icon.
+  2. **Icon Generator**: `bin/antigravity-generate-icons.py` wrote `antigravity-acc2-tray.png` but never created `antigravity-1-tray.png` or `antigravity-tray.png`.
+  3. **Runtime Synchronizer**: `bin/antigravity-apply-icon.py`'s `sync_tray_cache()` only matched Account 2 processes (`antigravity-profile2`) and copied `ACC2_TRAY_PATH` over Chromium's `/tmp/org.chromium.Chromium.*/status_icon_*.png`. It completely ignored Account 1 processes.
+
+### Solution Applied
+* In [bin/antigravity-generate-icons.py](bin/antigravity-generate-icons.py): Added generation of `antigravity-1-tray.png` and `antigravity-tray.png` in 1024x1024 master, 48x48, 32x32, 24x24 in both `~/.local/share/icons/` and `hicolor/{sz}x{sz}/apps` + `hicolor/{sz}x{sz}/status`.
+* In [bin/antigravity-apply-icon.py](bin/antigravity-apply-icon.py): Defined `ACC1_TRAY_PATH` and updated `sync_tray_cache()` to classify both Account 1 and Account 2 processes, copying the appropriate tray icon to `/tmp/org.chromium.Chromium.*/status_icon_*.png`.
+* In [bin/manage-antigravity.sh](bin/manage-antigravity.sh) and [~/.local/bin/antigravity-1](~/.local/bin/antigravity-1): Added `export ANTIGRAVITY_TRAY_ICON_PATH="${LOCAL_ICONS}/${icon_name}-tray.png"`.
+* In [bin/antigravity-f5-patch.js](bin/antigravity-f5-patch.js): Added fallback to `ANTIGRAVITY_ICON_PATH` before default white icon.
+
+---
+
+## 16. Summary Checklist for Future Diagnostics
 
 | Checkpoint | Target Path / Command | Expected Healthy State |
 | :--- | :--- | :--- |
 | **Protobuf Tag 20** | `src/antigravity_suite/proto/cascade.py` | Must NOT emit Tag 20 when `source == 0` |
 | **Protobuf Tag 1 vs 2** | `src/antigravity_suite/proto/cascade.py` | Tag 1 = Clean Title, Tag 2 = Preview Prompt |
+| **Checkpoint Step 23** | `src/antigravity_suite/history/extractor.py` | Decodes `Tag 30 -> Tag 4` from `<uuid>.db` for authentic LLM title |
+| **Timestamp Floor** | `src/antigravity_suite/history/item_metadata.py` | Normalized ms > Jan 1, 2020; prevents "2027y" epoch 0 bug |
+| **Deletion Sync** | `src/antigravity_suite/history/deletion.py` | Bidirectional purge when `<uuid>.db` is removed; prevents infinite spinner |
+| **Tray Icon Paths** | `~/.local/share/icons/` | `antigravity-1-tray.png` & `antigravity-acc2-tray.png` (48x48, 32x32, 24x24) |
+| **Launcher Tray Env** | `~/.local/bin/antigravity-1`, `antigravity-acc2` | Exports `ANTIGRAVITY_TRAY_ICON_PATH` |
+| **Tray Cache Sync** | `bin/antigravity-apply-icon.py` | Syncs `/tmp/org.chromium.Chromium.*/status_icon_*.png` for both Acc1 & Acc2 |
 | **Hub vs IDE Partition** | `conversation_summaries.db` | `app_data_dir`: `antigravity` (Hub) vs `antigravity-ide` (IDE) |
 | **Hub Binary Proto** | `agyhub_summaries_proto.pb` | Contains ONLY Hub partition chats (~53), NOT IDE workspace chats |
-| **IDE State** | `state.vscdb` (`trajectorySummaries`) | Contains ALL workspace chats (309) |
+| **IDE State** | `state.vscdb` (`trajectorySummaries`) | Contains ALL workspace chats (293) |
 | **Audit Log** | `~/.gemini/antigravity/history_merger_audit.log` | JSONL records for all mutations |
-| **Sidebar Grouping** | `~/.config/Antigravity/app_storage.json` | `"projectsGroupBy": "none"` |
-| **Conversations Folder** | `~/.gemini/antigravity/conversations/` | Contains ONLY `<UUID>.db` files (no `conversation_summaries.db`) |
 | **Language Server Health** | `~/.config/Antigravity/logs/language_server.log` | `reconcile checked N, restored 0, cached N, dropped 0` |
-| **Unit Test Suite** | `python3 -m unittest discover tests` | All 104 tests passing |
+| **Unit Test Suite** | `python3 -m unittest discover tests` | All 113 tests passing |
