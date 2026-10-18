@@ -28,10 +28,12 @@ from antigravity_suite.history.discovery import (
 )
 from antigravity_suite.history.distribution import replicate_to_ide_profiles
 from antigravity_suite.history.extractor import (
+    extract_conv_prompts,
     extract_conv_text,
     get_annotation_info,
     get_annotation_title,
     is_clean_title,
+    is_prompt_text,
     sync_annotation_file,
 )
 from antigravity_suite.history.models import ConversationSummary, SyncStats
@@ -354,29 +356,35 @@ def resolve_conversation_item(
     ext_t, ext_p = extract_conv_text(db_file, transcript_file)
     clean_ext_t = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", ext_t or "").strip()
 
-    prompt_cands = set()
-    for raw_p in [ext_p]:
-        if raw_p:
-            p_clean = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", raw_p).strip()
-            if p_clean:
-                prompt_cands.add(p_clean)
-                lines = [l.strip() for l in p_clean.split("\n") if l.strip()]
-                if lines:
-                    prompt_cands.add(lines[0])
-            if raw_p.strip():
-                prompt_cands.add(raw_p.strip())
+    prompt_cands = extract_conv_prompts(db_file, transcript_file)
+    if ext_p:
+        prompt_cands.add(ext_p.strip())
+        p_clean = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", ext_p).strip()
+        if p_clean:
+            prompt_cands.add(p_clean)
 
-    # 1. Check existing titles (anno_title, curr_title, raw_title)
+    # 1. Check existing titles (curr_title, anno_title, raw_title)
+    # Prefer curr_title (master DB) if clean and not a prompt, to prevent IDE prompt overwrites
     existing_clean_title = ""
-    for cand in [anno_title, curr_title, raw_title]:
-        if cand and is_clean_title(cand) and cand.strip() not in prompt_cands:
+    for cand in [curr_title, anno_title, raw_title]:
+        if (
+            cand
+            and is_clean_title(cand)
+            and not is_prompt_text(cand, prompt_cands)
+            and cand.strip() not in ["Conversation", "Untitled Conversation"]
+        ):
             existing_clean_title = cand.strip()
             break
 
     # 2. Check LLM summaries (raw_summary, parsed_sql summary, curr_prev)
     llm_title = ""
     for cand in [raw_summary, parsed_sql.get("summary", ""), curr_prev]:
-        if cand and is_clean_title(cand) and cand.strip() not in prompt_cands:
+        if (
+            cand
+            and is_clean_title(cand)
+            and not is_prompt_text(cand, prompt_cands)
+            and cand.strip() not in ["Conversation", "Untitled Conversation"]
+        ):
             llm_title = cand.strip()
             break
 
@@ -385,7 +393,7 @@ def resolve_conversation_item(
         final_title = existing_clean_title
     elif llm_title:
         final_title = llm_title
-    elif clean_ext_t and is_clean_title(clean_ext_t) and clean_ext_t not in prompt_cands:
+    elif clean_ext_t and is_clean_title(clean_ext_t) and not is_prompt_text(clean_ext_t, prompt_cands):
         final_title = clean_ext_t
     else:
         final_title = "Conversation"
@@ -432,8 +440,8 @@ def resolve_conversation_item(
     needs_title_rebuild = bool(
         curr_raw_tit != final_title
         or curr_raw_sum != expected_proto_sum
-        or (curr_raw_sum in prompt_cands)
-        or (curr_raw_tit in prompt_cands)
+        or is_prompt_text(curr_raw_sum, prompt_cands)
+        or is_prompt_text(curr_raw_tit, prompt_cands)
         or has_dirty_title
     )
     needs_ws_rebuild = bool(ws_uri and ws_uri != parsed_raw.get("workspace_uri"))
@@ -572,7 +580,7 @@ def resolve_conversation_item(
         source="",
     )
     upsert_summary(con, summary_model)
-    if final_title and is_clean_title(final_title) and (not clean_ext_t or final_title != clean_ext_t):
+    if final_title and is_clean_title(final_title) and not is_prompt_text(final_title, prompt_cands):
         sync_annotation_file(effective_master, conv_id, final_title, pinned=is_pinned, archived=is_archived, force=True)
     else:
         # No authentic title: clean up stale prompt annotation file if present
@@ -583,7 +591,7 @@ def resolve_conversation_item(
                 m = re.search(r'title\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', content)
                 if m:
                     existing_t = m.group(1).strip()
-                    if not is_clean_title(existing_t) or existing_t == clean_ext_t:
+                    if not is_clean_title(existing_t) or is_prompt_text(existing_t, prompt_cands):
                         new_content = re.sub(r'\s*title\s*:\s*"[^"\\]*(?:\\.[^"\\]*)*"', '', content).strip()
                         has_pin = bool(re.search(r'pinned\s*:\s*true', new_content, re.IGNORECASE))
                         has_arc = bool(re.search(r'archived\s*:\s*true', new_content, re.IGNORECASE))
@@ -656,7 +664,7 @@ def synchronize_master_summaries(
             with open(master_proto, "rb") as f:
                 proto_data = f.read()
             for c_uuid, raw in extract_entries_from_proto(proto_data).items():
-                if raw and len(raw) > 20:
+                if raw and len(raw) > 20 and c_uuid not in all_summaries:
                     all_summaries[c_uuid] = raw
         except Exception:
             pass

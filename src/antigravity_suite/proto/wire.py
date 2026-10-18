@@ -236,9 +236,14 @@ def extract_entries_from_proto(data: bytes) -> Dict[str, bytes]:
                     break
 
             if entry_key and entry_val:
-                pure = extract_pure_binary_summary(entry_val)
-                if pure:
-                    entries[entry_key] = pure
+                if entry_key == "trajectorySummaries":
+                    sub_entries = extract_entries_from_proto(entry_val)
+                    if sub_entries:
+                        entries.update(sub_entries)
+                else:
+                    pure = extract_pure_binary_summary(entry_val)
+                    if pure:
+                        entries[entry_key] = pure
             else:
                 # Could be an outer container wrapping entries (e.g. in antigravityUnifiedStateSync)
                 sub_entries = extract_entries_from_proto(entry_data)

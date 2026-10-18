@@ -13,7 +13,7 @@ import os
 import re
 import sqlite3
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Optional, Set, Tuple, Union
 
 from antigravity_suite.history.synthesizer import parse_step14_user_prompt
 
@@ -121,86 +121,73 @@ def sync_annotation_file(
     archived: Optional[bool] = None,
     force: bool = False,
 ) -> bool:
-    """Ensures annotations/<conv_id>.pbtxt exists, has title, and preserves pinned/archived states."""
+    """Ensures annotations/<conv_id>.pbtxt exists, has valid title, and preserves pinned/archived states."""
     anno_dir = os.path.join(str(master_gemini), "annotations")
     os.makedirs(anno_dir, exist_ok=True)
     anno_file = os.path.join(anno_dir, f"{conv_id}.pbtxt")
 
     clean_title = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", title or "").strip()
     clean_title = clean_title.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
-    is_valid_title = is_clean_title(clean_title)
-    title_line = f'title: "{clean_title}"' if is_valid_title else ""
+    is_valid_title = is_clean_title(clean_title) and clean_title not in ["Conversation", "Untitled Conversation"]
 
+    existing_content = ""
     if os.path.isfile(anno_file):
         try:
             with open(anno_file, "r", encoding="utf-8", errors="ignore") as f:
-                content = f.read()
-            m = re.search(r'title\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', content)
-            if m:
-                existing_t = m.group(1).strip()
-                if not is_clean_title(existing_t):
-                    # Existing title is dirty or shell prompt. Replace or remove it.
-                    if is_valid_title:
-                        new_content = re.sub(r'title\s*:\s*"[^"\\]*(?:\\.[^"\\]*)*"', title_line, content)
-                    else:
-                        new_content = re.sub(r'\s*title\s*:\s*"[^"\\]*(?:\\.[^"\\]*)*"', '', content)
-                elif force and is_valid_title:
-                    new_content = re.sub(r'title\s*:\s*"[^"\\]*(?:\\.[^"\\]*)*"', title_line, content)
-                else:
-                    new_content = content
-            else:
-                if is_valid_title:
-                    new_content = f"{title_line}  {content}".strip()
-                else:
-                    new_content = content
-
-            if pinned is True:
-                if not re.search(r'pinned\s*:\s*true', new_content, re.IGNORECASE):
-                    new_content = new_content.strip() + "  pinned:true"
-            elif pinned is False:
-                new_content = re.sub(r'\s*pinned\s*:\s*true', '', new_content, flags=re.IGNORECASE)
-
-            if archived is True:
-                if not re.search(r'archived\s*:\s*true', new_content, re.IGNORECASE):
-                    new_content = new_content.strip() + "  archived:true"
-            elif archived is False:
-                new_content = re.sub(r'\s*archived\s*:\s*true', '', new_content, flags=re.IGNORECASE)
-
-            new_content = re.sub(r'[ \t]+', ' ', new_content).strip()
-
-            has_pinned = bool(re.search(r'pinned\s*:\s*true', new_content, re.IGNORECASE))
-            has_archived = bool(re.search(r'archived\s*:\s*true', new_content, re.IGNORECASE))
-            has_title = bool(re.search(r'title\s*:\s*"[^"\\]*(?:\\.[^"\\]*)*"', new_content))
-
-            if not has_pinned and not has_archived and not has_title:
-                try:
-                    os.remove(anno_file)
-                    return True
-                except Exception:
-                    pass
-
-            if new_content != content.strip():
-                with open(anno_file, "w", encoding="utf-8") as f:
-                    f.write(f"{new_content}\n")
-                return True
+                existing_content = f.read()
         except Exception:
-            return False
-    else:
-        if not is_valid_title and not pinned and not archived:
-            return False
+            pass
+
+    existing_t = ""
+    m = re.search(r'title\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', existing_content)
+    if m:
+        existing_t = m.group(1).strip()
+
+    is_pinned = pinned
+    if is_pinned is None:
+        is_pinned = bool(re.search(r'pinned\s*:\s*true', existing_content, re.IGNORECASE))
+
+    is_archived = archived
+    if is_archived is None:
+        is_archived = bool(re.search(r'archived\s*:\s*true', existing_content, re.IGNORECASE))
+
+    final_t = ""
+    if is_valid_title:
+        if force or not existing_t or not is_clean_title(existing_t):
+            final_t = clean_title
+        else:
+            final_t = existing_t
+    elif existing_t and is_clean_title(existing_t) and existing_t not in ["Conversation", "Untitled Conversation"]:
+        final_t = existing_t
+
+    extra_fields = []
+    for extra in re.findall(r'(last_user_view_time\s*:\s*\{[^}]*\})', existing_content):
+        extra_fields.append(extra.strip())
+
+    if not final_t and not is_pinned and not is_archived and not extra_fields:
+        if os.path.isfile(anno_file):
+            try:
+                os.remove(anno_file)
+                return True
+            except Exception:
+                pass
+        return False
+
+    lines = []
+    if final_t:
+        lines.append(f'title: "{final_t}"')
+    if is_pinned:
+        lines.append("pinned:true")
+    if is_archived:
+        lines.append("archived:true")
+    for extra in extra_fields:
+        lines.append(extra)
+
+    new_content = "\n".join(lines) + "\n"
+    if new_content != existing_content:
         try:
-            body_parts = []
-            if is_valid_title:
-                body_parts.append(title_line)
-            if pinned is True:
-                body_parts.append("pinned:true")
-            if archived is True:
-                body_parts.append("archived:true")
-            body = "  ".join(body_parts)
-            if not body:
-                return False
             with open(anno_file, "w", encoding="utf-8") as f:
-                f.write(f"{body}\n")
+                f.write(new_content)
             return True
         except Exception:
             return False
@@ -208,6 +195,7 @@ def sync_annotation_file(
 
 
 _EXTRACT_CACHE: Dict[Tuple[str, int, int, str, int, int], Tuple[str, str]] = {}
+_PROMPT_CACHE: Dict[Tuple[str, int, int, str, int, int], Set[str]] = {}
 
 
 def _get_file_stat(p: Union[str, Path, None]) -> Tuple[int, int]:
@@ -218,6 +206,116 @@ def _get_file_stat(p: Union[str, Path, None]) -> Tuple[int, int]:
         return (st.st_mtime_ns, st.st_size)
     except OSError:
         return (0, 0)
+
+
+def extract_conv_prompts(
+    db_path: Union[str, Path, None],
+    transcript_path: Union[str, Path, None],
+) -> Set[str]:
+    """
+    Extracts all user prompt text variants across DB steps and transcript logs
+    to prevent raw prompts from ever being treated as conversation titles.
+    """
+    db_key = str(db_path) if db_path else ""
+    tr_key = str(transcript_path) if transcript_path else ""
+    stat_db = _get_file_stat(db_path)
+    stat_tr = _get_file_stat(transcript_path)
+    cache_key = (db_key, stat_db[0], stat_db[1], tr_key, stat_tr[0], stat_tr[1])
+    if cache_key in _PROMPT_CACHE:
+        return set(_PROMPT_CACHE[cache_key])
+
+    prompts: Set[str] = set()
+
+    # 1. From transcript
+    t_str = str(transcript_path) if transcript_path else ""
+    if t_str and os.path.isfile(t_str):
+        try:
+            with open(t_str, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        if entry.get("type") == "USER_INPUT" or entry.get("source") == "USER_EXPLICIT":
+                            content = entry.get("content", "")
+                            if isinstance(content, str) and content.strip():
+                                m = re.search(r"<USER_REQUEST>(.*?)</USER_REQUEST>", content, re.DOTALL)
+                                raw = m.group(1).strip() if m else content.strip()
+                                if raw:
+                                    prompts.add(raw)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    # 2. From SQLite steps table
+    db_str = str(db_path) if db_path else ""
+    if db_str and os.path.isfile(db_str):
+        conn = None
+        try:
+            conn = sqlite3.connect(db_str, timeout=10.0)
+            cur = conn.cursor()
+            cur.execute("SELECT step_payload FROM steps WHERE step_type = 14;")
+            for r in cur.fetchall():
+                if r[0]:
+                    p = parse_step14_user_prompt(r[0])
+                    if p and p.strip():
+                        prompts.add(p.strip())
+        except Exception:
+            pass
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+    signatures: Set[str] = set()
+    for p in prompts:
+        signatures.add(p)
+        clean = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", p).strip()
+        if clean:
+            signatures.add(clean)
+            space_clean = re.sub(r"\s+", " ", clean).strip()
+            signatures.add(space_clean)
+            for l in clean.split("\n"):
+                l_strip = l.strip()
+                if l_strip:
+                    signatures.add(l_strip)
+                    sh_clean = re.sub(
+                        r"^(?:[╰╭│├└─\s]*[❯>$#%]\s*|root@[^:]+:[^\s#$]+[#$]\s*|[a-zA-Z0-9_-]+@[^:]+:[^\s#$]+[#$]\s*)",
+                        "",
+                        l_strip,
+                    ).strip()
+                    if sh_clean:
+                        signatures.add(sh_clean)
+            for length in [60, 77, 80, 100]:
+                if len(space_clean) >= length:
+                    signatures.add(space_clean[:length].strip())
+
+    _PROMPT_CACHE[cache_key] = signatures
+    return signatures
+
+
+def is_prompt_text(cand: Optional[str], prompt_cands: Set[str]) -> bool:
+    """Returns True if candidate string matches any prompt variant or prefix."""
+    if not cand or not isinstance(cand, str):
+        return False
+    cand_s = cand.strip()
+    if not cand_s:
+        return False
+    if cand_s in prompt_cands:
+        return True
+    cand_norm = re.sub(r"\s+", " ", cand_s).lower()
+    for p in prompt_cands:
+        p_norm = re.sub(r"\s+", " ", p).lower()
+        if cand_norm == p_norm:
+            return True
+        min_len = min(len(cand_norm), len(p_norm))
+        if min_len >= 25 and cand_norm[:min_len] == p_norm[:min_len]:
+            return True
+    return False
 
 
 def extract_conv_text(
@@ -293,7 +391,7 @@ def extract_conv_text(
 
     # Inspect SQLite database if transcript was not enough
     db_str = str(db_path) if db_path else ""
-    if not first_user_prompt and os.path.isfile(db_str):
+    if (not first_user_prompt or not latest_user_prompt) and os.path.isfile(db_str):
         conn = None
         try:
             conn = sqlite3.connect(db_str, timeout=15.0)

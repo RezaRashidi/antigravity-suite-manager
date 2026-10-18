@@ -1165,8 +1165,44 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             anno_file = master / "annotations" / f"{conv_id}.pbtxt"
             self.assertFalse(anno_file.exists())
 
+    def test_is_prompt_text_prefix_and_truncation(self):
+        from antigravity_suite.history.extractor import is_prompt_text
+        prompt_cands = {
+            "می خواهم یک سناریو واقعی برای تست k6 بنویسم فقط بک اند وصل شو به گرافنا افرانت و سناریو رو برام آماده کن",
+        }
+        # Exact match
+        self.assertTrue(is_prompt_text("می خواهم یک سناریو واقعی برای تست k6 بنویسم فقط بک اند وصل شو به گرافنا افرانت و سناریو رو برام آماده کن", prompt_cands))
+        # 80-char prefix truncation
+        truncated = "می خواهم یک سناریو واقعی برای تست k6 بنویسم فقط بک اند وصل شو به گرافنا افرانت و"
+        self.assertTrue(is_prompt_text(truncated, prompt_cands))
+        # 40-char prefix truncation
+        self.assertTrue(is_prompt_text(truncated[:40], prompt_cands))
+        # Authentic title must NOT match
+        self.assertFalse(is_prompt_text("طراحی سناریو تست بارگیری", prompt_cands))
+
+    def test_sync_annotation_multiline_with_last_user_view_time(self):
+        from antigravity_suite.history.extractor import sync_annotation_file
+        with tempfile.TemporaryDirectory() as td:
+            cid = "99999999-8888-7777-6666-555555555555"
+            anno_dir = Path(td) / "annotations"
+            anno_dir.mkdir(parents=True)
+            anno_file = anno_dir / f"{cid}.pbtxt"
+            # Pre-existing pbtxt with last_user_view_time
+            anno_file.write_text('title: "Old Title"\nlast_user_view_time:{seconds:1792305404 nanos:509000000}\n')
+
+            sync_annotation_file(td, cid, "طراحی سناریو تست بارگیری", pinned=True, force=True)
+
+            content = anno_file.read_text()
+            lines = [l.strip() for l in content.splitlines() if l.strip()]
+            self.assertIn('title: "طراحی سناریو تست بارگیری"', lines)
+            self.assertIn('pinned:true', lines)
+            self.assertIn('last_user_view_time:{seconds:1792305404 nanos:509000000}', lines)
+            # Ensure each field is on its own line
+            self.assertEqual(len(lines), 3)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

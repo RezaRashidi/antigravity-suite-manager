@@ -108,7 +108,7 @@ def build_unified_state_sync(all_summaries: Dict[str, bytes], existing_raw_b64: 
                                 _, sub_pos = read_varint(field_val, sub_pos)
                             else:
                                 break
-                        if sub_key == "trajectorySummaries":
+                        if sub_key == "trajectorySummaries" or not sub_key or not sub_key.isidentifier():
                             continue
                 elif wire_type == 5:
                     pos += 4

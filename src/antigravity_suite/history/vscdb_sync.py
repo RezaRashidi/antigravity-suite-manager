@@ -16,8 +16,10 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 from antigravity_suite.history.extractor import (
+    extract_conv_prompts,
     extract_conv_text,
     is_clean_title,
+    is_prompt_text,
     sync_annotation_file,
 )
 from antigravity_suite.history.projects import get_project_id_for_workspace, normalize_workspace_uri
@@ -132,23 +134,18 @@ def ingest_vscdb_summaries(
 
                     db_p = master_conv_dir / f"{u_id}.db"
                     tr_p = master_conv_dir.parent / "brain" / u_id / ".system_generated" / "logs" / "transcript.jsonl"
-                    prompt_t, prompt_prev = extract_conv_text(db_p, tr_p)
-                    clean_prompts = set()
-                    for p_raw in [prompt_t, prompt_prev]:
-                        if p_raw:
-                            clean_p = re.sub(r"(?:in\s*)?@\[[^\]]+\]", "", p_raw).strip()
-                            if clean_p:
-                                clean_prompts.add(clean_p)
-                                lines = [l.strip() for l in clean_p.split("\n") if l.strip()]
-                                if lines:
-                                    clean_prompts.add(lines[0])
-                            if p_raw.strip():
-                                clean_prompts.add(p_raw.strip())
+                    clean_prompts = extract_conv_prompts(db_p, tr_p)
 
-                    # Prefer authentic title that is NOT the raw user prompt
+                    # Prefer authentic summary (Tag 1), which holds LLM-generated title
+                    # Tag 15 (title) is only user prompt fallback
                     ide_title = ""
-                    for cand in [ide_annot_title, ide_summary]:
-                        if cand and is_clean_title(cand) and cand.strip() not in clean_prompts:
+                    for cand in [ide_summary, ide_annot_title]:
+                        if (
+                            cand
+                            and is_clean_title(cand)
+                            and not is_prompt_text(cand, clean_prompts)
+                            and cand.strip() not in ["Conversation", "Untitled Conversation"]
+                        ):
                             ide_title = cand.strip()
                             break
 
@@ -157,9 +154,14 @@ def ingest_vscdb_summaries(
                         curr_t = (curr_parsed.get("title") or curr_parsed.get("summary") or "").strip()
                         should_update = False
                         if ide_title:
-                            if not curr_t or not is_clean_title(curr_t) or curr_t in clean_prompts:
-                                should_update = True
-                            elif curr_t != ide_title:
+                            # Never overwrite an existing authentic title in master!
+                            # Only update if master title is missing, generic, or dirty/polluted by prompt
+                            if (
+                                not curr_t
+                                or not is_clean_title(curr_t)
+                                or is_prompt_text(curr_t, clean_prompts)
+                                or curr_t in ["Conversation", "Untitled Conversation"]
+                            ):
                                 should_update = True
 
                         if should_update:
