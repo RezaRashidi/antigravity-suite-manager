@@ -156,6 +156,37 @@ class TestProjectMappingAndGrouping(unittest.TestCase):
         expected_root = f"file://{repo_dir}"
         self.assertEqual(normalize_workspace_uri(sub_uri, user_home=self.temp_dir), expected_root)
 
+    def test_dynamic_container_learning_and_vscdb_discovery(self):
+        """Verifies custom opened workspaces dynamically teach container names."""
+        import sqlite3
+        from antigravity_suite.history.projects import (
+            PROJECT_CONTAINERS,
+            discover_workspace_roots,
+            normalize_workspace_uri,
+        )
+
+        vsc_dir = self.temp_dir / ".config" / "Antigravity IDE" / "User" / "globalStorage"
+        vsc_dir.mkdir(parents=True, exist_ok=True)
+        db_path = vsc_dir / "state.vscdb"
+
+        custom_root = self.temp_dir / "custom-work-dir" / "secret-app"
+        custom_root.mkdir(parents=True, exist_ok=True)
+        custom_uri = custom_root.as_uri()
+
+        with sqlite3.connect(db_path) as con:
+            cur = con.cursor()
+            cur.execute("CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value TEXT);")
+            recent_data = json.dumps({"entries": [{"folderUri": custom_uri}]})
+            cur.execute("INSERT INTO ItemTable VALUES ('history.recentlyOpenedPathsList', ?);", (recent_data,))
+
+        discovered = discover_workspace_roots(user_home=self.temp_dir)
+        self.assertIn(custom_uri, discovered)
+        self.assertIn("custom-work-dir", PROJECT_CONTAINERS)
+
+        sub_file_uri = (custom_root / "src" / "deep" / "nested" / "file.py").as_uri()
+        norm = normalize_workspace_uri(sub_file_uri, user_home=self.temp_dir)
+        self.assertEqual(norm, custom_uri)
+
 
 if __name__ == "__main__":
     unittest.main()

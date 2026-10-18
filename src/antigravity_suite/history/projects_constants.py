@@ -4,6 +4,8 @@ Project Mapping Constants and In-Memory Registries.
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 PROJECT_CONTAINERS: Set[str] = {
@@ -17,6 +19,29 @@ KNOWN_ROOTS: List[str] = []
 KNOWN_PROJECT_MAPPINGS: Dict[str, str] = {}
 _PROJECT_MAPPINGS_CACHE: Optional[Dict[str, str]] = None
 _LAST_MAPPINGS_DISCOVERY_TIME: float = 0.0
+
+
+def load_dynamic_containers(user_home: Optional[Path] = None) -> None:
+    """Loads additional custom project containers from environment or paths.conf."""
+    env_c = os.environ.get("ANTIGRAVITY_PROJECT_CONTAINERS")
+    if env_c:
+        for item in env_c.split(","):
+            if item.strip():
+                PROJECT_CONTAINERS.add(item.strip().lower())
+    try:
+        from antigravity_suite.config import get_user_home
+        home = user_home or get_user_home()
+        conf = home / ".config" / "antigravity" / "paths.conf"
+        if conf.is_file():
+            with open(conf, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("PROJECT_CONTAINERS=") or line.startswith("CUSTOM_PROJECT_CONTAINERS="):
+                        val = line.split("=", 1)[1].strip().strip('"\'')
+                        for item in val.split(","):
+                            if item.strip():
+                                PROJECT_CONTAINERS.add(item.strip().lower())
+    except Exception:
+        pass
 
 
 def register_known_root(root_uri: str) -> None:
@@ -49,3 +74,6 @@ def clear_workspace_caches() -> None:
         normalize_workspace_uri.cache_clear()
     except Exception:
         pass
+
+
+load_dynamic_containers()

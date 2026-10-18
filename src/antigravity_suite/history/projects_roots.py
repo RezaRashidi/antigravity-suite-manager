@@ -9,9 +9,11 @@ import json
 import os
 from pathlib import Path
 from typing import List, Optional, Set
+from urllib.parse import unquote, urlsplit
 
 from antigravity_suite.config import get_user_home
-from antigravity_suite.history.projects_constants import KNOWN_ROOTS
+from antigravity_suite.history.projects_constants import KNOWN_ROOTS, PROJECT_CONTAINERS
+from antigravity_suite.history.projects_vscdb_roots import discover_roots_from_vscdb
 
 
 def get_candidate_gemini_dirs(user_home: Optional[Path] = None) -> List[Path]:
@@ -42,14 +44,14 @@ def get_candidate_gemini_dirs(user_home: Optional[Path] = None) -> List[Path]:
 
 
 def discover_workspace_roots(user_home: Optional[Path] = None) -> List[str]:
-    """Dynamically discovers all authentic workspace roots."""
+    """Dynamically discovers all authentic workspace roots across configs and IDE state."""
     home = user_home or get_user_home()
     roots_set: Set[str] = set(KNOWN_ROOTS)
 
     for gdir in get_candidate_gemini_dirs(home):
-        projects_dir = gdir / "config" / "projects"
-        if projects_dir.is_dir():
-            for fpath in projects_dir.glob("*.json"):
+        pdir = gdir / "config" / "projects"
+        if pdir.is_dir():
+            for fpath in pdir.glob("*.json"):
                 if fpath.name in ("outside-of-project.json", "default-cli-project.json"):
                     continue
                 try:
@@ -58,7 +60,7 @@ def discover_workspace_roots(user_home: Optional[Path] = None) -> List[str]:
                     for r in data.get("projectResources", {}).get("resources", []):
                         furi = r.get("folderUri") or r.get("gitFolder", {}).get("folderUri")
                         if furi and str(furi).startswith("file://"):
-                            roots_set.add(str(furi))
+                            roots_set.add(str(furi).rstrip("/"))
                 except Exception:
                     pass
 
@@ -73,11 +75,21 @@ def discover_workspace_roots(user_home: Optional[Path] = None) -> List[str]:
                     wdata = json.load(f)
                 furi = wdata.get("folder") or wdata.get("workspace")
                 if furi and str(furi).startswith("file://") and not any(k in str(furi) for k in [".gemini", "Workspaces"]):
-                    roots_set.add(str(furi))
+                    roots_set.add(str(furi).rstrip("/"))
             except Exception:
                 pass
+
+    for vsc_root in discover_roots_from_vscdb(home):
+        roots_set.add(vsc_root)
 
     for r in sorted(roots_set):
         if r not in KNOWN_ROOTS:
             KNOWN_ROOTS.append(r)
+        try:
+            p_name = Path(unquote(urlsplit(r).path).replace("\\", "/").rstrip("/")).parent.name.lower()
+            if p_name and p_name not in ("home", "users", "root", "", "/"):
+                PROJECT_CONTAINERS.add(p_name)
+        except Exception:
+            pass
+
     return sorted(list(roots_set), key=len, reverse=True)

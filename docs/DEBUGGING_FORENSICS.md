@@ -417,7 +417,30 @@ print("Tag 15 (annotations.title):", parsed.get("title"))
 
 ---
 
-## 16. Summary Checklist for Future Diagnostics
+---
+
+## 16. Issue 14: Dynamic Workspace Discovery & Elimination of Static Container Assumptions
+
+### Symptoms
+* On machines without standard JetBrains folder paths (e.g., custom structures like `/data/repos/`, `/home/user/work/`, `/srv/projects/`), chats created without selecting a project (`outside-of-project`) failed to normalize to their authentic workspace root.
+* Subfolder tool calls (`Cwd`, `AbsolutePath`) either failed validation or fell back to raw deep paths rather than grouping under the actual project opened in the IDE.
+* Hardcoding `PROJECT_CONTAINERS` (`phpstormprojects`, `webstormprojects`, etc.) caused machine-specific disparities between primary and secondary environments.
+
+### Root Cause
+1. **Static Container Heuristic**: `PROJECT_CONTAINERS` was a fixed Python set. If a developer's parent directory was not named in this set, subfolder truncation failed.
+2. **Incomplete Workspace Discovery**: `discover_workspace_roots()` inspected `workspaceStorage/*/workspace.json` but ignored VS Code's primary global storage database (`state.vscdb`), specifically `history.recentlyOpenedPathsList`. Workspaces opened via IDE on non-standard paths were not registered into `KNOWN_ROOTS`.
+3. **Marker File Traps**: Attempting to deduce project roots from generic project markers (`package.json`, `composer.json`, `Makefile`) is flawed in monorepo, microservice, and nested package setups (e.g., `/monorepo/frontend/package.json` would be falsely treated as a distinct root instead of the parent `/monorepo` opened in the IDE). In Antigravity, a workspace is *strictly and exclusively* a folder the user actually opened in the IDE or Hub.
+
+### Solution Applied
+1. **IDE Global Storage Ingestion**: Implemented [projects_vscdb_roots.py](src/antigravity_suite/history/projects_vscdb_roots.py) to query `state.vscdb` (`history.recentlyOpenedPathsList`) across all user profiles, retrieving all authentic folders opened by the user regardless of filesystem location.
+2. **Dynamic Container Learning**: Updated [projects_roots.py](src/antigravity_suite/history/projects_roots.py) so that when authentic workspace roots are discovered (from `config/projects/*.json` or `state.vscdb`), their immediate parent folder names are automatically registered into `PROJECT_CONTAINERS`.
+3. **Configurable Extensibility**: Added `load_dynamic_containers()` in [projects_constants.py](src/antigravity_suite/history/projects_constants.py) to load custom container directory names from `~/.config/antigravity/paths.conf` (`PROJECT_CONTAINERS="..."`) or environment variable `ANTIGRAVITY_PROJECT_CONTAINERS`.
+4. **Prefix Matching Priority**: [projects_normalize.py](src/antigravity_suite/history/projects_normalize.py) matches against authentic known opened roots using longest prefix matching. If a path does not belong to any opened workspace, it stays `outside-of-project` rather than guessing or corrupting filesystem roots.
+5. **Regression Verification**: Added `test_dynamic_container_learning_and_vscdb_discovery` in [tests/test_projects.py](tests/test_projects.py). All 114 tests passing.
+
+---
+
+## 17. Summary Checklist for Future Diagnostics
 
 | Checkpoint | Target Path / Command | Expected Healthy State |
 | :--- | :--- | :--- |
@@ -429,9 +452,10 @@ print("Tag 15 (annotations.title):", parsed.get("title"))
 | **Tray Icon Paths** | `~/.local/share/icons/` | `antigravity-1-tray.png` & `antigravity-acc2-tray.png` (48x48, 32x32, 24x24) |
 | **Launcher Tray Env** | `~/.local/bin/antigravity-1`, `antigravity-acc2` | Exports `ANTIGRAVITY_TRAY_ICON_PATH` |
 | **Tray Cache Sync** | `bin/antigravity-apply-icon.py` | Syncs `/tmp/org.chromium.Chromium.*/status_icon_*.png` for both Acc1 & Acc2 |
+| **Dynamic Workspaces** | `src/antigravity_suite/history/projects_roots.py` | Queries `state.vscdb` (`recentlyOpenedPathsList`); dynamically learns containers |
 | **Hub vs IDE Partition** | `conversation_summaries.db` | `app_data_dir`: `antigravity` (Hub) vs `antigravity-ide` (IDE) |
 | **Hub Binary Proto** | `agyhub_summaries_proto.pb` | Contains ONLY Hub partition chats (~53), NOT IDE workspace chats |
 | **IDE State** | `state.vscdb` (`trajectorySummaries`) | Contains ALL workspace chats (293) |
 | **Audit Log** | `~/.gemini/antigravity/history_merger_audit.log` | JSONL records for all mutations |
 | **Language Server Health** | `~/.config/Antigravity/logs/language_server.log` | `reconcile checked N, restored 0, cached N, dropped 0` |
-| **Unit Test Suite** | `python3 -m unittest discover tests` | All 113 tests passing |
+| **Unit Test Suite** | `python3 -m unittest discover tests` | All 114 tests passing |
