@@ -264,7 +264,7 @@ if (fs.existsSync(trayPath)) {
     if (!trayCode.includes('process.env.ANTIGRAVITY_TRAY_ICON_PATH')) {
         const targetTrayIcon = "const icon = electron_1.nativeImage.createFromPath(path.join(__dirname, '..', iconFile));";
         const replacementTrayIcon = `const defaultIconPath = path.join(__dirname, '..', iconFile);
-    const trayIconPath = process.env.ANTIGRAVITY_TRAY_ICON_PATH || defaultIconPath;
+    const trayIconPath = process.env.ANTIGRAVITY_TRAY_ICON_PATH || process.env.ANTIGRAVITY_ICON_PATH || defaultIconPath;
     const icon = electron_1.nativeImage.createFromPath(trayIconPath);`;
 
         const targetTooltip = "tray.setToolTip(electron_1.app.getName());";

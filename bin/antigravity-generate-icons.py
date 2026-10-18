@@ -471,6 +471,8 @@ def main():
     # Write Master Icons in ~/.local/share/icons
     write_png(1024, 1024, rgba_acc1, os.path.join(LOCAL_ICONS, "antigravity.png"))
     write_png(1024, 1024, rgba_acc1, os.path.join(LOCAL_ICONS, "antigravity-1.png"))
+    write_png(1024, 1024, rgba_acc1, os.path.join(LOCAL_ICONS, "antigravity-tray.png"))
+    write_png(1024, 1024, rgba_acc1, os.path.join(LOCAL_ICONS, "antigravity-1-tray.png"))
     write_png(1024, 1024, rgba_acc2, os.path.join(LOCAL_ICONS, "antigravity-acc2.png"))
     write_png(1024, 1024, rgba_acc2, os.path.join(LOCAL_ICONS, "antigravity-acc2-tray.png"))
     write_png(1024, 1024, rgba_ide, os.path.join(LOCAL_ICONS, "antigravity-ide.png"))
@@ -481,6 +483,8 @@ def main():
         raw_map = {
             "antigravity.png": (os.path.join(tmp_dir, "raw_acc1_1024.raw"), rgba_acc1),
             "antigravity-1.png": (os.path.join(tmp_dir, "raw_acc1_1024.raw"), rgba_acc1),
+            "antigravity-tray.png": (os.path.join(tmp_dir, "raw_acc1_1024.raw"), rgba_acc1),
+            "antigravity-1-tray.png": (os.path.join(tmp_dir, "raw_acc1_1024.raw"), rgba_acc1),
             "antigravity-acc2.png": (os.path.join(tmp_dir, "raw_acc2_1024.raw"), rgba_acc2),
             "antigravity-acc2-tray.png": (os.path.join(tmp_dir, "raw_acc2_1024.raw"), rgba_acc2),
             "antigravity-ide.png": (os.path.join(tmp_dir, "raw_ide_1024.raw"), rgba_ide),
@@ -513,6 +517,21 @@ def main():
                     s_data = resample_raw(rgba_data, 1024, 1024, sz, sz)
                 write_png(sz, sz, s_data, dst_png)
 
+                # Generate dedicated crisp tray resolution files in ~/.local/share/icons and hicolor status
+                if sz == 48:
+                    if name in ("antigravity-1-tray.png", "antigravity-tray.png", "antigravity-acc2-tray.png"):
+                        write_png(48, 48, s_data, os.path.join(LOCAL_ICONS, name))
+                        status_dir = os.path.join(LOCAL_ICONS, "hicolor", "48x48", "status")
+                        os.makedirs(status_dir, exist_ok=True)
+                        write_png(48, 48, s_data, os.path.join(status_dir, name))
+                elif sz in (24, 32):
+                    if name in ("antigravity-1-tray.png", "antigravity-tray.png", "antigravity-acc2-tray.png"):
+                        base_stem = name[:-4]
+                        write_png(sz, sz, s_data, os.path.join(LOCAL_ICONS, f"{base_stem}-{sz}.png"))
+                        status_dir = os.path.join(LOCAL_ICONS, "hicolor", f"{sz}x{sz}", "status")
+                        os.makedirs(status_dir, exist_ok=True)
+                        write_png(sz, sz, s_data, os.path.join(status_dir, name))
+
     print("[SUCCESS] Multi-resolution hicolor themes (16 to 512) generated.")
 
     # Ensure index.theme exists in hicolor for GTK validation
@@ -527,7 +546,7 @@ def main():
     # Also copy top-level icons into ~/.local/share/pixmaps as standard FreeDesktop fallback
     pixmaps_dir = os.path.join(REAL_HOME, ".local/share/pixmaps")
     os.makedirs(pixmaps_dir, exist_ok=True)
-    for name in ["antigravity.png", "antigravity-1.png", "antigravity-ide.png", "antigravity-acc2.png"]:
+    for name in ["antigravity.png", "antigravity-1.png", "antigravity-tray.png", "antigravity-1-tray.png", "antigravity-ide.png", "antigravity-acc2.png", "antigravity-acc2-tray.png"]:
         src_f = os.path.join(LOCAL_ICONS, name)
         if os.path.isfile(src_f):
             try: shutil.copy2(src_f, os.path.join(pixmaps_dir, name))

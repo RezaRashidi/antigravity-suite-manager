@@ -38,7 +38,20 @@ if not os.path.isfile(ACC1_ICON_PATH):
 
 ACC2_ICON_PATH = os.path.join(REAL_HOME, ".local/share/icons/antigravity-acc2.png")
 IDE_ICON_PATH = os.path.join(REAL_HOME, ".local/share/icons/antigravity-ide.png")
+
+ACC1_TRAY_PATH = os.path.join(REAL_HOME, ".local/share/icons/antigravity-1-tray.png")
+if not os.path.isfile(ACC1_TRAY_PATH):
+    ACC1_TRAY_PATH = os.path.join(REAL_HOME, ".local/share/icons/antigravity-tray.png")
+if not os.path.isfile(ACC1_TRAY_PATH):
+    ACC1_TRAY_PATH = os.path.join(REAL_HOME, ".local/share/icons/hicolor/48x48/apps/antigravity-1-tray.png")
+if not os.path.isfile(ACC1_TRAY_PATH):
+    ACC1_TRAY_PATH = ACC1_ICON_PATH
+
 ACC2_TRAY_PATH = os.path.join(REAL_HOME, ".local/share/icons/antigravity-acc2-tray.png")
+if not os.path.isfile(ACC2_TRAY_PATH):
+    ACC2_TRAY_PATH = os.path.join(REAL_HOME, ".local/share/icons/hicolor/48x48/apps/antigravity-acc2-tray.png")
+if not os.path.isfile(ACC2_TRAY_PATH):
+    ACC2_TRAY_PATH = ACC2_ICON_PATH
 
 def get_boot_time():
     try:
@@ -66,15 +79,13 @@ def get_proc_start_time(pid):
     return None
 
 def sync_tray_cache():
-    effective_tray = ACC2_TRAY_PATH
-    if not os.path.isfile(effective_tray):
-        if os.path.isfile(ACC2_ICON_PATH):
-            effective_tray = ACC2_ICON_PATH
-        else:
-            return
-    
-    # 1. Find running Account 2 processes
+    effective_acc1_tray = ACC1_TRAY_PATH if os.path.isfile(ACC1_TRAY_PATH) else ACC1_ICON_PATH
+    effective_acc2_tray = ACC2_TRAY_PATH if os.path.isfile(ACC2_TRAY_PATH) else ACC2_ICON_PATH
+
+    acc1_processes = []
     acc2_processes = []
+    other_procs = []
+
     for pid_str in os.listdir("/proc"):
         if not pid_str.isdigit():
             continue
@@ -82,34 +93,30 @@ def sync_tray_cache():
             with open(f"/proc/{pid_str}/cmdline", "rb") as f:
                 cmd = f.read().decode("utf-8", errors="ignore")
                 cmd_low = cmd.lower()
-                if "antigravity" in cmd_low and ("antigravity-profile2" in cmd_low or "antigravity-2" in cmd_low or "account2" in cmd_low):
-                    pid = int(pid_str)
-                    st = get_proc_start_time(pid)
-                    proc_time = (_BOOT_TIME + (st / _CLK_TCK)) if st else os.path.getmtime(f"/proc/{pid_str}")
-                    acc2_processes.append((pid, proc_time))
-        except Exception:
-            pass
+                
+                if "antigravity" not in cmd_low:
+                    if any(x in cmd_low for x in ["chromium", "chrome", "code", "slack", "discord", "electron"]):
+                        pid = int(pid_str)
+                        st = get_proc_start_time(pid)
+                        proc_time = (_BOOT_TIME + (st / _CLK_TCK)) if st else os.path.getmtime(f"/proc/{pid_str}")
+                        other_procs.append((pid, proc_time))
+                    continue
 
-    if not acc2_processes:
-        return
+                pid = int(pid_str)
+                st = get_proc_start_time(pid)
+                proc_time = (_BOOT_TIME + (st / _CLK_TCK)) if st else os.path.getmtime(f"/proc/{pid_str}")
 
-    # Collect start times of other Electron/Chromium/Antigravity processes
-    other_procs = []
-    for pid_str in os.listdir("/proc"):
-        if not pid_str.isdigit():
-            continue
-        pid = int(pid_str)
-        if any(pid == p[0] for p in acc2_processes):
-            continue
-        try:
-            with open(f"/proc/{pid_str}/cmdline", "rb") as f:
-                cmd = f.read().decode("utf-8", errors="ignore").lower()
-                if any(x in cmd for x in ["antigravity", "chromium", "chrome", "code", "slack", "discord", "electron"]):
-                    st = get_proc_start_time(pid)
-                    proc_time = (_BOOT_TIME + (st / _CLK_TCK)) if st else os.path.getmtime(f"/proc/{pid_str}")
+                if "antigravity-ide" in cmd_low or "/opt/antigravity/" in cmd_low:
                     other_procs.append((pid, proc_time))
+                elif "antigravity-profile2" in cmd_low or "antigravity-2" in cmd_low or "account2" in cmd_low:
+                    acc2_processes.append((pid, proc_time))
+                elif "antigravity" in cmd_low:
+                    acc1_processes.append((pid, proc_time))
         except Exception:
             pass
+
+    if not acc1_processes and not acc2_processes:
+        return
 
     for d in glob.glob("/tmp/org.chromium.Chromium.*"):
         if not os.path.isdir(d):
@@ -119,13 +126,25 @@ def sync_tray_cache():
         except Exception:
             continue
 
-        best_acc2_diff = min(abs(dir_ctime - t) for _, t in acc2_processes) if acc2_processes else float("inf")
+        best_acc1_diff = min((abs(dir_ctime - t) for _, t in acc1_processes), default=float("inf"))
+        best_acc2_diff = min((abs(dir_ctime - t) for _, t in acc2_processes), default=float("inf"))
         best_other_diff = min((abs(dir_ctime - t) for _, t in other_procs), default=float("inf"))
 
-        if best_acc2_diff < best_other_diff or not other_procs:
+        target_tray = None
+        if best_acc1_diff < best_acc2_diff and best_acc1_diff < best_other_diff:
+            target_tray = effective_acc1_tray
+        elif best_acc2_diff < best_acc1_diff and best_acc2_diff < best_other_diff:
+            target_tray = effective_acc2_tray
+        elif best_acc1_diff != float("inf") and not acc2_processes and best_acc1_diff <= best_other_diff:
+            target_tray = effective_acc1_tray
+        elif best_acc2_diff != float("inf") and not acc1_processes and best_acc2_diff <= best_other_diff:
+            target_tray = effective_acc2_tray
+
+        if target_tray and os.path.isfile(target_tray):
             for icon_file in glob.glob(os.path.join(d, "status_icon_*.png")):
                 try:
-                    shutil.copyfile(effective_tray, icon_file)
+                    if not os.path.isfile(icon_file) or os.path.getsize(icon_file) != os.path.getsize(target_tray):
+                        shutil.copyfile(target_tray, icon_file)
                 except Exception:
                     pass
 

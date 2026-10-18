@@ -810,6 +810,7 @@ export XDG_CONFIG_HOME="\${REAL_HOME}/.config"
 export ANTIGRAVITY_DESKTOP_NAME="${desktop_name}"
 export ANTIGRAVITY_APP_NAME="${wm_class}"
 export ANTIGRAVITY_ICON_PATH="${LOCAL_ICONS}/${icon_name}.png"
+export ANTIGRAVITY_TRAY_ICON_PATH="${LOCAL_ICONS}/${icon_name}-tray.png"
 export ELECTRON_OZONE_PLATFORM_HINT="x11"
 
 cd "\${REAL_HOME}" || cd /tmp
@@ -874,6 +875,22 @@ EOF
         cp -f "${LOCAL_ICONS}/antigravity-1.png" "${LOCAL_ICONS}/antigravity.png" 2>/dev/null || true
     elif [ -f "${LOCAL_ICONS}/antigravity.png" ] && [ ! -f "${LOCAL_ICONS}/antigravity-1.png" ]; then
         cp -f "${LOCAL_ICONS}/antigravity.png" "${LOCAL_ICONS}/antigravity-1.png" 2>/dev/null || true
+    fi
+
+    # Guarantee tray icon exists on disk
+    if [ ! -f "${LOCAL_ICONS}/${icon_name}-tray.png" ]; then
+        if [ -f "${LOCAL_ICONS}/antigravity-1-tray.png" ]; then
+            cp -f "${LOCAL_ICONS}/antigravity-1-tray.png" "${LOCAL_ICONS}/${icon_name}-tray.png" 2>/dev/null || true
+        elif [ -f "${LOCAL_ICONS}/antigravity-tray.png" ]; then
+            cp -f "${LOCAL_ICONS}/antigravity-tray.png" "${LOCAL_ICONS}/${icon_name}-tray.png" 2>/dev/null || true
+        elif [ -f "${LOCAL_ICONS}/${icon_name}.png" ]; then
+            cp -f "${LOCAL_ICONS}/${icon_name}.png" "${LOCAL_ICONS}/${icon_name}-tray.png" 2>/dev/null || true
+        fi
+    fi
+    if [ -f "${LOCAL_ICONS}/antigravity-1-tray.png" ] && [ ! -f "${LOCAL_ICONS}/antigravity-tray.png" ]; then
+        cp -f "${LOCAL_ICONS}/antigravity-1-tray.png" "${LOCAL_ICONS}/antigravity-tray.png" 2>/dev/null || true
+    elif [ -f "${LOCAL_ICONS}/antigravity-tray.png" ] && [ ! -f "${LOCAL_ICONS}/antigravity-1-tray.png" ]; then
+        cp -f "${LOCAL_ICONS}/antigravity-tray.png" "${LOCAL_ICONS}/antigravity-1-tray.png" 2>/dev/null || true
     fi
 
     update-desktop-database "${LOCAL_APPS}" 2>/dev/null || true
