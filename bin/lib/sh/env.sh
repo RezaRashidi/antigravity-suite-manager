@@ -17,7 +17,9 @@ REAL_HOME=$(getent passwd "$REAL_USER" 2>/dev/null | cut -d: -f6)
 REAL_HOME="${REAL_HOME:-$HOME}"
 export REAL_USER REAL_HOME
 
-PROFILE2_DIR="${REAL_HOME}/.antigravity-profile2"
+PATHS_CONF="${REAL_HOME}/.config/antigravity/paths.conf"
+[ -f "$PATHS_CONF" ] && source "$PATHS_CONF" 2>/dev/null || true
+PROFILE2_DIR="${ANTIGRAVITY_PROFILE2_DIR:-${PROFILE2_DIR:-${REAL_HOME}/.antigravity-profile2}}"
 SHARED_GEMINI_DIR="${REAL_HOME}/.gemini"
 SHARED_CONV_DIR="${SHARED_GEMINI_DIR}/antigravity"
 SHARED_CONFIG_DIR="${SHARED_CONFIG_DIR:-${SHARED_GEMINI_DIR}/config}"

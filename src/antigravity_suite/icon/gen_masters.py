@@ -32,18 +32,22 @@ def ensure_scale_binary() -> None:
 
 def load_master_icons():
     """Finds and rasterizes master black and white 1024x1024 icons."""
+    from antigravity_suite.detect.paths_config import load_paths_config
+    app_d, ide_d, _ = load_paths_config()
     b_cands = [
         os.path.join(LOCAL_ICONS, "antigravity-master-black.png"),
+        os.path.join(app_d, "resources", "icon.png") if app_d else "",
         "/opt/Antigravity-x64/resources/icon.png", "/opt/antigravity2/resources/icon.png",
         "/opt/antigravity/resources/icon.png", "/usr/share/icons/antigravity.png",
     ]
     w_cands = [
         os.path.join(LOCAL_ICONS, "antigravity-master-white.png"),
         os.path.join(LOCAL_ICONS, "antigravity-ide-master.png"),
+        os.path.join(ide_d, "resources", "app", "resources", "linux", "code.png") if ide_d else "",
         "/opt/antigravity-ide/resources/app/resources/linux/code.png",
     ]
-    m_blk = next((c for c in b_cands if os.path.isfile(c)), None)
-    m_wht = next((c for c in w_cands if os.path.isfile(c)), m_blk)
+    m_blk = next((c for c in b_cands if c and os.path.isfile(c)), None)
+    m_wht = next((c for c in w_cands if c and os.path.isfile(c)), m_blk)
     if not m_blk:
         return None, None
 

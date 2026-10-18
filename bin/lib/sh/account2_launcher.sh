@@ -22,11 +22,11 @@ export ELECTRON_OZONE_PLATFORM_HINT="x11"
 if [ "\$1" = "--restart" ] || [ "\$1" = "-r" ]; then
     shift
     echo "[INFO] Terminating existing Antigravity Account 2 instance..."
-    pkill -f "user-data-dir=.*\.antigravity-profile2.*Antigravity" 2>/dev/null || true
+    pkill -f "user-data-dir=.*\${PROFILE2}.*Antigravity" 2>/dev/null || pkill -f "class=antigravity-2" 2>/dev/null || true
     sleep 1.5
 fi
 
-running_pid=\$(pgrep -f "user-data-dir=.*\.antigravity-profile2.*Antigravity" | head -n 1 || true)
+running_pid=\$(pgrep -f "user-data-dir=.*\${PROFILE2}.*Antigravity" | head -n 1 || pgrep -f "class=antigravity-2" | head -n 1 || true)
 if [ -n "\$running_pid" ]; then
     echo "[INFO] Antigravity Account 2 is already running (PID: \${running_pid})."
     echo "[INFO] Bringing window to front... (Pass --restart to restart fresh)"

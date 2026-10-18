@@ -30,23 +30,25 @@ auto_detect_installations() {
     if [ "$CLI_APP_DIR_SPECIFIED" = true ]; then
         APP_INSTALL_DIR="$prev_app_dir"
     else
-        APP_INSTALL_DIR="${APP_INSTALL_DIR:-$ANTIGRAVITY_DETECTED_APP}"
-        APP_INSTALL_DIR="${APP_INSTALL_DIR:-/opt/antigravity2}"
-        if [ ! -d "$APP_INSTALL_DIR" ] && [ -d "/opt/Antigravity-x64" ]; then
-            APP_INSTALL_DIR="/opt/Antigravity-x64"
-        elif [ ! -d "$APP_INSTALL_DIR" ] && [ -d "/opt/antigravity" ]; then
-            APP_INSTALL_DIR="/opt/antigravity"
+        APP_INSTALL_DIR="${ANTIGRAVITY_APP_DIR:-${APP_INSTALL_DIR:-$ANTIGRAVITY_DETECTED_APP}}"
+        if [ -z "$APP_INSTALL_DIR" ] || [ ! -d "$APP_INSTALL_DIR" ]; then
+            for c in "$ANTIGRAVITY_DETECTED_APP" "/opt/Antigravity-x64" "/opt/antigravity2" "/opt/antigravity" "${REAL_HOME}/.local/share/antigravity"; do
+                [ -n "$c" ] && [ -d "$c" ] && { APP_INSTALL_DIR="$c"; break; }
+            done
         fi
+        APP_INSTALL_DIR="${APP_INSTALL_DIR:-/opt/antigravity2}"
     fi
 
     if [ "$CLI_IDE_DIR_SPECIFIED" = true ]; then
         IDE_INSTALL_DIR="$prev_ide_dir"
     else
-        IDE_INSTALL_DIR="${IDE_INSTALL_DIR:-$ANTIGRAVITY_DETECTED_IDE}"
-        IDE_INSTALL_DIR="${IDE_INSTALL_DIR:-/opt/antigravity}"
-        if [ ! -d "$IDE_INSTALL_DIR" ] && [ -d "/opt/antigravity-ide" ]; then
-            IDE_INSTALL_DIR="/opt/antigravity-ide"
+        IDE_INSTALL_DIR="${ANTIGRAVITY_IDE_DIR:-${IDE_INSTALL_DIR:-$ANTIGRAVITY_DETECTED_IDE}}"
+        if [ -z "$IDE_INSTALL_DIR" ] || [ ! -d "$IDE_INSTALL_DIR" ]; then
+            for c in "$ANTIGRAVITY_DETECTED_IDE" "/opt/antigravity-ide" "/opt/antigravity" "${REAL_HOME}/.local/share/antigravity-ide"; do
+                [ -n "$c" ] && [ -d "$c" ] && { IDE_INSTALL_DIR="$c"; break; }
+            done
         fi
+        IDE_INSTALL_DIR="${IDE_INSTALL_DIR:-/opt/antigravity}"
     fi
 
     if [ -n "$ANTIGRAVITY_DETECTED_APP_VER" ] && [ -z "$TARGET_APP_VER" ]; then

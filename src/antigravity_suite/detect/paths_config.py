@@ -41,6 +41,13 @@ def load_paths_config(detected_app: str = "", detected_ide: str = "") -> Tuple[s
                 elif "IDE" in inst["type"] and not detected_ide:
                     detected_ide = inst["path"]
 
+    env_app = os.environ.get("ANTIGRAVITY_APP_DIR", "")
+    env_ide = os.environ.get("ANTIGRAVITY_IDE_DIR", "")
+    if env_app and os.path.isdir(env_app):
+        app_dir = env_app
+    if env_ide and os.path.isdir(env_ide):
+        ide_dir = env_ide
+
     final_app = app_dir if (app_dir and os.path.isdir(app_dir)) else (detected_app if (detected_app and os.path.isdir(detected_app)) else app_dir)
     if not final_app:
         for cand in ["/opt/Antigravity-x64", "/opt/antigravity2", "/opt/antigravity"]:
@@ -48,7 +55,7 @@ def load_paths_config(detected_app: str = "", detected_ide: str = "") -> Tuple[s
                 final_app = cand
                 break
         else:
-            final_app = "/opt/Antigravity-x64"
+            final_app = detected_app or "/opt/Antigravity-x64"
 
     final_ide = ide_dir if (ide_dir and os.path.isdir(ide_dir)) else (detected_ide if (detected_ide and os.path.isdir(detected_ide)) else ide_dir)
     if not final_ide:
@@ -57,7 +64,7 @@ def load_paths_config(detected_app: str = "", detected_ide: str = "") -> Tuple[s
                 final_ide = cand
                 break
         else:
-            final_ide = "/opt/antigravity-ide"
+            final_ide = detected_ide or "/opt/antigravity-ide"
 
     return final_app, final_ide, custom_paths
 

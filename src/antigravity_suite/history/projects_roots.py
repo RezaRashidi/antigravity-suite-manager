@@ -24,9 +24,8 @@ def get_candidate_gemini_dirs(user_home: Optional[Path] = None) -> List[Path]:
     if env_dir:
         candidates.append(Path(env_dir))
 
-    candidates.extend([
-        home / ".gemini", home / ".gemide", home / ".gemini-ide", home / ".antigravity-profile2" / ".gemini",
-    ])
+    p2 = Path(os.environ["ANTIGRAVITY_PROFILE2_DIR"]) if "ANTIGRAVITY_PROFILE2_DIR" in os.environ else (home / ".antigravity-profile2")
+    candidates.extend([home / ".gemini", home / ".gemide", home / ".gemini-ide", p2 / ".gemini"])
     for p_glob in [home / ".antigravity-profile-app-*" / ".gemini", home / ".antigravity-ide-profile-*" / ".gemini"]:
         for match in glob.glob(str(p_glob)):
             candidates.append(Path(match))

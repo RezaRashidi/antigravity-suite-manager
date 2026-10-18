@@ -1814,6 +1814,67 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             self.assertEqual(row[0], "Authentic IDE Title")
             con.close()
 
+    def test_tray_sync_dynamic_temp_dirs(self):
+        """Verifies _get_temp_dirs respects TMPDIR and includes standard temporary directories."""
+        from antigravity_suite.icon.tray_sync import _get_temp_dirs
+        dirs = _get_temp_dirs()
+        self.assertIn("/tmp", dirs)
+        with tempfile.TemporaryDirectory() as td:
+            old_tmp = os.environ.get("TMPDIR")
+            try:
+                os.environ["TMPDIR"] = td
+                custom_dirs = _get_temp_dirs()
+                self.assertIn(td, custom_dirs)
+            finally:
+                if old_tmp is None:
+                    os.environ.pop("TMPDIR", None)
+                else:
+                    os.environ["TMPDIR"] = old_tmp
+
+    def test_dynamic_app_ide_env_paths_config(self):
+        """Verifies load_paths_config respects ANTIGRAVITY_APP_DIR and ANTIGRAVITY_IDE_DIR."""
+        from antigravity_suite.detect.paths_config import load_paths_config
+        with tempfile.TemporaryDirectory() as td:
+            app_dir = os.path.join(td, "my-custom-app")
+            ide_dir = os.path.join(td, "my-custom-ide")
+            os.makedirs(app_dir)
+            os.makedirs(ide_dir)
+
+            old_app = os.environ.get("ANTIGRAVITY_APP_DIR")
+            old_ide = os.environ.get("ANTIGRAVITY_IDE_DIR")
+            try:
+                os.environ["ANTIGRAVITY_APP_DIR"] = app_dir
+                os.environ["ANTIGRAVITY_IDE_DIR"] = ide_dir
+                final_app, final_ide, _ = load_paths_config()
+                self.assertEqual(final_app, app_dir)
+                self.assertEqual(final_ide, ide_dir)
+            finally:
+                if old_app is None:
+                    os.environ.pop("ANTIGRAVITY_APP_DIR", None)
+                else:
+                    os.environ["ANTIGRAVITY_APP_DIR"] = old_app
+                if old_ide is None:
+                    os.environ.pop("ANTIGRAVITY_IDE_DIR", None)
+                else:
+                    os.environ["ANTIGRAVITY_IDE_DIR"] = old_ide
+
+    def test_dynamic_profile2_env_discovery(self):
+        """Verifies candidate gemini dirs respects ANTIGRAVITY_PROFILE2_DIR."""
+        from antigravity_suite.config_paths import discover_candidate_ide_dirs
+        with tempfile.TemporaryDirectory() as td:
+            custom_p2 = Path(td) / "custom-profile2"
+            (custom_p2 / ".gemini").mkdir(parents=True, exist_ok=True)
+            old_p2 = os.environ.get("ANTIGRAVITY_PROFILE2_DIR")
+            try:
+                os.environ["ANTIGRAVITY_PROFILE2_DIR"] = str(custom_p2)
+                dirs = discover_candidate_ide_dirs(Path(td), Path(td) / ".gemini")
+                self.assertIn(custom_p2 / ".gemini", dirs)
+            finally:
+                if old_p2 is None:
+                    os.environ.pop("ANTIGRAVITY_PROFILE2_DIR", None)
+                else:
+                    os.environ["ANTIGRAVITY_PROFILE2_DIR"] = old_p2
+
 
 if __name__ == "__main__":
     unittest.main()

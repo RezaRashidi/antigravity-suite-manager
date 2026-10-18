@@ -27,11 +27,13 @@ def get_user_home() -> Path:
 
 def discover_candidate_ide_dirs(user_home: Path, eff_gemini: Path) -> List[Path]:
     """Finds all candidate IDE and profile configuration directories."""
+    p2_env = os.environ.get("ANTIGRAVITY_PROFILE2_DIR")
+    p2_path = Path(p2_env).resolve() if p2_env else (user_home / ".antigravity-profile2")
     candidates = [
         user_home / ".gemide",
         user_home / ".gemini-ide",
         eff_gemini,
-        user_home / ".antigravity-profile2" / ".gemini",
+        p2_path / ".gemini",
     ]
     for p_glob in [
         user_home / ".antigravity-profile-app-*" / ".gemini",

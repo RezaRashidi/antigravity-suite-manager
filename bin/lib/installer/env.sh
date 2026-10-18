@@ -37,3 +37,4 @@ if [ -f "$PATHS_CONF" ]; then
 fi
 APP_INSTALL_DIR="${APP_INSTALL_DIR:-/opt/antigravity2}"
 IDE_INSTALL_DIR="${IDE_INSTALL_DIR:-/opt/antigravity}"
+PROFILE2_DIR="${ANTIGRAVITY_PROFILE2_DIR:-${PROFILE2_DIR:-${REAL_HOME}/.antigravity-profile2}}"

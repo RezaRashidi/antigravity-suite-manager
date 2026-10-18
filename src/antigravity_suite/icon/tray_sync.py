@@ -1,5 +1,5 @@
 """
-Tray cache synchronization for Chromium status icons.
+Tray cache synchronization for Chromium status icons across temporary directories.
 """
 
 from __future__ import annotations
@@ -7,8 +7,28 @@ from __future__ import annotations
 import glob
 import os
 import shutil
+import tempfile
+from typing import List
+
 from antigravity_suite.icon.paths import ACC1_ICON_PATH, ACC1_TRAY_PATH, ACC2_ICON_PATH, ACC2_TRAY_PATH
 from antigravity_suite.icon.proc import _BOOT_TIME, _CLK_TCK, get_proc_start_time
+
+
+def _get_temp_dirs() -> List[str]:
+    cands = [tempfile.gettempdir(), "/tmp", "/var/tmp"]
+    for env_k in ["TMPDIR", "TEMP", "TMP", "XDG_RUNTIME_DIR"]:
+        v = os.environ.get(env_k)
+        if v and os.path.isdir(v):
+            cands.append(v)
+    uid = getattr(os, "getuid", lambda: None)()
+    if uid is not None and os.path.isdir(f"/run/user/{uid}"):
+        cands.append(f"/run/user/{uid}")
+    seen, valid = set(), []
+    for c in cands:
+        if c and os.path.isdir(c) and c not in seen:
+            seen.add(c)
+            valid.append(c)
+    return valid
 
 
 def _collect_processes():
@@ -25,9 +45,9 @@ def _collect_processes():
             if "antigravity" not in cmd_low:
                 if any(x in cmd_low for x in ["chromium", "chrome", "code", "slack", "discord", "electron"]):
                     other_p.append((pid, proc_time))
-            elif "antigravity-ide" in cmd_low or "/opt/antigravity/" in cmd_low:
+            elif "antigravity-ide" in cmd_low or "antigravity_ide" in cmd_low or "/antigravity-ide" in cmd_low:
                 other_p.append((pid, proc_time))
-            elif any(k in cmd_low for k in ["antigravity-profile2", "antigravity-2", "account2"]):
+            elif any(k in cmd_low for k in ["profile2", "antigravity-2", "account2"]):
                 acc2_p.append((pid, proc_time))
             else:
                 acc1_p.append((pid, proc_time))
@@ -43,7 +63,11 @@ def sync_tray_cache() -> None:
     acc1_p, acc2_p, other_p = _collect_processes()
     if not acc1_p and not acc2_p: return
 
-    for d in glob.glob("/tmp/org.chromium.Chromium.*"):
+    chromium_dirs: List[str] = []
+    for tdir in _get_temp_dirs():
+        chromium_dirs.extend(glob.glob(os.path.join(tdir, "org.chromium.Chromium.*")))
+
+    for d in chromium_dirs:
         if not os.path.isdir(d): continue
         try: dir_ctime = os.path.getctime(d)
         except Exception: continue

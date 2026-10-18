@@ -34,6 +34,8 @@ def check_keyring_storage(real_home: str, local_bin: str, profile2_dir: str) -> 
 
 
 def check_account2(profile2_dir: str) -> str:
+    if not profile2_dir or not os.path.isdir(profile2_dir):
+        return f"{Y}Not Configured (Standalone profile 1){NC}"
     k = os.path.isfile(os.path.join(profile2_dir, '.gemini', 'cache', 'antigravity-keyring-unavailable'))
     c, f = os.path.islink(os.path.join(profile2_dir, '.gemini', 'antigravity')), os.path.exists(os.path.join(profile2_dir, '.gemini', 'config'))
     return f"{G}Configured (Isolated Keyring + Shared History){NC}" if (k and c and f) else f"{Y}Incomplete Setup{NC}"
