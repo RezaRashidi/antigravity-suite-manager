@@ -93,8 +93,9 @@ class TestExtractor(unittest.TestCase):
             logs_dir = os.path.join(td, ".system_generated", "logs")
             os.makedirs(logs_dir, exist_ok=True)
             transcript_file = os.path.join(logs_dir, "transcript.jsonl")
+            fake_file = os.path.join(td, "settings.yml")
             with open(transcript_file, "w", encoding="utf-8") as f:
-                f.write('{"source":"USER_EXPLICIT","type":"USER_INPUT","content":"<USER_REQUEST>@[/home/user/Downloads/project-config/settings.yml:L2-L13]\\nبه سرور قدیمی دسترسی دارم\\nچطوری پیدا کنم</USER_REQUEST>"}\n')
+                f.write(f'{{"source":"USER_EXPLICIT","type":"USER_INPUT","content":"<USER_REQUEST>@[{fake_file}:L2-L13]\\nبه سرور قدیمی دسترسی دارم\\nچطوری پیدا کنم</USER_REQUEST>"}}\n')
 
             title, preview = extract_conv_text("", transcript_file)
             self.assertEqual(title, "")

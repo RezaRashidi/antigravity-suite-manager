@@ -11,6 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from antigravity_suite.config import get_user_home
 from antigravity_suite.history.audit import HistoryAuditLogger
 from antigravity_suite.history.title_sanitizer import (
     is_raw_prompt_sentence,
@@ -68,7 +69,7 @@ class TestAuditAndSanitizer(unittest.TestCase):
         self.assertEqual(sanitize_topic_title("Fix bug in @[main.py]"), "Fix bug")
 
         # Empty fallback to workspace name
-        self.assertEqual(sanitize_topic_title("", fallback_workspace="file:///home/user/my-project"), "My Project Chat")
+        self.assertEqual(sanitize_topic_title("", fallback_workspace=(get_user_home() / "my-project").as_uri()), "My Project Chat")
         self.assertEqual(sanitize_topic_title(""), "Conversation")
 
     def test_title_anomaly_detection(self):

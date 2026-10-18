@@ -25,7 +25,7 @@ graph TD
 
 ### Symptoms
 * SQLite (`conversation_summaries.db`) contained 306 conversations with valid titles, step counts, and workspace URIs.
-* Go Language Server log ([language_server.log](file:///home/reza/.config/Antigravity/logs/language_server.log)) reported:
+* Go Language Server log (`~/.config/Antigravity/logs/language_server.log`) reported:
   ```
   [Summaries] reconcile checked 322 conversations, restored 0, cached 321, skipped 1, dropped 0, cancelled false in 71ms (resident: 0 -> 0)
   ```
@@ -92,13 +92,13 @@ graph TD
    * **Result**: Every incoming conversation summary was diverted to `externalSummaries`, completely bypassing `indexes.sidebar`.
 
 ### Solution Applied
-* In [src/antigravity_suite/proto/cascade.py](file:///home/reza/PhpstormProjects/antigravity-suite-manager/src/antigravity_suite/proto/cascade.py), omit Tag 20 when `source == 0`:
+* In [src/antigravity_suite/proto/cascade.py](src/antigravity_suite/proto/cascade.py), omit Tag 20 when `source == 0`:
   ```python
   if source != 0:
       out += encode_tag_uint(20, source)
   ```
-* In [src/antigravity_suite/history/merger.py](file:///home/reza/PhpstormProjects/antigravity-suite-manager/src/antigravity_suite/history/merger.py), detect existing stored summaries with `source == 1` or `tag 20 == 1` and force a clean rebuild.
-* In [src/antigravity_suite/history/sqlite_store.py](file:///home/reza/PhpstormProjects/antigravity-suite-manager/src/antigravity_suite/history/sqlite_store.py), strip `'CORTEX_TRAJECTORY_SOURCE_CASCADE_CLIENT'` from SQLite store.
+* In [src/antigravity_suite/history/merger.py](src/antigravity_suite/history/merger.py), detect existing stored summaries with `source == 1` or `tag 20 == 1` and force a clean rebuild.
+* In [src/antigravity_suite/history/sqlite_store.py](src/antigravity_suite/history/sqlite_store.py), strip `'CORTEX_TRAJECTORY_SOURCE_CASCADE_CLIENT'` from SQLite store.
 
 ---
 
@@ -110,7 +110,7 @@ graph TD
 
 ### Diagnostic Methodology & Execution
 1. **Comparing Instance Configurations**:
-   Inspected differences between Account 1 ([~/.config/Antigravity/app_storage.json](file:///home/reza/.config/Antigravity/app_storage.json)) and Account 2 ([~/.antigravity-profile2/.config/Antigravity/app_storage.json](file:///home/reza/.antigravity-profile2/.config/Antigravity/app_storage.json)):
+   Inspected differences between Account 1 (`~/.config/Antigravity/app_storage.json`) and Account 2 (`~/.antigravity-profile2/.config/Antigravity/app_storage.json`):
    ```python
    # Account 1:
    "projectsGroupBy": "project",
@@ -133,7 +133,7 @@ graph TD
    * Because `onlyShowFirstFewConvos` had all projects collapsed except `d21f8bda...` (CRM), the sidebar hid all recent chats and isolated only the 17 old CRM conversations.
 
 ### Solution Applied
-* In [~/.config/Antigravity/app_storage.json](file:///home/reza/.config/Antigravity/app_storage.json):
+* In `~/.config/Antigravity/app_storage.json`:
   ```json
   {
     "projectsGroupBy": "none",
@@ -151,24 +151,24 @@ graph TD
 ### Symptoms
 * Go Language Server log contained recurring warnings:
   ```
-  Skipping conversation conversation_summaries while listing: open backend /home/reza/.gemini/antigravity/conversations/conversation_summaries.db: db version too new: got 3, want 1
+  Skipping conversation conversation_summaries while listing: open backend ~/.gemini/antigravity/conversations/conversation_summaries.db: db version too new: got 3, want 1
   [Summaries] failed to generate summary for conversation_summaries while reconciling: conversation conversation_summaries not found
   ```
 
 ### Diagnostic Methodology & Execution
-* Checked directory contents of `/home/reza/.gemini/antigravity/conversations/`.
+* Checked directory contents of `~/.gemini/antigravity/conversations/`.
 * Discovered a rogue symlink:
   ```bash
-  /home/reza/.gemini/antigravity/conversations/conversation_summaries.db -> ../conversation_summaries.db
+  ~/.gemini/antigravity/conversations/conversation_summaries.db -> ../conversation_summaries.db
   ```
 * **Root Cause**: The Go Language Server enumerates all `*.db` files in `conversations/` assuming they are individual conversation trajectory databases (`user_version = 1`). It attempted to open the master summary database (`user_version = 3`) as a conversation, threw a schema incompatibility error, and aborted reconciliation for that thread.
 
 ### Solution Applied
 * Removed the rogue symlink:
   ```bash
-  rm -f /home/reza/.gemini/antigravity/conversations/conversation_summaries.db
+  rm -f ~/.gemini/antigravity/conversations/conversation_summaries.db
   ```
-* Removed empty 0-byte collision artifact `/home/reza/.config/antigravity/conversation_summaries.db`.
+* Removed empty 0-byte collision artifact `~/.config/antigravity/conversation_summaries.db`.
 
 ---
 
@@ -178,7 +178,7 @@ graph TD
 * Updates made to `transcript.jsonl` in pool profiles were silently ignored during merge sweeps.
 
 ### Diagnostic Methodology & Execution
-* Inspected [src/antigravity_suite/history/pool_merger.py](file:///home/reza/PhpstormProjects/antigravity-suite-manager/src/antigravity_suite/history/pool_merger.py):
+* Inspected [src/antigravity_suite/history/pool_merger.py](src/antigravity_suite/history/pool_merger.py):
   ```python
   src_logs = os.path.join(b_item, ".system_generated", "logs")
   tgt_logs = target_brain_item / ".system_generated" / "logs"
@@ -237,10 +237,11 @@ Even if `annotations.title` contained a clean title, if `summary.summary` contai
 #### Step 4: Dissecting the Binary Wire Format (`raw_summary`)
 Inspected how `raw_summary` in SQLite `conversation_summaries.db` was being assembled:
 ```python
-import sqlite3
+import os, sqlite3
 from antigravity_suite.proto.cascade import parse_cascade_summary
 
-con = sqlite3.connect("/home/reza/.gemini/antigravity/conversation_summaries.db")
+db_file = os.path.expanduser("~/.gemini/antigravity/conversation_summaries.db")
+con = sqlite3.connect(db_file)
 row = con.execute("SELECT conversation_id, raw_summary FROM conversation_summaries WHERE app_data_dir = 'antigravity-ide' LIMIT 1").fetchone()
 parsed = parse_cascade_summary(row[1])
 print("Tag 1 (summary.summary):", parsed.get("summary"))
@@ -253,7 +254,7 @@ print("Tag 15 (annotations.title):", parsed.get("title"))
 - Because Tag 1 took precedence in `main.js`, the entire IDE rendered the raw prompt as the title.
 
 ### Solution Applied
-* Implemented generic title resolution in [src/antigravity_suite/history/title_sanitizer.py](file:///home/reza/PhpstormProjects/antigravity-suite-manager/src/antigravity_suite/history/title_sanitizer.py):
+* Implemented generic title resolution in [src/antigravity_suite/history/title_sanitizer.py](src/antigravity_suite/history/title_sanitizer.py):
   1. Priority order: Existing clean title > Authentic LLM summary > Clean artifact title > Workspace-derived title (`<WorkspaceName> Chat`) > `"Conversation"`.
   2. Strips Markdown context tokens (`@[filename]` and `in @[filepath]`).
   3. **Strict separation of Protobuf fields**:
@@ -274,12 +275,12 @@ print("Tag 15 (annotations.title):", parsed.get("title"))
   * Hub runs: `--app_data_dir=antigravity`
   * IDE runs: `--app_data_dir=antigravity-ide`
 * In `merger.py`, the merger previously forced `app_data_dir = 'antigravity'` for all 308 chats and wrote all chats into `agyhub_summaries_proto.pb`.
-* When Hub opened an IDE chat, Hub's Electron renderer inspected `workspace_uris` (`file:///home/reza/...`). Because Hub is a standalone launcher without an active IDE workspace, Hub dynamically filtered out the workspace conversation, purging it from view.
+* When Hub opened an IDE chat, Hub's Electron renderer inspected `workspace_uris` (`file://<workspace_path>`). Because Hub is a standalone launcher without an active IDE workspace, Hub dynamically filtered out the workspace conversation, purging it from view.
 * In SQLite `conversation_summaries.db`, `upsert_summary()` lacked `app_data_dir` in `ON CONFLICT(conversation_id) DO UPDATE SET`, preventing partition migration.
 
 ### Solution Applied
 * **Dual-Partition Isolation**:
-  1. Updated `upsert_summary()` in [src/antigravity_suite/history/sqlite_store.py](file:///home/reza/PhpstormProjects/antigravity-suite-manager/src/antigravity_suite/history/sqlite_store.py) to update `app_data_dir` on conflict.
+  1. Updated `upsert_summary()` in [src/antigravity_suite/history/sqlite_store.py](src/antigravity_suite/history/sqlite_store.py) to update `app_data_dir` on conflict.
   2. Partitioned SQLite records: Conversations bound to an IDE workspace URI are marked `app_data_dir = 'antigravity-ide'` (257 chats). Standalone conversations are marked `app_data_dir = 'antigravity'` (53 chats).
   3. `serialize_master_proto()` now writes ONLY Hub-scoped chats (`app_data_dir == 'antigravity'`) into `agyhub_summaries_proto.pb`. Hub never loads IDE chats, completely eliminating ghost disappearing chats.
   4. IDE reads all workspace conversations via `state.vscdb` (`trajectorySummaries`, 309 chats).
@@ -306,7 +307,7 @@ print("Tag 15 (annotations.title):", parsed.get("title"))
 * `antigravity-sync.service` ran every 50 seconds in the background, making it impossible to determine what changed between runs.
 
 ### Solution Applied
-* Created [src/antigravity_suite/history/audit.py](file:///home/reza/PhpstormProjects/antigravity-suite-manager/src/antigravity_suite/history/audit.py) logging structured JSONL events to `~/.gemini/antigravity/history_merger_audit.log`:
+* Created [src/antigravity_suite/history/audit.py](src/antigravity_suite/history/audit.py) logging structured JSONL events to `~/.gemini/antigravity/history_merger_audit.log`:
   * `TITLE_CHANGED`: Old title vs new title, reason.
   * `WORKSPACE_CHANGED`: Rebinding workspace URIs.
   * `PARTITION_CHANGED`: Partition transitions between `antigravity` and `antigravity-ide`.

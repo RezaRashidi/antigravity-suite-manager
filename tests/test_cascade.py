@@ -2,6 +2,7 @@
 Unit Tests for Cascade Summary and Trajectory Metadata Protobuf Serialization.
 """
 
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -10,6 +11,7 @@ _SRC_DIR = str(Path(__file__).resolve().parent.parent / "src")
 if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
+from antigravity_suite.config import get_user_home
 from antigravity_suite.proto.cascade import build_cascade_summary, parse_cascade_summary
 from antigravity_suite.proto.trajectory import (
     build_trajectory_metadata_blob,
@@ -18,18 +20,22 @@ from antigravity_suite.proto.trajectory import (
 
 
 class TestCascadeAndTrajectory(unittest.TestCase):
+    def setUp(self):
+        self.home = get_user_home()
+
     def test_cascade_summary_roundtrip(self):
         uuid = "b8ce61c5-e433-43af-ac03-e29bcb50c347"
         title = "Optimize Network Configuration"
         summary = "Refactored routing tables and proxy rules."
         step_count = 15
+        ws_uri = (self.home / "projects" / "net").as_uri()
 
         data = build_cascade_summary(
             uuid=uuid,
             title=title,
             summary=summary,
             step_count=step_count,
-            workspace_uri="file:///home/developer/projects/net",
+            workspace_uri=ws_uri,
             project_id="proj-42",
         )
         self.assertTrue(len(data) > 0)
@@ -39,12 +45,12 @@ class TestCascadeAndTrajectory(unittest.TestCase):
         self.assertEqual(parsed.get("title"), title)
         self.assertEqual(parsed.get("summary"), summary)
         self.assertEqual(parsed.get(2), step_count)
-        self.assertEqual(parsed.get("workspace_uri"), "file:///home/developer/projects/net")
+        self.assertEqual(parsed.get("workspace_uri"), ws_uri)
         self.assertEqual(parsed.get("project_id"), "proj-42")
 
     def test_trajectory_metadata_blob_roundtrip(self):
         conv_id = "5bd4cfc0-38b3-4013-8a66-bf3aecfc5693"
-        ws_uri = "file:///home/user/workspace/app"
+        ws_uri = (self.home / "workspace" / "app").as_uri()
         proj_id = "custom-project-id"
 
         blob = build_trajectory_metadata_blob(
@@ -197,43 +203,44 @@ class TestCascadeAndTrajectory(unittest.TestCase):
             update_sidebar_workspaces_state,
         )
 
-        initial = update_sidebar_workspaces_state(None, ["file:///home/user/PhpstormProjects/project-alpha"])
+        alpha_uri = (self.home / "PhpstormProjects" / "project-alpha").as_uri()
+        beta_uri = (self.home / "Music" / "project-beta").as_uri()
+
+        initial = update_sidebar_workspaces_state(None, [alpha_uri])
         parsed1 = parse_sidebar_workspaces(initial)
-        self.assertIn("file:///home/user/PhpstormProjects/project-alpha", parsed1)
+        self.assertIn(alpha_uri, parsed1)
 
         updated = update_sidebar_workspaces_state(initial, [
-            "file:///home/user/PhpstormProjects/project-alpha",
-            "file:///home/user/Music/project-beta",
+            alpha_uri,
+            beta_uri,
         ])
         parsed2 = parse_sidebar_workspaces(updated)
-        self.assertIn("file:///home/user/PhpstormProjects/project-alpha", parsed2)
-        self.assertIn("file:///home/user/Music/project-beta", parsed2)
+        self.assertIn(alpha_uri, parsed2)
+        self.assertIn(beta_uri, parsed2)
 
     def test_normalize_workspace_uri(self):
         from antigravity_suite.history.merger import normalize_workspace_uri
 
-        self.assertEqual(
-            normalize_workspace_uri("file:///home/user/PhpstormProjects/project-alpha/backend"),
-            "file:///home/user/PhpstormProjects/project-alpha",
-        )
-        self.assertEqual(
-            normalize_workspace_uri("file:///home/user/Music/project-beta/src"),
-            "file:///home/user/Music/project-beta",
-        )
-        self.assertEqual(
-            normalize_workspace_uri('["file:///home/user/PhpstormProjects/project-alpha/memory-bank"]'),
-            "file:///home/user/PhpstormProjects/project-alpha",
-        )
+        alpha_root = (self.home / "PhpstormProjects" / "project-alpha").as_uri()
+        alpha_sub = (self.home / "PhpstormProjects" / "project-alpha" / "backend").as_uri()
+        beta_root = (self.home / "Music" / "project-beta").as_uri()
+        beta_sub = (self.home / "Music" / "project-beta" / "src").as_uri()
+        alpha_mem = json.dumps([(self.home / "PhpstormProjects" / "project-alpha" / "memory-bank").as_uri()])
+
+        self.assertEqual(normalize_workspace_uri(alpha_sub), alpha_root)
+        self.assertEqual(normalize_workspace_uri(beta_sub), beta_root)
+        self.assertEqual(normalize_workspace_uri(alpha_mem), alpha_root)
 
     def test_project_id_tag18_and_tag14(self):
         from antigravity_suite.proto.wire import read_varint
 
+        alpha_uri = (self.home / "PhpstormProjects" / "project-alpha").as_uri()
         data = build_cascade_summary(
             uuid="c0a80101-0000-0000-0000-000000000001",
             title="Project Tag Test",
             summary="Testing Tag 18 and Tag 14",
             step_count=3,
-            workspace_uri="file:///home/user/PhpstormProjects/project-alpha",
+            workspace_uri=alpha_uri,
             project_id="7bc454c1-6ec0-4ab3-b5eb-09fb9887e76f",
         )
         parsed = parse_cascade_summary(data)
@@ -282,18 +289,18 @@ class TestCascadeAndTrajectory(unittest.TestCase):
     def test_get_project_id_for_workspace(self):
         from antigravity_suite.history.projects import get_project_id_for_workspace
 
-        alpha_root = "file:///home/user/PhpstormProjects/project-alpha"
-        alpha_sub = "file:///home/user/PhpstormProjects/project-alpha/.github/workflows"
+        alpha_root = (self.home / "PhpstormProjects" / "project-alpha").as_uri()
+        alpha_sub = (self.home / "PhpstormProjects" / "project-alpha" / ".github" / "workflows").as_uri()
         root_pid = get_project_id_for_workspace(alpha_root, create_missing=True)
         sub_pid = get_project_id_for_workspace(alpha_sub, create_missing=True)
         self.assertIsNotNone(root_pid)
         self.assertEqual(root_pid, sub_pid)
 
-        beta_pid = get_project_id_for_workspace("file:///home/user/Music/project-beta", create_missing=True)
+        beta_pid = get_project_id_for_workspace((self.home / "Music" / "project-beta").as_uri(), create_missing=True)
         self.assertIsNotNone(beta_pid)
         self.assertNotEqual(root_pid, beta_pid)
 
-        gamma_pid = get_project_id_for_workspace("file:///home/user/PhpstormProjects/sample-app", create_missing=True)
+        gamma_pid = get_project_id_for_workspace((self.home / "PhpstormProjects" / "sample-app").as_uri(), create_missing=True)
         self.assertIsNotNone(gamma_pid)
         self.assertNotEqual(beta_pid, gamma_pid)
 
@@ -301,10 +308,11 @@ class TestCascadeAndTrajectory(unittest.TestCase):
         """Verifies Tag 17 Tag 1 CortexWorkspaceMetadata submessage is correctly decoded."""
         from antigravity_suite.proto.wire import encode_tag_bytes
 
+        ws_uri = (self.home / "workspace" / "app").as_uri()
         # Build Tag 17 with only Tag 1 CortexWorkspaceMetadata (no Tag 7, no Tag 9)
         ws_sub = bytearray()
-        ws_sub += encode_tag_bytes(1, b"file:///home/user/workspace/app")
-        ws_sub += encode_tag_bytes(2, b"file:///home/user/workspace/app")
+        ws_sub += encode_tag_bytes(1, ws_uri.encode("utf-8"))
+        ws_sub += encode_tag_bytes(2, ws_uri.encode("utf-8"))
 
         tag17_body = bytearray()
         tag17_body += encode_tag_bytes(1, bytes(ws_sub))
@@ -315,7 +323,7 @@ class TestCascadeAndTrajectory(unittest.TestCase):
         data += encode_tag_bytes(17, bytes(tag17_body))
 
         parsed = parse_cascade_summary(bytes(data))
-        self.assertEqual(parsed.get("workspace_uri"), "file:///home/user/workspace/app")
+        self.assertEqual(parsed.get("workspace_uri"), ws_uri)
         self.assertEqual(parsed.get("project_id"), "project-uuid-1234")
 
     def test_parse_sidebar_workspaces_mixed_wire_types(self):
@@ -324,8 +332,9 @@ class TestCascadeAndTrajectory(unittest.TestCase):
         from antigravity_suite.proto.vscdb import parse_sidebar_workspaces
         from antigravity_suite.proto.wire import encode_tag_bytes, encode_tag_uint
 
+        app_uri = (self.home / "app").as_uri()
         valid_entry = bytearray()
-        valid_entry += encode_tag_bytes(1, b"file:///home/user/app")
+        valid_entry += encode_tag_bytes(1, app_uri.encode("utf-8"))
         valid_entry += encode_tag_bytes(2, b"dummy-row-bytes")
 
         payload = bytearray()
@@ -381,7 +390,7 @@ class TestCascadeAndTrajectory(unittest.TestCase):
             summary="Prompt text",
             step_count=10,
             project_id="247e98f3-52b3-41c9-aebb-1732fb2b7070",
-            workspace_uri="file:///home/reza/Music/lede",
+            workspace_uri=(self.home / "Music" / "project-gamma").as_uri(),
         )
         parsed = parse_cascade_summary(data)
         self.assertEqual(parsed.get("project_id"), "247e98f3-52b3-41c9-aebb-1732fb2b7070")

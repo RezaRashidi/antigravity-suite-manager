@@ -12,6 +12,7 @@ _SRC_DIR = str(Path(__file__).resolve().parent.parent / "src")
 if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
+from antigravity_suite.config import get_user_home
 from antigravity_suite.history.models import ConversationSummary
 from antigravity_suite.history.sqlite_store import ensure_summaries_schema, upsert_summary
 
@@ -29,7 +30,7 @@ class TestSqliteStore(unittest.TestCase):
                 preview="Original Preview",
                 step_count=5,
                 last_modified_time="2026-10-15T10:00:00+00:00",
-                workspace_uris="file:///home/user/project",
+                workspace_uris=(get_user_home() / "project").as_uri(),
                 status="CASCADE_RUN_STATUS_RUNNING",
                 source="IDE",
                 project_id="proj-42",

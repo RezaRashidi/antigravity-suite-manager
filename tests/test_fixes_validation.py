@@ -13,7 +13,9 @@ from pathlib import Path
 
 # Import functions to test
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "bin"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 import importlib
+from antigravity_suite.config import get_user_home
 
 class TestFixesValidation(unittest.TestCase):
 
@@ -75,8 +77,8 @@ class TestFixesValidation(unittest.TestCase):
         detect = importlib.import_module("antigravity-detect")
         with tempfile.TemporaryDirectory() as td:
             launcher_f = os.path.join(td, "antigravity-test")
-            old_p = "/home/user/.antigravity-profile-app-work"
-            new_p = "/data/custom-profiles/.antigravity-profile-app-work2"
+            old_p = os.path.join(td, "old-root", ".antigravity-profile-app-work")
+            new_p = os.path.join(td, "new-root", ".antigravity-profile-app-work2")
             
             content = f'''#!/usr/bin/env bash
 export PROFILE="{old_p}"
@@ -238,7 +240,7 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
         self.assertGreater(curr_start, 0)
 
         # Check regex extraction for custom instance
-        cmd = "/opt/antigravity/antigravity --user-data-dir=/home/user/.antigravity-profile-app-work"
+        cmd = f"/opt/antigravity/antigravity --user-data-dir={get_user_home()}/.antigravity-profile-app-work"
         m_app = re.search(r'\.antigravity-profile-(app-[a-zA-Z0-9_-]+)', cmd) or \
                 re.search(r'\.antigravity-profile-([a-zA-Z0-9_-]+)', cmd)
         self.assertIsNotNone(m_app)
@@ -411,9 +413,9 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
     def test_src_not_truncated_as_project_container(self):
         from antigravity_suite.history.projects import PROJECT_CONTAINERS, normalize_workspace_uri
         self.assertNotIn("src", PROJECT_CONTAINERS)
-        raw_uri = "file:///home/developer/app-server/src/controllers/auth"
+        raw_uri = (get_user_home() / "app-server" / "src" / "controllers" / "auth").as_uri()
         norm = normalize_workspace_uri(raw_uri)
-        self.assertNotEqual(norm, "file:///home/developer/app-server/src/controllers")
+        self.assertNotEqual(norm, (get_user_home() / "app-server" / "src" / "controllers").as_uri())
         self.assertEqual(norm, raw_uri)
 
     def test_ensure_project_configs_populates_all_gemini_dirs(self):
@@ -426,7 +428,7 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             g1.mkdir(parents=True)
             g2.mkdir(parents=True)
 
-            ws_target = "file:///home/developer/cool-service"
+            ws_target = (u_home / "cool-service").as_uri()
             ensure_project_configs(user_home=u_home, workspace_uris=[ws_target])
 
             # Both g1 and g2 config/projects/ must have the generated project file
@@ -600,7 +602,7 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             proj_dir = home / ".gemini" / "config" / "projects"
             proj_dir.mkdir(parents=True)
 
-            ws_uri = "file:///home/user/workspace/project-alpha"
+            ws_uri = (home / "workspace" / "project-alpha").as_uri()
             p1_def = {
                 "id": "11111111-2222-3333-4444-555555555555",
                 "name": "project-alpha",
@@ -621,7 +623,7 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             self.assertEqual(pid, "11111111-2222-3333-4444-555555555555")
 
             # 3. Add new project on disk (simulating user opening project during session)
-            ws_beta = "file:///home/user/workspace/project-beta"
+            ws_beta = (home / "workspace" / "project-beta").as_uri()
             p2_def = {
                 "id": "66666666-7777-8888-9999-000000000000",
                 "name": "project-beta",
@@ -637,14 +639,19 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
     def test_normalize_workspace_uri_fast_strings_and_windows_paths(self):
         from antigravity_suite.history.projects import normalize_workspace_uri, is_container_or_system_root
 
+        home_dyn = get_user_home()
+        container_uri = (home_dyn / "PhpstormProjects").as_uri()
+        app_uri = (home_dyn / "PhpstormProjects" / "my-app").as_uri()
+        sub_uri = (home_dyn / "PhpstormProjects" / "my-app" / "subfolder" / "file").as_uri()
+
         # System root check
         self.assertTrue(is_container_or_system_root("file:///tmp"))
-        self.assertTrue(is_container_or_system_root("file:///home/reza/PhpstormProjects"))
-        self.assertFalse(is_container_or_system_root("file:///home/reza/PhpstormProjects/antigravity-suite-manager"))
+        self.assertTrue(is_container_or_system_root(container_uri))
+        self.assertFalse(is_container_or_system_root(app_uri))
 
         # Normalization with cross-platform slashes
-        norm = normalize_workspace_uri("file:///home/reza/PhpstormProjects/my-app/subfolder/file")
-        self.assertEqual(norm, "file:///home/reza/PhpstormProjects/my-app")
+        norm = normalize_workspace_uri(sub_uri)
+        self.assertEqual(norm, app_uri)
 
     def test_get_transcript_timestamps_tail_seeking(self):
         from antigravity_suite.history.merger import get_transcript_timestamps
@@ -968,9 +975,10 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
 
                 stats = SyncStats()
                 all_summaries = {}
+                conv_ws = (master / "lede").as_uri()
                 # SQLite existing row has authentic_pid at index 8 and raw_with_outside at index 4!
                 existing_rows = {
-                    conv_id: ("Lede Chat", "Lede Preview", 3, "2026-10-10 12:00:00", raw_with_outside, "2026-10-10 12:00:00", 0, "file:///home/user/lede", authentic_pid)
+                    conv_id: ("Lede Chat", "Lede Preview", 3, "2026-10-10 12:00:00", raw_with_outside, "2026-10-10 12:00:00", 0, conv_ws, authentic_pid)
                 }
 
                 resolve_conversation_item(
@@ -996,7 +1004,7 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
         with tempfile.TemporaryDirectory() as td:
             master = Path(td)
             conv_id = "44444444-4444-4444-4444-444444444444"
-            dirty_title = "@[/home/reza/PhpstormProjects/app/User.php:20-30] Refactor auth"
+            dirty_title = f"@[{master}/app/User.php:20-30] Refactor auth"
 
             ok = sync_annotation_file(master, conv_id, dirty_title)
             self.assertTrue(ok)
@@ -1086,7 +1094,7 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
         self.assertFalse(is_clean_title("<USER_REQUEST>help</USER_REQUEST>"))
         self.assertFalse(is_clean_title("╰─❯ curl -X POST http://localhost:8080/api"))
         self.assertFalse(is_clean_title("root@cp1:/var/log# cat error.log"))
-        self.assertFalse(is_clean_title("reza@vm-control-plane:~$ sudo tail -f /var/log/nginx/stream_error.log"))
+        self.assertFalse(is_clean_title("developer@vm-control-plane:~$ sudo tail -f /var/log/nginx/stream_error.log"))
         self.assertFalse(is_clean_title("docker exec -it galera1 bash"))
         self.assertFalse(is_clean_title("git status"))
         self.assertFalse(is_clean_title("http://localhost:3000"))
@@ -1109,12 +1117,12 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             anno_dir.mkdir(parents=True)
             anno_file = anno_dir / f"{conv_id}.pbtxt"
             # Pre-seed with dirty shell title and pinned:true
-            anno_file.write_text('title: "reza@vm-control-plane:~$ sudo tail -f /var/log/nginx/stream_error.log"  pinned:true\n')
+            anno_file.write_text('title: "developer@vm-control-plane:~$ sudo tail -f /var/log/nginx/stream_error.log"  pinned:true\n')
 
             # Sync with generic "Conversation": dirty title should be stripped, pinned preserved
             sync_annotation_file(master, conv_id, "Conversation", pinned=True, force=False)
             content = anno_file.read_text()
-            self.assertNotIn("reza@vm-control-plane", content)
+            self.assertNotIn("developer@vm-control-plane", content)
             self.assertNotIn("title:", content)
             self.assertIn("pinned:true", content)
 
@@ -1232,7 +1240,7 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
                     con,
                     conv_id=cid,
                     title="Performance Engineering Strategy: Load Test Scenario Design Catalog",
-                    workspace_uri="file:///home/reza/PhpstormProjects/k6",
+                    workspace_uri=(get_user_home() / "workspace" / "load-test").as_uri(),
                     project_id="a9b5a9cf-cfda-543d-9a7e-6cf8a15a7005",
                     last_modified_iso="2026-10-17 13:17:21.000000+00:00",
                     step_count=3795,
@@ -1248,7 +1256,7 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
                 self.assertGreater(row[2], 1000000000000000000)  # > 1e18 nanoseconds
                 self.assertEqual(row[3], 3795)
                 self.assertEqual(row[4], "Performance Engineering Strategy: Load Test Scenario Design Catalog")
-                self.assertEqual(row[5], "k6")
+                self.assertEqual(row[5], "load-test")
                 self.assertEqual(row[6], "a9b5a9cf-cfda-543d-9a7e-6cf8a15a7005")
 
     def test_manifest_lifecycle_and_tombstones(self):
@@ -1680,7 +1688,7 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             # 1. Validation checks
             self.assertTrue(is_valid_workspace_uri(f"file://{real_proj}", user_home=fake_home))
             self.assertFalse(is_valid_workspace_uri(f"file://{non_existent_proj}", user_home=fake_home))
-            self.assertFalse(is_valid_workspace_uri("file:///home/reza/`\nTotal", user_home=fake_home))
+            self.assertFalse(is_valid_workspace_uri(f"file://{fake_home}/`\nTotal", user_home=fake_home))
             self.assertFalse(is_valid_workspace_uri("file:///tmp", user_home=fake_home))
             self.assertFalse(is_valid_workspace_uri(f"file://{fake_home}/PhpstormProjects", user_home=fake_home))
 
@@ -1704,7 +1712,7 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
                 # Step 0: prompt with code discussion mentioning mock Workspace
                 f.write(json.dumps({
                     "step_index": 0, "type": "USER_INPUT",
-                    "content": 'Check this diff:\n- get_project_id_for_workspace("file:///home/reza/PhpstormProjects/Odirect")'
+                    "content": f'Check this diff:\n- get_project_id_for_workspace("file://{non_existent_proj}")'
                 }) + "\n")
                 # Step 1: tool execution with authentic Cwd
                 f.write(json.dumps({

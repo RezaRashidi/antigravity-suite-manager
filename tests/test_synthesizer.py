@@ -33,6 +33,11 @@ class TestSynthesizer(unittest.TestCase):
             db_path = os.path.join(td, f"{conv_id}.db")
             transcript_path = os.path.join(td, "transcript_full.jsonl")
 
+            mock_src_dir = os.path.join(td, "src")
+            os.makedirs(mock_src_dir, exist_ok=True)
+            mock_file = os.path.join(mock_src_dir, "app.py")
+            mock_ws = Path(mock_src_dir).as_uri()
+
             transcript_lines = [
                 {
                     "step_index": 0,
@@ -52,7 +57,7 @@ class TestSynthesizer(unittest.TestCase):
                             "id": "call_123",
                             "name": "view_file",
                             "args": {
-                                "AbsolutePath": "/home/developer/src/app.py",
+                                "AbsolutePath": mock_file,
                                 "toolAction": "Viewing file",
                                 "toolSummary": "View app.py",
                             },
@@ -76,7 +81,7 @@ class TestSynthesizer(unittest.TestCase):
                 conv_id=conv_id,
                 db_path=db_path,
                 transcript_path=transcript_path,
-                workspace_uri="file:///home/developer/src",
+                workspace_uri=mock_ws,
                 project_id="my-project",
             )
             self.assertTrue(ok)
@@ -99,13 +104,13 @@ class TestSynthesizer(unittest.TestCase):
             self.assertIn(b"view_file", meta)
             self.assertIn(b"view_file", payload)
             self.assertIn(b"AbsolutePath", payload)
-            self.assertIn(b"/home/developer/src/app.py", payload)
+            self.assertIn(mock_file.encode("utf-8"), payload)
 
             # Workspace blob check
             blob_row = cur.execute("SELECT data FROM trajectory_metadata_blob WHERE id = 'main';").fetchone()
             self.assertIsNotNone(blob_row)
             parsed_blob = parse_trajectory_metadata_blob(blob_row[0])
-            self.assertEqual(parsed_blob.get("workspace_uri"), "file:///home/developer/src")
+            self.assertEqual(parsed_blob.get("workspace_uri"), mock_ws)
             self.assertEqual(parsed_blob.get("project_id"), "my-project")
 
             conn.close()

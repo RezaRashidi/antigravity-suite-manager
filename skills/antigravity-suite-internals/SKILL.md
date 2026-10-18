@@ -96,7 +96,7 @@ Both Hub and IDE rely on a compiled Go language server (`language_server`) provi
 
 ```bash
 /opt/antigravity/resources/app/extensions/antigravity/bin/language_server_linux_x64.bin \
-  --gemini_dir=/home/reza/.gemide \
+  --gemini_dir=$HOME/.gemide \
   --csrf_token=5ecc597a-0f7e-460a-9c01-3268282c7b5b \
   --extension_server_port=33557 \
   --extension_server_csrf_token=24a9e44c-a6df-4e5f-991f-a82a72bcac99 \
@@ -417,7 +417,7 @@ Defines all user-facing state flags, titles, and categorization:
 #### 7.3 `CortexWorkspaceMetadata` (Tag 9 in Summary & Tag 1 in Metadata)
 | Tag | Field Name | Wire Type | Proto Type | Description |
 |:---:|:---|:---:|:---|:---|
-| **1** | `workspace_folder_absolute_uri` | Length-Delimited | `string` | Project workspace URI (e.g. `file:///home/user/project`) |
+| **1** | `workspace_folder_absolute_uri` | Length-Delimited | `string` | Project workspace URI (e.g. `file://<workspace_root>`) |
 | **2** | `git_root_absolute_uri` | Length-Delimited | `string` | Git repository root URI |
 | **3** | `repository` | Length-Delimited | `Repository` | Repository metadata submessage |
 | **4** | `branch_name` | Length-Delimited | `string` | Active Git branch name |
@@ -650,9 +650,9 @@ To run multiple Antigravity instances concurrently without credential collisions
 
 | Instance | Executable / Launcher | Profile Root | Gemini Dir | Password Store | Account Example |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Hub Acc 1** | `antigravity-1` | `~` | `~/.gemini` | `--password-store=basic` | `aisummerreza@gmail.com` |
-| **Hub Acc 2** | `antigravity-acc2` | `~/.antigravity-profile2` | `~/.antigravity-profile2/.gemini` | `--password-store=basic` | `reza93ai20224@gmail.com` |
-| **IDE** | `antigravity-ide` | `~` | `~/.gemide` | `--password-store=basic` | `rezalast4m@gmail.com` |
+| **Hub Acc 1** | `antigravity-1` | `~` | `~/.gemini` | `--password-store=basic` | `primary@example.com` |
+| **Hub Acc 2** | `antigravity-acc2` | `~/.antigravity-profile2` | `~/.antigravity-profile2/.gemini` | `--password-store=basic` | `secondary@example.com` |
+| **IDE** | `antigravity-ide` | `~` | `~/.gemide` | `--password-store=basic` | `ide-dev@example.com` |
 
 ### 3-Way Unified History Architecture
 While accounts and auth remain isolated, conversation histories and brain artifacts are unified via symlinks:

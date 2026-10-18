@@ -333,8 +333,8 @@ Environment & Permissions:
   • Keyring Storage Mode:   Normal File Storage (Decoupled from GNOME Keyring)
   • History Sharing:        3-Way Unified (App 1, App 2, IDE)
   • Customizations Sharing: Unified (Rules, Skills, MCP across all instances)
-  • App Dir Ownership:      Writable by reza (Ready)
-  • IDE Dir Ownership:      Writable by reza (Ready)
+  • App Dir Ownership:      Writable by <user> (Ready)
+  • IDE Dir Ownership:      Writable by <user> (Ready)
 ========================================================================================
 ```
 

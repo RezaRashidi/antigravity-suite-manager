@@ -31,50 +31,45 @@ class TestProjectMappingAndGrouping(unittest.TestCase):
 
     def test_normalize_subfolder_workspace_uris(self):
         """Verifies subfolders correctly normalize to their canonical project root."""
+        fake_home = self.temp_dir
+        alpha_base = (fake_home / "PhpstormProjects" / "project-alpha").as_uri()
+        alpha_sub1 = (fake_home / "PhpstormProjects" / "project-alpha" / ".github" / "workflows").as_uri()
+        alpha_sub2 = (fake_home / "PhpstormProjects" / "project-alpha" / "backend" / "src").as_uri()
+        beta_base = (fake_home / "Music" / "project-beta").as_uri()
+        beta_sub = (fake_home / "Music" / "project-beta" / "package" / "kernel" / "mac80211").as_uri()
+        sample_base = (fake_home / "PhpstormProjects" / "sample-app").as_uri()
+        sample_sub = json.dumps([(fake_home / "PhpstormProjects" / "sample-app" / "load-tests").as_uri()])
+        cdn_base = (fake_home / "Downloads" / "cdn-worker").as_uri()
+        cdn_sub = (fake_home / "Downloads" / "cdn-worker" / "workers").as_uri()
+
         test_cases = [
-            (
-                "file:///home/user/PhpstormProjects/project-alpha/.github/workflows",
-                "file:///home/user/PhpstormProjects/project-alpha",
-            ),
-            (
-                "file:///home/user/PhpstormProjects/project-alpha/backend/src",
-                "file:///home/user/PhpstormProjects/project-alpha",
-            ),
-            (
-                "file:///home/user/Music/project-beta/package/kernel/mac80211",
-                "file:///home/user/Music/project-beta",
-            ),
-            (
-                '["file:///home/user/PhpstormProjects/sample-app/load-tests"]',
-                "file:///home/user/PhpstormProjects/sample-app",
-            ),
-            (
-                "file:///home/user/Downloads/cdn-worker/workers",
-                "file:///home/user/Downloads/cdn-worker",
-            ),
+            (alpha_sub1, alpha_base),
+            (alpha_sub2, alpha_base),
+            (beta_sub, beta_base),
+            (sample_sub, sample_base),
+            (cdn_sub, cdn_base),
         ]
         for sub_path, expected_root in test_cases:
-            self.assertEqual(normalize_workspace_uri(sub_path), expected_root)
+            self.assertEqual(normalize_workspace_uri(sub_path, user_home=fake_home), expected_root)
 
     def test_known_projects_resolve_to_registered_ids(self):
         """Verifies projects resolve to stable, deterministic IDs and subfolders match roots."""
-        alpha_root = "file:///home/user/PhpstormProjects/project-alpha"
-        alpha_sub = "file:///home/user/PhpstormProjects/project-alpha/.github/workflows"
+        alpha_root = (self.temp_dir / "PhpstormProjects" / "project-alpha").as_uri()
+        alpha_sub = (self.temp_dir / "PhpstormProjects" / "project-alpha" / ".github" / "workflows").as_uri()
         root_pid = get_project_id_for_workspace(alpha_root, user_home=self.temp_dir, create_missing=True)
         sub_pid = get_project_id_for_workspace(alpha_sub, user_home=self.temp_dir, create_missing=True)
         self.assertIsNotNone(root_pid)
         self.assertEqual(root_pid, sub_pid)
 
-        beta_pid = get_project_id_for_workspace("file:///home/user/Music/project-beta", user_home=self.temp_dir, create_missing=True)
+        beta_pid = get_project_id_for_workspace((self.temp_dir / "Music" / "project-beta").as_uri(), user_home=self.temp_dir, create_missing=True)
         self.assertIsNotNone(beta_pid)
         self.assertNotEqual(root_pid, beta_pid)
 
     def test_ensure_project_configs_creation(self):
         """Verifies missing project JSON definitions are properly created dynamically."""
-        test_workspaces = [
-            "file:///home/user/PhpstormProjects/sample-app",
-            "file:///home/user/Downloads/cdn-worker",
-        ]
+        sample_uri = (self.temp_dir / "PhpstormProjects" / "sample-app").as_uri()
+        cdn_uri = (self.temp_dir / "Downloads" / "cdn-worker").as_uri()
+        test_workspaces = [sample_uri, cdn_uri]
         ensure_project_configs(user_home=self.temp_dir, workspace_uris=test_workspaces)
         projects_dir = self.temp_dir / ".gemini" / "config" / "projects"
         self.assertTrue(projects_dir.is_dir())
@@ -82,7 +77,7 @@ class TestProjectMappingAndGrouping(unittest.TestCase):
         created_files = list(projects_dir.glob("*.json"))
         self.assertEqual(len(created_files), 2)
 
-        sample_pid = get_project_id_for_workspace("file:///home/user/PhpstormProjects/sample-app", user_home=self.temp_dir)
+        sample_pid = get_project_id_for_workspace(sample_uri, user_home=self.temp_dir)
         sample_file = projects_dir / f"{sample_pid}.json"
         self.assertTrue(sample_file.is_file())
         with open(sample_file, "r", encoding="utf-8") as f:
@@ -91,7 +86,7 @@ class TestProjectMappingAndGrouping(unittest.TestCase):
         self.assertEqual(sample_data["id"], sample_pid)
         self.assertEqual(
             sample_data["projectResources"]["resources"][0]["gitFolder"]["folderUri"],
-            "file:///home/user/PhpstormProjects/sample-app",
+            sample_uri,
         )
 
     def test_dynamic_project_discovery(self):
@@ -100,7 +95,7 @@ class TestProjectMappingAndGrouping(unittest.TestCase):
         projects_dir.mkdir(parents=True)
 
         custom_pid = "d8e7f6a5-b4c3-2109-8765-fedcba987654"
-        custom_uri = "file:///home/user/custom/project"
+        custom_uri = (self.temp_dir / "custom" / "project").as_uri()
         custom_def = {
             "id": custom_pid,
             "name": "custom-project",
@@ -138,12 +133,16 @@ class TestProjectMappingAndGrouping(unittest.TestCase):
                 "file:///home/dev/code/web-portal",
             ),
             (
+                (self.temp_dir / "code" / "web-portal" / "src" / "pkg").as_uri(),
+                (self.temp_dir / "code" / "web-portal").as_uri(),
+            ),
+            (
                 "file:///var/log/syslog",
                 "file:///var/log/syslog",
             ),
         ]
         for sub_path, expected_root in cases:
-            self.assertEqual(normalize_workspace_uri(sub_path), expected_root)
+            self.assertEqual(normalize_workspace_uri(sub_path, user_home=self.temp_dir), expected_root)
 
     def test_git_repository_root_dynamic_detection(self):
         """Verifies local filesystem git repository roots are automatically detected."""

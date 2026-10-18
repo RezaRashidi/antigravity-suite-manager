@@ -70,10 +70,13 @@ def register_project_mapping(workspace_uri: str, project_id: str) -> None:
 
 
 @lru_cache(maxsize=2048)
-def is_container_or_system_root(uri_str: str) -> bool:
+def is_container_or_system_root(
+    uri_str: str,
+    user_home: Optional[Path] = None,
+) -> bool:
     """
     Returns True if uri_str is a parent container folder or system root
-    (e.g. /tmp, /var/tmp, /home/<user>, /home/<user>/PhpstormProjects) that
+    (e.g. /tmp, /var/tmp, user home, user container directories) that
     should NOT swallow sub-projects.
     """
     if not uri_str:
@@ -82,6 +85,18 @@ def is_container_or_system_root(uri_str: str) -> bool:
     path_str = unquote(parsed.path).replace("\\", "/").rstrip("/")
     if path_str in ("/tmp", "/var/tmp", "/home", "/Users", "") or path_str.count("/") <= 2:
         return True
+
+    home_path = (user_home or get_user_home()).resolve()
+    home_str = str(home_path).replace("\\", "/").rstrip("/")
+
+    # Check if path points directly to home or a direct container directory inside home
+    if path_str == home_str:
+        return True
+    if path_str.startswith(home_str + "/"):
+        rel = path_str[len(home_str) + 1 :]
+        if "/" not in rel and rel.lower() in PROJECT_CONTAINERS:
+            return True
+
     parts = path_str.split("/")
     if len(parts) == 4 and parts[1].lower() in ("home", "users") and parts[3].lower() in PROJECT_CONTAINERS:
         return True
@@ -115,11 +130,12 @@ def is_valid_workspace_uri(
     if not path_str or path_str in ("/", "\\"):
         return False
 
+    home = (user_home or get_user_home()).resolve()
+
     # Container or system roots alone are not authentic project workspaces
-    if is_container_or_system_root(u):
+    if is_container_or_system_root(u, user_home=home):
         return False
 
-    home = (user_home or get_user_home()).resolve()
     p = Path(path_str)
     try:
         if str(home) in path_str:
@@ -286,6 +302,19 @@ def normalize_workspace_uri(
 
         # 3. Universal project container directory heuristic
         clean_path = path_str.replace("\\", "/")
+
+        # 3a. Direct check relative to effective user home
+        home_str = str(home_path).replace("\\", "/").rstrip("/")
+        if clean_path.startswith(home_str + "/"):
+            rel = clean_path[len(home_str) + 1 :]
+            rel_parts = rel.split("/")
+            if len(rel_parts) >= 2 and rel_parts[0].lower() in PROJECT_CONTAINERS:
+                root_path = f"{home_str}/{rel_parts[0]}/{rel_parts[1]}"
+                root_uri = f"file://{root_path}"
+                register_known_root(root_uri)
+                return root_uri
+
+        # 3b. Generic container check across arbitrary user directories / environments
         parts = clean_path.split("/")
         start_idx = 0
         if len(parts) >= 3 and parts[1].lower() in ("home", "users"):
@@ -424,7 +453,7 @@ def ensure_project_configs(
             for ws in targets:
                 if not ws or ws in existing_folder_uris:
                     continue
-                if not ws.startswith("file://") or any(k in ws for k in [".gemini", "/tmp"]) or is_container_or_system_root(ws):
+                if not ws.startswith("file://") or ".gemini" in ws or is_container_or_system_root(ws, user_home=home):
                     continue
                 parsed = urlsplit(ws)
                 path_str = unquote(parsed.path)
