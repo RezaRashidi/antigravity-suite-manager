@@ -512,6 +512,7 @@ Configure icons interactively or via command-line flags:
 | `rtl` | Apply / re-apply Right-to-Left (RTL) patch to App & IDE |
 | `update-rtl` | Fetch latest RTL patch from GitHub and apply |
 | `f5` | Apply manual F5 reload backend sync patch |
+| `checksums` | Verify and synchronize VS Code bundle checksums in `product.json` |
 | `clean-cache` | Clear downloaded archives in `/tmp/antigravity-cache` |
 | `keyring` | Manage credential storage mode (status, set, purge, or interactive) |
 
@@ -579,6 +580,20 @@ Integrated via [mmnaderi/antigravity-rtl](https://github.com/mmnaderi/antigravit
 
 ### Manual F5 Reload Patch
 Disables automated background application restarts during inactivity, allowing the user to refresh the session manually via the **F5** key without losing chat history or window context.
+
+### Antigravity IDE Bundle Checksum Integrity & Corruption Fix
+Antigravity IDE runs VS Code's internal `IntegrityService` on startup to verify 11 core bundle files against `product.json["checksums"]`. Applying external patches (such as `antigravity-rtl` font CSP tweaks or custom UI buttons) alters files on disk, triggering the dialog `"Your Antigravity IDE installation appears to be corrupt. Please reinstall."`.
+
+The suite manager incorporates an automated unpadded SHA-256 base64 hasher (`src/antigravity_suite/patch/ide_checksums.py`) that syncs live checksums whenever patches are applied or updated. You can also verify or re-synchronize manually at any time:
+
+```bash
+# Verify checksum status
+antigravity-checksums /opt/antigravity --verify
+
+# Re-synchronize checksums in product.json
+~/manage-antigravity.sh checksums
+```
+
 
 ---
 
