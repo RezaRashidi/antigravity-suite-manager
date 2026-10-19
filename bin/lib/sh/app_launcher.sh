@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Unified dynamic App launcher generator for all instances (Account 1, 2, N).
+# Unified dynamic App launcher and desktop entry generator for all instances.
 
 write_dynamic_app_launcher() {
     local target="$1" prof="$2" udata="$3" wm="$4" desk="$5" icon="$6" tray="$7" pstore="$8" symlink="$9"
@@ -63,4 +63,32 @@ exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}${pstore}--ozone-platform=
 EOF
     chmod +x "$target"
     [ -n "$symlink" ] && ln -sfn "$target" "$symlink" || true
+}
+
+write_app_desktop_entry() {
+    local target="$1" name="$2" comm="$3" exec_cmd="$4" icon="$5" wm="$6" restart_cmd="$7"
+    cat <<EOF > "$target"
+[Desktop Entry]
+Name=${name}
+GenericName=AI Pair Programmer
+Comment=${comm}
+Exec=${exec_cmd}
+Terminal=false
+Type=Application
+Icon=${icon}
+Categories=Development;IDE;
+StartupWMClass=${wm}
+MimeType=x-scheme-handler/antigravity;
+StartupNotify=true
+EOF
+    if [ -n "$restart_cmd" ]; then
+        cat <<EOF >> "$target"
+Actions=Restart;
+
+[Desktop Action Restart]
+Name=Restart ${name}
+Exec=${restart_cmd}
+EOF
+    fi
+    chmod +x "$target"
 }

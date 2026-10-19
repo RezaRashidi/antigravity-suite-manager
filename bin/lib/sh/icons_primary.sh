@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Icon and tray icon assurance for Account 1.
+# Primary icon and tray icon synchronization and fallback assurance.
 
-ensure_account1_icons() {
+ensure_primary_icons() {
     local icon_name="$1"
     if [ ! -f "${LOCAL_ICONS}/${icon_name}.png" ]; then
         if [ -f "${LOCAL_ICONS}/antigravity-master-black.png" ]; then
@@ -31,3 +31,5 @@ ensure_account1_icons() {
         cp -f "${LOCAL_ICONS}/antigravity-tray.png" "${LOCAL_ICONS}/antigravity-1-tray.png" 2>/dev/null || true
     fi
 }
+
+ensure_account1_icons() { ensure_primary_icons "$@"; }
