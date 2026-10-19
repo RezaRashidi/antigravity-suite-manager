@@ -529,24 +529,57 @@ print("Tag 15 (annotations.title):", parsed.get("title"))
 
 ---
 
-## 19. Summary Checklist for Future Diagnostics
+## 20. Issue 17: Systemic 2027y Timestamp Distortion & Go time.Time Zero-Value Wire Format
+
+See full standalone forensics document: [docs/forensics/19_systemic_2027y_timestamp_distortion_and_go_zero_value_wire_format.md](forensics/19_systemic_2027y_timestamp_distortion_and_go_zero_value_wire_format.md).
+
+### Summary
+* **Symptom**: Chat creation and modification dates distorted to `2027y` across Desktop App and IDE sidebar.
+* **Root Cause**: Protobuf Tag 3 (`last_modified_time`) varint encoded `-62135596800` seconds (`08 80 92 b8 c3 98 fe ff ff ff 01`), which is the Go `time.Time{}` zero value (January 1, Year 0001). Frontend calculated `timeAgo` from Year 0001 to 2026, rendering `2027y`.
+* **Fix**:
+  1. Enforced Year 0001 rejection guards in [cascade_builder.py](src/antigravity_suite/proto/cascade_builder.py) and [item_metadata.py](src/antigravity_suite/history/item_metadata.py).
+  2. Guarded FTS nanosecond timestamps in [sqlite_fts.py](src/antigravity_suite/history/sqlite_fts.py) requiring `dt.year > 2000`.
+  3. Added native SQLite fallback in [sqlite_ops.py](src/antigravity_suite/history/sqlite_ops.py).
+  4. Filtered binary summaries in [summary_sync.py](src/antigravity_suite/history/summary_sync.py) against discovered IDs.
+
+---
+
+## 21. Issue 18: Watcher Daemon Self-Trigger Loop (app_storage.json & WAL) and Physical DB Deletion Guard
+
+See full standalone forensics document: [docs/forensics/20_watcher_daemon_self_trigger_loop_and_physical_db_deletion_guard.md](forensics/20_watcher_daemon_self_trigger_loop_and_physical_db_deletion_guard.md).
+
+### Summary
+* **Symptom**: Background daemon `antigravity-sync.service` consumed 50%–99% CPU running endless merge loops every 30 seconds; 15 active conversations unexpectedly vanished into `~/.config/antigravity/backups/trash/`.
+* **Root Cause**:
+  1. Inotify watched `app_storage.json` (modified continuously by Electron on window focus/telemetry) and SQLite WAL (`*.vscdb-wal`), causing self-trigger loops on its own write operations.
+  2. `del_ide` misinterpreted workspace-scoped IDE views as user deletions and trashed active conversations.
+* **Fix**:
+  1. Excluded `app_storage.json`, `*.vscdb-wal`, and `*-shm` from inotify triggers in [watcher_debounce.py](src/antigravity_suite/history/watcher_debounce.py) and target discovery in [watcher_targets.py](src/antigravity_suite/history/watcher_targets.py). Daemon now sleeps at 0.0% CPU (`STAT Ss`).
+  2. Added hard physical DB guard `(d / f"{c}.db").stat().st_size > 100` in [deletion_sync.py](src/antigravity_suite/history/deletion_sync.py).
+  3. Restored all 15 active conversations from trash and backups into master stores.
+
+---
+
+## 22. Summary Checklist for Future Diagnostics
 
 | Checkpoint | Target Path / Command | Expected Healthy State |
 | :--- | :--- | :--- |
 | **Protobuf Tag 20** | `src/antigravity_suite/proto/cascade.py` | Must NOT emit Tag 20 when `source == 0` |
 | **Protobuf Tag 1 vs 2** | `src/antigravity_suite/proto/cascade.py` | Tag 1 = Clean Title, Tag 2 = Preview Prompt |
 | **Checkpoint Step 23** | `src/antigravity_suite/history/extractor_checkpoint.py` | Decodes `Tag 30 -> Tag 4` from `<uuid>.db` for authentic LLM title |
-| **Timestamp Floor** | `src/antigravity_suite/history/item_metadata.py` | Normalized ms > Jan 1, 2020; prevents "2027y" epoch 0 bug |
-| **Deletion Sync** | `src/antigravity_suite/history/deletion.py` | Bidirectional purge when `<uuid>.db` is removed; prevents infinite spinner |
+| **Timestamp Floor** | `src/antigravity_suite/history/item_metadata.py` | Rejects `0001%` dates; validates `dt.year > 2000` |
+| **Physical DB Deletion Guard** | `src/antigravity_suite/history/deletion_sync.py` | Never deletes conversation if `<uuid>.db` exists on disk |
+| **Watcher Inotify Quiescence** | `src/antigravity_suite/history/watcher_debounce.py` | Excludes `app_storage.json` & WAL; daemon sleeps at 0% CPU |
 | **Tray Icon Paths** | `~/.local/share/icons/` | `antigravity-1-tray.png` & `antigravity-acc2-tray.png` (48x48, 32x32, 24x24) |
 | **Launcher Tray Env** | `~/.local/bin/antigravity-1`, `antigravity-acc2` | Exports `ANTIGRAVITY_TRAY_ICON_PATH` |
 | **Tray Cache Sync** | `src/antigravity_suite/icon/tray_sync.py` | Scans `tempfile.gettempdir()`, `$TMPDIR`, `$XDG_RUNTIME_DIR`, `/run/user/<uid>`, `/tmp` |
 | **Dynamic Workspaces** | `src/antigravity_suite/history/projects_roots.py` | Queries `state.vscdb` (`recentlyOpenedPathsList`); dynamically learns containers |
 | **Hub vs IDE Partition** | `conversation_summaries.db` | `app_data_dir`: `antigravity` (Hub) vs `antigravity-ide` (IDE) |
-| **Hub Binary Proto** | `agyhub_summaries_proto.pb` | Contains ONLY Hub partition chats (~53), NOT IDE workspace chats |
-| **IDE State** | `state.vscdb` (`trajectorySummaries`) | Contains ALL workspace chats (293) |
+| **Hub Binary Proto** | `agyhub_summaries_proto.pb` | Contains ONLY Hub partition chats, NOT IDE workspace chats |
+| **IDE State** | `state.vscdb` (`trajectorySummaries`) | Contains ALL workspace chats (304 active records) |
 | **Audit Log** | `~/.gemini/antigravity/history_merger_audit.log` | JSONL records for all mutations |
 | **Language Server Health** | `~/.config/Antigravity/logs/language_server.log` | `reconcile checked N, restored 0, cached N, dropped 0` |
 | **F5 Backend Reload** | `bin/lib/patch/patch_utils_reload.js` | Invokes `await ls.restartLanguageServer()` & strips stale handlers |
 | **Unit Test Suite** | `python3 -m unittest discover tests` | All 120 tests passing |
+
 

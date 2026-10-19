@@ -712,7 +712,10 @@ To guarantee all MCP servers, custom skills, rules, and plugins are shared betwe
 ## 7. Real-Time Synchronization Daemon (`antigravity-merge-history.py`)
 
 Runs as a systemd user service (`antigravity-sync.service`) or on-demand CLI command:
-- Uses polling and mtime debounce (0.5s) to monitor write events on databases, tokens, and storage files across all instances.
+- Uses Linux kernel inotify and `epoll` with adaptive debounce (3.0s quiet duration) to monitor write events.
+- **Self-Trigger Protection**: Excludes `app_storage.json`, `*.vscdb-wal`, `*.vscdb-shm`, and `transcript_full.jsonl` from watch triggers to prevent feedback loops and ensure 0.0% idle CPU (`STAT Ss`).
+- **Physical Database Protection**: Enforces hard existence guards on `(d / f"{c}.db").stat().st_size > 100` before processing any deletion, preventing active conversations from being purged during workspace switches.
+- **Go Zero-Value Timestamp Rejection**: Rejects any incoming date starting with `"0001"`, preventing `-62135596800` varint seconds from poisoning Protobuf Tag 3 and causing the `2027y` UI date bug.
 - Re-indexes conversation titles into SQLite `conversation_summaries.db`.
 - Serializes and writes binary `agyhub_summaries_proto.pb` and `jetbox_summaries.pb` for instantaneous Hub UI updates without app restarts.
 - Broadcasts Base64 `antigravityUnifiedStateSync.trajectorySummaries` to all IDE `state.vscdb` targets.
