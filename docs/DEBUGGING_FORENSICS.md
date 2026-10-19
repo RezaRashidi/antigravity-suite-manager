@@ -576,7 +576,23 @@ See full standalone forensics document: [docs/forensics/21_ide_installation_corr
 
 ---
 
-## 23. Summary Checklist for Future Diagnostics
+## 23. Issue 20: Elimination of Hardcoded Account Scripts & Dynamic Multi-Instance Architecture
+
+See full standalone forensics document: [docs/forensics/22_elimination_of_hardcoded_account_scripts_and_unified_dynamic_launchers.md](forensics/22_elimination_of_hardcoded_account_scripts_and_unified_dynamic_launchers.md).
+
+### Summary
+* **Symptom**: Code duplication across bespoke `account1.sh`, `account2.sh`, `account1_launcher.sh`, `account2_launcher.sh`, and `account1_icon.sh`; inconsistent launcher features (`--restart`, stale RAM binary detection).
+* **Root Cause**:
+  1. The suite started with hardcoded two-account support and retained legacy account files even after generalized multi-instance support was added.
+  2. Each launcher implemented its own heredoc script and `.desktop` entry, causing maintenance drift.
+* **Fix**:
+  1. Built [app_launcher.sh](bin/lib/sh/app_launcher.sh) providing `write_dynamic_app_launcher` and `write_app_desktop_entry` for all App instances (Account 1, 2, and $N$).
+  2. Built [instance_app.sh](bin/lib/sh/instance_app.sh) providing unified `setup_app_instance(iid)` and [icons_primary.sh](bin/lib/sh/icons_primary.sh).
+  3. Completely deleted all bespoke `account*.sh` files.
+
+---
+
+## 24. Summary Checklist for Future Diagnostics
 
 | Checkpoint | Target Path / Command | Expected Healthy State |
 | :--- | :--- | :--- |

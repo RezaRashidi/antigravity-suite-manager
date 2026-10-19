@@ -27,4 +27,5 @@ This document records the end-to-end diagnostic methodology, reverse-engineering
 - [19. Issue 17: Systemic 2027y Timestamp Distortion & Go time.Time Zero-Value Wire Format](19_systemic_2027y_timestamp_distortion_and_go_zero_value_wire_format.md)
 - [20. Issue 18: Watcher Daemon Self-Trigger Loop (app_storage.json & WAL) and Physical DB Deletion Guard](20_watcher_daemon_self_trigger_loop_and_physical_db_deletion_guard.md)
 - [21. Issue 19: Antigravity IDE Corruption Dialog & VS Code Checksum Integrity Synchronization](21_ide_installation_corrupt_checksum_integrity_fix.md)
-- [22. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
+- [22. Issue 20: Elimination of Hardcoded Account Scripts & Dynamic Multi-Instance Architecture](22_elimination_of_hardcoded_account_scripts_and_unified_dynamic_launchers.md)
+- [23. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
