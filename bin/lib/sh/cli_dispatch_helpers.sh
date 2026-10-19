@@ -18,6 +18,8 @@ dispatch_update() {
         rtl) update_rtl ;;
         f5) FORCE_INSTALL=true patch_f5_reload ;;
         checksums) fix_ide_checksums "${IDE_INSTALL_DIR:-/opt/antigravity}" ;;
+        repo|self) update_suite_repo ;;
+        services|service|daemons) restart_suite_services ;;
         all|*) update_all ;;
     esac
 }

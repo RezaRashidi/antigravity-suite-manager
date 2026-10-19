@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Antigravity Suite Manager repository self-update engine
+
+find_suite_repo_root() {
+    local candidate
+    for candidate in "$SCRIPT_DIR" "${SCRIPT_DIR}/.." "${REAL_HOME}/PhpstormProjects/antigravity-suite-manager"; do
+        if [ -d "${candidate}/.git" ]; then
+            echo "$(cd -P "$candidate" && pwd)"
+            return 0
+        fi
+    done
+    local py_repo
+    py_repo=$(python3 -c "import antigravity_suite, os; print(os.path.abspath(os.path.join(os.path.dirname(antigravity_suite.__file__), '..', '..')))" 2>/dev/null || true)
+    if [ -n "$py_repo" ] && [ -d "${py_repo}/.git" ]; then
+        echo "$py_repo"
+        return 0
+    fi
+    return 1
+}
+
+update_suite_repo() {
+    log_info "Detecting Antigravity Suite Manager repository..."
+    local repo_dir
+    repo_dir=$(find_suite_repo_root) || {
+        log_err "Failed to locate Antigravity Suite Manager git repository."
+        return 1
+    }
+    log_info "Updating repository at ${repo_dir} via git pull..."
+    local branch
+    branch=$(git -C "$repo_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+    if ! git -C "$repo_dir" pull origin "$branch"; then
+        log_err "Git pull failed for branch '$branch'."
+        return 1
+    fi
+    log_success "Repository successfully updated from origin/${branch}."
+
+    if [ -f "${repo_dir}/src/scale_icon.c" ]; then
+        log_info "Recompiling Catmull-Rom resampler..."
+        gcc -O3 -Wall "${repo_dir}/src/scale_icon.c" -lm -o "${LOCAL_BIN}/scale_icon" 2>/dev/null || true
+        chmod +x "${LOCAL_BIN}/scale_icon" 2>/dev/null || true
+    fi
+
+    log_info "Redeploying suite scripts and libraries to ${LOCAL_BIN}..."
+    if [ -d "${repo_dir}/bin" ]; then
+        for s in manage-antigravity.sh antigravity-generate-icons.py antigravity-apply-icon.py \
+                 antigravity-merge-history.py antigravity-migration.py antigravity-detect.py \
+                 antigravity-keyring.py antigravity-f5-patch.js antigravity-checksums.py; do
+            if [ -f "${repo_dir}/bin/${s}" ]; then
+                cp -f "${repo_dir}/bin/${s}" "${LOCAL_BIN}/" 2>/dev/null || true
+                chmod +x "${LOCAL_BIN}/${s}" 2>/dev/null || true
+            fi
+        done
+        if [ -d "${repo_dir}/bin/lib" ]; then
+            mkdir -p "${LOCAL_BIN}/lib"
+            cp -rf "${repo_dir}/bin/lib/"* "${LOCAL_BIN}/lib/" 2>/dev/null || true
+        fi
+    fi
+
+    local py_ver
+    py_ver=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo "3")
+    local user_sp="${REAL_HOME}/.local/lib/python${py_ver}/site-packages"
+    mkdir -p "$user_sp" 2>/dev/null || true
+    echo "${repo_dir}/src" > "${user_sp}/antigravity_suite.pth" 2>/dev/null || true
+
+    ln -sfn "${LOCAL_BIN}/manage-antigravity.sh" "${REAL_HOME}/manage-antigravity.sh"
+
+    log_info "Restarting background services with updated codebase..."
+    restart_suite_services
+
+    log_success "Antigravity Suite Manager repository update complete!"
+}

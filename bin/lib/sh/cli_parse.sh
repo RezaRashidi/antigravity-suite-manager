@@ -60,6 +60,8 @@ parse_cli_args() {
             update-app) COMMAND="update"; SUB_COMMAND="app"; shift ;;
             update-ide) COMMAND="update"; SUB_COMMAND="ide"; shift ;;
             update-f5) COMMAND="update"; SUB_COMMAND="f5"; shift ;;
+            update-repo|self-update|update-self) COMMAND="update-repo"; shift ;;
+            restart-services|restart-service|restart-daemon|restart-daemons) COMMAND="restart-services"; shift ;;
             status|all|app|ide|app1|app2|ide-shortcuts|update-rtl|clean-cache|help)
                 COMMAND="$1"; shift ;;
             -h|--help) show_help; exit 0 ;;

@@ -28,9 +28,11 @@ interactive_menu() {
     echo "21) Export Suite or History Archive (Cross-System Migration)"
     echo "22) Import Suite or History Archive (Cross-System Restore/Merge)"
     echo "23) Manage Backups & Snapshots (List, Create, Restore)"
+    echo "24) Update Suite Manager Repository (git pull, build & deploy)"
+    echo "25) Restart Background Services (Sync & Icon Daemon)"
     echo "0) Exit"
     echo -e "${CYAN}-----------------------------------------------------${NC}"
-    read -rp "Select an option [0-23]: " choice
+    read -rp "Select an option [0-25]: " choice
 
     case "$choice" in
         1) install_antigravity_all ;;
@@ -56,6 +58,8 @@ interactive_menu() {
         21) menu_action_export ;;
         22) menu_action_import ;;
         23) menu_action_backups ;;
+        24) update_suite_repo ;;
+        25) restart_suite_services ;;
         0) exit 0 ;;
         *) log_err "Invalid selection."; exit 1 ;;
     esac

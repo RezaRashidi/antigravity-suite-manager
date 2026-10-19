@@ -30,7 +30,9 @@ Commands:
   remove-instance Delete an App or IDE instance and archive its profile (alias: remove)
   f5            Re-apply manual F5 backend reload sync patch
   rtl           Apply / re-apply antigravity-rtl to App and IDE
-  update        Smart update components [all|app|ide|rtl|f5|checksums] (preserves user data)
+  update        Smart update components [all|app|ide|rtl|f5|checksums|repo|services] (preserves user data)
+  update-repo   Update Antigravity Suite Manager repository, recompile, and redeploy
+  restart-services Restart systemd history sync and X11 icon injector daemons
   update-rtl    Update antigravity-rtl to latest and re-apply
   update-f5     Re-apply manual F5 backend reload sync patch (alias for update f5)
   checksums     Verify and synchronize Antigravity IDE bundle integrity checksums

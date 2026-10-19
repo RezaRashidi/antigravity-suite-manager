@@ -23,7 +23,11 @@ install: build
 	install -m 755 bin/antigravity-migration.py $(BINDIR)/antigravity-migration.py
 	install -m 755 bin/antigravity-detect.py $(BINDIR)/antigravity-detect.py
 	install -m 755 bin/antigravity-keyring.py $(BINDIR)/antigravity-keyring.py
+	install -m 755 bin/antigravity-checksums.py $(BINDIR)/antigravity-checksums.py 2>/dev/null || true
+	install -m 755 bin/antigravity-f5-patch.js $(BINDIR)/antigravity-f5-patch.js 2>/dev/null || true
 	install -m 755 bin/scale_icon $(BINDIR)/scale_icon
+	mkdir -p $(BINDIR)/lib
+	cp -rf bin/lib/* $(BINDIR)/lib/ 2>/dev/null || true
 	cp -f assets/antigravity-master-*.png $(ICONDIR)/ 2>/dev/null || true
 	@python3 -c 'import site, os; sp = site.getusersitepackages(); os.makedirs(sp, exist_ok=True); open(os.path.join(sp, "antigravity_suite.pth"), "w").write("$(CURDIR)/src\n")' 2>/dev/null || true
 	ln -sfn $(BINDIR)/manage-antigravity.sh $(HOME)/manage-antigravity.sh

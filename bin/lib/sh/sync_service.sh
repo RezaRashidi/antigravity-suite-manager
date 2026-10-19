@@ -40,3 +40,27 @@ merge_history() {
     fi
     log_success "History synchronization complete."
 }
+
+restart_suite_services() {
+    log_info "Restarting Antigravity Suite background services..."
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl --user daemon-reload 2>/dev/null || true
+        if systemctl --user is-enabled antigravity-sync.service >/dev/null 2>&1 || \
+           systemctl --user is-active antigravity-sync.service >/dev/null 2>&1; then
+            systemctl --user restart --no-block antigravity-sync.service 2>/dev/null || true
+            log_success "Systemd history sync daemon restarted."
+        fi
+    fi
+    if pgrep -f "antigravity-apply-icon.py --daemon" >/dev/null 2>&1; then
+        pkill -f "antigravity-apply-icon.py --daemon" 2>/dev/null || true
+        sleep 0.5
+    fi
+    local icon_script="${LOCAL_BIN}/antigravity-apply-icon.py"
+    [ ! -f "$icon_script" ] && icon_script="${SCRIPT_DIR}/antigravity-apply-icon.py"
+    [ ! -f "$icon_script" ] && icon_script="${SCRIPT_DIR}/bin/antigravity-apply-icon.py"
+    if [ -f "$icon_script" ]; then
+        nohup python3 "$icon_script" --daemon </dev/null >/dev/null 2>&1 &
+        log_success "X11 icon injector daemon restarted."
+    fi
+    log_success "All Antigravity Suite background services restarted."
+}

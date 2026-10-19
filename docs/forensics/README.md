@@ -28,4 +28,5 @@ This document records the end-to-end diagnostic methodology, reverse-engineering
 - [20. Issue 18: Watcher Daemon Self-Trigger Loop (app_storage.json & WAL) and Physical DB Deletion Guard](20_watcher_daemon_self_trigger_loop_and_physical_db_deletion_guard.md)
 - [21. Issue 19: Antigravity IDE Corruption Dialog & VS Code Checksum Integrity Synchronization](21_ide_installation_corrupt_checksum_integrity_fix.md)
 - [22. Issue 20: Elimination of Hardcoded Account Scripts & Dynamic Multi-Instance Architecture](22_elimination_of_hardcoded_account_scripts_and_unified_dynamic_launchers.md)
-- [23. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
+- [23. Issue 21: Self-Update Engine & Background Service Orchestration](23_self_update_engine_and_background_service_orchestration.md)
+- [24. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)

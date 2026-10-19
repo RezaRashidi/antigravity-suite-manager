@@ -592,7 +592,24 @@ See full standalone forensics document: [docs/forensics/22_elimination_of_hardco
 
 ---
 
-## 24. Summary Checklist for Future Diagnostics
+## 24. Issue 21: Self-Update Engine & Background Service Orchestration
+
+See full standalone forensics document: [docs/forensics/23_self_update_engine_and_background_service_orchestration.md](forensics/23_self_update_engine_and_background_service_orchestration.md).
+
+### Summary
+* **Symptom**: Lack of unified self-update command for the suite manager repository itself; shell blocking or freezing when restarting background history sync and icon daemon services.
+* **Root Cause**:
+  1. Invocations outside git repository (e.g. `~/.local/bin`) failed to locate repo root without Python package introspection.
+  2. `systemctl --user restart` blocked synchronously waiting for graceful stop/start of `antigravity-merge-history.py --watch`.
+  3. `antigravity-apply-icon.py --daemon` loop retained file descriptor inheritance from parent subshells.
+* **Fix**:
+  1. Built [repo_update.sh](bin/lib/sh/repo_update.sh) with `find_suite_repo_root()` and `update_suite_repo()` (`git pull`, C resampler recompile, script redeploy, site-packages `.pth` refresh, and service restart).
+  2. Built non-blocking `restart_suite_services()` in [sync_service.sh](bin/lib/sh/sync_service.sh) using `systemctl --user restart --no-block` and decoupled daemon spawning via `nohup` & stdin redirection.
+  3. Exposed `update-repo` and `restart-services` across CLI, setup wizard flags, interactive menu (items 24 & 25), and Control Center (`[P]` and `[D]`).
+
+---
+
+## 25. Summary Checklist for Future Diagnostics
 
 | Checkpoint | Target Path / Command | Expected Healthy State |
 | :--- | :--- | :--- |
@@ -613,7 +630,9 @@ See full standalone forensics document: [docs/forensics/22_elimination_of_hardco
 | **Audit Log** | `~/.gemini/antigravity/history_merger_audit.log` | JSONL records for all mutations |
 | **Language Server Health** | `~/.config/Antigravity/logs/language_server.log` | `reconcile checked N, restored 0, cached N, dropped 0` |
 | **F5 Backend Reload** | `bin/lib/patch/patch_utils_reload.js` | Invokes `await ls.restartLanguageServer()` & strips stale handlers |
-| **Unit Test Suite** | `python3 -m unittest discover tests` | All 123 tests passing |
+| **Suite Self-Update** | `~/manage-antigravity.sh update-repo` | Git pull, recompile resampler, redeploy scripts, restart daemons |
+| **Services Restart** | `~/manage-antigravity.sh restart-services` | Systemd non-blocking reload & X11 icon injector recycle |
+| **Unit Test Suite** | `python3 -m unittest discover tests` | All 127 tests passing |
 
 
 

@@ -487,6 +487,26 @@ Update everything (Apps, IDE, RTL patch, F5 patch) with version protection:
 
 ---
 
+### Suite Manager Self-Update & Background Services Restart
+
+Update the Antigravity Suite Manager codebase itself via `git pull`, recompile the Catmull-Rom resampler, redeploy all tools & libraries to `~/.local/bin`, register Python user site-packages, and trigger automatic background service restarts:
+
+```bash
+~/manage-antigravity.sh update-repo
+# or via setup wizard / installer:
+./install.sh --update-repo
+```
+
+Restart all background daemons (Systemd user service `antigravity-sync.service` and X11 window injector `antigravity-apply-icon.py --daemon`):
+
+```bash
+~/manage-antigravity.sh restart-services
+# or via setup wizard / installer:
+./install.sh --restart-services
+```
+
+---
+
 ### Customizing Icon Themes & Recolor
 
 Configure icons interactively or via command-line flags:

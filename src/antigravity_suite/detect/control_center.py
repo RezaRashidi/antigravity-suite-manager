@@ -41,7 +41,7 @@ def render_control_center_overview(unified: List[Dict[str, Any]]) -> None:
     print("  [N] Install New Binary   [U] Smart Update All       [R] Apply RTL Patch")
     print("  [C] Create Clone Profile [E] Export Archive         [I] Import Archive")
     print("  [B] History Backups      [W] Run Setup Wizard       [S] Run Setup Step")
-    print("  [Q] Exit Setup")
+    print("  [P] Update Repository    [D] Restart Services       [Q] Exit Setup")
     print(f"{CYAN}========================================================================================{NC}")
 
 
@@ -55,7 +55,7 @@ def run_control_center() -> None:
     while True:
         unified, curr_app, curr_ide, custom_paths = get_unified_instances()
         render_control_center_overview(unified)
-        try: choice = input(f"Select option [1-{len(unified)}, N, U, C, R, E, I, B, W, S, Q, Default: Q]: ").strip()
+        try: choice = input(f"Select option [1-{len(unified)}, N, U, C, R, E, I, B, W, S, P, D, Q, Default: Q]: ").strip()
         except (KeyboardInterrupt, EOFError): break
 
         if choice in ["0", "", "q", "Q", "exit"]: break
@@ -67,6 +67,12 @@ def run_control_center() -> None:
             subprocess.run(["bash", manage_sh, "rtl", "all" if r_tgt in ["1", ""] else ("app" if r_tgt == "2" else "ide")], check=False)
         elif choice.upper() in ["E", "I"]: handle_control_center_export_import(choice, local_bin)
         elif choice.upper() == "B": handle_control_center_backups(local_bin)
+        elif choice.upper() == "P":
+            subprocess.run(["bash", manage_sh, "update-repo"], check=False)
+            input("\nPress Enter to return to Control Center...")
+        elif choice.upper() == "D":
+            subprocess.run(["bash", manage_sh, "restart-services"], check=False)
+            input("\nPress Enter to return to Control Center...")
         elif choice.upper() == "W": sys.exit(10)
         elif choice.upper() == "S": handle_control_center_steps(manage_sh, installer_sh)
         elif choice.isdigit() and 1 <= int(choice) <= len(unified):

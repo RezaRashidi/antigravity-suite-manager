@@ -12,10 +12,9 @@ run_step() {
         6) step_6_configure_keyring ;;
         7) step_7_install_antigravity ;;
         8) step_8_setup_launchers_and_sync ;;
-        update|[Uu]*)
-            step_4_deploy_scripts
-            exec "${TARGET_BIN}/manage-antigravity.sh" update
-            ;;
+        update-repo) step_4_deploy_scripts; exec "${TARGET_BIN}/manage-antigravity.sh" update-repo ;;
+        restart-services) step_4_deploy_scripts; exec "${TARGET_BIN}/manage-antigravity.sh" restart-services ;;
+        update|[Uu]*) step_4_deploy_scripts; exec "${TARGET_BIN}/manage-antigravity.sh" update ;;
         *) return 0 ;;
     esac
 }
@@ -45,8 +44,11 @@ maybe_launch_control_center() {
 
 run_installer_workflow() {
     if [ "$RUN_UPDATE" = true ]; then
-        step_4_deploy_scripts
-        exec "${TARGET_BIN}/manage-antigravity.sh" update
+        step_4_deploy_scripts; exec "${TARGET_BIN}/manage-antigravity.sh" update
+    elif [ "$RUN_UPDATE_REPO" = true ]; then
+        step_4_deploy_scripts; exec "${TARGET_BIN}/manage-antigravity.sh" update-repo
+    elif [ "$RUN_RESTART_SERVICES" = true ]; then
+        step_4_deploy_scripts; exec "${TARGET_BIN}/manage-antigravity.sh" restart-services
     fi
 
     maybe_launch_control_center
@@ -70,17 +72,13 @@ run_installer_workflow() {
             read -rp "[Enter] Continue | [s]kip next | [j <1-8>] jump | [u]pdate | [q]uit: " next_action
             case "$next_action" in
                 [Qq]*) echo "Exiting setup wizard."; exit 0 ;;
-                [Uu]*)
-                    step_4_deploy_scripts
-                    exec "${TARGET_BIN}/manage-antigravity.sh" update
-                    ;;
+                [Uu]*) step_4_deploy_scripts; exec "${TARGET_BIN}/manage-antigravity.sh" update ;;
                 [Ss]*) curr=$((curr + 1)) ;;
                 [Jj]*)
                     local target_j
                     target_j=$(echo "$next_action" | awk '{print $2}')
                     if [ -n "$target_j" ] && [ "$target_j" -ge 1 ] && [ "$target_j" -le 8 ] 2>/dev/null; then
-                        curr="$target_j"
-                        continue
+                        curr="$target_j"; continue
                     fi
                     ;;
             esac
