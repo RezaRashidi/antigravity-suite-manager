@@ -12,6 +12,10 @@ run_step() {
         6) step_6_configure_keyring ;;
         7) step_7_install_antigravity ;;
         8) step_8_setup_launchers_and_sync ;;
+        update|[Uu]*)
+            step_4_deploy_scripts
+            exec "${TARGET_BIN}/manage-antigravity.sh" update
+            ;;
         *) return 0 ;;
     esac
 }
@@ -63,9 +67,13 @@ run_installer_workflow() {
             echo -e "\n${CYAN}----------------------------------------------------------------------${NC}"
             echo -e "${BOLD}Completed Step ${curr}: $(get_step_name "$curr")${NC}"
             echo -e "Next up Step $((curr + 1)): $(get_step_name "$((curr + 1))")"
-            read -rp "[Enter] Continue | [s]kip next | [j <1-8>] jump | [q]uit: " next_action
+            read -rp "[Enter] Continue | [s]kip next | [j <1-8>] jump | [u]pdate | [q]uit: " next_action
             case "$next_action" in
                 [Qq]*) echo "Exiting setup wizard."; exit 0 ;;
+                [Uu]*)
+                    step_4_deploy_scripts
+                    exec "${TARGET_BIN}/manage-antigravity.sh" update
+                    ;;
                 [Ss]*) curr=$((curr + 1)) ;;
                 [Jj]*)
                     local target_j

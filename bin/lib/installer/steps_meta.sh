@@ -11,6 +11,7 @@ get_step_num() {
         6|[Kk]eyring*|[Cc]red*) echo 6 ;;
         7|[Ii]nstall*|[Dd]ownload*|[Bb]inary*) echo 7 ;;
         8|[Ll]auncher*|[Ss]ync*|[Cc]hat*) echo 8 ;;
+        [Uu]*|[Uu]pdate*) echo "update" ;;
         *) echo "$1" ;;
     esac
 }

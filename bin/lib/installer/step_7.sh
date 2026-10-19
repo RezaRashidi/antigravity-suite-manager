@@ -42,7 +42,10 @@ step_7_install_antigravity() {
     fi
 
     if [ "$do_install" = true ]; then
-        echo -e "${GREEN}Installing Google Antigravity Suite into configured paths...${NC}"
+        echo -e "${GREEN}Installing / Updating Google Antigravity Suite into configured paths...${NC}"
         "${TARGET_BIN}/manage-antigravity.sh" install all --app-dir "$app_target" --ide-dir "$ide_target"
+        "${TARGET_BIN}/manage-antigravity.sh" update-rtl
+        "${TARGET_BIN}/manage-antigravity.sh" update-f5
+        "${TARGET_BIN}/manage-antigravity.sh" checksums
     fi
 }

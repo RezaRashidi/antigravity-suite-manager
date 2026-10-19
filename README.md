@@ -604,6 +604,14 @@ antigravity-checksums /opt/antigravity --verify
 ~/manage-antigravity.sh checksums
 ```
 
+### Automated Full Patch Re-Application on Updates
+When running a suite update (`./install.sh -u`, `~/manage-antigravity.sh update`, or Control Center `[U]`), the manager forces clean re-application of all patches:
+1. **RTL Typography**: Restores clean backups and applies fresh upstream RTL patches to App and IDE.
+2. **F5 Backend Reload**: Unpacks `app.asar`, re-applies all IPC and language server restart hooks, and repacks.
+3. **Checksums Integrity**: Recomputes live SHA-256 base64 digests and updates `product.json`.
+4. **Desktop Launchers**: Re-verifies single-instance flags and X11 icon mappings.
+
+
 
 ---
 

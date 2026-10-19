@@ -70,9 +70,11 @@ def handle_control_center_backups(local_bin: str) -> None:
 
 
 def handle_control_center_steps(manage_sh: str, installer_sh: str) -> None:
-    print(f"\n{CYAN}=== Select Setup Step (1: Deps, 2: Paths, 3: Resampler, 4: Tools, 5: Icons, 6: Keyring, 7: Download, 8: Launchers, 0: Return) ==={NC}")
-    s_choice = input("Select step [1-8, 0 to cancel]: ").strip()
-    if s_choice.isdigit() and 1 <= int(s_choice) <= 8:
+    print(f"\n{CYAN}=== Select Setup Step (1: Deps, 2: Paths, 3: Resampler, 4: Tools, 5: Icons, 6: Keyring, 7: Download, 8: Launchers, U: Update, 0: Return) ==={NC}")
+    s_choice = input("Select option [1-8, U, 0 to cancel]: ").strip()
+    if s_choice.upper() == "U":
+        subprocess.run(["bash", installer_sh if os.path.isfile(installer_sh) else manage_sh, "--update"], check=False)
+    elif s_choice.isdigit() and 1 <= int(s_choice) <= 8:
         cmd = ["bash", installer_sh if os.path.isfile(installer_sh) else manage_sh, "--only-step" if os.path.isfile(installer_sh) else "wizard", s_choice]
         subprocess.run(cmd, check=False)
 

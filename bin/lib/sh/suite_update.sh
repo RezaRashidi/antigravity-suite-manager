@@ -19,11 +19,10 @@ update_all() {
     install_binary "Antigravity-IDE" "$IDE_URL" "$TARGET_IDE_VER" "$IDE_INSTALL_DIR"
     setup_ide_shortcuts
 
-    if [ "$SKIP_RTL" != true ]; then
-        patch_rtl_all
-    elif [ "$SKIP_F5" != true ]; then
-        patch_f5_reload
-    fi
+    log_info "Force re-applying all patches across App and IDE..."
+    [ "$SKIP_RTL" != true ] && FORCE_INSTALL=true patch_rtl_all --force
+    [ "$SKIP_F5" != true ] && FORCE_INSTALL=true patch_f5_reload --force
+    fix_ide_checksums "${IDE_INSTALL_DIR}"
 
     log_info "Verifying post-update status & patches..."
     check_status
@@ -39,8 +38,8 @@ update_app() {
     if [ -d "$PROFILE2_DIR" ] || [ -f "${LOCAL_BIN}/antigravity-acc2" ]; then
         setup_account_2
     fi
-    [ "$SKIP_RTL" != true ] && patch_rtl_app "$@"
-    [ "$SKIP_F5" != true ] && patch_f5_reload "$@"
+    [ "$SKIP_RTL" != true ] && FORCE_INSTALL=true patch_rtl_app --force
+    [ "$SKIP_F5" != true ] && FORCE_INSTALL=true patch_f5_reload --force
     log_success "Antigravity App update routine complete."
 }
 
@@ -50,7 +49,7 @@ update_ide() {
     log_info "Updating Antigravity IDE at ${IDE_INSTALL_DIR}..."
     install_binary "Antigravity-IDE" "$IDE_URL" "$TARGET_IDE_VER" "$IDE_INSTALL_DIR"
     setup_ide_shortcuts
-    [ "$SKIP_RTL" != true ] && patch_rtl_ide "$@"
+    [ "$SKIP_RTL" != true ] && FORCE_INSTALL=true patch_rtl_ide --force
     fix_ide_checksums "${IDE_INSTALL_DIR}"
     log_success "Antigravity IDE update routine complete."
 }

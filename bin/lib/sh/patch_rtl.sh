@@ -9,6 +9,8 @@ patch_rtl_app() {
     if [ "$FORCE_INSTALL" != true ] && grep -qa "ANTIGRAVITY RTL PATCH" "$asar"; then
         log_info "RTL patch is already applied to Antigravity App. Skipping."
         return 0
+    elif [ "$FORCE_INSTALL" = true ] && grep -qa "ANTIGRAVITY RTL PATCH" "$asar"; then
+        echo "y" | npx --yes antigravity-rtl@latest --restore --app --path "$asar" 2>/dev/null || true
     fi
 
     log_info "Ensuring permissions before RTL app patch..."
@@ -38,6 +40,8 @@ patch_rtl_ide() {
             log_info "RTL patch is already applied to Antigravity IDE. Skipping."
             return 0
         fi
+    elif [ "$FORCE_INSTALL" = true ] && [ -f "${main_js}.rtl-bak" ]; then
+        echo "y" | npx --yes antigravity-rtl@latest --restore --ide --path "${IDE_INSTALL_DIR}" 2>/dev/null || true
     fi
 
     log_info "Ensuring permissions before RTL IDE patch..."
