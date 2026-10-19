@@ -26,6 +26,19 @@ if [ "\$1" = "--restart" ] || [ "\$1" = "-r" ]; then
     sleep 1.5
 fi
 
+# Detect stale instance running a deleted binary (updated while running)
+for p in \$(pgrep -f "user-data-dir=.*\${PROFILE2}.*Antigravity" || true); do
+    if [ -L "/proc/\$p/exe" ]; then
+        exe_tgt=\$(readlink "/proc/\$p/exe" 2>/dev/null || true)
+        if [[ "\$exe_tgt" == *"(deleted)"* ]]; then
+            echo "[INFO] Stale binary in RAM detected (app was updated on disk). Restarting..."
+            kill -TERM "\$p" 2>/dev/null || kill -9 "\$p" 2>/dev/null || true
+            sleep 1.2
+            break
+        fi
+    fi
+done
+
 running_pid=\$(pgrep -f "user-data-dir=.*\${PROFILE2}.*Antigravity" | head -n 1 || pgrep -f "class=antigravity-2" | head -n 1 || true)
 if [ -n "\$running_pid" ]; then
     echo "[INFO] Antigravity Account 2 is already running (PID: \${running_pid})."

@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 # Suite update and cache cleaning routines
 
+terminate_running_app() {
+    local running
+    running=$(pgrep -f "${APP_INSTALL_DIR}/antigravity" || true)
+    if [ -n "$running" ]; then
+        log_info "Stopping active Antigravity App processes before update..."
+        pkill -f "${APP_INSTALL_DIR}/antigravity" 2>/dev/null || true
+        pkill -f "${APP_INSTALL_DIR}/resources/bin/language_server" 2>/dev/null || true
+        sleep 1.2
+    fi
+}
+
 update_all() {
     auto_detect_installations
     resolve_dynamic_urls
@@ -10,6 +21,7 @@ update_all() {
     log_info "Starting full suite update..."
     log_info "User configs, databases, keys, and history will be preserved."
 
+    terminate_running_app
     install_binary "Antigravity-App" "$APP_URL" "$TARGET_APP_VER" "$APP_INSTALL_DIR"
     setup_account_1
     if [ -d "$PROFILE2_DIR" ] || [ -f "${LOCAL_BIN}/antigravity-acc2" ]; then
@@ -33,6 +45,7 @@ update_app() {
     auto_detect_installations
     resolve_dynamic_urls
     log_info "Updating Antigravity App at ${APP_INSTALL_DIR}..."
+    terminate_running_app
     install_binary "Antigravity-App" "$APP_URL" "$TARGET_APP_VER" "$APP_INSTALL_DIR"
     setup_account_1
     if [ -d "$PROFILE2_DIR" ] || [ -f "${LOCAL_BIN}/antigravity-acc2" ]; then

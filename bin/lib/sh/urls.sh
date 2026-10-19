@@ -72,6 +72,6 @@ PYEOF
     fi
 
     if [ -n "$TARGET_APP_VER" ] || [ -n "$TARGET_IDE_VER" ]; then
-        log_success "Discovered Latest: App ${TARGET_APP_VER:+v$TARGET_APP_VER}${TARGET_APP_VER:-Unknown} | IDE ${TARGET_IDE_VER:+v$TARGET_IDE_VER}${TARGET_IDE_VER:-Unknown}"
+        log_success "Discovered Latest: App ${TARGET_APP_VER:+v}${TARGET_APP_VER:-Unknown} | IDE ${TARGET_IDE_VER:+v}${TARGET_IDE_VER:-Unknown}"
     fi
 }

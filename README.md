@@ -473,6 +473,13 @@ Update everything (Apps, IDE, RTL patch, F5 patch) with version protection:
 
 - If you already have the latest version installed, the script **skips re-downloading**.
 - If download is required, it caches the archive in `/tmp/antigravity-cache`.
+- **Automatic Process Lifecycle**: The update routine stops active App instances before extraction so that Electron never continues running a stale binary from RAM.
+- **Stale Binary Detection in RAM**: Launchers (`antigravity`, `antigravity-1`, `antigravity-acc2`) automatically inspect `/proc/<pid>/exe`. If an update occurred while the app was running (marking the executable as `(deleted)`), the launcher automatically restarts the process with the new version.
+- **Manual Restart**: Pass `--restart` or `-r` to any launcher to cleanly terminate and restart an instance:
+  ```bash
+  antigravity --restart
+  antigravity-acc2 --restart
+  ```
 - To force an unconditional re-download and re-install:
   ```bash
   ~/manage-antigravity.sh update --force
