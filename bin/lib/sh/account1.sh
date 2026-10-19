@@ -32,9 +32,16 @@ setup_account_1() {
         wm_class="antigravity-1"; desktop_name="antigravity-1.desktop"; app_title="Antigravity (Account 1)"; app_comment="Antigravity AI Platform - Account 1"; icon_name="antigravity-1"
     fi
     log_info "Configuring ${app_title} (${desktop_name})..."
-
-    write_account1_launcher "$desktop_name" "$wm_class" "$icon_name" "$pass_store_flag"
-
+    write_dynamic_app_launcher \
+        "${LOCAL_BIN}/antigravity-1" \
+        "${REAL_HOME}" \
+        "${REAL_HOME}/.config/Antigravity" \
+        "$wm_class" \
+        "$desktop_name" \
+        "${LOCAL_ICONS}/${icon_name}.png" \
+        "${LOCAL_ICONS}/${icon_name}-tray.png" \
+        "$pass_store_flag" \
+        "${LOCAL_BIN}/antigravity"
 
     cat <<EOF > "${LOCAL_APPS}/${desktop_name}"
 [Desktop Entry]

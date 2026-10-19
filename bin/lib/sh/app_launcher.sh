@@ -1,28 +1,30 @@
 #!/usr/bin/env bash
-# Generates the Account 1 launcher script with restart and stale detection.
+# Unified dynamic App launcher generator for all instances (Account 1, 2, N).
 
-write_account1_launcher() {
-    local desktop_name="$1" wm_class="$2" icon_name="$3" pass_store_flag="$4"
-    cat <<EOF > "${LOCAL_BIN}/antigravity-1"
+write_dynamic_app_launcher() {
+    local target="$1" prof="$2" udata="$3" wm="$4" desk="$5" icon="$6" tray="$7" pstore="$8" symlink="$9"
+
+    cat <<EOF > "$target"
 #!/usr/bin/env bash
 set -e
 export REAL_HOME="${REAL_HOME}"
-export HOME="\${REAL_HOME}"
-export XDG_CONFIG_HOME="\${REAL_HOME}/.config"
-export ANTIGRAVITY_DESKTOP_NAME="${desktop_name}"
-export ANTIGRAVITY_APP_NAME="${wm_class}"
-export ANTIGRAVITY_ICON_PATH="${LOCAL_ICONS}/${icon_name}.png"
-export ANTIGRAVITY_TRAY_ICON_PATH="${LOCAL_ICONS}/${icon_name}-tray.png"
+export PROFILE="${prof}"
+export HOME="\${PROFILE}"
+export XDG_CONFIG_HOME="\${PROFILE}/.config"
+export ANTIGRAVITY_DESKTOP_NAME="${desk}"
+export ANTIGRAVITY_APP_NAME="${wm}"
+export ANTIGRAVITY_ICON_PATH="${icon}"
+export ANTIGRAVITY_TRAY_ICON_PATH="${tray}"
 export ELECTRON_OZONE_PLATFORM_HINT="x11"
 
 if [ "\$1" = "--restart" ] || [ "\$1" = "-r" ]; then
     shift
-    echo "[INFO] Terminating active Antigravity (Account 1) instance..."
-    pkill -f "user-data-dir=.*\.config/Antigravity" 2>/dev/null || pkill -f "class=${wm_class}" 2>/dev/null || true
+    echo "[INFO] Terminating active instance (${wm})..."
+    pkill -f "user-data-dir=.*${udata##*/}" 2>/dev/null || pkill -f "class=${wm}" 2>/dev/null || true
     sleep 1.2
 fi
 
-# Detect stale instance running a deleted binary (updated while running)
+# Detect stale instance running a deleted binary (updated on disk while running)
 for p in \$(pgrep -f "${APP_INSTALL_DIR}/antigravity" || true); do
     if [ -L "/proc/\$p/exe" ]; then
         exe_tgt=\$(readlink "/proc/\$p/exe" 2>/dev/null || true)
@@ -34,6 +36,15 @@ for p in \$(pgrep -f "${APP_INSTALL_DIR}/antigravity" || true); do
         fi
     fi
 done
+
+if [ \$# -eq 0 ]; then
+    running_pid=\$(pgrep -f "user-data-dir=.*${udata##*/}" | head -n 1 || pgrep -f "class=${wm}" | head -n 1 || true)
+    if [ -n "\$running_pid" ] && [ "\$running_pid" != "\$\$" ]; then
+        echo "[INFO] ${wm} is already running (PID: \${running_pid}). Bringing to front..."
+        python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --focus 2>/dev/null || true
+        exit 0
+    fi
+fi
 
 cd "\${REAL_HOME}" || cd /tmp
 ! pgrep -f "antigravity-apply-icon.py --daemon" >/dev/null 2>&1 && python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
@@ -48,8 +59,8 @@ if [ -f "${APP_INSTALL_DIR}/chrome-sandbox" ]; then
     fi
 fi
 
-exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}${pass_store_flag}--ozone-platform=x11 --user-data-dir="\${REAL_HOME}/.config/Antigravity" --class="${wm_class}" --name="${wm_class}" "\$@"
+exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}${pstore}--ozone-platform=x11 --user-data-dir="${udata}" --class="${wm}" --name="${wm}" "\$@"
 EOF
-    chmod +x "${LOCAL_BIN}/antigravity-1"
-    ln -sfn "${LOCAL_BIN}/antigravity-1" "${LOCAL_BIN}/antigravity"
+    chmod +x "$target"
+    [ -n "$symlink" ] && ln -sfn "$target" "$symlink" || true
 }

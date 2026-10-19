@@ -35,47 +35,17 @@ create_app_instance() {
     local icon_args=(--custom-instance "$wm_class" --custom-theme "$itheme")
     [ -n "$ihue" ] && icon_args+=(--custom-hue "$ihue")
     python3 "${LOCAL_BIN}/antigravity-generate-icons.py" "${icon_args[@]}" >/dev/null 2>&1 || true
+    write_dynamic_app_launcher \
+        "$launcher" \
+        "${profile_dir}" \
+        "${profile_dir}/.config/Antigravity" \
+        "$wm_class" \
+        "${wm_class}.desktop" \
+        "${LOCAL_ICONS}/${wm_class}.png" \
+        "${LOCAL_ICONS}/${wm_class}-tray.png" \
+        "--password-store=basic " \
+        ""
 
-    cat <<EOF > "$launcher"
-#!/usr/bin/env bash
-set -e
-export REAL_HOME="${REAL_HOME}"
-export PROFILE="${profile_dir}"
-export HOME="\${PROFILE}"
-export XDG_CONFIG_HOME="\${PROFILE}/.config"
-export ANTIGRAVITY_DESKTOP_NAME="${wm_class}.desktop"
-export ANTIGRAVITY_APP_NAME="${wm_class}"
-export ANTIGRAVITY_ICON_PATH="${LOCAL_ICONS}/${wm_class}.png"
-export ELECTRON_OZONE_PLATFORM_HINT="x11"
-
-if [ "\$1" = "--restart" ] || [ "\$1" = "-r" ]; then
-    shift
-    pkill -f "user-data-dir=.*${profile_dir##*/}.*Antigravity" 2>/dev/null || true
-    sleep 1.5
-fi
-
-running_pid=\$(pgrep -f "user-data-dir=.*${profile_dir##*/}.*Antigravity" | head -n 1 || true)
-if [ -n "\$running_pid" ]; then
-    echo "[INFO] ${wm_class} is already running. Bringing to front..."
-    python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --focus "${iid}" || true
-    exit 0
-fi
-
-cd "\${REAL_HOME}" || cd /tmp
-! pgrep -f "antigravity-apply-icon.py --daemon" >/dev/null 2>&1 && python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
-disown -a 2>/dev/null || true
-
-SANDBOX_FLAG=""
-if [ -f "${APP_INSTALL_DIR}/chrome-sandbox" ]; then
-    sb_stat=\$(stat -c "%u:%a" "${APP_INSTALL_DIR}/chrome-sandbox" 2>/dev/null || true)
-    if [ "\$sb_stat" != "0:4755" ] && ! (sudo -n chown root:root "${APP_INSTALL_DIR}/chrome-sandbox" 2>/dev/null && sudo -n chmod 4755 "${APP_INSTALL_DIR}/chrome-sandbox" 2>/dev/null); then
-        SANDBOX_FLAG="--no-sandbox "
-    fi
-fi
-
-exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}--password-store=basic --ozone-platform=x11 --user-data-dir="\${PROFILE}/.config/Antigravity" --class="${wm_class}" --name="${wm_class}" "\$@"
-EOF
-    chmod +x "$launcher"
 
     cat <<EOF > "$desktop"
 [Desktop Entry]

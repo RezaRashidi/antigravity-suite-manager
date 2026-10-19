@@ -31,8 +31,16 @@ setup_account_2() {
     ln -sfn "$LOCAL_APPS" "$PROFILE2_DIR/.local/share/applications"
     ln -sfn "$LOCAL_ICONS" "$PROFILE2_DIR/.local/share/icons"
 
-    apply_icons_config || true
-    write_account2_launcher "$pass_store_flag"
+    write_dynamic_app_launcher \
+        "${LOCAL_BIN}/antigravity-acc2" \
+        "${PROFILE2_DIR}" \
+        "${PROFILE2_DIR}/.config/Antigravity" \
+        "antigravity-2" \
+        "antigravity-2.desktop" \
+        "${LOCAL_ICONS}/antigravity-acc2.png" \
+        "${LOCAL_ICONS}/antigravity-acc2-tray.png" \
+        "$pass_store_flag" \
+        ""
 
     cat <<EOF > "${LOCAL_APPS}/antigravity-2.desktop"
 [Desktop Entry]
