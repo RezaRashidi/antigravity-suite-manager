@@ -11,15 +11,22 @@ from typing import Optional, Tuple
 def is_relevant_event(ev_path: str) -> bool:
     """Checks whether an event path is relevant for triggering history synchronization."""
     base = os.path.basename(ev_path)
-    if not base or base.startswith("conversation_summaries") or base.endswith(".pbtxt") or base.endswith(".pb") or base == "transcript_full.jsonl":
+    if (
+        not base
+        or base.startswith("conversation_summaries")
+        or base.endswith(".pbtxt")
+        or base.endswith(".pb")
+        or base.endswith("-wal")
+        or base.endswith("-shm")
+        or base == "transcript_full.jsonl"
+        or base == "app_storage.json"
+    ):
         return False
     return (
         base.endswith(".db")
         or base.endswith(".jsonl")
         or base.endswith(".md")
         or base.endswith(".vscdb")
-        or base.endswith(".vscdb-wal")
-        or base == "app_storage.json"
     )
 
 

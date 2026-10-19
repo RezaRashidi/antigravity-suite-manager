@@ -52,10 +52,7 @@ def discover_watch_targets(effective_master: Path, home: Path) -> Tuple[List[str
         + [str(p / ".config" / "Antigravity") for p in home.glob(".antigravity-profile*") if os.path.isdir(p / ".config" / "Antigravity")]
         + [str(p / ".config" / "Antigravity IDE") for p in home.glob(".antigravity-profile*") if os.path.isdir(p / ".config" / "Antigravity IDE")]
     ))
-    extra_files = [str(p) for p in candidate_vscdbs] + [str(home / ".config" / "Antigravity" / "app_storage.json")]
-    for p in home.glob(".antigravity-profile*/.config/Antigravity/app_storage.json"):
-        if p.is_file():
-            extra_files.append(str(p))
+    extra_files = [str(p) for p in candidate_vscdbs]
 
     watch_conv_dirs = list(set([str(effective_master / "conversations")] + conv_pools))
     watch_brain_dirs = list(set([str(effective_master / "brain")] + brain_pools))
