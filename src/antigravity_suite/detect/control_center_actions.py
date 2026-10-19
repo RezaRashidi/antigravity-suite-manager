@@ -75,3 +75,15 @@ def handle_control_center_steps(manage_sh: str, installer_sh: str) -> None:
     if s_choice.isdigit() and 1 <= int(s_choice) <= 8:
         cmd = ["bash", installer_sh if os.path.isfile(installer_sh) else manage_sh, "--only-step" if os.path.isfile(installer_sh) else "wizard", s_choice]
         subprocess.run(cmd, check=False)
+
+
+def handle_control_center_update(manage_sh: str) -> None:
+    print(f"\n{CYAN}--- Smart Update Antigravity Suite ---{NC}")
+    print("  [1] Update Everything (App, IDE, RTL, F5, Checksums)\n  [2] Update Antigravity App Only\n  [3] Update Antigravity IDE Only\n  [4] Update RTL Patch Package\n  [5] Re-apply F5 Reload Patch\n  [0] Return")
+    u_c = input("Select update target [1-5, Default: 1]: ").strip()
+    if u_c == "2": subprocess.run(["bash", manage_sh, "update", "app"], check=False)
+    elif u_c == "3": subprocess.run(["bash", manage_sh, "update", "ide"], check=False)
+    elif u_c == "4": subprocess.run(["bash", manage_sh, "update-rtl"], check=False)
+    elif u_c == "5": subprocess.run(["bash", manage_sh, "update-f5"], check=False)
+    elif u_c in ["1", ""]: subprocess.run(["bash", manage_sh, "update"], check=False)
+

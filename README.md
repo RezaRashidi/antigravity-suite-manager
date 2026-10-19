@@ -40,6 +40,14 @@ cd antigravity-suite-manager
 ./install.sh
 ```
 
+To update an existing installation anytime:
+
+```bash
+./install.sh -u
+# or via management tool:
+~/manage-antigravity.sh update
+```
+
 Launch the interactive Control Center dashboard anytime:
 
 ```bash
@@ -512,7 +520,9 @@ Configure icons interactively or via command-line flags:
 | `rtl` | Apply / re-apply Right-to-Left (RTL) patch to App & IDE |
 | `update-rtl` | Fetch latest RTL patch from GitHub and apply |
 | `f5` | Apply manual F5 reload backend sync patch |
+| `update-f5` | Force re-apply manual F5 reload backend sync patch |
 | `checksums` | Verify and synchronize VS Code bundle checksums in `product.json` |
+| `update` | Smart update components: `update [all|app|ide|rtl|f5|checksums]` |
 | `clean-cache` | Clear downloaded archives in `/tmp/antigravity-cache` |
 | `keyring` | Manage credential storage mode (status, set, purge, or interactive) |
 

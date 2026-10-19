@@ -30,9 +30,10 @@ Commands:
   remove-instance Delete an App or IDE instance and archive its profile (alias: remove)
   f5            Re-apply manual F5 backend reload sync patch
   rtl           Apply / re-apply antigravity-rtl to App and IDE
+  update        Smart update components [all|app|ide|rtl|f5|checksums] (preserves user data)
   update-rtl    Update antigravity-rtl to latest and re-apply
+  update-f5     Re-apply manual F5 backend reload sync patch (alias for update f5)
   checksums     Verify and synchronize Antigravity IDE bundle integrity checksums
-  update        Smart update: checks versions, downloads to /tmp/antigravity-cache, skips if up-to-date
   export-history Export conversation history & brains to portable tarball [out]
   import-history Import & merge conversation history from archive <file>
   export-suite  Export suite configurations (rules, skills, plugins, MCP, accounts) [out]

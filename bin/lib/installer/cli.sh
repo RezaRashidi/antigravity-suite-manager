@@ -13,6 +13,7 @@ Options:
   -w, --wizard              Enable interactive step-by-step wizard (prompts after each step)
   --app-dir <path>          Specify custom Antigravity App install directory
   --ide-dir <path>          Specify custom Antigravity IDE install directory
+  -u, --update              Perform smart update of installed binaries & patches
   -i, --install-antigravity Force downloading and installing Antigravity binaries
   -y, --yes                 Run non-interactively with defaults
   -h, --help                Show this help message
@@ -36,6 +37,7 @@ parse_installer_cli() {
             --step|-s) START_STEP="$(get_step_num "$2")"; shift 2 ;;
             --only-step|-o) ONLY_STEP="$(get_step_num "$2")"; shift 2 ;;
             --wizard|-w) STEP_BY_STEP=true; shift ;;
+            --update|-u) RUN_UPDATE=true; shift ;;
             --app-dir) CLI_APP_DIR="$2"; shift 2 ;;
             --ide-dir) CLI_IDE_DIR="$2"; shift 2 ;;
             --install-antigravity|-i) INSTALL_ANTIGRAVITY=true; shift ;;

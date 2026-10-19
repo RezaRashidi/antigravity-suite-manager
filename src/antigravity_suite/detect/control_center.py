@@ -17,6 +17,7 @@ from antigravity_suite.detect.control_center_actions import (
     handle_control_center_export_import,
     handle_control_center_install,
     handle_control_center_steps,
+    handle_control_center_update,
 )
 from antigravity_suite.detect.paths_config import save_paths_config
 from antigravity_suite.detect.unified import get_unified_instances
@@ -37,9 +38,10 @@ def render_control_center_overview(unified: List[Dict[str, Any]]) -> None:
         print(f"  [{idx}] {item['name']:<35} {v_str:<9} in {item['engine_path']:<18} History: {h_tag} | Keyring: {k_tag} | {lnch}")
     print("----------------------------------------------------------------------------------------")
     print(f"{BOLD}Select an installation or clone [1-{len(unified)}] to EDIT its settings.{NC}")
-    print("  [N] Install New Binary   [C] Create Clone Profile   [R] Apply RTL Patch")
-    print("  [E] Export Archive       [I] Import Archive         [B] History Backups")
-    print("  [W] Run Setup Wizard     [S] Run Setup Step         [Q] Exit Setup")
+    print("  [N] Install New Binary   [U] Smart Update All       [R] Apply RTL Patch")
+    print("  [C] Create Clone Profile [E] Export Archive         [I] Import Archive")
+    print("  [B] History Backups      [W] Run Setup Wizard       [S] Run Setup Step")
+    print("  [Q] Exit Setup")
     print(f"{CYAN}========================================================================================{NC}")
 
 
@@ -53,11 +55,12 @@ def run_control_center() -> None:
     while True:
         unified, curr_app, curr_ide, custom_paths = get_unified_instances()
         render_control_center_overview(unified)
-        try: choice = input(f"Select option [1-{len(unified)}, N, C, R, E, I, B, W, S, Q, Default: Q]: ").strip()
+        try: choice = input(f"Select option [1-{len(unified)}, N, U, C, R, E, I, B, W, S, Q, Default: Q]: ").strip()
         except (KeyboardInterrupt, EOFError): break
 
         if choice in ["0", "", "q", "Q", "exit"]: break
         elif choice.upper() == "N": handle_control_center_install(manage_sh)
+        elif choice.upper() == "U": handle_control_center_update(manage_sh)
         elif choice.upper() == "C": handle_control_center_clone(manage_sh)
         elif choice.upper() == "R":
             r_tgt = input("Select RTL target [1: All, 2: App, 3: IDE, Default: 1]: ").strip()

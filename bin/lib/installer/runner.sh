@@ -40,6 +40,11 @@ maybe_launch_control_center() {
 }
 
 run_installer_workflow() {
+    if [ "$RUN_UPDATE" = true ]; then
+        step_4_deploy_scripts
+        exec "${TARGET_BIN}/manage-antigravity.sh" update
+    fi
+
     maybe_launch_control_center
 
     if [ "$ONLY_STEP" -ge 1 ] && [ "$ONLY_STEP" -le 8 ]; then

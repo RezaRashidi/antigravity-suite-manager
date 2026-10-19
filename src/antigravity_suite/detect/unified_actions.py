@@ -58,6 +58,9 @@ def handle_unified_patches_and_reinstall(choice: str, u_item: Dict[str, Any], en
     if choice in ["8", "5"]:
         print(f"\n{CYAN}Downloading & installing fresh {u_item['type']} into {eng_p}...{NC}")
         subprocess.run(["bash", manage_sh, "install", c_type, flag, eng_p, "--force"], check=False)
+    elif choice.upper() == "U":
+        print(f"\n{CYAN}Smart updating {u_item['type']} at {eng_p} with force re-patch...{NC}")
+        subprocess.run(["bash", manage_sh, "update", c_type, flag, eng_p, "--force"], check=False)
     elif choice.upper() == "R":
         print(f"\n{CYAN}Applying RTL patch to {u_item['type']} at {eng_p}...{NC}")
         subprocess.run(["bash", manage_sh, "rtl", c_type, flag, eng_p, "--force"], check=False)

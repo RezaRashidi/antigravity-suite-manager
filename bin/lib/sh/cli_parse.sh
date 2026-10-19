@@ -53,7 +53,14 @@ parse_cli_args() {
             set-icons|icons)
                 COMMAND="set-icons"; shift
                 if [ -n "$1" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
-            status|all|app|ide|app1|app2|ide-shortcuts|update-rtl|update|clean-cache|help)
+            update)
+                COMMAND="update"; shift
+                if [ -n "$1" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
+            update-all) COMMAND="update"; SUB_COMMAND="all"; shift ;;
+            update-app) COMMAND="update"; SUB_COMMAND="app"; shift ;;
+            update-ide) COMMAND="update"; SUB_COMMAND="ide"; shift ;;
+            update-f5) COMMAND="update"; SUB_COMMAND="f5"; shift ;;
+            status|all|app|ide|app1|app2|ide-shortcuts|update-rtl|clean-cache|help)
                 COMMAND="$1"; shift ;;
             -h|--help) show_help; exit 0 ;;
             *) log_err "Unknown argument: $1"; show_help; exit 1 ;;

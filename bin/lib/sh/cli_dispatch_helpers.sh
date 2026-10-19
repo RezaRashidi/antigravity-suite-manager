@@ -10,6 +10,19 @@ dispatch_install() {
     esac
 }
 
+dispatch_update() {
+    auto_detect_installations
+    case "${SUB_COMMAND:-all}" in
+        app) update_app ;;
+        ide) update_ide ;;
+        rtl) update_rtl ;;
+        f5) FORCE_INSTALL=true patch_f5_reload ;;
+        checksums) fix_ide_checksums "${IDE_INSTALL_DIR:-/opt/antigravity}" ;;
+        all|*) update_all ;;
+    esac
+}
+
+
 dispatch_rtl() {
     auto_detect_installations
     case "${SUB_COMMAND:-all}" in

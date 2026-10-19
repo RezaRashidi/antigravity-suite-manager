@@ -25,9 +25,9 @@ def render_unified_header(u_item: Dict[str, Any], c: Dict[str, Any] | None, p_di
         print("  [4] Re-generate Desktop Launcher & Icons\n  [5] Relocate / Rename Profile Directory\n  [6] Manage Clone Profile")
         print(f"\n{BOLD}Engine & Installation Settings:{NC}")
         print(f"  [7] Change / Relocate Engine Directory Path\n  [8] Download & Re-install Latest Binaries\n  [9] Set Engine as Suite Primary Target")
-        print("  [R] Apply RTL Patch\n  [F] Apply F5 Backend Reload & Isolation Patch\n  [0] Done (Return)")
+        print("  [U] Smart Update Engine & Patches\n  [R] Apply RTL Patch\n  [F] Apply F5 Backend Reload & Isolation Patch\n  [0] Done (Return)")
     else:
         print(f"{BOLD}Engine & Installation Settings:{NC}")
         print("  [1] Relocate Directory\n  [2] Set Primary Target\n  [3] Re-generate Launcher\n  [4] Toggle Keyring\n  [5] Re-install")
-        print("  [R] Apply RTL Patch\n  [F] Apply F5 Reload Patch\n  [0] Done (Return)")
+        print("  [U] Smart Update Engine & Patches\n  [R] Apply RTL Patch\n  [F] Apply F5 Reload Patch\n  [0] Done (Return)")
     print(f"{CYAN}----------------------------------------------------------------------------------------{NC}")
