@@ -560,7 +560,23 @@ See full standalone forensics document: [docs/forensics/20_watcher_daemon_self_t
 
 ---
 
-## 22. Summary Checklist for Future Diagnostics
+## 22. Issue 19: Antigravity IDE Corruption Dialog & VS Code Checksum Integrity Synchronization
+
+See full standalone forensics document: [docs/forensics/21_ide_installation_corrupt_checksum_integrity_fix.md](forensics/21_ide_installation_corrupt_checksum_integrity_fix.md).
+
+### Summary
+* **Symptom**: Antigravity IDE dialog on startup: `"Your Antigravity IDE installation appears to be corrupt. Please reinstall."`
+* **Root Cause**:
+  1. Antigravity IDE (VS Code OSS) executes `IntegrityService` checking SHA-256 base64 hashes in `product.json["checksums"]`.
+  2. Modifying `workbench.html`, `workbench-jetski-agent.html` (RTL patch) and `workbench.desktop.main.js` (sync button) invalidated the stored checksums (`isPure: false`).
+* **Fix**:
+  1. Built [ide_checksums.py](src/antigravity_suite/patch/ide_checksums.py) and CLI `antigravity-checksums.py`.
+  2. Automatically synchronized live bundle file checksums into `product.json`.
+  3. Hooked `fix_ide_checksums` directly into [patch_rtl.sh](bin/lib/sh/patch_rtl.sh) and CLI dispatch.
+
+---
+
+## 23. Summary Checklist for Future Diagnostics
 
 | Checkpoint | Target Path / Command | Expected Healthy State |
 | :--- | :--- | :--- |
@@ -570,6 +586,7 @@ See full standalone forensics document: [docs/forensics/20_watcher_daemon_self_t
 | **Timestamp Floor** | `src/antigravity_suite/history/item_metadata.py` | Rejects `0001%` dates; validates `dt.year > 2000` |
 | **Physical DB Deletion Guard** | `src/antigravity_suite/history/deletion_sync.py` | Never deletes conversation if `<uuid>.db` exists on disk |
 | **Watcher Inotify Quiescence** | `src/antigravity_suite/history/watcher_debounce.py` | Excludes `app_storage.json` & WAL; daemon sleeps at 0% CPU |
+| **IDE Checksum Integrity** | `bin/antigravity-checksums.py --verify` | All 11 bundle checksums match `product.json` (`isPure: true`) |
 | **Tray Icon Paths** | `~/.local/share/icons/` | `antigravity-1-tray.png` & `antigravity-acc2-tray.png` (48x48, 32x32, 24x24) |
 | **Launcher Tray Env** | `~/.local/bin/antigravity-1`, `antigravity-acc2` | Exports `ANTIGRAVITY_TRAY_ICON_PATH` |
 | **Tray Cache Sync** | `src/antigravity_suite/icon/tray_sync.py` | Scans `tempfile.gettempdir()`, `$TMPDIR`, `$XDG_RUNTIME_DIR`, `/run/user/<uid>`, `/tmp` |
@@ -580,6 +597,7 @@ See full standalone forensics document: [docs/forensics/20_watcher_daemon_self_t
 | **Audit Log** | `~/.gemini/antigravity/history_merger_audit.log` | JSONL records for all mutations |
 | **Language Server Health** | `~/.config/Antigravity/logs/language_server.log` | `reconcile checked N, restored 0, cached N, dropped 0` |
 | **F5 Backend Reload** | `bin/lib/patch/patch_utils_reload.js` | Invokes `await ls.restartLanguageServer()` & strips stale handlers |
-| **Unit Test Suite** | `python3 -m unittest discover tests` | All 120 tests passing |
+| **Unit Test Suite** | `python3 -m unittest discover tests` | All 123 tests passing |
+
 
 

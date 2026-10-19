@@ -37,6 +37,7 @@ dispatch_command() {
         f5|patch-f5) FORCE_INSTALL=true patch_f5_reload ;;
         rtl|patch-rtl) FORCE_INSTALL=true dispatch_rtl ;;
         update-rtl) update_rtl ;;
+        checksums|fix-checksums|patch-checksums) fix_ide_checksums "${IDE_INSTALL_DIR:-/opt/antigravity}" ;;
         update) update_all ;;
         clean-cache) clean_cache ;;
         help) show_help ;;

@@ -50,6 +50,21 @@ patch_rtl_ide() {
     fi
 
     log_success "RTL patch successfully applied to Antigravity IDE."
+    fix_ide_checksums "${IDE_INSTALL_DIR}"
+}
+
+fix_ide_checksums() {
+    local target_ide="${1:-$IDE_INSTALL_DIR}"
+    [ ! -d "$target_ide" ] && return 0
+    local cs_tool="${LOCAL_BIN}/antigravity-checksums.py"
+    if [ ! -f "$cs_tool" ]; then
+        local s_dir
+        s_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+        [ -f "${s_dir}/bin/antigravity-checksums.py" ] && cs_tool="${s_dir}/bin/antigravity-checksums.py"
+    fi
+    if [ -f "$cs_tool" ]; then
+        python3 "$cs_tool" "$target_ide" 2>/dev/null || true
+    fi
 }
 
 patch_rtl_all() {
@@ -65,4 +80,6 @@ update_rtl() {
     [ -f "$asar" ] && npx --yes antigravity-rtl@latest --restore --app --path "$asar" 2>/dev/null || true
     [ -d "${IDE_INSTALL_DIR}" ] && npx --yes antigravity-rtl@latest --restore --ide --path "${IDE_INSTALL_DIR}" 2>/dev/null || true
     FORCE_INSTALL=true patch_rtl_all
+    [ -d "${IDE_INSTALL_DIR}" ] && fix_ide_checksums "${IDE_INSTALL_DIR}"
 }
+
