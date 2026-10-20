@@ -25,7 +25,10 @@ def classify_transcript_step(entry: Dict[str, Any]) -> Optional[Tuple[int, int]]
     thinking = entry.get("thinking", "")
     tool_calls = entry.get("tool_calls", [])
 
-    if typ in ["CHECKPOINT", "CONVERSATION_HISTORY", "KNOWLEDGE_ARTIFACTS", "EPHEMERAL_MESSAGE", "SYSTEM_MESSAGE"] or src == "SYSTEM":
+    if typ == "CHECKPOINT":
+        return 23, 3
+
+    if typ in ["CONVERSATION_HISTORY", "KNOWLEDGE_ARTIFACTS", "EPHEMERAL_MESSAGE", "SYSTEM_MESSAGE"] or src == "SYSTEM":
         return None
 
     is_tool = (

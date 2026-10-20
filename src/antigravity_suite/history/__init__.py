@@ -4,6 +4,7 @@ Antigravity Conversation History, Summaries, and Synchronization Package.
 
 from antigravity_suite.history.audit import HistoryAuditLogger, get_audit_logger
 from antigravity_suite.history.backup import BackupEntry, HistoryBackupManager
+from antigravity_suite.history.checkpoint_sync import build_step23_payload, ensure_db_checkpoint_title
 from antigravity_suite.history.deletion import (
     detect_and_sync_deletions, get_manifest_path, get_tombstones,
     load_manifest, purge_conversation, save_manifest,
@@ -37,6 +38,7 @@ from antigravity_suite.history.watcher import watch_mode
 
 __all__ = [
     "BackupEntry", "HistoryBackupManager", "ConversationSummary", "SyncStats",
+    "build_step23_payload", "ensure_db_checkpoint_title",
     "HistoryAuditLogger", "get_audit_logger", "is_raw_prompt_sentence", "sanitize_topic_title",
     "discover_all_history_sources", "extract_conv_text", "get_annotation_info",
     "get_annotation_title", "sync_annotation_file", "ensure_summaries_schema",

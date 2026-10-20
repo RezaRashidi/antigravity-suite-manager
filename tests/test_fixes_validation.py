@@ -1934,6 +1934,33 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
         proc = subprocess.run(["node", "-e", script], cwd=os.path.dirname(os.path.dirname(__file__)))
         self.assertEqual(proc.returncode, 0)
 
+    def test_checkpoint_sync_build_and_ensure(self):
+        """Verifies build_step23_payload and ensure_db_checkpoint_title inject authentic titles."""
+        from antigravity_suite.history.checkpoint_sync import build_step23_payload, ensure_db_checkpoint_title
+        from antigravity_suite.history.extractor_checkpoint import parse_step23_checkpoint_title
+        import sqlite3, tempfile
+
+        payload = build_step23_payload(b"meta", "Simple Persian Greeting", 4, "سلام ۲")
+        self.assertEqual(parse_step23_checkpoint_title(payload), "Simple Persian Greeting")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_p = Path(tmp) / "test.db"
+            with sqlite3.connect(str(db_p)) as conn:
+                conn.execute("CREATE TABLE steps (idx INT, step_type INT, status INT, metadata BLOB, step_payload BLOB);")
+                conn.execute("INSERT INTO steps VALUES (0, 14, 3, x'0102', x'080e');")
+                conn.execute("INSERT INTO steps VALUES (1, 15, 3, x'0102', x'080f');")
+
+            self.assertTrue(ensure_db_checkpoint_title(db_p, "test-conv", "Persian Greeting", "سلام"))
+
+            with sqlite3.connect(str(db_p)) as conn:
+                row = conn.execute("SELECT idx, step_payload FROM steps WHERE step_type = 23;").fetchone()
+                self.assertIsNotNone(row)
+                self.assertEqual(row[0], 2)
+                self.assertEqual(parse_step23_checkpoint_title(row[1]), "Persian Greeting")
+
+            # Calling again with same title should be a no-op
+            self.assertFalse(ensure_db_checkpoint_title(db_p, "test-conv", "Persian Greeting", "سلام"))
+
 
 if __name__ == "__main__":
     unittest.main()

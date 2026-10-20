@@ -609,7 +609,20 @@ See full standalone forensics document: [docs/forensics/23_self_update_engine_an
 
 ---
 
-## 25. Summary Checklist for Future Diagnostics
+## 25. Issue 17: IDE Chat Open Title Regression (`Persian Greeting` Mutates to Prompt Text)
+
+* **Symptom**: In Desktop App, title is stable as `Persian Greeting`. In IDE Recent Conversations list, title displays as `Persian Greeting` before opening. When clicked and opened in the IDE editor pane, the header title immediately mutates to `سلام` (first user prompt), followed by the Recent menu mutating to `سلام`. Closing and viewing in App shows the title intact, but opening in IDE reproduces the mutation.
+* **Root Cause**:
+  1. The target conversation (`95ccec1a-a0ef-489f-9a34-55990309e128.db`) contains only 2 steps (`step_type = 14` User Input and `step_type = 15` Planner Response), lacking a Checkpoint step (`step_type = 23` / `CORTEX_STEP_TYPE_CHECKPOINT`), and has no markdown plan artifact in `brain/`.
+  2. When opened, `createAgentStateProviderForConvo` initiates a ConnectRPC stream `streamAgentStateUpdates` with `language_server`.
+  3. Lacking Step 23 or a markdown plan title, `language_server` dynamically falls back to extracting the raw prompt string from Step 0 (`Tag 19 -> Subtag 2 = "سلام"`), populating `CascadeTrajectorySummary.summary = "سلام"` in the stream payload.
+  4. The IDE Redux reducer `applyStreamBatch` (`Npn`) receives this stream and executes `a[t] = r`, dynamically overwriting `summaries[cascadeId].summary` in memory.
+  5. The conversation header hook `_w` evaluates `t = ers(e)` (`summary`), resolving to `"سلام"`. Simultaneously, the Recent menu selector `z5e` (`G3n`) reads from `e.summaries`, mutating the Recent entry from `"Persian Greeting"` to `"سلام"`.
+* **Forensic Reference**: See detailed forensic report in [docs/forensics/18_ide_chat_open_title_regression_persian_greeting.md](docs/forensics/18_ide_chat_open_title_regression_persian_greeting.md).
+
+---
+
+## 26. Summary Checklist for Future Diagnostics
 
 | Checkpoint | Target Path / Command | Expected Healthy State |
 | :--- | :--- | :--- |

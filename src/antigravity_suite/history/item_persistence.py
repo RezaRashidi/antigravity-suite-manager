@@ -12,9 +12,10 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict
 
+from antigravity_suite.history.checkpoint_sync import ensure_db_checkpoint_title
+from antigravity_suite.history.extractor import sync_annotation_file
 from antigravity_suite.history.models import ConversationSummary
 from antigravity_suite.history.sqlite_store import upsert_summary
-from antigravity_suite.history.extractor import sync_annotation_file
 from antigravity_suite.history.title_sanitizer import is_clean_title
 from antigravity_suite.proto.cascade import build_cascade_summary
 from antigravity_suite.proto.trajectory import build_trajectory_metadata_blob
@@ -79,6 +80,7 @@ def persist_conversation_item(
 
     if meta["has_db"] and ws_uri:
         try:
+            ensure_db_checkpoint_title(db_file, conv_id, final_title, prompt=final_prev, transcript_path=meta.get("transcript_file"))
             blob = build_trajectory_metadata_blob(conv_id=conv_id, workspace_uri=ws_uri, project_id=proj_id)
             with sqlite3.connect(str(db_file), timeout=15.0) as target_db:
                 target_db.execute("CREATE TABLE IF NOT EXISTS trajectory_metadata_blob (id TEXT PRIMARY KEY DEFAULT 'main', data BLOB);")
