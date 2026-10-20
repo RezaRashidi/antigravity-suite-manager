@@ -47,7 +47,7 @@ def format_account_section(accounts: List[AccountQuotaMetric]) -> List[str]:
             pct_col = _GREEN if pct > 50 else (_YELLOW if pct > 20 else _RED)
             reset_note = f" (resets {b.reset_time})" if b.reset_time else ""
             lines.append(
-                f"    Bucket [{b.window:6}] : {b.name:24} -> "
+                f"    [{b.group_name:10}] {b.window:6} : {b.name:22} -> "
                 f"{pct_col}{pct:5.1f}% remaining{_RESET}{reset_note}"
             )
     return lines

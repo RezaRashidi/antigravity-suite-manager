@@ -5,7 +5,7 @@ System, account, and prompt test data models for benchmarking.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 
 @dataclass
@@ -28,6 +28,7 @@ class QuotaBucket:
     window: str
     remaining_fraction: float
     reset_time: str
+    group_name: str = "Gemini"
 
 
 @dataclass

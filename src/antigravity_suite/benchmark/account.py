@@ -15,9 +15,12 @@ from .models_system import AccountQuotaMetric, QuotaBucket
 def _parse_quota_groups(groups: list) -> List[QuotaBucket]:
     buckets: List[QuotaBucket] = []
     for g in groups:
+        gname = g.get("displayName", "")
+        tag = "Gemini" if "Gemini" in gname else ("Claude/GPT" if ("Claude" in gname or "GPT" in gname) else "Global")
         for b in g.get("buckets", []):
             buckets.append(
                 QuotaBucket(
+                    group_name=tag,
                     name=b.get("displayName", "Limit"),
                     window=b.get("window", "unknown"),
                     remaining_fraction=float(b.get("remainingFraction", 0.0)),
