@@ -1,54 +1,42 @@
 // Antigravity Multi-Account UI: Target Detection and Cascade Identification
 (function initMountModule() {
     window.__antigravityDetectCascadeId = function() {
-        const hashMatch = window.location.hash.match(/[a-f0-9-]{16,}/i);
-        if (hashMatch) return hashMatch[0];
-        const pathMatch = window.location.pathname.match(/[a-f0-9-]{16,}/i);
-        if (pathMatch) return pathMatch[0];
+        const cv = document.querySelector('[data-testid="conversation-view"][data-cascade-id]');
+        const cvId = cv?.getAttribute('data-cascade-id');
+        if (cvId) return cvId;
 
-        const dataEl = document.querySelector('[data-cascade-id], [data-conversation-id], [data-session-id], [data-chat-id]');
-        if (dataEl) {
-            const id = dataEl.getAttribute('data-cascade-id') || dataEl.getAttribute('data-conversation-id') ||
-                       dataEl.getAttribute('data-session-id') || dataEl.getAttribute('data-chat-id');
-            if (id) return id;
-        }
+        const sel = document.querySelector('[data-testid="conversation-row-sidebar"][data-selected="true"], [data-testid="conversation-row-sidebar"].bg-sidebar-secondary');
+        const selId = sel?.getAttribute('data-cascade-id');
+        if (selId) return selId;
 
-        const activeItem = document.querySelector('[class*="conversation"][class*="active"], [class*="cascade"][class*="active"], [class*="chat"][class*="selected"], [aria-selected="true"]');
-        if (activeItem) {
-            const match = (activeItem.id + ' ' + activeItem.className + ' ' + (activeItem.getAttribute('data-id') || '')).match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i);
-            if (match) return match[0];
-            const titleEl = activeItem.querySelector('[class*="title"], span');
-            if (titleEl && titleEl.textContent) return 'chat-' + titleEl.textContent.trim().slice(0, 30);
-        }
+        const pm = window.location.pathname.match(/[a-f0-9-]{16,}/i);
+        if (pm) return pm[0];
+        const hm = window.location.hash.match(/[a-f0-9-]{16,}/i);
+        if (hm) return hm[0];
         return 'default';
     };
 
     window.__antigravityFindTarget = function() {
-        const buttons = Array.from(document.querySelectorAll('button'));
-        for (const btn of buttons) {
-            const txt = (btn.textContent || '').trim();
-            if (
-                txt.includes('Flash') || txt.includes('Pro') || txt.includes('Claude') ||
-                txt.includes('Gemini') || txt.includes('Sonnet') || txt.includes('GPT') ||
-                txt.includes('Auto') || txt.includes('DeepSeek') || txt.includes('Thinking') ||
-                btn.getAttribute('data-testid') === 'model-selector'
-            ) {
-                if (btn.parentElement) return { target: btn.parentElement, insertAfter: btn, floating: false };
+        const triggers = Array.from(document.querySelectorAll('[data-testid="model-selector-trigger"]'));
+        const visible = triggers.filter(el => el.offsetParent !== null || el.getBoundingClientRect().width > 0);
+        const trigger = visible.find(el => el.closest('[data-testid="conversation-view"]')) || visible[visible.length - 1] || triggers[triggers.length - 1];
+        if (trigger) {
+            const parent = trigger.parentElement?.closest('.flex.items-center') || trigger.parentElement;
+            if (parent && parent !== trigger) {
+                let ref = trigger;
+                while (ref && ref.parentElement && ref.parentElement !== parent) ref = ref.parentElement;
+                return { target: parent, insertAfter: ref, floating: false };
             }
         }
-        const prompt = document.querySelector('textarea, [contenteditable="true"], [role="textbox"]');
-        if (prompt) {
-            const box = prompt.closest('form, [class*="prompt"], [class*="input"], [class*="cascade"]') || prompt.parentElement;
-            if (box) {
-                const footer = box.querySelector('[class*="input-footer"], [class*="footer"], div[class*="items-center"][class*="min-w-0"]') ||
-                               box.querySelector('div[class*="items-center"]');
-                if (footer) return { target: footer, floating: false };
-            }
+        const tb = document.querySelector('[data-testid="conversation-view"] [data-testid="input-box-bottom-toolbar"], [data-testid="input-box-bottom-toolbar"]');
+        if (tb) {
+            const row = tb.querySelector('.flex.items-center') || tb;
+            return { target: row, insertAfter: row.firstElementChild, floating: false };
         }
-        const footers = document.querySelectorAll('div[class*="input-footer"]');
-        for (const f of footers) {
-            const group = f.querySelector('div[class*="items-center"]') || f.querySelector('div[class*="flex-1"]') || f;
-            if (group) return { target: group, floating: false };
+        const ft = document.querySelector('[data-testid="conversation-view"] .@container\\/input-footer, .@container\\/input-footer');
+        if (ft) {
+            const row = ft.querySelector('.flex.items-center') || ft;
+            return { target: row, floating: false };
         }
         return null;
     };

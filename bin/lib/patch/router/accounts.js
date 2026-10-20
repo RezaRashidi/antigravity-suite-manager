@@ -7,12 +7,23 @@ const { ACCOUNTS_DIR, ensureAccountsDir } = require('./bindings');
 function findPrimaryTokenFiles() {
     const home = os.homedir();
     const files = [];
+    const direct = [
+        path.join(home, '.gemini', 'jetski-standalone-oauth-token'),
+        path.join(home, '.gemide', 'jetski-standalone-oauth-token'),
+        path.join(home, '.config', 'antigravity', 'jetski-standalone-oauth-token'),
+        path.join(home, '.config', 'Antigravity', 'jetski-standalone-oauth-token'),
+    ];
+    for (const p of direct) {
+        if (fs.existsSync(p) && !files.includes(p)) files.push(p);
+    }
     try {
         const entries = fs.readdirSync(home, { withFileTypes: true });
         for (const ent of entries) {
             if (ent.isDirectory() && ent.name.startsWith('.')) {
-                const p = path.join(home, ent.name, 'jetski-standalone-oauth-token');
-                if (fs.existsSync(p)) files.push(p);
+                for (const sub of ['jetski-standalone-oauth-token', path.join('.gemini', 'jetski-standalone-oauth-token')]) {
+                    const p = path.join(home, ent.name, sub);
+                    if (fs.existsSync(p) && !files.includes(p)) files.push(p);
+                }
             }
         }
     } catch (_) {}

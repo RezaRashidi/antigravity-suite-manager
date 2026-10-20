@@ -1,8 +1,18 @@
 #!/usr/bin/env bash
 # F5 backend reload and window/tray isolation patcher.
 
+ensure_app_install_dir() {
+    [ -n "$APP_INSTALL_DIR" ] && [ -f "${APP_INSTALL_DIR}/resources/app.asar" ] && return 0
+    auto_detect_installations 2>/dev/null || true
+    [ -n "$APP_INSTALL_DIR" ] && [ -f "${APP_INSTALL_DIR}/resources/app.asar" ] && return 0
+    for c in "$ANTIGRAVITY_DETECTED_APP" "/opt/Antigravity-x64" "/opt/antigravity2" "/opt/antigravity" "${REAL_HOME:-$HOME}/.local/share/antigravity"; do
+        [ -n "$c" ] && [ -f "${c}/resources/app.asar" ] && { APP_INSTALL_DIR="$c"; return 0; }
+    done
+}
+
 patch_f5_reload() {
     for arg in "$@"; do [ "$arg" = "--force" ] || [ "$arg" = "-f" ] && FORCE_INSTALL=true; done
+    ensure_app_install_dir
     local asar_file="${APP_INSTALL_DIR}/resources/app.asar"
     if [ ! -f "$asar_file" ]; then
         log_warn "app.asar not found at ${asar_file}. Skipping F5 sync patch."
@@ -55,7 +65,8 @@ patch_f5_reload() {
 }
 
 unpatch_f5() {
-    local asar_file="${APP_INSTALL_DIR:-/opt/antigravity2}/resources/app.asar"
+    ensure_app_install_dir
+    local asar_file="${APP_INSTALL_DIR}/resources/app.asar"
     if [ ! -f "$asar_file" ]; then
         log_warn "app.asar not found at ${asar_file}."
         return 0
@@ -76,7 +87,8 @@ unpatch_f5() {
 }
 
 unpatch_antigravity() {
-    local asar_file="${APP_INSTALL_DIR:-/opt/antigravity2}/resources/app.asar"
+    ensure_app_install_dir
+    local asar_file="${APP_INSTALL_DIR}/resources/app.asar"
     local orig_file="${asar_file}.orig"
     local bak2_file="${asar_file}.bak2"
 
@@ -93,7 +105,7 @@ unpatch_antigravity() {
     fi
 
     log_info "Restoring unmodified original app.asar from $(basename "$src")..."
-    fix_permissions "${APP_INSTALL_DIR:-/opt/antigravity2}"
+    fix_permissions "${APP_INSTALL_DIR}"
     cp -f "$src" "$asar_file"
     chmod 644 "$asar_file"
 

@@ -11,10 +11,16 @@ function patchIpcAndPreload(distDir) {
     electron_1.ipcMain.handle('multi-account:get-state', async () => {
         try {
             const router = require('./multi_account_router');
-            const accounts = await (router.loadAllAccountsWithQuotas ? router.loadAllAccountsWithQuotas() : Object.values(router.loadAllAccounts()));
+            let accounts = router.loadAllAccountsWithQuotasSync ? router.loadAllAccountsWithQuotasSync() : Object.values(router.loadAllAccounts());
+            if (!accounts?.some(a => a.quotas?.length) && router.loadAllAccountsWithQuotas) {
+                try { accounts = await Promise.race([router.loadAllAccountsWithQuotas(), new Promise(r => setTimeout(() => r(accounts), 800))]); } catch (_) {}
+            }
+            if (!accounts || !accounts.length) accounts = Object.values(router.loadAllAccounts());
             const bindings = router.getBindings();
             return { accounts, bindings, active_default: router.getActiveAccountEmail ? router.getActiveAccountEmail() : bindings.__active_account, proxy_running: true };
-        } catch (_) { return { accounts: [], bindings: {} }; }
+        } catch (_) {
+            try { const router = require('./multi_account_router'); return { accounts: Object.values(router.loadAllAccounts()), bindings: router.getBindings() }; } catch (e) { return { accounts: [], bindings: {} }; }
+        }
     });
     electron_1.ipcMain.handle('multi-account:bind-cascade', async (_event, cascadeId, email, model) => {
         try {
@@ -34,9 +40,18 @@ function patchIpcAndPreload(distDir) {
     electron_1.ipcMain.handle('multi-account:start-login', async () => {
         try {
             const { spawn } = require('child_process');
-            spawn('python3', ['-m', 'antigravity_suite.multi_account.cli', 'login'], { detached: true, stdio: 'ignore' }).unref();
+            const py = process.platform === 'win32' ? 'python' : (process.env.PYTHON || 'python3');
+            spawn(py, ['-m', 'antigravity_suite.multi_account.cli', 'login'], { detached: true, stdio: 'ignore' }).unref();
             return true;
         } catch (_) { return false; }
+    });
+    electron_1.ipcMain.handle('multi-account:log', async (_event, msg) => {
+        try {
+            const p = electron_1.app?.getPath ? electron_1.app.getPath('userData') : require('path').join(require('os').homedir(), '.config', 'antigravity');
+            require('fs').mkdirSync(p, { recursive: true });
+            require('fs').appendFileSync(require('path').join(p, 'ui_debug.log'), '[' + new Date().toISOString() + '] ' + msg + '\\n');
+        } catch (_) {}
+        return true;
     });
 `;
             code = code.replace('function registerIpcHandlers(storageManager) {', 'function registerIpcHandlers(storageManager) {' + snippets);
@@ -54,6 +69,7 @@ const multiAccountAPI = {
     bindCascade: (cascadeId, email, model) => electron_1.ipcRenderer.invoke('multi-account:bind-cascade', cascadeId, email, model),
     setActiveAccount: (email) => electron_1.ipcRenderer.invoke('multi-account:set-active-account', email),
     startLogin: () => electron_1.ipcRenderer.invoke('multi-account:start-login'),
+    log: (msg) => electron_1.ipcRenderer.invoke('multi-account:log', msg),
 };
 electron_1.contextBridge.exposeInMainWorld('antigravityMultiAccount', multiAccountAPI);
 `;
@@ -66,7 +82,7 @@ function unpatchIpcAndPreload(distDir) {
     const ipcPath = path.join(distDir, 'ipcHandlers.js');
     if (fs.existsSync(ipcPath)) {
         let code = fs.readFileSync(ipcPath, 'utf8');
-        code = code.replace(/electron_1\.ipcMain\.handle\('multi-account:get-state'[\s\S]*?electron_1\.ipcMain\.handle\('multi-account:start-login'[\s\S]*?\}\);/g, '');
+        code = code.replace(/electron_1\.ipcMain\.handle\('multi-account:get-state'[\s\S]*?electron_1\.ipcMain\.handle\('multi-account:log'[\s\S]*?\}\);/g, '');
         fs.writeFileSync(ipcPath, code, 'utf8');
     }
     const preloadPath = path.join(distDir, 'preload.js');

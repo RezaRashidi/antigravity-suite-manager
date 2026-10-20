@@ -4,6 +4,7 @@ const https = require('https');
 const { getBindings, getActiveAccountEmail, logTraffic } = require('./bindings');
 const { loadAllAccounts } = require('./accounts');
 const { refreshGoogleToken } = require('./oauth');
+const { handleApiRequest, tryInterceptCommand } = require('./api');
 
 const DEFAULT_PORT = 41999;
 const UPSTREAM_HOST = 'daily-cloudcode-pa.googleapis.com';
@@ -36,14 +37,19 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
         req.on('data', chunk => chunks.push(chunk));
         req.on('end', async () => {
             const body = Buffer.concat(chunks);
+            const bodyStr = body.toString('utf8');
+            if (handleApiRequest(req, res, bodyStr)) return;
+
             let cascadeId = null;
             try {
-                const parsed = JSON.parse(body.toString('utf8'));
+                const parsed = JSON.parse(bodyStr);
                 cascadeId = parsed.cascadeId || parsed.conversationId || parsed.trajectoryId;
             } catch (_) {
-                const match = body.toString('utf8').match(/"(?:cascadeId|conversationId)":\s*"([a-zA-Z0-9_\-]+)"/);
+                const match = bodyStr.match(/"(?:cascadeId|conversationId)":\s*"([a-zA-Z0-9_\-]+)"/);
                 if (match) cascadeId = match[1];
             }
+
+            if (tryInterceptCommand(req, res, bodyStr, cascadeId)) return;
 
             const bindings = getBindings();
             const boundEmail = (cascadeId && bindings[cascadeId]?.email) || getActiveAccountEmail(loadAllAccounts()) || 'Primary (Native)';
@@ -68,23 +74,16 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
             req.on('aborted', () => upReq.destroy());
             upReq.on('error', (err) => {
                 logTraffic(`Chat: [${cascadeId || 'general'}] !! Upstream Error: ${err.message}`);
-                if (!res.headersSent) {
-                    res.writeHead(502, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ error: err.message }));
-                }
+                if (!res.headersSent) { res.writeHead(502, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: err.message })); }
             });
             if (body.length > 0) upReq.write(body);
             upReq.end();
         });
     });
 
-    _server.on('error', (err) => {
-        if (err.code === 'EADDRINUSE') console.log(`[MultiAccountRouter] Port ${port} in use.`);
-        else console.error('[MultiAccountRouter] Server error:', err.message);
-    });
-    _server.listen(port, '127.0.0.1', () => {
-        logTraffic(`MultiAccountRouter started on port ${port}`);
-    });
+    _server.on('error', (err) => { if (err.code !== 'EADDRINUSE') console.error('[MultiAccountRouter] Error:', err.message); });
+    const host = process.env.ANTIGRAVITY_ROUTER_HOST || '0.0.0.0';
+    _server.listen(port, host, () => logTraffic(`MultiAccountRouter started on ${host}:${port}`));
     return _server;
 }
 

@@ -1,8 +1,18 @@
 #!/usr/bin/env bash
 # Antigravity Account Selector & Multi-Account Subsystem Patcher
 
+ensure_app_install_dir() {
+    [ -n "$APP_INSTALL_DIR" ] && [ -f "${APP_INSTALL_DIR}/resources/app.asar" ] && return 0
+    auto_detect_installations 2>/dev/null || true
+    [ -n "$APP_INSTALL_DIR" ] && [ -f "${APP_INSTALL_DIR}/resources/app.asar" ] && return 0
+    for c in "$ANTIGRAVITY_DETECTED_APP" "/opt/Antigravity-x64" "/opt/antigravity2" "/opt/antigravity" "${REAL_HOME:-$HOME}/.local/share/antigravity"; do
+        [ -n "$c" ] && [ -f "${c}/resources/app.asar" ] && { APP_INSTALL_DIR="$c"; return 0; }
+    done
+}
+
 patch_selector() {
     for arg in "$@"; do [ "$arg" = "--force" ] || [ "$arg" = "-f" ] && FORCE_INSTALL=true; done
+    ensure_app_install_dir
     local asar_file="${APP_INSTALL_DIR}/resources/app.asar"
     if [ ! -f "$asar_file" ]; then
         log_warn "app.asar not found at ${asar_file}. Skipping selector patch."
@@ -46,6 +56,13 @@ patch_selector() {
     cp "$tmp_dir/app.asar.patched" "$asar_file"
     rm -rf "$tmp_dir"
 
+    local t_skills="${REAL_HOME:-$HOME}/.gemini/config/skills"
+    mkdir -p "$t_skills" 2>/dev/null || true
+    local r_dir; r_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+    for sk in whoami accounts switch; do
+        [ -d "${r_dir}/skills/${sk}" ] && cp -rf "${r_dir}/skills/${sk}" "$t_skills/" 2>/dev/null || true
+    done
+
     if grep -qa "$patch_fingerprint" "$asar_file" || grep -qa "multi_account_ui" "$asar_file"; then
         log_success "Account selector patch applied and verified successfully."
     else
@@ -55,6 +72,7 @@ patch_selector() {
 }
 
 unpatch_selector() {
+    ensure_app_install_dir
     local asar_file="${APP_INSTALL_DIR}/resources/app.asar"
     if [ ! -f "$asar_file" ]; then
         log_warn "app.asar not found at ${asar_file}."

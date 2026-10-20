@@ -17,17 +17,11 @@ function patchUtilsReload(utilsCode) {
             let isGenerating = false;
             if (win && !win.isDestroyed() && win.webContents) {
                 try {
-                    isGenerating = await win.webContents.executeJavaScript(\`(() => {
-                        return Boolean(
-                            document.querySelector('button[aria-label*="Stop" i]') ||
-                            document.querySelector('button[aria-label*="Cancel" i]') ||
-                            document.querySelector('[data-testid="stop-button"]')
-                        );
-                    })()\`);
+                    isGenerating = await win.webContents.executeJavaScript('Boolean(document.querySelector(\\'button[aria-label*="Stop" i]\\') || document.querySelector(\\'button[aria-label*="Cancel" i]\\') || document.querySelector(\\'[data-testid="stop-button"]\\'))');
                 } catch (_) {}
             }
             if ((global.__active_agent_count__ && global.__active_agent_count__ > 0) || isGenerating) {
-                console.log('[Keybindings] Manual sync blocked: active agent or generation running.');
+                console.log('[Keybindings] Sync blocked: active agent running.');
                 if (win && !win.isDestroyed() && win.webContents) {
                     try {
                         void win.webContents.executeJavaScript("(() => { if (document.getElementById('__antigravity_sync_toast__')) return; const t = document.createElement('div'); t.id = '__antigravity_sync_toast__'; t.innerText = 'Cannot sync: Task is currently running'; t.style.cssText = 'position:fixed;top:20px;right:20px;background:#e53e3e;color:#fff;padding:8px 16px;border-radius:8px;z-index:999999;font-family:sans-serif;font-size:13px;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,0.3);'; document.body.appendChild(t); setTimeout(() => t.remove(), 3000); })()");
@@ -37,21 +31,28 @@ function patchUtilsReload(utilsCode) {
             }
             if (win && !win.isDestroyed() && win.webContents) {
                 try {
-                    void win.webContents.executeJavaScript("(() => { if (document.getElementById('__antigravity_sync_toast__')) return; const t = document.createElement('div'); t.id = '__antigravity_sync_toast__'; t.innerText = 'Syncing...'; t.style.cssText = 'position:fixed;top:20px;right:20px;background:rgba(0,0,0,0.85);color:#fff;padding:8px 16px;border-radius:8px;z-index:999999;font-family:sans-serif;font-size:13px;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,0.3);'; document.body.appendChild(t); })()");
+                    void win.webContents.executeJavaScript("(() => { if (document.getElementById('__antigravity_sync_toast__')) return; const t = document.createElement('div'); t.id = '__antigravity_sync_toast__'; t.innerText = 'Syncing chats with IDE...'; t.style.cssText = 'position:fixed;top:20px;right:20px;background:rgba(0,0,0,0.85);color:#fff;padding:8px 16px;border-radius:8px;z-index:999999;font-family:sans-serif;font-size:13px;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,0.3);'; document.body.appendChild(t); })()");
                 } catch (_) {}
             }
-            let restarted = false;
+            let newPort = null;
             try {
                 const ls = require('./languageServer');
                 if (ls && typeof ls.restartLanguageServer === 'function') {
                     await ls.restartLanguageServer();
-                    restarted = true;
+                    newPort = typeof ls.getLsPort === 'function' ? ls.getLsPort() : null;
                 }
             } catch (err) {
                 console.error('[Keybindings] LanguageServer restart failed:', err);
             }
-            if (!restarted && win && !win.isDestroyed() && win.webContents) {
-                try { win.webContents.reload(); } catch (_) {}
+            if (win && !win.isDestroyed() && win.webContents) {
+                try {
+                    const curUrl = win.webContents.getURL();
+                    if (newPort && curUrl && /^https?:\/\/127\.0\.0\.1:\d+/i.test(curUrl)) {
+                        await win.loadURL(curUrl.replace(/https?:\/\/127\.0\.0\.1:\d+/, 'https://127.0.0.1:' + newPort));
+                    } else {
+                        win.webContents.reload();
+                    }
+                } catch (_) {}
             }
         },`;
 

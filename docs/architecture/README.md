@@ -29,6 +29,7 @@ This technical specification and engineering reference documents the complete da
    - [9.1 Zero-Restart Live Annotation Script](#91-zero-restart-live-annotation-script)
 10. [Data Flow Lifecycle: Message Creation to Storage](#10-data-flow-lifecycle-message-creation-to-storage)
 11. [Two-Way Synchronization Engine (`antigravity-suite-manager`)](#11-two-way-synchronization-engine-antigravity-suite-manager)
+12. [Multi-Account Selector Architecture & Router Subsystem](12_multi_account_selector_architecture.md)
 
 ---
 
@@ -46,3 +47,4 @@ This technical specification and engineering reference documents the complete da
 - [9. Live ConnectRPC Loopback Protocol](09_live_connectrpc_loopback_protocol.md)
 - [10. Data Flow Lifecycle: Message Creation to Storage](10_data_flow_lifecycle_message_creation_to_stora.md)
 - [11. Two-Way Synchronization Engine (`antigravity-suite-manager`)](11_two_way_synchronization_engine_antigravity_su.md)
+- [12. Multi-Account Selector Architecture & Router Subsystem](12_multi_account_selector_architecture.md)

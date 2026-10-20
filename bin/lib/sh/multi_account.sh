@@ -15,6 +15,31 @@ get_multi_account_cli() {
     fi
 }
 
+generate_remote_control_bookmarklet() {
+    local host_ip
+    host_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    [ -z "$host_ip" ] && host_ip="127.0.0.1"
+    local router_url="http://${host_ip}:41999"
+    echo ""
+    echo -e "${CYAN}=====================================================${NC}"
+    echo -e "       ${GREEN}Antigravity Remote Control Account Selector${NC}"
+    echo -e "${CYAN}=====================================================${NC}"
+    echo ""
+    echo -e "${YELLOW}Method 1: Direct In-Chat Slash Commands (Zero-install, Universal):${NC}"
+    echo "  While in any Remote Control chat (on your phone or browser), simply type:"
+    echo "    /accounts          - Show all connected Google accounts & current binding"
+    echo "    /switch <number>   - Switch this chat to account number (e.g. /switch 2)"
+    echo "    /switch <email>    - Switch this chat to email (e.g. /switch user@gmail.com)"
+    echo "    /whoami            - Check which account is handling this chat"
+    echo ""
+    echo -e "${YELLOW}Method 2: One-Click Browser Bookmarklet (Visual Selector Pill):${NC}"
+    echo "  Create a bookmark in your mobile or laptop browser with this URL:"
+    echo ""
+    echo "javascript:(function(){var h=localStorage.getItem('agy_host')||prompt('Antigravity Host URL:','${router_url}');if(h){localStorage.setItem('agy_host',h);window.__AGY_ROUTER_HOST__=h;var s=document.createElement('script');s.src=h+'/ui_bundle.js?t='+Date.now();document.head.appendChild(s);}})();"
+    echo ""
+    echo -e "${CYAN}-----------------------------------------------------${NC}"
+}
+
 dispatch_multi_account() {
     local m_script
     m_script="$(get_multi_account_cli)"
@@ -22,6 +47,10 @@ dispatch_multi_account() {
     if [ $# -gt 0 ]; then
         local subcmd="$1"
         shift
+        if [ "$subcmd" = "bookmarklet" ] || [ "$subcmd" = "remote" ] || [ "$subcmd" = "remote-control" ]; then
+            generate_remote_control_bookmarklet "$@"
+            return 0
+        fi
         if [ -n "$m_script" ] && [ -f "$m_script" ]; then
             python3 "$m_script" "$subcmd" "$@"
             return $?
@@ -30,7 +59,6 @@ dispatch_multi_account() {
         return $?
     fi
 
-    # Interactive Submenu when triggered from main menu without arguments
     interactive_multi_account_menu
 }
 
@@ -53,9 +81,10 @@ interactive_multi_account_menu() {
         echo "4) View Active Conversation Bindings"
         echo "5) Remove / Sign Out an Account"
         echo "6) Check / Restart Multi-Account Proxy Service"
+        echo "7) Remote Control Account Selector (Bookmarklet & Chat Commands)"
         echo "0) Return to Main Menu"
         echo -e "${CYAN}-----------------------------------------------------${NC}"
-        read -rp "Select an option [0-6]: " choice
+        read -rp "Select an option [0-7]: " choice
 
         case "$choice" in
             1)
@@ -157,6 +186,10 @@ interactive_multi_account_menu() {
                         log_err "Failed to start proxy service."
                     fi
                 fi
+                read -rp "Press Enter to continue..." _
+                ;;
+            7)
+                generate_remote_control_bookmarklet
                 read -rp "Press Enter to continue..." _
                 ;;
             0)
