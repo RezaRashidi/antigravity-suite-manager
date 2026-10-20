@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 from antigravity_suite.multi_account.bindings import get_account_for_cascade
 from antigravity_suite.multi_account.tokens import is_token_expired, refresh_access_token
 from antigravity_suite.multi_account.vault import list_vault_accounts
@@ -30,23 +30,15 @@ def extract_cascade_id(body: bytes) -> Optional[str]:
 
 
 def resolve_account_token(cascade_id: Optional[str]) -> Optional[str]:
-    """Resolves active OAuth access token for cascade_id or fallback primary."""
-    email = get_account_for_cascade(cascade_id) if cascade_id else None
+    """Resolves OAuth token for cascade; returns None for transparent passthrough."""
+    if not cascade_id:
+        return None
+    email = get_account_for_cascade(cascade_id)
+    if not email:
+        return None
     accounts = list_vault_accounts()
-    selected = None
-    if email:
-        for a in accounts:
-            if a.email.lower() == email.lower():
-                selected = a
-                break
-    if not selected:
-        for a in accounts:
-            if a.is_primary:
-                selected = a
-                break
-    if not selected and accounts:
-        selected = accounts[0]
-    if not selected or not selected.token:
+    selected = next((a for a in accounts if a.email.lower() == email.lower()), None)
+    if not selected or selected.is_primary or not selected.token:
         return None
 
     tok = selected.token
@@ -58,13 +50,17 @@ def resolve_account_token(cascade_id: Optional[str]) -> Optional[str]:
 
 
 def prepare_upstream_headers(
-    headers: Dict[str, str], token: Optional[str], upstream_host: str
+    headers: Dict[str, str], token: Optional[str], upstream_host: str, body_len: int = 0
 ) -> Dict[str, str]:
-    """Replaces Authorization header and strips loopback-specific headers."""
+    """Prepares headers for upstream request; preserves Content-Length when body present."""
     out = dict(headers)
     out["Host"] = upstream_host
     if token:
         out["Authorization"] = f"Bearer {token}"
-    for drop in ["Content-Length", "Transfer-Encoding", "Connection"]:
+    if body_len > 0:
+        out["Content-Length"] = str(body_len)
+    else:
+        out.pop("Content-Length", None)
+    for drop in ["Transfer-Encoding", "Connection"]:
         out.pop(drop, None)
     return out

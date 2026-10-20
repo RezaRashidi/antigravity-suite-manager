@@ -1,5 +1,6 @@
 // ==============================================================================
 // Antigravity Multi-Account UI Injector: Prompt Bar Pill & Account Selector
+// High-performance, debounced, light & dark theme adaptive
 // ==============================================================================
 
 (function initMultiAccountUI() {
@@ -10,166 +11,249 @@
 
     let cachedState = { accounts: [], bindings: {} };
     let currentCascadeId = 'default';
+    let isRenderScheduled = false;
 
     // Inject styles
-    const styleEl = document.createElement('style');
-    styleEl.id = 'antigravity-multi-account-styles';
-    styleEl.textContent = `
-        .agy-acc-pill-container {
-            display: inline-flex;
-            align-items: center;
-            position: relative;
-            margin-left: 4px;
-            margin-right: 4px;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            z-index: 9999;
-        }
-        .agy-acc-pill-container.floating {
-            position: fixed;
-            bottom: 20px;
-            right: 24px;
-            z-index: 999999;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-        }
-        .agy-acc-pill-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            background: rgba(255, 255, 255, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.16);
-            border-radius: 14px;
-            padding: 3px 10px;
-            color: #e0e0e0;
-            font-size: 12px;
-            cursor: pointer;
-            transition: all 0.15s ease;
-            user-select: none;
-            outline: none;
-            backdrop-filter: blur(8px);
-        }
-        .agy-acc-pill-btn:hover {
-            background: rgba(255, 255, 255, 0.15);
-            border-color: rgba(255, 255, 255, 0.32);
-            color: #ffffff;
-        }
-        .agy-acc-avatar {
-            width: 16px;
-            height: 16px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #4285f4, #34a853);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 10px;
-            font-weight: bold;
-            color: #ffffff;
-        }
-        .agy-acc-badge {
-            font-size: 11px;
-            font-weight: 500;
-            max-width: 120px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        .agy-quota-badge {
-            background: rgba(0, 0, 0, 0.4);
-            padding: 1px 6px;
-            border-radius: 8px;
-            font-size: 10px;
-            font-weight: 600;
-        }
-        .agy-quota-gemini { color: #8ab4f8; }
-        .agy-quota-claude { color: #f28b82; }
+    let styleEl = document.getElementById('antigravity-multi-account-styles');
+    if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = 'antigravity-multi-account-styles';
+        styleEl.textContent = `
+            :root {
+                --agy-pill-bg: rgba(0, 0, 0, 0.05);
+                --agy-pill-border: rgba(0, 0, 0, 0.14);
+                --agy-pill-text: #202124;
+                --agy-pill-hover: rgba(0, 0, 0, 0.09);
+                --agy-dropdown-bg: #ffffff;
+                --agy-dropdown-border: rgba(0, 0, 0, 0.14);
+                --agy-dropdown-shadow: 0 10px 28px rgba(0, 0, 0, 0.15);
+                --agy-dropdown-text: #202124;
+                --agy-dropdown-subtext: #5f6368;
+                --agy-dropdown-hover: rgba(0, 0, 0, 0.05);
+                --agy-dropdown-header: #5f6368;
+                --agy-dropdown-selected: rgba(66, 133, 244, 0.12);
+                --agy-quota-badge-bg: rgba(0, 0, 0, 0.06);
+                --agy-quota-gemini: #1a73e8;
+                --agy-quota-claude: #d93025;
+                --agy-btn-action-bg: rgba(0, 0, 0, 0.04);
+                --agy-btn-action-border: rgba(0, 0, 0, 0.12);
+                --agy-btn-action-hover: rgba(0, 0, 0, 0.08);
+                --agy-btn-action-text: #3c4043;
+            }
+            html.dark, body.dark, [data-theme="dark"], .dark {
+                --agy-pill-bg: rgba(255, 255, 255, 0.08);
+                --agy-pill-border: rgba(255, 255, 255, 0.16);
+                --agy-pill-text: #e0e0e0;
+                --agy-pill-hover: rgba(255, 255, 255, 0.15);
+                --agy-dropdown-bg: #1e1f22;
+                --agy-dropdown-border: rgba(255, 255, 255, 0.18);
+                --agy-dropdown-shadow: 0 10px 28px rgba(0, 0, 0, 0.75);
+                --agy-dropdown-text: #e0e0e0;
+                --agy-dropdown-subtext: #9aa0a6;
+                --agy-dropdown-hover: rgba(255, 255, 255, 0.08);
+                --agy-dropdown-header: #9aa0a6;
+                --agy-dropdown-selected: rgba(66, 133, 244, 0.22);
+                --agy-quota-badge-bg: rgba(0, 0, 0, 0.4);
+                --agy-quota-gemini: #8ab4f8;
+                --agy-quota-claude: #f28b82;
+                --agy-btn-action-bg: rgba(255, 255, 255, 0.07);
+                --agy-btn-action-border: rgba(255, 255, 255, 0.14);
+                --agy-btn-action-hover: rgba(255, 255, 255, 0.15);
+                --agy-btn-action-text: #e0e0e0;
+            }
+            @media (prefers-color-scheme: dark) {
+                :root:not(.light) {
+                    --agy-pill-bg: rgba(255, 255, 255, 0.08);
+                    --agy-pill-border: rgba(255, 255, 255, 0.16);
+                    --agy-pill-text: #e0e0e0;
+                    --agy-pill-hover: rgba(255, 255, 255, 0.15);
+                    --agy-dropdown-bg: #1e1f22;
+                    --agy-dropdown-border: rgba(255, 255, 255, 0.18);
+                    --agy-dropdown-shadow: 0 10px 28px rgba(0, 0, 0, 0.75);
+                    --agy-dropdown-text: #e0e0e0;
+                    --agy-dropdown-subtext: #9aa0a6;
+                    --agy-dropdown-hover: rgba(255, 255, 255, 0.08);
+                    --agy-dropdown-header: #9aa0a6;
+                    --agy-dropdown-selected: rgba(66, 133, 244, 0.22);
+                    --agy-quota-badge-bg: rgba(0, 0, 0, 0.4);
+                    --agy-quota-gemini: #8ab4f8;
+                    --agy-quota-claude: #f28b82;
+                    --agy-btn-action-bg: rgba(255, 255, 255, 0.07);
+                    --agy-btn-action-border: rgba(255, 255, 255, 0.14);
+                    --agy-btn-action-hover: rgba(255, 255, 255, 0.15);
+                    --agy-btn-action-text: #e0e0e0;
+                }
+            }
 
-        .agy-acc-dropdown {
-            position: absolute;
-            bottom: calc(100% + 8px);
-            left: 0;
-            min-width: 310px;
-            background: #1e1f22;
-            border: 1px solid rgba(255, 255, 255, 0.18);
-            border-radius: 10px;
-            box-shadow: 0 8px 28px rgba(0, 0, 0, 0.75);
-            padding: 8px 0;
-            display: none;
-            flex-direction: column;
-            z-index: 100000;
-            color: #e0e0e0;
-        }
-        .agy-acc-dropdown.open {
-            display: flex;
-        }
-        .agy-acc-header {
-            padding: 8px 14px 6px;
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: #9aa0a6;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .agy-acc-item {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 8px 14px;
-            cursor: pointer;
-            transition: background 0.15s ease;
-        }
-        .agy-acc-item:hover {
-            background: rgba(255, 255, 255, 0.08);
-        }
-        .agy-acc-item.selected {
-            background: rgba(66, 133, 244, 0.2);
-            border-left: 3px solid #4285f4;
-        }
-        .agy-acc-item-left {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-        .agy-acc-item-email {
-            font-size: 12px;
-            font-weight: 500;
-            color: #fff;
-        }
-        .agy-acc-item-sub {
-            font-size: 10px;
-            color: #9aa0a6;
-        }
-        .agy-acc-item-right {
-            display: flex;
-            flex-direction: column;
-            align-items: flex-end;
-            gap: 2px;
-        }
-        .agy-acc-footer {
-            padding: 8px 10px 4px;
-            border-top: 1px solid rgba(255, 255, 255, 0.08);
-            display: flex;
-            gap: 6px;
-        }
-        .agy-acc-btn-action {
-            flex: 1;
-            padding: 5px 8px;
-            background: rgba(255, 255, 255, 0.07);
-            border: 1px solid rgba(255, 255, 255, 0.14);
-            border-radius: 6px;
-            color: #e0e0e0;
-            font-size: 11px;
-            cursor: pointer;
-            text-align: center;
-        }
-        .agy-acc-btn-action:hover {
-            background: rgba(255, 255, 255, 0.15);
-            color: #fff;
-        }
-    `;
-    document.head.appendChild(styleEl);
+            .agy-acc-pill-container {
+                display: inline-flex;
+                align-items: center;
+                position: relative;
+                margin-left: 4px;
+                margin-right: 4px;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                z-index: 9999;
+            }
+            .agy-acc-pill-container.floating {
+                position: fixed;
+                bottom: 20px;
+                right: 24px;
+                z-index: 999999;
+                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+            }
+            .agy-acc-pill-btn {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                background: var(--agy-pill-bg);
+                border: 1px solid var(--agy-pill-border);
+                border-radius: 14px;
+                padding: 3px 10px;
+                color: var(--agy-pill-text);
+                font-size: 12px;
+                cursor: pointer;
+                transition: all 0.15s ease;
+                user-select: none;
+                outline: none;
+                backdrop-filter: blur(8px);
+            }
+            .agy-acc-pill-btn:hover {
+                background: var(--agy-pill-hover);
+                color: var(--agy-pill-text);
+            }
+            .agy-acc-avatar {
+                width: 16px;
+                height: 16px;
+                border-radius: 50%;
+                background: linear-gradient(135deg, #4285f4, #34a853);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 10px;
+                font-weight: bold;
+                color: #ffffff;
+            }
+            .agy-acc-badge {
+                font-size: 11px;
+                font-weight: 500;
+                max-width: 120px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                color: var(--agy-pill-text);
+            }
+            .agy-quota-badge {
+                background: var(--agy-quota-badge-bg);
+                padding: 1px 6px;
+                border-radius: 8px;
+                font-size: 10px;
+                font-weight: 600;
+            }
+            .agy-quota-gemini { color: var(--agy-quota-gemini); }
+            .agy-quota-claude { color: var(--agy-quota-claude); }
+
+            .agy-acc-dropdown {
+                position: absolute;
+                bottom: calc(100% + 8px);
+                left: 0;
+                min-width: 310px;
+                background: var(--agy-dropdown-bg);
+                border: 1px solid var(--agy-dropdown-border);
+                border-radius: 10px;
+                box-shadow: var(--agy-dropdown-shadow);
+                padding: 8px 0;
+                display: none;
+                flex-direction: column;
+                z-index: 100000;
+                color: var(--agy-dropdown-text);
+            }
+            .agy-acc-dropdown.open {
+                display: flex;
+            }
+            .agy-acc-header {
+                padding: 8px 14px 6px;
+                font-size: 11px;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                color: var(--agy-dropdown-header);
+                border-bottom: 1px solid var(--agy-dropdown-border);
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .agy-acc-item {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 8px 14px;
+                cursor: pointer;
+                transition: background 0.15s ease;
+            }
+            .agy-acc-item:hover {
+                background: var(--agy-dropdown-hover);
+            }
+            .agy-acc-item.selected {
+                background: var(--agy-dropdown-selected);
+                border-left: 3px solid #4285f4;
+            }
+            .agy-acc-item-left {
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+            }
+            .agy-acc-item-email {
+                font-size: 12px;
+                font-weight: 500;
+                color: var(--agy-dropdown-text);
+            }
+            .agy-acc-item-sub {
+                font-size: 10px;
+                color: var(--agy-dropdown-subtext);
+            }
+            .agy-acc-item-right {
+                display: flex;
+                flex-direction: column;
+                align-items: flex-end;
+                gap: 2px;
+            }
+            .agy-acc-footer {
+                padding: 8px 10px 4px;
+                border-top: 1px solid var(--agy-dropdown-border);
+                display: flex;
+                gap: 6px;
+            }
+            .agy-acc-btn-action {
+                flex: 1;
+                padding: 5px 8px;
+                background: var(--agy-btn-action-bg);
+                border: 1px solid var(--agy-btn-action-border);
+                border-radius: 6px;
+                color: var(--agy-btn-action-text);
+                font-size: 11px;
+                cursor: pointer;
+                text-align: center;
+            }
+            .agy-acc-btn-action:hover {
+                background: var(--agy-btn-action-hover);
+            }
+        `;
+        document.head.appendChild(styleEl);
+    }
+
+    function isDarkTheme() {
+        if (document.documentElement.classList.contains('dark') || document.body.classList.contains('dark')) return true;
+        if (document.documentElement.getAttribute('data-theme') === 'dark') return true;
+        try {
+            const bg = window.getComputedStyle(document.body).backgroundColor;
+            const rgb = bg.match(/\d+/g);
+            if (rgb && rgb.length >= 3) {
+                const brightness = (Number(rgb[0]) * 299 + Number(rgb[1]) * 587 + Number(rgb[2]) * 114) / 1000;
+                return brightness < 128;
+            }
+        } catch (_) {}
+        return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
 
     function detectCurrentCascadeId() {
         const hashMatch = window.location.hash.match(/[a-f0-9-]{16,}/i);
@@ -183,7 +267,7 @@
         if (window.antigravityMultiAccount?.getState) {
             try {
                 cachedState = await window.antigravityMultiAccount.getState();
-                renderPill();
+                scheduleRender();
             } catch (err) {
                 console.error('[MultiAccountUI] State fetch error:', err);
             }
@@ -200,7 +284,7 @@
     }
 
     function findAttachmentTarget() {
-        // Priority 1: Inside the input-footer container
+        // Priority 1: Inside input-footer container
         const footers = document.querySelectorAll('div[class*="input-footer"]');
         for (const footer of footers) {
             const group = footer.querySelector('div[class*="items-center"][class*="min-w-0"]') ||
@@ -216,8 +300,17 @@
                 if (btn.parentElement) return { target: btn.parentElement, floating: false };
             }
         }
-        // Priority 3: Fallback floating container on document body
+        // Fallback: floating container
         return { target: document.body, floating: true };
+    }
+
+    function scheduleRender() {
+        if (isRenderScheduled) return;
+        isRenderScheduled = true;
+        requestAnimationFrame(() => {
+            isRenderScheduled = false;
+            renderPill();
+        });
     }
 
     function renderPill() {
@@ -235,8 +328,6 @@
             target.appendChild(pillContainer);
         }
 
-        pillContainer.className = 'agy-acc-pill-container' + (floating ? ' floating' : '');
-
         const initial = (active.name || active.email || 'G')[0].toUpperCase();
         let quotaText = '';
         if (active.quotas && active.quotas.length > 0) {
@@ -249,6 +340,15 @@
             quotaText = `<span class="agy-quota-badge agy-quota-gemini">Ready</span>`;
         }
 
+        const dark = isDarkTheme();
+        const renderKey = `${active.email}|${active.tier}|${quotaText}|${currentCascadeId}|${(cachedState.accounts || []).length}|${floating}|${dark}`;
+        if (pillContainer.__renderKey === renderKey) {
+            return;
+        }
+        pillContainer.__renderKey = renderKey;
+
+        pillContainer.className = 'agy-acc-pill-container' + (floating ? ' floating' : '') + (dark ? ' dark' : '');
+
         pillContainer.innerHTML = `
             <button class="agy-acc-pill-btn" type="button" id="agy-acc-toggle-btn" title="Antigravity Account Selector & Quota Telemetry">
                 <div class="agy-acc-avatar">${initial}</div>
@@ -259,7 +359,7 @@
             <div class="agy-acc-dropdown" id="agy-acc-dropdown">
                 <div class="agy-acc-header">
                     <span>Google Accounts</span>
-                    <span style="font-size:9px;color:#8ab4f8;">${active.tier || ''}</span>
+                    <span style="font-size:9px;color:var(--agy-quota-gemini);">${active.tier || ''}</span>
                 </div>
                 <div class="agy-acc-list">
                     ${(cachedState.accounts || []).map(acc => {
@@ -299,7 +399,7 @@
             };
         }
 
-        // Account select
+        // Account selection
         pillContainer.querySelectorAll('.agy-acc-item').forEach(item => {
             item.onclick = async (e) => {
                 e.stopPropagation();
@@ -308,13 +408,14 @@
                     await window.antigravityMultiAccount.bindCascade(currentCascadeId, email);
                     if (!cachedState.bindings) cachedState.bindings = {};
                     cachedState.bindings[currentCascadeId] = email;
-                    renderPill();
+                    pillContainer.__renderKey = null;
+                    scheduleRender();
                 }
                 dropdown.classList.remove('open');
             };
         });
 
-        // Add Account Button
+        // Add Account
         const addBtn = document.getElementById('agy-acc-add-btn');
         if (addBtn) {
             addBtn.onclick = async (e) => {
@@ -326,7 +427,7 @@
             };
         }
 
-        // Refresh Button
+        // Refresh
         const refBtn = document.getElementById('agy-acc-refresh-btn');
         if (refBtn) {
             refBtn.onclick = async (e) => {
@@ -336,19 +437,41 @@
         }
     }
 
+    // Close dropdown on outside click
     document.addEventListener('click', () => {
         const dd = document.getElementById('agy-acc-dropdown');
         if (dd) dd.classList.remove('open');
     });
 
-    const observer = new MutationObserver(() => {
-        const pill = document.getElementById('antigravity-account-pill');
-        if (!pill || pill.parentElement === document.body) {
-            renderPill();
+    // Observer: only trigger when target area or root classes change, debounced
+    let debounceTimer = null;
+    const observer = new MutationObserver((mutations) => {
+        let shouldCheck = false;
+        for (const m of mutations) {
+            // Ignore mutations within the pill itself to eliminate infinite loops!
+            if (m.target && m.target.closest && m.target.closest('#antigravity-account-pill')) {
+                continue;
+            }
+            if (m.type === 'attributes' && (m.attributeName === 'class' || m.attributeName === 'data-theme')) {
+                shouldCheck = true;
+                break;
+            }
+            if (m.type === 'childList') {
+                shouldCheck = true;
+                break;
+            }
+        }
+        if (shouldCheck) {
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                scheduleRender();
+            }, 150);
         }
     });
-    observer.observe(document.body, { childList: true, subtree: true });
 
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'data-theme'] });
+
+    // Initial state fetch
     fetchState();
-    setInterval(fetchState, 12000);
+    setInterval(fetchState, 30000);
 })();

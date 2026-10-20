@@ -38,6 +38,8 @@ Commands:
   checksums     Verify and synchronize Antigravity IDE bundle integrity checksums
   benchmark     Benchmark AI response speed, IPv6/proxy latency, and context bloat (alias: bench)
   multi-account Manage connected Google accounts, quotas & chat bindings (aliases: accounts, multiaccount)
+  patch-accounts Apply prompt-bar account selector & multi-account proxy patch
+  unpatch       Restore clean unmodified original app.asar (revert all patches)
   export-history Export conversation history & brains to portable tarball [out]
   import-history Import & merge conversation history from archive <file>
   export-suite  Export suite configurations (rules, skills, plugins, MCP, accounts) [out]

@@ -195,23 +195,27 @@ async function refreshGoogleToken(account) {
 }
 
 async function resolveTokenForCascade(cascadeId) {
-    const accounts = loadAllAccounts();
+    if (!cascadeId) return null;
     const bindings = getBindings();
-    let email = null;
-    if (cascadeId && bindings[cascadeId]) {
-        email = bindings[cascadeId].email;
+    const binding = bindings[cascadeId];
+    if (!binding || !binding.email) {
+        // Transparent pass-through: do not touch native Authorization header
+        return null;
     }
-    let target = email && accounts[email] ? accounts[email] : null;
-    if (!target) {
-        target = Object.values(accounts).find(a => a.is_primary) || Object.values(accounts)[0];
+    const accounts = loadAllAccounts();
+    const target = accounts[binding.email];
+    if (!target) return null;
+    if (target.is_primary) {
+        // Native primary account handles its own OAuth tokens
+        return null;
     }
-    if (!target || !target.token) return null;
+    if (!target.token) return null;
 
     let expiryMs = target.token.expiry ? new Date(target.token.expiry).getTime() : 0;
     if (!expiryMs || expiryMs - Date.now() < 300000) {
         return await refreshGoogleToken(target);
     }
-    return target.token.access_token;
+    return target.token.access_token || null;
 }
 
 function startMultiAccountRouter(port = DEFAULT_PORT) {
@@ -240,10 +244,19 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
             const token = await resolveTokenForCascade(cascadeId);
             const headers = { ...req.headers };
             headers.host = UPSTREAM_HOST;
+
+            // Only override Authorization if explicitly bound to a secondary account
             if (token) {
                 headers.authorization = `Bearer ${token}`;
             }
-            delete headers['content-length'];
+
+            // CRITICAL: Preserve explicit Content-Length so Google Cloud Code PA
+            // does NOT reject chunked transfer encoding with HTTP 400 INVALID_ARGUMENT!
+            if (body.length > 0) {
+                headers['content-length'] = Buffer.byteLength(body);
+            }
+            delete headers['transfer-encoding'];
+            delete headers['connection'];
 
             const upReq = https.request({
                 hostname: UPSTREAM_HOST,
@@ -251,15 +264,20 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
                 path: req.url,
                 method: req.method,
                 headers: headers,
+                timeout: 0,
             }, (upRes) => {
                 res.writeHead(upRes.statusCode, upRes.headers);
                 upRes.pipe(res);
             });
 
+            req.on('aborted', () => upReq.destroy());
+
             upReq.on('error', (err) => {
                 console.error('[MultiAccountRouter] Upstream error:', err.message);
-                res.writeHead(502, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: err.message }));
+                if (!res.headersSent) {
+                    res.writeHead(502, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: err.message }));
+                }
             });
 
             if (body.length > 0) upReq.write(body);
@@ -269,7 +287,7 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
 
     _server.on('error', (err) => {
         if (err.code === 'EADDRINUSE') {
-            console.log(`[MultiAccountRouter] Port ${port} in use (daemon running).`);
+            console.log(`[MultiAccountRouter] Port ${port} in use (external/existing daemon).`);
         } else {
             console.error('[MultiAccountRouter] Server error:', err.message);
         }

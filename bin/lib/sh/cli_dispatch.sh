@@ -40,6 +40,8 @@ dispatch_command() {
         checksums|fix-checksums|patch-checksums) fix_ide_checksums "${IDE_INSTALL_DIR:-/opt/antigravity}" ;;
         benchmark|bench|speed-test) dispatch_benchmark "${CMD_ARGS[@]}" ;;
         multi-account|multiaccount|accounts) dispatch_multi_account "${CMD_ARGS[@]}" ;;
+        patch-accounts|patch-selector) FORCE_INSTALL=true patch_f5_reload ;;
+        unpatch|restore|revert-patch) unpatch_antigravity ;;
         update) dispatch_update ;;
         update-repo|self-update|update-self) update_suite_repo ;;
         restart-services|restart-service|restart-daemon|restart-daemons) restart_suite_services ;;

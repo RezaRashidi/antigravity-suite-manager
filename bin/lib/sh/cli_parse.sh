@@ -63,6 +63,8 @@ parse_cli_args() {
             update-repo|self-update|update-self|24) COMMAND="update-repo"; shift ;;
             benchmark|bench|speed-test|26) COMMAND="benchmark"; shift; CMD_ARGS=("$@"); break ;;
             multi-account|multiaccount|accounts|27) COMMAND="multi-account"; shift; CMD_ARGS=("$@"); break ;;
+            patch-accounts|patch-selector) COMMAND="patch-accounts"; shift ;;
+            unpatch|restore|revert-patch) COMMAND="unpatch"; shift ;;
             restart-services|restart-service|restart-daemon|restart-daemons|25) COMMAND="restart-services"; shift ;;
             status|all|app|ide|app1|app2|ide-shortcuts|update-rtl|clean-cache|help)
                 COMMAND="$1"; shift ;;
