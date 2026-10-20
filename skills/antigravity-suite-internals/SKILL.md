@@ -1292,4 +1292,151 @@ Configured in `package.json`:
 | `antigravity.migrateWindsurfSettings` | Imports settings, rules, and workflows from Windsurf configuration roots. |
 | `antigravity.importCursorSettings` | Imports configuration and extension rules from Cursor environments. |
 
+---
+
+## 18. Response Throttling, Pacing & Latency Discrepancy Diagnostics
+
+### 18.1 Execution Bottleneck Identification: Time To First Token (TTFT)
+The user-facing "Thinking for Xs" timer rendered in the frontend (`jetskiAgent/main.js`):
+```javascript
+t >= 0 ? f(Dt, { children: ["Thinking for ", Math.max(1, t), "s"] }) : f(Dt, { children: ["Thinking", f(vNe, {})] })
+```
+measures the elapsed time between dispatching the user prompt and receiving the first stream chunk (`streamGenerateContent?alt=sse`) from Google's Cloud Code PA backend. In active telemetry, local message preparation takes under 100 ms (`total_latency_ms: 98`). The remainder of the thinking duration is spent waiting on server-side prefill and network round-trips.
+
+### 18.2 CPU Thread Capping (`--limit_go_max_procs=4`)
+The Language Server binary hardcodes a ceiling on Go's runtime concurrency scheduler:
+```bash
+/opt/antigravity2/resources/bin/language_server --limit_go_max_procs=4
+```
+Even on 16-core or 32-core workstations, background indexing, Tree-sitter AST parsing, and symbol embedding are capped at 4 OS threads to prevent workstation UI freezes.
+
+### 18.3 Dynamic Debouncing (`DynamicDebouncer`)
+Implemented in `third_party/jetski/go_utils/debouncer.go`:
+- `DynamicDebouncer[string].CanExecute`: Throttles background code completions (Supercomplete) and AST parsing.
+- Key properties: `GetDebounceLatencyMs`, `GetPromptLatencyMs`, and `HandleStreamingCommandRequest.GetIgnoreSupercompleteDebounce`.
+- Applies a 150 ms to 300 ms debounce window during keystroke bursts to prevent flooding backend model APIs.
+
+### 18.4 Backoff and Retry Sleeping (`ModelAPIRetryConfig`)
+Defined in `google3/third_party/jetski/cortex_pb/cortex.proto` and `google3/learning/genai/api/interactions`:
+```protobuf
+message ModelAPIRetryConfig {
+  int32 max_retries = 1;
+  int32 initial_sleep_duration_ms = 2;
+  float exponential_multiplier = 3;
+  int32 jitter_range = 4;
+  int32 max_sleep_duration_ms = 5;
+}
+```
+Upon receiving HTTP 429 (Too Many Requests), rate-limit signals, or transport dropouts, the Go engine suspends the execution goroutine via `time.Sleep` with exponential backoff before retrying.
+
+### 18.5 Frontend DOM & State Pacing (`_changeThrottler`)
+Extracted from `jetskiAgent/main.js`:
+```javascript
+this._changeThrottler = new Glo();
+this._changeThrottler.throttle(this._flushUpdates, 10);
+timing: { throttleMs: 100, retryDelayMs: 1000, oppositeDirectionCooldownMs: 1000 }
+```
+React state and DOM updates are batched at 10 ms to 100 ms intervals rather than rendering per-byte stream deltas, preventing browser thread lockups during high-speed token generation.
+
+### 18.6 Machine-to-Machine Latency Divergence Diagnostics (3s vs 12s)
+When two systems with identical accounts, models, and empty chat context exhibit vast latency differences (e.g. 3 seconds vs 12 seconds), the delay stems from 5 operational factors:
+
+1. **IPv6 Blackhole in Go Dual-Stack `net.Dialer` (Primary Cause)**:
+   - Go's resolver queries both A and AAAA records for `daily-cloudcode-pa.googleapis.com`.
+   - If IPv6 is enabled on the network adapter but dropped by an upstream router or ISP firewall, Go waits for TCP SYN timeout (5 to 9 seconds) before failing over to IPv4.
+   - Verification and mitigation on Linux:
+     ```bash
+     curl -6 -m 5 https://daily-cloudcode-pa.googleapis.com
+     sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+     ```
+2. **Local MCP Tools & Skills Injection (Prefill Token Inflation)**:
+   - MCP servers (`~/.gemini/config/mcp_config.json`) and skills (`~/.gemini/config/skills/`) are stored locally per machine.
+   - If System B has 6 MCP servers (such as Portainer with 150+ tools) and 45 skills, every prompt carries over 40,000 tokens of JSON schema definitions in the system prompt even with zero chat history.
+   - LLM server-side prefill time increases significantly with input prompt size.
+3. **Reasoning Effort & Thinking Budget Allocation (`thinking_budget`)**:
+   - Models with reasoning support utilize `ThinkingConfig.GetThinkingBudget` and `GetMinThinkingBudget`.
+   - If one machine has Extended Thinking or a higher budget configured (e.g. 8,192 tokens vs 1,024 tokens), the model generates hidden reasoning tokens in `CHANNEL_THOUGHT` before outputting the first visible text.
+4. **HTTP/2 WebChannel Drops & Proxy Handshake Latency**:
+   - The Language Server uses long-lived HTTP/2 streams (`streamGenerateContent?alt=sse`).
+   - If an intermediate proxy or VPN terminates idle TCP connections (`WebChannel connection closed ... Retrying immediately`), every prompt incurs a cold TCP handshake and TLS 1.3 negotiation round-trip over the proxy (1.5s to 3s).
+5. **A/B Testing Assignment (`device_fingerprint`)**:
+   - At initialization, the client transmits `device_fingerprint` to Google's backend, assigning the machine to Mendel experiment cohorts. Cohorts may route through deeper safety classification pipelines (e.g. Sonar monitors) or different inference server clusters.
+
+---
+
+## 19. Context Compaction, Truncation & Token Budgeting Subsystem
+
+### 19.1 Architecture & Protobuf Schemas
+Context compression is handled via the Compaction subsystem in `google3/third_party/jetski/jetski_cortex_pb/` and `google.ai.generativelanguage.v1main`:
+```protobuf
+message CompactionConfig {
+  CompactionMode mode = 1;
+  int32 compaction_threshold = 7;
+}
+
+message CompactionInfo {
+  repeated int32 compacted_at_step_indices = 1;
+}
+
+message CompactionStep {
+  string summary = 1;
+  int64 original_tokens = 2;
+  int64 compacted_tokens = 3;
+}
+```
+
+### 19.2 Compaction Triggers & Lifecycle
+- **Manual Trigger**: Executing the `/compact` slash command triggers `cortex/shared.ParseCompactRequest`.
+- **Automated Threshold Trigger**: When trajectory tokens exceed `compaction_threshold`, the language server automatically initiates rolling summarization.
+- **Folding Index (`compacted_at_step_indices`)**: Older turns, tool calls, and large command outputs are collapsed into a compressed summary block. These indices are omitted from active attention windows during upstream calls while physical step data remains persisted in `<uuid>.db`.
+- **UI Feedback**: When `enableCompactionNotification` is active, the frontend surfaces an inline compaction badge informing the user of the folded steps.
+
+### 19.3 Customization Token Budgeting & Priority Pruning
+Located in `google3/third_party/jetski/cortex/customizations/`:
+- **Budget Computation**: `GetCustomizationBudget` and `GetRulesBudget` calculate maximum allowable tokens for steering rules and skills.
+- **Priority Ranking**: `computeRulePriority` and `sortTruncatableItems` rank customizations by scope and relevance.
+- **Pruning Engine**: When customizations exceed the token budget, `computeTruncatedCustomizations` and `truncateItemsToFit` prune lower-priority leaves (`pruneUntruncatedLeaves`), ensuring base system prompts do not exhaust context capacity.
+
+---
+
+## 20. Model Context Protocol (MCP) Subsystem Architecture
+
+### 20.1 Client Session Architecture
+Implemented in `third_party/jetski/cortex/utils/mcp/` and `mcpcore/mcp_client_session_instance.go`:
+- Configuration is loaded from `~/.gemini/config/mcp_config.json` into `McpServerConfig`.
+- Parameters parsed: `GetCommand`, `GetArgs`, `GetEnv`, `GetCwd`, `GetDisableStandaloneSse`, and `GetAuthProviderType`.
+
+### 20.2 Transport Mechanisms
+- **`stdio`**: Spawns a child process and communicates via JSON-RPC 2.0 over standard input/output.
+- **`sse`**: Establishes an HTTP connection consuming Server-Sent Events for remote or networked MCP hosts.
+
+### 20.3 Dual Loading Strategy (Eager vs Lazy)
+To prevent prompt bloat from large toolsets:
+- **Eager Loading**: Tools are compiled directly into the model's tool declarations as `mcp_<serverName>_<toolName>` with full JSON parameter schemas embedded in the system prompt.
+- **Lazy Loading**: Used for large tool catalogs. Full schemas are stored on disk at `~/.gemini/antigravity/mcp/<serverName>/<toolName>.json`. The system prompt only receives the top-level `call_mcp_tool` (`NewCallMcpToolConverter`), `list_resources`, and `read_resource`. The agent reads tool schemas on demand and executes calls through `call_mcp_tool`.
+
+---
+
+## 21. Skills Subsystem & Dynamic Runtime Narrowing
+
+### 21.1 Discovery Roots & Frontmatter Parsing
+Located in `google3/third_party/jetski/cortex/customizations/`:
+- **Discovery Paths**: Scans `~/.gemini/config/skills/`, `.agent/skills/`, `.agents/skills/`, and workspace roots for `SKILL.md` files.
+- **Parser (`ParseSkillMetadata`)**: Extracts YAML frontmatter into Protobuf `SkillMetadata`:
+  ```protobuf
+  message SkillMetadata {
+    string name = 1;
+    string description = 2;
+    string publisher = 3;
+    string version = 4;
+    string icon = 5;
+    string logo = 6;
+  }
+  ```
+
+### 21.2 Dynamic Runtime Filtering (`narrowSkillsForRuntime`)
+- Rather than dumping all installed skills into every conversation, `CascadeManager.narrowSkillsForRuntime` dynamically filters skills based on the active workspace type, repository structure, and opened files.
+- Injected skills supply brief descriptions in the system prompt. Deep procedural instructions inside `SKILL.md` are progressively fetched by the agent via `read_file` only when triggered.
+
+
 
