@@ -80,7 +80,8 @@ def persist_conversation_item(
 
     if meta["has_db"] and ws_uri:
         try:
-            ensure_db_checkpoint_title(db_file, conv_id, final_title, prompt=final_prev, transcript_path=meta.get("transcript_file"))
+            if final_title and not final_title.endswith(" Chat") and final_title not in ["Conversation", "Untitled Conversation"]:
+                ensure_db_checkpoint_title(db_file, conv_id, final_title, prompt=final_prev)
             blob = build_trajectory_metadata_blob(conv_id=conv_id, workspace_uri=ws_uri, project_id=proj_id)
             with sqlite3.connect(str(db_file), timeout=15.0) as target_db:
                 target_db.execute("CREATE TABLE IF NOT EXISTS trajectory_metadata_blob (id TEXT PRIMARY KEY DEFAULT 'main', data BLOB);")

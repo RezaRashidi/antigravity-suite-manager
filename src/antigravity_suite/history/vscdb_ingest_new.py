@@ -67,3 +67,6 @@ def insert_new_from_ide(
     )
     upsert_summary(con, model)
     sync_annotation_file(master_conv_dir.parent, u_id, title_to_use, pinned=is_pin, archived=is_arc, force=True)
+    if title_to_use and not title_to_use.endswith(" Chat") and title_to_use not in ["Conversation", "Untitled Conversation"]:
+        from antigravity_suite.history.checkpoint_sync import ensure_db_checkpoint_title
+        ensure_db_checkpoint_title(db_p, u_id, title_to_use)

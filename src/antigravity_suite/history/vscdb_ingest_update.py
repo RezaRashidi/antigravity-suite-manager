@@ -28,7 +28,8 @@ def update_existing_from_ide(
     pinned_set: Optional[Set[str]] = None,
 ) -> bool:
     """Updates an existing conversation summary if IDE has an authentic title."""
-    if not (ide_title and (not curr_t or not is_clean_title(curr_t) or is_prompt_text(curr_t, conv_prompts) or curr_t in ["Conversation", "Untitled Conversation"])):
+    is_fb = curr_t in ["Conversation", "Untitled Conversation"] or curr_t.endswith(" Chat")
+    if not (ide_title and (not curr_t or not is_clean_title(curr_t) or is_prompt_text(curr_t, conv_prompts) or is_fb)):
         return False
 
     db_ws_uri, db_proj_id = get_db_trajectory_meta(db_p)
@@ -64,4 +65,6 @@ def update_existing_from_ide(
     all_summaries[u_id] = new_bin
     cur.execute("UPDATE conversation_summaries SET title=?, raw_summary=? WHERE conversation_id=?", (ide_title, new_bin, u_id))
     sync_annotation_file(master_conv_dir.parent, u_id, ide_title, pinned=is_pin, archived=is_arc, force=True)
+    from antigravity_suite.history.checkpoint_sync import ensure_db_checkpoint_title
+    ensure_db_checkpoint_title(db_p, u_id, ide_title)
     return True

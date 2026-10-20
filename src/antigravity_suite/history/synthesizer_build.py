@@ -79,9 +79,6 @@ def synthesize_db_from_transcript(
                         meta, payload = bytes(step_meta), build_step14_payload(step_meta, status, content)
                     elif step_type == 15:
                         meta, payload = bytes(step_meta), build_step15_payload(step_meta, status, content, thinking, tool_calls, out_idx, pending_tool_calls)
-                    elif step_type == 23:
-                        from antigravity_suite.history.checkpoint_sync import build_step23_payload
-                        meta, payload = bytes(step_meta), build_step23_payload(step_meta, "", out_idx, "")
                     else:
                         meta, payload = build_step132_payload(step_meta, status, content, str(entry.get("type", "")), out_idx, pending_tool_calls)
 

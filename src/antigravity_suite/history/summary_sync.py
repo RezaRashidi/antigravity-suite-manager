@@ -28,6 +28,7 @@ def synchronize_master_summaries(
     pinned_set: Optional[Set[str]] = None,
     user_home: Optional[Path] = None,
     tombstones: Optional[Set[str]] = None,
+    candidate_vscdbs: Optional[List[str]] = None,
 ) -> Tuple[sqlite3.Connection, Dict[str, bytes]]:
     """Synchronizes conversation metadata in SQLite conversation_summaries.db and proto dict."""
     home = Path(user_home).resolve() if user_home else get_user_home()
@@ -63,6 +64,10 @@ def synchronize_master_summaries(
                     all_summaries[c_uuid] = raw
         except Exception:
             pass
+
+    if candidate_vscdbs:
+        from antigravity_suite.history.vscdb_sync import ingest_vscdb_summaries
+        ingest_vscdb_summaries(candidate_vscdbs, all_summaries, master_conv_dir, con, pinned_set=pinned_set, tombstones=tombstones)
 
     all_conv_ids = collect_all_conversation_ids(
         master_conv_dir=master_conv_dir,

@@ -70,8 +70,9 @@ def extract_conv_text(db_path: Union[str, Path], transcript_path: Union[str, Pat
                 cur = conn.cursor()
                 for cp_row in cur.execute("SELECT step_payload FROM steps WHERE step_type = 23 ORDER BY idx DESC LIMIT 5;").fetchall():
                     if cp_row and cp_row[0]:
-                        checkpoint_title = parse_step23_checkpoint_title(cp_row[0]) or ""
-                        if checkpoint_title:
+                        cand = parse_step23_checkpoint_title(cp_row[0]) or ""
+                        if cand and not cand.endswith(" Chat") and cand not in ["Conversation", "Untitled Conversation"]:
+                            checkpoint_title = cand
                             break
                 if not first_p or not latest_p:
                     f_row = cur.execute("SELECT step_payload FROM steps WHERE step_type = 14 ORDER BY idx ASC LIMIT 1;").fetchone()

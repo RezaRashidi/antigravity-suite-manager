@@ -66,7 +66,8 @@ def ingest_vscdb_summaries(
                         if u_id in all_summaries:
                             curr_parsed = parse_cascade_summary(all_summaries[u_id])
                             curr_t = (curr_parsed.get("title") or curr_parsed.get("summary") or "").strip()
-                            if curr_t and is_clean_title(curr_t) and curr_t not in ["Conversation", "Untitled Conversation"] and "@[" not in curr_t:
+                            is_fb = curr_t in ["Conversation", "Untitled Conversation"] or curr_t.endswith(" Chat")
+                            if curr_t and is_clean_title(curr_t) and not is_fb and "@[" not in curr_t:
                                 continue
                             if update_existing_from_ide(u_id, ide_title, curr_t, curr_parsed, conv_prompts, all_summaries, db_p, cur, master_conv_dir, pinned_set):
                                 ide_ingested_total += 1

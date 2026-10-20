@@ -1961,6 +1961,62 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             # Calling again with same title should be a no-op
             self.assertFalse(ensure_db_checkpoint_title(db_p, "test-conv", "Persian Greeting", "سلام"))
 
+            # Calling with fallback title should be rejected
+            self.assertFalse(ensure_db_checkpoint_title(db_p, "test-conv", "Ansible Galera Chat", "prompt"))
+            self.assertFalse(ensure_db_checkpoint_title(db_p, "test-conv", "Conversation", "prompt"))
+
+    def test_ide_new_chat_title_transfers_to_app_properly(self):
+        """Verifies that when a chat is created in the IDE, its authentic title transfers to the App and SQLite summaries."""
+        from antigravity_suite.history.merger import merge_histories
+        from antigravity_suite.proto.cascade import build_cascade_summary
+        from antigravity_suite.proto.vscdb import build_summaries_state
+        from antigravity_suite.history.synthesizer_payloads import build_step14_payload, build_step15_payload
+        from antigravity_suite.history.extractor_checkpoint import parse_step23_checkpoint_title
+        import tempfile, sqlite3
+
+        with tempfile.TemporaryDirectory() as td:
+            user_home = Path(td)
+            gemini_dir = user_home / ".gemini" / "antigravity"
+            gemini_dir.mkdir(parents=True)
+            conv_dir = gemini_dir / "conversations"
+            conv_dir.mkdir(parents=True)
+            brain_dir = gemini_dir / "brain"
+            brain_dir.mkdir(parents=True)
+
+            vscdb_dir = user_home / ".config" / "Antigravity IDE" / "User" / "globalStorage"
+            vscdb_dir.mkdir(parents=True)
+            vscdb_path = vscdb_dir / "state.vscdb"
+
+            cid = "c4ddc3ee-7c6e-44ee-9038-65e276ff4bb4"
+            ide_title = "Simple Persian Greeting"
+            ide_proto = build_cascade_summary(cid, ide_title, ide_title, 2, workspace_uri="file:///home/reza/PhpstormProjects/antigravity-suite-manager")
+
+            with sqlite3.connect(str(vscdb_path)) as v_con:
+                v_con.execute("CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value TEXT);")
+                v_con.execute("INSERT INTO ItemTable VALUES (?, ?);",
+                              ("antigravityUnifiedStateSync.trajectorySummaries", build_summaries_state({cid: ide_proto})))
+
+            c_db = conv_dir / f"{cid}.db"
+            with sqlite3.connect(str(c_db)) as c_con:
+                c_con.execute("CREATE TABLE steps (idx INT, step_type INT, status INT, metadata BLOB, step_payload BLOB);")
+                c_con.execute("INSERT INTO steps VALUES (0, 14, 3, x'01', ?);", (build_step14_payload(b"", 3, "سلام ۲"),))
+                c_con.execute("INSERT INTO steps VALUES (1, 15, 3, x'01', ?);", (build_step15_payload(b"", 3, "سلام!", "", [], 1, []),))
+                c_con.commit()
+
+            merge_histories(master_gemini=gemini_dir, user_home=user_home, quiet=True, skip_backup=True)
+
+            sum_db = gemini_dir / "conversation_summaries.db"
+            with sqlite3.connect(str(sum_db)) as s_con:
+                row = s_con.execute("SELECT conversation_id, title FROM conversation_summaries WHERE conversation_id = ?;", (cid,)).fetchone()
+                self.assertIsNotNone(row)
+                self.assertEqual(row[1], "Simple Persian Greeting")
+
+            # Check that step 23 was injected with authentic title and NOT the workspace fallback
+            with sqlite3.connect(str(c_db)) as c_con:
+                s23_row = c_con.execute("SELECT step_payload FROM steps WHERE step_type = 23;").fetchone()
+                self.assertIsNotNone(s23_row)
+                self.assertEqual(parse_step23_checkpoint_title(s23_row[0]), "Simple Persian Greeting")
+
 
 if __name__ == "__main__":
     unittest.main()

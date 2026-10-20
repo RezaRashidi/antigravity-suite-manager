@@ -35,27 +35,18 @@ def build_step23_payload(step_meta_bytes: bytes, title: str, step_idx: int, prom
     return bytes(payload)
 
 
-def _append_transcript_checkpoint(tf_str: str, prompt: str) -> None:
-    targets = [tf_str, tf_str.replace("transcript.jsonl", "transcript_full.jsonl")] if tf_str.endswith("transcript.jsonl") else [tf_str]
-    for p in targets:
-        if not os.path.isfile(p):
-            continue
-        try:
-            with open(p, "r", encoding="utf-8", errors="ignore") as f:
-                has_ckpt = any('"type":"CHECKPOINT"' in line or '"type": "CHECKPOINT"' in line for line in f)
-            if not has_ckpt:
-                entry = {"step_index": 2, "source": "SYSTEM", "type": "CHECKPOINT", "status": "DONE", "content": f"# Resuming from a compaction\n\n1. {prompt}"}
-                with open(p, "a", encoding="utf-8") as f:
-                    f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-        except Exception:
-            pass
-
-
 def ensure_db_checkpoint_title(
-    db_path: Union[str, Path], conv_id: str, title: str, prompt: str = "", transcript_path: Optional[Union[str, Path]] = None,
+    db_path: Union[str, Path],
+    conv_id: str,
+    title: str,
+    prompt: str = "",
+    transcript_path: Optional[Union[str, Path]] = None,
+    allow_fallback: bool = False,
 ) -> bool:
-    """Ensures conversation SQLite database contains a step_type = 23 checkpoint reflecting title."""
-    if not title or not is_clean_title(title) or title in ["Conversation", "---"] or not os.path.isfile(str(db_path)):
+    """Ensures conversation SQLite database contains a step_type = 23 checkpoint reflecting authentic title."""
+    if not title or not is_clean_title(title) or title in ["Conversation", "Untitled Conversation", "---"] or not os.path.isfile(str(db_path)):
+        return False
+    if not allow_fallback and (title.endswith(" Chat") or title.startswith("Desktop:")):
         return False
     try:
         with sqlite3.connect(str(db_path), timeout=15.0) as conn:
@@ -64,7 +55,10 @@ def ensure_db_checkpoint_title(
             existing_s23 = cur.fetchall()
             if existing_s23:
                 last_idx, last_payload = existing_s23[-1]
-                if parse_step23_checkpoint_title(last_payload) == title:
+                old_t = parse_step23_checkpoint_title(last_payload)
+                if old_t == title:
+                    return False
+                if old_t and (title.endswith(" Chat") or not is_clean_title(title)):
                     return False
                 cur.execute("SELECT metadata FROM steps WHERE idx = ?;", (last_idx,))
                 meta_row = cur.fetchone()
@@ -84,7 +78,5 @@ def ensure_db_checkpoint_title(
             conn.commit()
     except Exception:
         return False
-    if transcript_path:
-        _append_transcript_checkpoint(str(transcript_path), prompt)
     return True
 
