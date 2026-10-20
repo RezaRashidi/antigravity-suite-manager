@@ -96,6 +96,11 @@ class TestBenchmarkSubsystem(unittest.TestCase):
         self.assertIsInstance(report, BenchmarkReport)
         self.assertIsNotNone(report.context)
 
+    def test_cli_main_smoke(self):
+        from antigravity_suite.benchmark.cli import main
+        code = main(["--skip-network"])
+        self.assertIn(code, (0, 1))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -7,7 +7,7 @@ step_4_deploy_scripts() {
 
     # Deploy all bin scripts and libraries
     if [ -d "${SCRIPT_DIR}/bin" ]; then
-        for s in manage-antigravity.sh antigravity-generate-icons.py antigravity-apply-icon.py antigravity-merge-history.py antigravity-migration.py antigravity-detect.py antigravity-keyring.py antigravity-f5-patch.js antigravity-checksums.py; do
+        for s in manage-antigravity.sh antigravity-generate-icons.py antigravity-apply-icon.py antigravity-merge-history.py antigravity-migration.py antigravity-detect.py antigravity-keyring.py antigravity-f5-patch.js antigravity-checksums.py antigravity-benchmark.py; do
             if [ -f "${SCRIPT_DIR}/bin/${s}" ]; then
                 cp -f "${SCRIPT_DIR}/bin/${s}" "${TARGET_BIN}/" 2>/dev/null || sudo -n cp -f "${SCRIPT_DIR}/bin/${s}" "${TARGET_BIN}/" 2>/dev/null || true
                 chmod +x "${TARGET_BIN}/${s}" 2>/dev/null || true
