@@ -1,849 +1,98 @@
-// ==============================================================================
-// Antigravity Multi-Account UI Injector: Native Prompt Bar Account Selector
-// Ultra-compact dropdown, hover "View Usage" flyout, accurate live quotas
-// ==============================================================================
+// Antigravity Multi-Account UI Injector: Main Controller
+(function initUI() {
+    if (window.__agyMultiAccountReady) return;
+    window.__agyMultiAccountReady = true;
+    let state = { accounts: [], bindings: {} }, cascadeId = 'default', rTimer = null;
 
-(function initMultiAccountUI() {
-    if (window.__antigravityMultiAccountUIInitialized) return;
-    window.__antigravityMultiAccountUIInitialized = true;
-
-    console.log('[MultiAccountUI] Initializing native prompt bar account selector...');
-
-    let cachedState = { accounts: [], bindings: {} };
-    let currentCascadeId = 'default';
-    let isRenderScheduled = false;
-
-    // Inject styles matching Antigravity native input-footer model selector
-    let styleEl = document.getElementById('antigravity-multi-account-styles');
-    if (!styleEl) {
-        styleEl = document.createElement('style');
-        styleEl.id = 'antigravity-multi-account-styles';
-        styleEl.textContent = `
-            :root {
-                --agy-pill-text: #4b5563;
-                --agy-pill-text-hover: #111827;
-                --agy-pill-hover-bg: rgba(0, 0, 0, 0.05);
-                --agy-dropdown-bg: #ffffff;
-                --agy-dropdown-border: #e5e7eb;
-                --agy-dropdown-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-                --agy-dropdown-text: #1f2937;
-                --agy-dropdown-subtext: #6b7280;
-                --agy-dropdown-hover: #f3f4f6;
-                --agy-dropdown-header: #4b5563;
-                --agy-dropdown-selected: rgba(59, 130, 246, 0.08);
-                --agy-quota-track: #e5e7eb;
-                --agy-btn-action-bg: #f9fafb;
-                --agy-btn-action-border: #d1d5db;
-                --agy-btn-action-hover: #f3f4f6;
-                --agy-btn-action-text: #374151;
-            }
-            html.dark, body.dark, [data-theme="dark"], .dark {
-                --agy-pill-text: #9ca3af;
-                --agy-pill-text-hover: #f3f4f6;
-                --agy-pill-hover-bg: rgba(255, 255, 255, 0.08);
-                --agy-dropdown-bg: #1e1f22;
-                --agy-dropdown-border: rgba(255, 255, 255, 0.12);
-                --agy-dropdown-shadow: 0 12px 30px rgba(0, 0, 0, 0.7);
-                --agy-dropdown-text: #f3f4f6;
-                --agy-dropdown-subtext: #9ca3af;
-                --agy-dropdown-hover: rgba(255, 255, 255, 0.06);
-                --agy-dropdown-header: #9ca3af;
-                --agy-dropdown-selected: rgba(59, 130, 246, 0.18);
-                --agy-quota-track: rgba(255, 255, 255, 0.12);
-                --agy-btn-action-bg: rgba(255, 255, 255, 0.05);
-                --agy-btn-action-border: rgba(255, 255, 255, 0.12);
-                --agy-btn-action-hover: rgba(255, 255, 255, 0.1);
-                --agy-btn-action-text: #e5e7eb;
-            }
-            @media (prefers-color-scheme: dark) {
-                :root:not(.light) {
-                    --agy-pill-text: #9ca3af;
-                    --agy-pill-text-hover: #f3f4f6;
-                    --agy-pill-hover-bg: rgba(255, 255, 255, 0.08);
-                    --agy-dropdown-bg: #1e1f22;
-                    --agy-dropdown-border: rgba(255, 255, 255, 0.12);
-                    --agy-dropdown-shadow: 0 12px 30px rgba(0, 0, 0, 0.7);
-                    --agy-dropdown-text: #f3f4f6;
-                    --agy-dropdown-subtext: #9ca3af;
-                    --agy-dropdown-hover: rgba(255, 255, 255, 0.06);
-                    --agy-dropdown-header: #9ca3af;
-                    --agy-dropdown-selected: rgba(59, 130, 246, 0.18);
-                    --agy-quota-track: rgba(255, 255, 255, 0.12);
-                    --agy-btn-action-bg: rgba(255, 255, 255, 0.05);
-                    --agy-btn-action-border: rgba(255, 255, 255, 0.12);
-                    --agy-btn-action-hover: rgba(255, 255, 255, 0.1);
-                    --agy-btn-action-text: #e5e7eb;
-                }
-            }
-
-            .agy-acc-pill-container {
-                display: inline-flex;
-                align-items: center;
-                position: relative;
-                margin-left: 2px;
-                margin-right: 4px;
-                font-family: inherit;
-                z-index: 9999;
-            }
-            .agy-acc-pill-container.floating {
-                position: fixed;
-                bottom: 20px;
-                right: 24px;
-                z-index: 999999;
-            }
-
-            /* Flat compact button matching model selector seamlessly */
-            .agy-acc-pill-btn {
-                display: inline-flex;
-                align-items: center;
-                gap: 4px;
-                background: transparent;
-                border: none;
-                border-radius: 6px;
-                padding: 3px 6px;
-                color: var(--agy-pill-text);
-                font-size: 12px;
-                font-weight: 500;
-                cursor: pointer;
-                transition: background 0.12s ease, color 0.12s ease;
-                user-select: none;
-                outline: none;
-                height: 26px;
-                box-shadow: none;
-            }
-            .agy-acc-pill-btn:hover {
-                background: var(--agy-pill-hover-bg);
-                color: var(--agy-pill-text-hover);
-            }
-
-            .agy-acc-badge {
-                font-size: 12px;
-                font-weight: 500;
-                max-width: 140px;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                white-space: nowrap;
-                color: inherit;
-            }
-
-            /* Compact Main Dropdown Menu */
-            .agy-acc-dropdown {
-                position: absolute;
-                bottom: calc(100% + 6px);
-                left: 0;
-                width: 270px;
-                background: var(--agy-dropdown-bg);
-                border: 1px solid var(--agy-dropdown-border);
-                border-radius: 8px;
-                box-shadow: var(--agy-dropdown-shadow);
-                padding: 4px 0;
-                display: none;
-                flex-direction: column;
-                z-index: 100000;
-                color: var(--agy-dropdown-text);
-            }
-            .agy-acc-dropdown.open {
-                display: flex;
-            }
-            .agy-acc-header {
-                padding: 6px 12px;
-                font-size: 11px;
-                font-weight: 600;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-                color: var(--agy-dropdown-header);
-                border-bottom: 1px solid var(--agy-dropdown-border);
-            }
-            .agy-acc-list {
-                max-height: 220px;
-                overflow-y: auto;
-            }
-            .agy-acc-item {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                padding: 7px 12px;
-                cursor: pointer;
-                transition: background 0.12s ease;
-                position: relative;
-            }
-            .agy-acc-item:hover {
-                background: var(--agy-dropdown-hover);
-            }
-            .agy-acc-item.selected {
-                background: var(--agy-dropdown-selected);
-            }
-            .agy-acc-item-left {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                min-width: 0;
-                flex: 1;
-            }
-            .agy-acc-avatar-sm {
-                width: 20px;
-                height: 20px;
-                border-radius: 50%;
-                background: linear-gradient(135deg, #4285f4, #34a853);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 10px;
-                font-weight: 700;
-                color: #ffffff;
-                flex-shrink: 0;
-            }
-            .agy-acc-text-col {
-                display: flex;
-                flex-direction: column;
-                min-width: 0;
-            }
-            .agy-acc-email-text {
-                font-size: 12px;
-                font-weight: 500;
-                color: var(--agy-dropdown-text);
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-            }
-            .agy-acc-email-sub {
-                font-size: 10px;
-                color: var(--agy-dropdown-subtext);
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-            }
-
-            .agy-view-usage-link {
-                font-size: 11px;
-                color: #3b82f6;
-                padding: 2px 6px;
-                border-radius: 4px;
-                display: inline-flex;
-                align-items: center;
-                gap: 2px;
-                opacity: 0.85;
-                cursor: pointer;
-                white-space: nowrap;
-                flex-shrink: 0;
-            }
-            .agy-view-usage-link:hover {
-                opacity: 1;
-                background: rgba(59, 130, 246, 0.1);
-            }
-
-            /* "View Usage" Sub-Menu Flyout (Native Antigravity Usage Style, Unclipped) */
-            .agy-usage-flyout {
-                position: absolute;
-                left: calc(100% + 8px);
-                top: 0;
-                width: 320px;
-                background: var(--agy-dropdown-bg);
-                border: 1px solid var(--agy-dropdown-border);
-                border-radius: 8px;
-                box-shadow: var(--agy-dropdown-shadow);
-                padding: 12px 14px;
-                display: none;
-                flex-direction: column;
-                gap: 10px;
-                z-index: 100005;
-                color: var(--agy-dropdown-text);
-                pointer-events: auto;
-            }
-            .agy-usage-flyout.visible {
-                display: flex;
-            }
-
-            .agy-usage-flyout-header {
-                display: flex;
-                justify-content: space-between;
-                align-items: flex-start;
-                border-bottom: 1px solid var(--agy-dropdown-border);
-                padding-bottom: 8px;
-            }
-            .agy-usage-title {
-                font-size: 13px;
-                font-weight: 600;
-                color: var(--agy-dropdown-text);
-            }
-            .agy-usage-email-sub {
-                font-size: 11px;
-                color: var(--agy-dropdown-subtext);
-            }
-            .agy-tier-badge {
-                font-size: 10px;
-                font-weight: 600;
-                padding: 2px 6px;
-                border-radius: 4px;
-                background: rgba(59, 130, 246, 0.12);
-                color: #3b82f6;
-                white-space: nowrap;
-            }
-
-            .agy-usage-group {
-                display: flex;
-                flex-direction: column;
-                gap: 6px;
-            }
-            .agy-group-title {
-                font-size: 11px;
-                font-weight: 600;
-                color: var(--agy-dropdown-header);
-                text-transform: uppercase;
-                letter-spacing: 0.4px;
-            }
-            .agy-bucket-box {
-                display: flex;
-                flex-direction: column;
-                gap: 3px;
-            }
-            .agy-bucket-meta {
-                display: flex;
-                justify-content: space-between;
-                font-size: 11px;
-                color: var(--agy-dropdown-text);
-            }
-            .agy-bucket-bar-track {
-                width: 100%;
-                height: 4px;
-                background: var(--agy-quota-track);
-                border-radius: 2px;
-                overflow: hidden;
-            }
-            .agy-bucket-bar-fill {
-                height: 100%;
-                border-radius: 2px;
-                transition: width 0.3s ease;
-            }
-            .agy-bucket-reset {
-                font-size: 10px;
-                color: var(--agy-dropdown-subtext);
-            }
-
-            .agy-usage-alert {
-                padding: 8px 10px;
-                border-radius: 6px;
-                font-size: 11px;
-                line-height: 1.4;
-            }
-            .agy-usage-alert.alert-warning {
-                background: rgba(245, 158, 11, 0.1);
-                border: 1px solid rgba(245, 158, 11, 0.25);
-                color: #d97706;
-            }
-            .agy-usage-alert.alert-error {
-                background: rgba(239, 68, 68, 0.1);
-                border: 1px solid rgba(239, 68, 68, 0.25);
-                color: #dc2626;
-            }
-
-            .agy-usage-note {
-                font-size: 10px;
-                color: var(--agy-dropdown-subtext);
-                border-top: 1px solid var(--agy-dropdown-border);
-                padding-top: 6px;
-                line-height: 1.3;
-            }
-
-            .agy-acc-footer {
-                padding: 6px 10px;
-                border-top: 1px solid var(--agy-dropdown-border);
-                display: flex;
-                gap: 6px;
-            }
-            .agy-acc-btn-action {
-                flex: 1;
-                padding: 4px 8px;
-                background: var(--agy-btn-action-bg);
-                border: 1px solid var(--agy-btn-action-border);
-                border-radius: 6px;
-                color: var(--agy-btn-action-text);
-                font-size: 11px;
-                font-weight: 500;
-                cursor: pointer;
-                text-align: center;
-            }
-            .agy-acc-btn-action:hover {
-                background: var(--agy-btn-action-hover);
-            }
-
-            .agy-toast {
-                position: fixed;
-                bottom: 68px;
-                right: 24px;
-                background: rgba(24, 24, 27, 0.92);
-                color: #ffffff;
-                font-size: 12px;
-                padding: 6px 14px;
-                border-radius: 6px;
-                border: 1px solid rgba(255, 255, 255, 0.15);
-                box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
-                z-index: 9999999;
-                pointer-events: none;
-                transition: opacity 0.25s ease;
-            }
-        `;
-        document.head.appendChild(styleEl);
-    }
-
-    function showToast(msg) {
+    function toast(msg) {
         let t = document.getElementById('antigravity-account-toast');
-        if (!t) {
+        if (!t && document.body) {
             t = document.createElement('div');
-            t.id = 'antigravity-account-toast';
-            t.className = 'agy-toast';
-            document.body.appendChild(t);
+            t.id = 'antigravity-account-toast'; t.className = 'agy-toast'; document.body.appendChild(t);
         }
-        t.textContent = msg;
-        t.style.opacity = '1';
-        setTimeout(() => { if (t) t.style.opacity = '0'; }, 2400);
-    }
-
-    function detectCurrentCascadeId() {
-        // 1. Hash or path UUID
-        const hashMatch = window.location.hash.match(/[a-f0-9-]{16,}/i);
-        if (hashMatch) return hashMatch[0];
-        const pathMatch = window.location.pathname.match(/[a-f0-9-]{16,}/i);
-        if (pathMatch) return pathMatch[0];
-
-        // 2. DOM dataset attributes
-        const dataEl = document.querySelector('[data-cascade-id], [data-conversation-id], [data-session-id], [data-chat-id]');
-        if (dataEl) {
-            const id = dataEl.getAttribute('data-cascade-id') ||
-                       dataEl.getAttribute('data-conversation-id') ||
-                       dataEl.getAttribute('data-session-id') ||
-                       dataEl.getAttribute('data-chat-id');
-            if (id) return id;
-        }
-
-        // 3. Active conversation item in sidebar
-        const activeItem = document.querySelector('[class*="conversation"][class*="active"], [class*="cascade"][class*="active"], [class*="chat"][class*="selected"], [aria-selected="true"]');
-        if (activeItem) {
-            const match = (activeItem.id + ' ' + activeItem.className + ' ' + (activeItem.getAttribute('data-id') || '')).match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i);
-            if (match) return match[0];
-            const titleEl = activeItem.querySelector('[class*="title"], span');
-            if (titleEl && titleEl.textContent) return 'chat-' + titleEl.textContent.trim().slice(0, 30);
-        }
-
-        return 'default';
+        if (t) { t.textContent = msg; t.style.opacity = '1'; setTimeout(() => t.style.opacity = '0', 2200); }
     }
 
     async function fetchState() {
         if (window.antigravityMultiAccount?.getState) {
-            try {
-                cachedState = await window.antigravityMultiAccount.getState();
-                scheduleRender();
-            } catch (err) {
-                console.error('[MultiAccountUI] State fetch error:', err);
+            try { state = await window.antigravityMultiAccount.getState(); render(); } catch (_) {}
+        }
+    }
+    function getActive() {
+        const e = state.bindings?.[cascadeId] || state.active_default || state.bindings?.__active_account;
+        return state.accounts?.find(a => a.email && a.email.toLowerCase() === e?.toLowerCase()) || state.accounts?.[0] || { email: 'Account' };
+    }
+
+    function render() {
+        try {
+            cascadeId = window.__antigravityDetectCascadeId ? window.__antigravityDetectCascadeId() : 'default';
+            const targetInfo = window.__antigravityFindTarget ? window.__antigravityFindTarget() : null;
+            if (!targetInfo?.target) return;
+            const { target, insertAfter, floating } = targetInfo, active = getActive();
+            let pill = document.getElementById('antigravity-account-pill');
+            if (!pill || pill.parentElement !== target) {
+                if (pill) pill.remove();
+                pill = document.createElement('div');
+                pill.id = 'antigravity-account-pill';
+                if (insertAfter?.nextSibling && insertAfter.parentElement === target) target.insertBefore(pill, insertAfter.nextSibling);
+                else target.appendChild(pill);
             }
-        }
-    }
+            pill.className = 'agy-acc-pill-container' + (floating ? ' floating' : '');
+            const handle = active.email ? active.email.split('@')[0] : 'Account';
+            const ddOld = pill.querySelector('#agy-acc-dd');
+            if (ddOld?.classList.contains('open') && pill.dataset.email === active.email) return;
+            pill.dataset.email = active.email;
 
-    function getActiveAccount() {
-        const email = cachedState.bindings?.[currentCascadeId] || cachedState.active_default || cachedState.bindings?.__active_account;
-        if (email && cachedState.accounts) {
-            const found = cachedState.accounts.find(a => a.email && a.email.toLowerCase() === email.toLowerCase());
-            if (found) return found;
-        }
-        return (cachedState.accounts && cachedState.accounts[0]) || { email: 'Default Account', quotas: [] };
-    }
+            pill.innerHTML = `<button class="agy-acc-pill-btn" type="button" id="agy-acc-btn" title="${active.email}"><span class="agy-acc-badge">${handle}</span><span style="font-size:8px;opacity:0.6;margin-left:1px;">▼</span></button><div class="agy-acc-dropdown" id="agy-acc-dd"><div class="agy-acc-header">Google Accounts</div><div class="agy-acc-list">${(state.accounts || []).map(a => `<div class="agy-acc-item ${a.email?.toLowerCase() === active.email?.toLowerCase() ? 'selected' : ''}" data-email="${a.email}"><div class="agy-acc-item-left"><div class="agy-acc-avatar-sm">${(a.email || 'G')[0].toUpperCase()}</div><div class="agy-acc-text-col"><span class="agy-acc-email-text">${a.email.split('@')[0]}</span><span class="agy-acc-email-sub">${a.email}</span></div>${a.email?.toLowerCase() === active.email?.toLowerCase() ? '<span style="color:#3b82f6;font-size:11px;font-weight:bold;">✓</span>' : ''}</div><span class="agy-view-usage-link" data-email="${a.email}">View usage ›</span></div>`).join('')}</div><div class="agy-acc-footer"><button class="agy-acc-btn-action" id="agy-acc-add">+ Add Account</button><button class="agy-acc-btn-action" id="agy-acc-ref">Refresh Limits</button></div><div class="agy-usage-flyout" id="agy-flyout"></div></div>`;
 
-    function isVisible(el) {
-        if (!el || !document.body.contains(el)) return false;
-        const style = window.getComputedStyle(el);
-        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-        const rect = el.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0;
-    }
-
-    function findAttachmentTarget() {
-        // Priority 1: Sibling of visible model selector button
-        const buttons = Array.from(document.querySelectorAll('button')).filter(isVisible);
-        for (const btn of buttons) {
-            const txt = (btn.textContent || '').trim();
-            if (
-                txt.includes('Flash') || txt.includes('Pro') || txt.includes('Claude') ||
-                txt.includes('Gemini') || txt.includes('Sonnet') || txt.includes('GPT') ||
-                txt.includes('Auto') || txt.includes('DeepSeek') || txt.includes('Thinking') ||
-                btn.getAttribute('data-testid') === 'model-selector'
-            ) {
-                if (btn.parentElement && isVisible(btn.parentElement)) {
-                    return { target: btn.parentElement, floating: false, insertAfter: btn };
-                }
-            }
-        }
-
-        // Priority 2: Inside active visible prompt bar footer
-        const inputs = Array.from(document.querySelectorAll('textarea, [contenteditable="true"], [role="textbox"]')).filter(isVisible);
-        for (const inp of inputs) {
-            const box = inp.closest('form, div[class*="prompt"], div[class*="input"], div[class*="cascade"]') || inp.parentElement;
-            if (box) {
-                const footer = box.querySelector('div[class*="footer"], div[class*="items-center"][class*="min-w-0"], div[class*="flex-1"]');
-                if (footer && isVisible(footer)) return { target: footer, floating: false };
-            }
-        }
-
-        // Priority 3: Any visible input-footer
-        const footers = Array.from(document.querySelectorAll('div[class*="input-footer"]')).filter(isVisible);
-        for (const footer of footers) {
-            const group = footer.querySelector('div[class*="items-center"][class*="min-w-0"]') ||
-                          footer.querySelector('div[class*="flex-1"]') ||
-                          footer;
-            if (group && isVisible(group)) return { target: group, floating: false };
-        }
-
-        return { target: document.body, floating: true };
-    }
-
-    function scheduleRender() {
-        if (isRenderScheduled) return;
-        isRenderScheduled = true;
-        requestAnimationFrame(() => {
-            isRenderScheduled = false;
-            renderPill();
-        });
-    }
-
-    function getBarColor(pct) {
-        if (pct >= 50) return '#34a853';
-        if (pct >= 20) return '#fbbc04';
-        return '#ea4335';
-    }
-
-    function buildUsageFlyoutContent(acc) {
-        if (!acc) return '<div style="padding:10px;font-size:12px;">No account selected</div>';
-        const tier = acc.tier || 'TEAMS_TIER_PRO';
-        const email = acc.email || 'Account';
-        let contentHtml = '';
-
-        if (acc.license_status === 'no_license') {
-            contentHtml = `
-                <div class="agy-usage-alert alert-warning">
-                    <div style="font-weight:600;margin-bottom:2px;">Subscription Required</div>
-                    <div>This account does not have an active Gemini Code Assist license.</div>
-                </div>
-            `;
-        } else if (acc.license_status === 'exhausted') {
-            contentHtml = `
-                <div class="agy-usage-alert alert-error">
-                    <div style="font-weight:600;margin-bottom:2px;">Resource Exhausted</div>
-                    <div>Hourly or weekly limits have been reached for this account.</div>
-                </div>
-            `;
-        } else if (acc.quotas && acc.quotas.length > 0) {
-            const gWeekly = acc.quotas.find(q => q.family === 'gemini' && q.window === 'weekly') || { percent: 100 };
-            const g5h = acc.quotas.find(q => q.family === 'gemini' && q.window === '5h') || { percent: 100 };
-            const cWeekly = acc.quotas.find(q => q.family === 'claude' && q.window === 'weekly') || { percent: 100 };
-            const c5h = acc.quotas.find(q => q.family === 'claude' && q.window === '5h') || { percent: 100 };
-
-            contentHtml = `
-                <div class="agy-usage-group">
-                    <div class="agy-group-title">Gemini Models</div>
-                    <div class="agy-bucket-box">
-                        <div class="agy-bucket-meta">
-                            <span>Weekly Limit Remaining</span>
-                            <span style="font-weight:600;color:${getBarColor(gWeekly.percent)}">${gWeekly.percent}%</span>
-                        </div>
-                        <div class="agy-bucket-bar-track">
-                            <div class="agy-bucket-bar-fill" style="width:${gWeekly.percent}%;background:${getBarColor(gWeekly.percent)}"></div>
-                        </div>
-                        ${gWeekly.description ? `<div class="agy-bucket-reset">${gWeekly.description}</div>` : ''}
-                    </div>
-                    <div class="agy-bucket-box" style="margin-top:4px;">
-                        <div class="agy-bucket-meta">
-                            <span>Five Hour Limit Remaining</span>
-                            <span style="font-weight:600;color:${getBarColor(g5h.percent)}">${g5h.percent}%</span>
-                        </div>
-                        <div class="agy-bucket-bar-track">
-                            <div class="agy-bucket-bar-fill" style="width:${g5h.percent}%;background:${getBarColor(g5h.percent)}"></div>
-                        </div>
-                    </div>
-                </div>
-                <div class="agy-usage-group" style="margin-top:6px;">
-                    <div class="agy-group-title">Claude and GPT models</div>
-                    <div class="agy-bucket-box">
-                        <div class="agy-bucket-meta">
-                            <span>Weekly Limit Remaining</span>
-                            <span style="font-weight:600;color:${getBarColor(cWeekly.percent)}">${cWeekly.percent}%</span>
-                        </div>
-                        <div class="agy-bucket-bar-track">
-                            <div class="agy-bucket-bar-fill" style="width:${cWeekly.percent}%;background:${getBarColor(cWeekly.percent)}"></div>
-                        </div>
-                    </div>
-                    <div class="agy-bucket-box" style="margin-top:4px;">
-                        <div class="agy-bucket-meta">
-                            <span>Five Hour Limit Remaining</span>
-                            <span style="font-weight:600;color:${getBarColor(c5h.percent)}">${c5h.percent}%</span>
-                        </div>
-                        <div class="agy-bucket-bar-track">
-                            <div class="agy-bucket-bar-fill" style="width:${c5h.percent}%;background:${getBarColor(c5h.percent)}"></div>
-                        </div>
-                    </div>
-                </div>
-                <div class="agy-usage-note">
-                    Within each group, models share a weekly limit and a 5-hour limit.
-                </div>
-            `;
-        } else {
-            contentHtml = `
-                <div style="font-size:11px;color:var(--agy-dropdown-subtext);padding:8px 0;">
-                    Loading live usage limits...
-                </div>
-            `;
-        }
-
-        return `
-            <div class="agy-usage-flyout-header">
-                <div>
-                    <div class="agy-usage-title">Usage limits</div>
-                    <div class="agy-usage-email-sub">${email}</div>
-                </div>
-                <span class="agy-tier-badge">${tier.split(' ')[0]}</span>
-            </div>
-            ${contentHtml}
-        `;
-    }
-
-    function renderPill() {
-        currentCascadeId = detectCurrentCascadeId();
-        const active = getActiveAccount();
-        const { target, floating, insertAfter } = findAttachmentTarget();
-        if (!target) return;
-
-        let pillContainer = document.getElementById('antigravity-account-pill');
-        if (!pillContainer || !document.body.contains(pillContainer) || pillContainer.parentElement !== target) {
-            if (pillContainer && pillContainer.parentElement) {
-                pillContainer.remove();
-            }
-            pillContainer = document.createElement('div');
-            pillContainer.id = 'antigravity-account-pill';
-            if (insertAfter && insertAfter.nextSibling) {
-                target.insertBefore(pillContainer, insertAfter.nextSibling);
-            } else {
-                target.appendChild(pillContainer);
-            }
-            pillContainer.__renderKey = null;
-        }
-
-        const handle = active.email ? active.email.split('@')[0] : 'Account';
-        const renderKey = `${active.email}|${currentCascadeId}|${(cachedState.accounts || []).length}|${floating}`;
-        if (pillContainer.__renderKey === renderKey) {
-            return;
-        }
-        pillContainer.__renderKey = renderKey;
-
-        pillContainer.className = 'agy-acc-pill-container' + (floating ? ' floating' : '');
-
-        // Flat button: handle + small chevron only (matches model selector, no bulky badges or avatar circles)
-        pillContainer.innerHTML = `
-            <button class="agy-acc-pill-btn" type="button" id="agy-acc-toggle-btn" title="Account: ${active.email}">
-                <span class="agy-acc-badge">${handle}</span>
-                <span style="font-size:8px;opacity:0.6;margin-left:1px;">▼</span>
-            </button>
-            <div class="agy-acc-dropdown" id="agy-acc-dropdown">
-                <div class="agy-acc-header">Google Accounts</div>
-                <div class="agy-acc-list">
-                    ${(cachedState.accounts || []).map(acc => {
-                        const isSel = acc.email && acc.email.toLowerCase() === active.email.toLowerCase();
-                        const accInitial = (acc.name || acc.email || 'G')[0].toUpperCase();
-                        const accHandle = acc.email ? acc.email.split('@')[0] : 'Account';
-                        return `
-                            <div class="agy-acc-item ${isSel ? 'selected' : ''}" data-email="${acc.email}">
-                                <div class="agy-acc-item-left">
-                                    <div class="agy-acc-avatar-sm">${accInitial}</div>
-                                    <div class="agy-acc-text-col">
-                                        <span class="agy-acc-email-text">${accHandle}</span>
-                                        <span class="agy-acc-email-sub">${acc.email}</span>
-                                    </div>
-                                    ${isSel ? '<span style="color:#3b82f6;font-size:11px;font-weight:bold;margin-left:2px;">✓</span>' : ''}
-                                </div>
-                                <span class="agy-view-usage-link" data-email="${acc.email}">View usage ›</span>
-                            </div>
-                        `;
-                    }).join('')}
-                </div>
-                <div class="agy-acc-footer">
-                    <button class="agy-acc-btn-action" id="agy-acc-add-btn">+ Add Account</button>
-                    <button class="agy-acc-btn-action" id="agy-acc-refresh-btn">Refresh Limits</button>
-                </div>
-                <div class="agy-usage-flyout" id="agy-active-flyout"></div>
-            </div>
-        `;
-
-        // Toggle dropdown
-        const btn = document.getElementById('agy-acc-toggle-btn');
-        const dropdown = document.getElementById('agy-acc-dropdown');
-        const flyout = document.getElementById('agy-active-flyout');
-        if (btn && dropdown) {
-            btn.onclick = (e) => {
+            const btn = document.getElementById('agy-acc-btn'), dd = document.getElementById('agy-acc-dd'), fly = document.getElementById('agy-flyout');
+            if (btn && dd) btn.onclick = (e) => {
                 e.stopPropagation();
-                dropdown.classList.toggle('open');
-                if (!dropdown.classList.contains('open') && flyout) {
-                    flyout.classList.remove('visible');
-                }
+                if (dd.classList.toggle('open')) {
+                    const top = pill.getBoundingClientRect().top;
+                    dd.classList.toggle('downward', top < 260); dd.classList.toggle('upward', top >= 260);
+                } else fly?.classList.remove('visible');
             };
-        }
 
-        // Flyout hover / click management
-        let hideFlyoutTimer = null;
-
-        function showFlyout(acc, triggerEl) {
-            if (!flyout) return;
-            if (hideFlyoutTimer) {
-                clearTimeout(hideFlyoutTimer);
-                hideFlyoutTimer = null;
-            }
-            flyout.innerHTML = buildUsageFlyoutContent(acc);
-            flyout.classList.add('visible');
-
-            if (dropdown && triggerEl) {
-                const ddRect = dropdown.getBoundingClientRect();
-                const trRect = triggerEl.getBoundingClientRect();
-                const topOffset = Math.max(0, trRect.top - ddRect.top - 20);
-                flyout.style.top = `${topOffset}px`;
-
-                if (ddRect.right + 340 > window.innerWidth) {
-                    flyout.style.left = 'auto';
-                    flyout.style.right = 'calc(100% + 8px)';
-                } else {
-                    flyout.style.left = 'calc(100% + 8px)';
-                    flyout.style.right = 'auto';
-                }
-            }
-        }
-
-        function scheduleHideFlyout() {
-            if (hideFlyoutTimer) clearTimeout(hideFlyoutTimer);
-            hideFlyoutTimer = setTimeout(() => {
-                if (flyout) flyout.classList.remove('visible');
-            }, 250);
-        }
-
-        if (flyout) {
-            flyout.addEventListener('mouseenter', () => {
-                if (hideFlyoutTimer) {
-                    clearTimeout(hideFlyoutTimer);
-                    hideFlyoutTimer = null;
-                }
-            });
-            flyout.addEventListener('mouseleave', () => {
-                scheduleHideFlyout();
-            });
-        }
-
-        // Account items event listeners
-        pillContainer.querySelectorAll('.agy-acc-item').forEach(item => {
-            const email = item.getAttribute('data-email');
-            const acc = (cachedState.accounts || []).find(a => a.email && a.email.toLowerCase() === email.toLowerCase());
-
-            item.addEventListener('mouseenter', () => {
-                if (acc) showFlyout(acc, item);
-            });
-            item.addEventListener('mouseleave', () => {
-                scheduleHideFlyout();
-            });
-
-            const link = item.querySelector('.agy-view-usage-link');
-            if (link) {
-                link.onclick = (e) => {
+            let hTimer = null;
+            pill.querySelectorAll('.agy-acc-item').forEach(item => {
+                const em = item.getAttribute('data-email'), acc = state.accounts?.find(a => a.email === em);
+                item.onmouseenter = () => { if (hTimer) clearTimeout(hTimer); window.__antigravityShowFlyout?.(fly, acc, dd, item); };
+                item.onmouseleave = () => { hTimer = setTimeout(() => fly?.classList.remove('visible'), 250); };
+                item.querySelector('.agy-view-usage-link')?.addEventListener('click', (e) => { e.stopPropagation(); window.__antigravityShowFlyout?.(fly, acc, dd, item); });
+                item.onclick = async (e) => {
+                    if (e.target.closest('.agy-view-usage-link') || e.target.closest('.agy-usage-flyout')) return;
                     e.stopPropagation();
-                    if (acc) showFlyout(acc, item);
+                    if (em && window.antigravityMultiAccount) {
+                        await window.antigravityMultiAccount.bindCascade?.(cascadeId, em);
+                        await window.antigravityMultiAccount.setActiveAccount?.(em);
+                        if (!state.bindings) state.bindings = {};
+                        state.bindings[cascadeId] = em; state.active_default = em;
+                        render(); toast(`✓ Switched chat to ${em.split('@')[0]}`);
+                    }
+                    dd.classList.remove('open'); fly?.classList.remove('visible');
                 };
+            });
+            if (fly) {
+                fly.onmouseenter = () => { if (hTimer) clearTimeout(hTimer); };
+                fly.onmouseleave = () => { hTimer = setTimeout(() => fly?.classList.remove('visible'), 250); };
             }
-
-            item.onclick = async (e) => {
-                if (e.target.closest('.agy-view-usage-link') || e.target.closest('.agy-usage-flyout')) {
-                    return;
-                }
-                e.stopPropagation();
-                if (email) {
-                    if (window.antigravityMultiAccount?.bindCascade) {
-                        await window.antigravityMultiAccount.bindCascade(currentCascadeId, email);
-                    }
-                    if (window.antigravityMultiAccount?.setActiveAccount) {
-                        await window.antigravityMultiAccount.setActiveAccount(email);
-                    }
-                    if (!cachedState.bindings) cachedState.bindings = {};
-                    cachedState.bindings[currentCascadeId] = email;
-                    cachedState.active_default = email;
-                    pillContainer.__renderKey = null;
-                    scheduleRender();
-                    showToast(`✓ Switched chat to ${email.split('@')[0]}`);
-                }
-                dropdown.classList.remove('open');
-                if (flyout) flyout.classList.remove('visible');
-            };
-        });
-
-        // Add Account
-        const addBtn = document.getElementById('agy-acc-add-btn');
-        if (addBtn) {
-            addBtn.onclick = async (e) => {
-                e.stopPropagation();
-                if (window.antigravityMultiAccount?.startLogin) {
-                    await window.antigravityMultiAccount.startLogin();
-                    await fetchState();
-                }
-            };
-        }
-
-        // Refresh
-        const refBtn = document.getElementById('agy-acc-refresh-btn');
-        if (refBtn) {
-            refBtn.onclick = async (e) => {
-                e.stopPropagation();
-                await fetchState();
-                showToast('Usage limits refreshed');
-            };
-        }
+            document.getElementById('agy-acc-add')?.addEventListener('click', async (e) => { e.stopPropagation(); await window.antigravityMultiAccount?.startLogin?.(); await fetchState(); });
+            document.getElementById('agy-acc-ref')?.addEventListener('click', async (e) => { e.stopPropagation(); await fetchState(); toast('Usage limits refreshed'); });
+        } catch (_) {}
     }
-
-    // Close on outside click
+    function scheduleRender() { if (!rTimer) rTimer = setTimeout(() => { rTimer = null; render(); }, 150); }
     document.addEventListener('click', (e) => {
-        const dd = document.getElementById('agy-acc-dropdown');
-        const fly = document.getElementById('agy-active-flyout');
-        const pill = document.getElementById('antigravity-account-pill');
-        if (dd && pill && !pill.contains(e.target)) {
-            dd.classList.remove('open');
-            if (fly) fly.classList.remove('visible');
-        }
+        const dd = document.getElementById('agy-acc-dd'), pill = document.getElementById('antigravity-account-pill');
+        if (dd && pill && !pill.contains(e.target)) { dd.classList.remove('open'); document.getElementById('agy-flyout')?.classList.remove('visible'); }
     });
-
-    // Watchdog: ensures selector is attached, visible, and updated across chat transitions
     setInterval(() => {
-        const pill = document.getElementById('antigravity-account-pill');
-        const { target } = findAttachmentTarget();
-        if (!pill || !document.body.contains(pill) || (target && pill.parentElement !== target) || !isVisible(pill)) {
-            scheduleRender();
-        }
-    }, 400);
-
-    window.addEventListener('popstate', scheduleRender);
-    window.addEventListener('hashchange', scheduleRender);
-
-    // Debounced mutation observer
-    let debounceTimer = null;
-    const observer = new MutationObserver((mutations) => {
-        let shouldCheck = false;
-        for (const m of mutations) {
-            if (m.target && m.target.closest && m.target.closest('#antigravity-account-pill')) {
-                continue;
-            }
-            if (m.type === 'childList') {
-                shouldCheck = true;
-                break;
-            }
-        }
-        if (shouldCheck) {
-            if (debounceTimer) clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(() => {
-                scheduleRender();
-            }, 120);
-        }
-    });
-
-    observer.observe(document.body, { childList: true, subtree: true });
-
-    fetchState();
-    setInterval(fetchState, 30000);
+        const pill = document.getElementById('antigravity-account-pill'), tInfo = window.__antigravityFindTarget?.();
+        if (!pill || !document.body?.contains(pill) || (tInfo?.target && pill.parentElement !== tInfo.target)) scheduleRender();
+    }, 450);
+    window.addEventListener('popstate', scheduleRender); window.addEventListener('hashchange', scheduleRender);
+    if (document.documentElement) new MutationObserver((muts) => {
+        for (const m of muts) { if (!m.target.closest || !m.target.closest('#antigravity-account-pill')) { scheduleRender(); break; } }
+    }).observe(document.documentElement, { childList: true, subtree: true });
+    fetchState(); setInterval(fetchState, 30000);
 })();
