@@ -57,7 +57,6 @@ def synthesize_db_from_transcript(
             pending_tool_calls: List[Dict[str, Any]] = []
             steps_rows: List[Tuple[int, int, int, bytes, bytes]] = []
             out_idx = 0
-            base_meta = build_step_meta(conv_id)
 
             with open(tf_str, "r", encoding="utf-8", errors="ignore") as f:
                 for line in f:
@@ -73,14 +72,15 @@ def synthesize_db_from_transcript(
                     step_type, status = classified
                     content, thinking = entry.get("content", ""), entry.get("thinking", "")
                     tool_calls = entry.get("tool_calls", [])
+                    step_meta = build_step_meta(conv_id, entry.get("created_at"))
 
                     if step_type == 14:
                         pending_tool_calls.clear()
-                        meta, payload = bytes(base_meta), build_step14_payload(base_meta, status, content)
+                        meta, payload = bytes(step_meta), build_step14_payload(step_meta, status, content)
                     elif step_type == 15:
-                        meta, payload = bytes(base_meta), build_step15_payload(base_meta, status, content, thinking, tool_calls, out_idx, pending_tool_calls)
+                        meta, payload = bytes(step_meta), build_step15_payload(step_meta, status, content, thinking, tool_calls, out_idx, pending_tool_calls)
                     else:
-                        meta, payload = build_step132_payload(base_meta, status, content, str(entry.get("type", "")), out_idx, pending_tool_calls)
+                        meta, payload = build_step132_payload(step_meta, status, content, str(entry.get("type", "")), out_idx, pending_tool_calls)
 
                     steps_rows.append((out_idx, step_type, status, meta, payload))
                     out_idx += 1

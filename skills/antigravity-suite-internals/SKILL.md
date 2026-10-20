@@ -397,8 +397,12 @@ The top-level conversation summary message persisted inside SQLite `conversation
 | **20** | `source` | Varint | `CortexTrajectorySource` | Creation client source enum (1=USER, 2=IDE, etc.) |
 
 > [!CRITICAL]
-> **The Protobuf Tag 20 Gate (Empty Sidebar / 0 Chats Rendered)**:
-> In `CascadeTrajectorySummary` (`cascade.py`), Tag 20 encodes the client source enum (`1 = CASCADE_CLIENT` / IDE). If Tag 20 is emitted with value 1 in `agyhub_summaries_proto.pb` or `conversation_summaries.raw_summary`, the Antigravity Hub Desktop App classifies the session as foreign IDE-owned and applies its frontend double-elimination filter, hiding the conversation completely (`0 chats rendered`, sidebar shows empty folders). When serializing summaries for the Hub Desktop App or master pool, Tag 20 must NOT be emitted (`source == 0` or omit Tag 20 entirely).
+> **The Reverse-Engineered Protobuf Wire Gates (Sidebar & Visibility Rules)**:
+> - **Tag 20 Gate (`source`)**: In `CascadeTrajectorySummary`, Tag 20 encodes the client source enum (`0=UNSPECIFIED`, `1=JETBOX`). If Tag 20 is emitted with non-zero or foreign values, the Desktop App frontend check `Ena(source) === false` shunts the conversation to `externalSummaries`, completely hiding it from the main sidebar (`0 chats rendered`). Must NOT emit Tag 20 when `source == 0` (or omit entirely).
+> - **Tag 22 Gate (`trajectory_type`)**: Must strictly be set to `4` (`CASCADE`). Setting `8` or other types triggers frontend `mm()` filter which excludes the conversation from `topLevel` sidebar navigation.
+> - **Tag 15 -> Tag 1 Gate (`title` Precedence)**: Frontend function `gC(a)` evaluates titles with strict priority: `annotations.title` (Tag 15 -> Tag 1) takes precedence over root `summary` (Tag 1). If `annotations.title` is populated, changing root `summary` alone has zero visual effect in the UI sidebar.
+> - **Tag 15 -> Tag 7 Gate (`last_user_view_time` & Unread Badge)**: Desktop App function `pT(summary)` compares `lastModifiedTime.seconds > lastUserViewTime.seconds`. An unread dot/badge is rendered whenever `lastModifiedTime` is newer than `lastUserViewTime`. Opening a chat fires an internal RPC updating `lastUserViewTime` in `annotations.pbtxt`.
+> - **Tag 17 -> Tag 5/6 Gate (`parent_conversation_id` & Subagent Tree)**: In `CortexTrajectoryMetadata`, if Tag 5 (`parent_conversation_id`) is populated, frontend function `tY()` classifies the conversation as a child/subagent trajectory and suppresses it from the top-level chat drawer, nesting it strictly under the parent tree.
 
 | **21** | `not_fully_idle` | Varint | `bool` | In-flight execution sentinel flag |
 | **22** | `trajectory_type` | Varint | `CortexTrajectoryType` | Trajectory type enum (4=CHAT) |
@@ -461,6 +465,83 @@ Defines all user-facing state flags, titles, and categorization:
 | **21** | `replacements` | Length-Delimited | `repeated StringReplacement` | Context placeholder replacements |
 | **22** | `battle_mode_metadata` | Length-Delimited | `BattleModeMetadata` | Multi-model arena metadata |
 | **23** | `remote_control_details` | Length-Delimited | `RemoteControlDetails` | Remote headless control session state |
+
+#### 7.5 The Year 1 AD ("2027y") Date Collapse & Go `time.Time{}` Zero-Value Mechanics
+
+##### 1. Symptoms & Visual Manifestation
+In the Antigravity Hub Desktop App and IDE sidebar, conversation cards suddenly display ancient relative dates such as `"2027y"` or `"2025y"` instead of human dates (e.g. `"2 hours ago"`, `"Oct 14"`). This anomaly frequently manifests on pinned chats or after clicking on a reconstructed conversation.
+
+##### 2. The Frontend Formatting Mechanism
+In Electron frontend bundle `jetski_main.js:3630264`:
+```javascript
+function iO(date) {
+    return formatDistanceToNow(date, { addSuffix: false });
+}
+```
+`formatDistanceToNow` computes the difference between current year (2026) and Year 1 AD (`0001-01-01T00:00:00Z`). The resulting duration is ~2025-2027 years, which date-fns formats and truncates to `"2027y"`.
+
+##### 3. Go Runtime `time.Time{}` Zero-Value Wire Encoding
+In the Go language server (`language_server`), uninitialized timestamps default to the Go zero-value:
+`time.Time{} = 0001-01-01 00:00:00 UTC = -62,135,596,800 seconds from Unix epoch`
+
+When Go's `google.protobuf.Timestamp` proto3 library encodes this value into a varint:
+`-62,135,596,800 = 18446744011573954816 (mod 2^64) = 0xfffffff1886e0900`
+Serialized protobuf wire bytes:
+```hex
+08 80 92 b8 c3 98 fe ff ff ff 01
+```
+Whenever this sequence appears in Protobuf Tag 3 (`last_modified_time`) or Tag 10 (`last_user_input_time`), the frontend parses Year 1 AD.
+
+##### 4. Language Server `recomputeAndStore` Trigger
+The Go Language Server maintains an in-memory summaries cache (`jetbox_summaries_store.(*Store).summaries`).
+When any of the following events occur:
+1. User clicks or views a conversation in the UI (firing `UpdateAnnotations`).
+2. An inotify file event detects a change to `conversations/<uuid>.db`.
+3. The store initiates startup reconciliation.
+
+The language server executes `Store.recomputeAndStore`, which opens `conversations/<uuid>.db` and scans `steps.metadata` to extract the most recent step timestamps (`CortexStepMetadata`).
+
+##### 5. Root Cause: Missing Step Metadata Timestamps
+In earlier database synthesizers, `steps.metadata` was constructed with only `conv_id` and routing metadata:
+```python
+meta += encode_tag_bytes(12, conv_id.encode("utf-8"))
+meta += encode_tag_bytes(20, sub)
+# Missing: Step timestamps Tag 1, Tag 6, Tag 7, Tag 8, Tag 32!
+```
+When `recomputeAndStore` found no timestamp tags in `steps.metadata`, the Go struct field `LastModifiedTime` remained `time.Time{}` (`0001-01-01T00:00:00Z`). The language server stored this zeroed struct into memory and broadcast it over ConnectRPC `JetboxSubscribeToSummaries`, wiping the authentic date in the running UI.
+
+##### 6. The Step Metadata Timestamp Specification (`CortexStepMetadata`)
+Every step written to `steps.metadata` must encode authentic timestamps:
+- **Tag 1 (`created_at`)**: Step creation timestamp (`google.protobuf.Timestamp`).
+- **Tag 6 (`finished_generating_at`)**: Generation finish timestamp.
+- **Tag 7 (`started_at`)**: Step execution start timestamp.
+- **Tag 8 (`completed_at`)**: Step execution completion timestamp.
+- **Tag 32 (`last_completed_chunk_at`)**: Streaming chunk completion timestamp.
+
+##### 7. Live In-Memory Repair via ConnectRPC (Without Killing Language Server)
+To update the language server's in-memory summaries map without restarting processes:
+```python
+import urllib.request, json
+
+req_body = {
+    "cascadeId": "<uuid>",
+    "summary": {
+        ...summary_dict,
+        "lastModifiedTime": "2026-10-18T10:00:00Z",
+        "lastUserInputTime": "2026-10-18T10:00:00Z",
+    }
+}
+req = urllib.request.Request(
+    f"http://127.0.0.1:{ls_port}/exa.language_server_pb.LanguageServerService/JetboxWriteSummary",
+    data=json.dumps(req_body).encode("utf-8"),
+    headers={
+        "Content-Type": "application/json",
+        "x-codeium-csrf-token": csrf_token,
+        "Connect-Protocol-Version": "1",
+    }
+)
+urllib.request.urlopen(req)
+```
 
 ---
 

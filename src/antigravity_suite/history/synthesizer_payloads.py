@@ -1,32 +1,29 @@
-"""
-Protobuf Step Payload Builders for User and Model Responses.
-"""
-
+"""Protobuf Step Payload Builders for User and Model Responses."""
 from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Union
 
 from antigravity_suite.history.synthesizer_tool_payloads import build_step132_payload
-from antigravity_suite.proto.wire import encode_tag_bytes, encode_tag_uint
+from antigravity_suite.proto.wire import encode_tag_bytes, encode_tag_uint, encode_timestamp_field
 
-__all__ = [
-    "build_step_meta",
-    "build_step14_payload",
-    "build_step15_payload",
-    "build_step132_payload",
-]
+__all__ = ["build_step_meta", "build_step14_payload", "build_step15_payload", "build_step132_payload"]
 
 
-def build_step_meta(conv_id: str) -> bytearray:
-    """Builds base metadata for a conversation step."""
+def build_step_meta(conv_id: str, ts_iso: Optional[Any] = None) -> bytearray:
+    """Builds base metadata for a conversation step with authentic timestamps."""
     meta = bytearray()
     meta += encode_tag_bytes(12, conv_id.encode("utf-8"))
-    sub = bytearray()
-    sub += encode_tag_bytes(1, conv_id.encode("utf-8"))
-    sub += encode_tag_bytes(4, conv_id.encode("utf-8"))
-    meta += encode_tag_bytes(20, bytes(sub))
+    sub = encode_tag_bytes(1, conv_id.encode("utf-8")) + encode_tag_bytes(4, conv_id.encode("utf-8"))
+    meta += encode_tag_bytes(20, sub)
+    ts_b = encode_timestamp_field(ts_iso)
+    if ts_b:
+        meta += encode_tag_bytes(1, ts_b)
+        meta += encode_tag_bytes(6, ts_b)
+        meta += encode_tag_bytes(7, ts_b)
+        meta += encode_tag_bytes(8, ts_b)
+        meta += encode_tag_bytes(32, ts_b)
     return meta
 
 

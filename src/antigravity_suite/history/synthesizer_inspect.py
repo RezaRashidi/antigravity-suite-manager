@@ -87,6 +87,10 @@ def is_synthesized_db_incomplete(db_path: Union[str, Path]) -> bool:
             s132 = cur.fetchall()
             if s132 and not (any(r[0] and has_tag_in_proto(r[0], 4, 2) for r in s132) and any(r[1] and has_tag_in_proto(r[1], 140, 2) for r in s132)):
                 return True
+            cur.execute("SELECT metadata FROM steps WHERE metadata IS NOT NULL LIMIT 5;")
+            sm = cur.fetchall()
+            if sm and not any(r[0] and (has_tag_in_proto(r[0], 7, 2) or has_tag_in_proto(r[0], 1, 2)) for r in sm):
+                return True
         _VERIFIED_COMPLETE_DBS[db_p] = (mtime, size)
         return False
     except Exception:

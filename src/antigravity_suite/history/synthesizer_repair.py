@@ -41,7 +41,6 @@ def repair_database_step_gaps(
                 return 0
 
             conv_id = Path(db_p).stem
-            base_meta = build_step_meta(conv_id)
             rows_to_insert: List[Tuple[int, int, int, bytes, bytes]] = []
 
             with open(tf_str, "r", encoding="utf-8", errors="ignore") as f:
@@ -61,13 +60,14 @@ def repair_database_step_gaps(
                     step_type, status = classified
                     content, thinking = entry.get("content", ""), entry.get("thinking", "")
                     tool_calls = entry.get("tool_calls", [])
+                    step_meta = build_step_meta(conv_id, entry.get("created_at"))
 
                     if step_type == 14:
-                        meta, payload = bytes(base_meta), build_step14_payload(base_meta, status, content)
+                        meta, payload = bytes(step_meta), build_step14_payload(step_meta, status, content)
                     elif step_type == 15:
-                        meta, payload = bytes(base_meta), build_step15_payload(base_meta, status, content, thinking, tool_calls, step_idx, [])
+                        meta, payload = bytes(step_meta), build_step15_payload(step_meta, status, content, thinking, tool_calls, step_idx, [])
                     else:
-                        meta, payload = build_step132_payload(base_meta, status, content, str(entry.get("type", "")), step_idx, [])
+                        meta, payload = build_step132_payload(step_meta, status, content, str(entry.get("type", "")), step_idx, [])
 
                     rows_to_insert.append((step_idx, step_type, status, meta, payload))
 
