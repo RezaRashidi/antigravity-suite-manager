@@ -41,10 +41,39 @@ function getBindings() {
     return {};
 }
 
+let _activeAccountEmail = null;
+
+function setActiveAccount(email) {
+    if (!email) return;
+    _activeAccountEmail = email;
+    ensureAccountsDir();
+    const b = getBindings();
+    b.__active_account = email;
+    try {
+        const tmp = BINDINGS_FILE + '.tmp';
+        fs.writeFileSync(tmp, JSON.stringify(b, null, 2), 'utf8');
+        fs.renameSync(tmp, BINDINGS_FILE);
+        logTraffic(`[ACTIVE] Active account set to: ${email}`);
+    } catch (_) {}
+}
+
+function getActiveAccountEmail() {
+    if (_activeAccountEmail) return _activeAccountEmail;
+    const b = getBindings();
+    if (b.__active_account) {
+        _activeAccountEmail = b.__active_account;
+        return _activeAccountEmail;
+    }
+    const accounts = Object.keys(loadAllAccounts());
+    return accounts[0] || null;
+}
+
 function setBinding(cascadeId, email, model = '') {
     ensureAccountsDir();
     const b = getBindings();
     b[cascadeId] = { cascade_id: cascadeId, email, model, updated_at: new Date().toISOString() };
+    b.__active_account = email;
+    _activeAccountEmail = email;
     try {
         const tmp = BINDINGS_FILE + '.tmp';
         fs.writeFileSync(tmp, JSON.stringify(b, null, 2), 'utf8');
@@ -358,15 +387,10 @@ async function loadAllAccountsWithQuotas() {
     return accountsList;
 }
 
-async function resolveTokenForCascade(cascadeId) {
-    if (!cascadeId) return null;
-    const bindings = getBindings();
-    const binding = bindings[cascadeId];
-    if (!binding || !binding.email) {
-        return null; // Transparent pass-through for primary/unbound chats
-    }
+async function resolveTokenForAccount(email) {
+    if (!email) return null;
     const accounts = loadAllAccounts();
-    const target = accounts[binding.email];
+    const target = accounts[email];
     if (!target) return null;
     if (target.is_primary) {
         return null; // Primary account uses its own native token
@@ -378,6 +402,20 @@ async function resolveTokenForCascade(cascadeId) {
         return await refreshGoogleToken(target);
     }
     return target.token.access_token || null;
+}
+
+async function resolveTokenForCascade(cascadeId) {
+    let email = null;
+    if (cascadeId) {
+        const bindings = getBindings();
+        if (bindings[cascadeId] && bindings[cascadeId].email) {
+            email = bindings[cascadeId].email;
+        }
+    }
+    if (!email) {
+        email = getActiveAccountEmail();
+    }
+    return await resolveTokenForAccount(email);
 }
 
 function startMultiAccountRouter(port = DEFAULT_PORT) {
@@ -403,9 +441,9 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
                 if (match) cascadeId = match[1];
             }
 
-            const token = await resolveTokenForCascade(cascadeId);
             const bindings = getBindings();
-            const boundEmail = (cascadeId && bindings[cascadeId] && bindings[cascadeId].email) || 'Primary (Native)';
+            const boundEmail = (cascadeId && bindings[cascadeId] && bindings[cascadeId].email) || getActiveAccountEmail() || 'Primary (Native)';
+            const token = await resolveTokenForCascade(cascadeId);
             const tokenFingerprint = token ? `token: ...${token.slice(-6)}` : 'token: [Native LS Session]';
             logTraffic(`Chat: [${cascadeId || 'general'}] -> Account: [${boundEmail}] | ${tokenFingerprint} | Path: ${req.url}`);
 
@@ -475,4 +513,7 @@ module.exports = {
     loadAllAccountsWithQuotas,
     getBindings,
     setBinding,
+    setActiveAccount,
+    getActiveAccountEmail,
 };
+

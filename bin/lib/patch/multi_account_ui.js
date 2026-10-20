@@ -92,15 +92,15 @@
                 z-index: 999999;
             }
 
-            /* Flat compact button matching model selector */
+            /* Flat compact button matching model selector seamlessly */
             .agy-acc-pill-btn {
                 display: inline-flex;
                 align-items: center;
-                gap: 5px;
+                gap: 4px;
                 background: transparent;
-                border: 1px solid transparent;
+                border: none;
                 border-radius: 6px;
-                padding: 4px 8px;
+                padding: 3px 6px;
                 color: var(--agy-pill-text);
                 font-size: 12px;
                 font-weight: 500;
@@ -108,30 +108,18 @@
                 transition: background 0.12s ease, color 0.12s ease;
                 user-select: none;
                 outline: none;
-                height: 28px;
+                height: 26px;
+                box-shadow: none;
             }
             .agy-acc-pill-btn:hover {
                 background: var(--agy-pill-hover-bg);
                 color: var(--agy-pill-text-hover);
             }
 
-            .agy-acc-avatar {
-                width: 15px;
-                height: 15px;
-                border-radius: 50%;
-                background: linear-gradient(135deg, #4285f4, #34a853);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 9px;
-                font-weight: 700;
-                color: #ffffff;
-                flex-shrink: 0;
-            }
             .agy-acc-badge {
                 font-size: 12px;
                 font-weight: 500;
-                max-width: 130px;
+                max-width: 140px;
                 overflow: hidden;
                 text-overflow: ellipsis;
                 white-space: nowrap;
@@ -244,11 +232,11 @@
                 background: rgba(59, 130, 246, 0.1);
             }
 
-            /* "View Usage" Sub-Menu Flyout (Native Antigravity Usage Style) */
+            /* "View Usage" Sub-Menu Flyout (Native Antigravity Usage Style, Unclipped) */
             .agy-usage-flyout {
                 position: absolute;
-                left: calc(100% + 6px);
-                bottom: 0;
+                left: calc(100% + 8px);
+                top: 0;
                 width: 320px;
                 background: var(--agy-dropdown-bg);
                 border: 1px solid var(--agy-dropdown-border);
@@ -260,8 +248,8 @@
                 gap: 10px;
                 z-index: 100005;
                 color: var(--agy-dropdown-text);
+                pointer-events: auto;
             }
-            .agy-acc-item:hover .agy-usage-flyout,
             .agy-usage-flyout.visible {
                 display: flex;
             }
@@ -412,10 +400,31 @@
     }
 
     function detectCurrentCascadeId() {
+        // 1. Hash or path UUID
         const hashMatch = window.location.hash.match(/[a-f0-9-]{16,}/i);
         if (hashMatch) return hashMatch[0];
         const pathMatch = window.location.pathname.match(/[a-f0-9-]{16,}/i);
         if (pathMatch) return pathMatch[0];
+
+        // 2. DOM dataset attributes
+        const dataEl = document.querySelector('[data-cascade-id], [data-conversation-id], [data-session-id], [data-chat-id]');
+        if (dataEl) {
+            const id = dataEl.getAttribute('data-cascade-id') ||
+                       dataEl.getAttribute('data-conversation-id') ||
+                       dataEl.getAttribute('data-session-id') ||
+                       dataEl.getAttribute('data-chat-id');
+            if (id) return id;
+        }
+
+        // 3. Active conversation item in sidebar
+        const activeItem = document.querySelector('[class*="conversation"][class*="active"], [class*="cascade"][class*="active"], [class*="chat"][class*="selected"], [aria-selected="true"]');
+        if (activeItem) {
+            const match = (activeItem.id + ' ' + activeItem.className + ' ' + (activeItem.getAttribute('data-id') || '')).match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i);
+            if (match) return match[0];
+            const titleEl = activeItem.querySelector('[class*="title"], span');
+            if (titleEl && titleEl.textContent) return 'chat-' + titleEl.textContent.trim().slice(0, 30);
+        }
+
         return 'default';
     }
 
@@ -431,7 +440,7 @@
     }
 
     function getActiveAccount() {
-        const email = cachedState.bindings?.[currentCascadeId] || cachedState.active_default;
+        const email = cachedState.bindings?.[currentCascadeId] || cachedState.active_default || cachedState.bindings?.__active_account;
         if (email && cachedState.accounts) {
             const found = cachedState.accounts.find(a => a.email && a.email.toLowerCase() === email.toLowerCase());
             if (found) return found;
@@ -439,23 +448,50 @@
         return (cachedState.accounts && cachedState.accounts[0]) || { email: 'Default Account', quotas: [] };
     }
 
+    function isVisible(el) {
+        if (!el || !document.body.contains(el)) return false;
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+    }
+
     function findAttachmentTarget() {
-        // Priority 1: Inside input-footer container
-        const footers = document.querySelectorAll('div[class*="input-footer"]');
+        // Priority 1: Sibling of visible model selector button
+        const buttons = Array.from(document.querySelectorAll('button')).filter(isVisible);
+        for (const btn of buttons) {
+            const txt = (btn.textContent || '').trim();
+            if (
+                txt.includes('Flash') || txt.includes('Pro') || txt.includes('Claude') ||
+                txt.includes('Gemini') || txt.includes('Sonnet') || txt.includes('GPT') ||
+                txt.includes('Auto') || txt.includes('DeepSeek') || txt.includes('Thinking') ||
+                btn.getAttribute('data-testid') === 'model-selector'
+            ) {
+                if (btn.parentElement && isVisible(btn.parentElement)) {
+                    return { target: btn.parentElement, floating: false, insertAfter: btn };
+                }
+            }
+        }
+
+        // Priority 2: Inside active visible prompt bar footer
+        const inputs = Array.from(document.querySelectorAll('textarea, [contenteditable="true"], [role="textbox"]')).filter(isVisible);
+        for (const inp of inputs) {
+            const box = inp.closest('form, div[class*="prompt"], div[class*="input"], div[class*="cascade"]') || inp.parentElement;
+            if (box) {
+                const footer = box.querySelector('div[class*="footer"], div[class*="items-center"][class*="min-w-0"], div[class*="flex-1"]');
+                if (footer && isVisible(footer)) return { target: footer, floating: false };
+            }
+        }
+
+        // Priority 3: Any visible input-footer
+        const footers = Array.from(document.querySelectorAll('div[class*="input-footer"]')).filter(isVisible);
         for (const footer of footers) {
             const group = footer.querySelector('div[class*="items-center"][class*="min-w-0"]') ||
                           footer.querySelector('div[class*="flex-1"]') ||
                           footer;
-            if (group) return { target: group, floating: false };
+            if (group && isVisible(group)) return { target: group, floating: false };
         }
-        // Priority 2: Next to model selector button
-        const buttons = document.querySelectorAll('button');
-        for (const btn of buttons) {
-            const txt = btn.textContent || '';
-            if (txt.includes('Flash') || txt.includes('Pro') || txt.includes('Claude') || txt.includes('Gemini') || txt.includes('Sonnet')) {
-                if (btn.parentElement) return { target: btn.parentElement, floating: false };
-            }
-        }
+
         return { target: document.body, floating: true };
     }
 
@@ -474,8 +510,10 @@
         return '#ea4335';
     }
 
-    function buildUsageFlyout(acc) {
+    function buildUsageFlyoutContent(acc) {
+        if (!acc) return '<div style="padding:10px;font-size:12px;">No account selected</div>';
         const tier = acc.tier || 'TEAMS_TIER_PRO';
+        const email = acc.email || 'Account';
         let contentHtml = '';
 
         if (acc.license_status === 'no_license') {
@@ -555,35 +593,39 @@
         }
 
         return `
-            <div class="agy-usage-flyout" id="flyout-${acc.email.replace(/[^a-zA-Z0-9]/g, '')}">
-                <div class="agy-usage-flyout-header">
-                    <div>
-                        <div class="agy-usage-title">Usage limits</div>
-                        <div class="agy-usage-email-sub">${acc.email}</div>
-                    </div>
-                    <span class="agy-tier-badge">${tier.split(' ')[0]}</span>
+            <div class="agy-usage-flyout-header">
+                <div>
+                    <div class="agy-usage-title">Usage limits</div>
+                    <div class="agy-usage-email-sub">${email}</div>
                 </div>
-                ${contentHtml}
+                <span class="agy-tier-badge">${tier.split(' ')[0]}</span>
             </div>
+            ${contentHtml}
         `;
     }
 
     function renderPill() {
         currentCascadeId = detectCurrentCascadeId();
         const active = getActiveAccount();
-        const { target, floating } = findAttachmentTarget();
+        const { target, floating, insertAfter } = findAttachmentTarget();
         if (!target) return;
 
         let pillContainer = document.getElementById('antigravity-account-pill');
-        if (!pillContainer) {
+        if (!pillContainer || !document.body.contains(pillContainer) || pillContainer.parentElement !== target) {
+            if (pillContainer && pillContainer.parentElement) {
+                pillContainer.remove();
+            }
             pillContainer = document.createElement('div');
             pillContainer.id = 'antigravity-account-pill';
-            target.appendChild(pillContainer);
-        } else if (pillContainer.parentElement !== target) {
-            target.appendChild(pillContainer);
+            if (insertAfter && insertAfter.nextSibling) {
+                target.insertBefore(pillContainer, insertAfter.nextSibling);
+            } else {
+                target.appendChild(pillContainer);
+            }
+            pillContainer.__renderKey = null;
         }
 
-        const initial = (active.name || active.email || 'G')[0].toUpperCase();
+        const handle = active.email ? active.email.split('@')[0] : 'Account';
         const renderKey = `${active.email}|${currentCascadeId}|${(cachedState.accounts || []).length}|${floating}`;
         if (pillContainer.__renderKey === renderKey) {
             return;
@@ -592,11 +634,10 @@
 
         pillContainer.className = 'agy-acc-pill-container' + (floating ? ' floating' : '');
 
-        // Flat button: avatar + handle + chevron (no bulky badges, perfectly flush)
+        // Flat button: handle + small chevron only (matches model selector, no bulky badges or avatar circles)
         pillContainer.innerHTML = `
             <button class="agy-acc-pill-btn" type="button" id="agy-acc-toggle-btn" title="Account: ${active.email}">
-                <div class="agy-acc-avatar">${initial}</div>
-                <span class="agy-acc-badge">${active.email.split('@')[0]}</span>
+                <span class="agy-acc-badge">${handle}</span>
                 <span style="font-size:8px;opacity:0.6;margin-left:1px;">▼</span>
             </button>
             <div class="agy-acc-dropdown" id="agy-acc-dropdown">
@@ -605,18 +646,18 @@
                     ${(cachedState.accounts || []).map(acc => {
                         const isSel = acc.email && acc.email.toLowerCase() === active.email.toLowerCase();
                         const accInitial = (acc.name || acc.email || 'G')[0].toUpperCase();
+                        const accHandle = acc.email ? acc.email.split('@')[0] : 'Account';
                         return `
                             <div class="agy-acc-item ${isSel ? 'selected' : ''}" data-email="${acc.email}">
                                 <div class="agy-acc-item-left">
                                     <div class="agy-acc-avatar-sm">${accInitial}</div>
                                     <div class="agy-acc-text-col">
-                                        <span class="agy-acc-email-text">${acc.email.split('@')[0]}</span>
+                                        <span class="agy-acc-email-text">${accHandle}</span>
                                         <span class="agy-acc-email-sub">${acc.email}</span>
                                     </div>
                                     ${isSel ? '<span style="color:#3b82f6;font-size:11px;font-weight:bold;margin-left:2px;">✓</span>' : ''}
                                 </div>
-                                <span class="agy-view-usage-link">View usage ›</span>
-                                ${buildUsageFlyout(acc)}
+                                <span class="agy-view-usage-link" data-email="${acc.email}">View usage ›</span>
                             </div>
                         `;
                     }).join('')}
@@ -625,36 +666,112 @@
                     <button class="agy-acc-btn-action" id="agy-acc-add-btn">+ Add Account</button>
                     <button class="agy-acc-btn-action" id="agy-acc-refresh-btn">Refresh Limits</button>
                 </div>
+                <div class="agy-usage-flyout" id="agy-active-flyout"></div>
             </div>
         `;
 
         // Toggle dropdown
         const btn = document.getElementById('agy-acc-toggle-btn');
         const dropdown = document.getElementById('agy-acc-dropdown');
+        const flyout = document.getElementById('agy-active-flyout');
         if (btn && dropdown) {
             btn.onclick = (e) => {
                 e.stopPropagation();
                 dropdown.classList.toggle('open');
+                if (!dropdown.classList.contains('open') && flyout) {
+                    flyout.classList.remove('visible');
+                }
             };
         }
 
-        // Account selection
+        // Flyout hover / click management
+        let hideFlyoutTimer = null;
+
+        function showFlyout(acc, triggerEl) {
+            if (!flyout) return;
+            if (hideFlyoutTimer) {
+                clearTimeout(hideFlyoutTimer);
+                hideFlyoutTimer = null;
+            }
+            flyout.innerHTML = buildUsageFlyoutContent(acc);
+            flyout.classList.add('visible');
+
+            if (dropdown && triggerEl) {
+                const ddRect = dropdown.getBoundingClientRect();
+                const trRect = triggerEl.getBoundingClientRect();
+                const topOffset = Math.max(0, trRect.top - ddRect.top - 20);
+                flyout.style.top = `${topOffset}px`;
+
+                if (ddRect.right + 340 > window.innerWidth) {
+                    flyout.style.left = 'auto';
+                    flyout.style.right = 'calc(100% + 8px)';
+                } else {
+                    flyout.style.left = 'calc(100% + 8px)';
+                    flyout.style.right = 'auto';
+                }
+            }
+        }
+
+        function scheduleHideFlyout() {
+            if (hideFlyoutTimer) clearTimeout(hideFlyoutTimer);
+            hideFlyoutTimer = setTimeout(() => {
+                if (flyout) flyout.classList.remove('visible');
+            }, 250);
+        }
+
+        if (flyout) {
+            flyout.addEventListener('mouseenter', () => {
+                if (hideFlyoutTimer) {
+                    clearTimeout(hideFlyoutTimer);
+                    hideFlyoutTimer = null;
+                }
+            });
+            flyout.addEventListener('mouseleave', () => {
+                scheduleHideFlyout();
+            });
+        }
+
+        // Account items event listeners
         pillContainer.querySelectorAll('.agy-acc-item').forEach(item => {
+            const email = item.getAttribute('data-email');
+            const acc = (cachedState.accounts || []).find(a => a.email && a.email.toLowerCase() === email.toLowerCase());
+
+            item.addEventListener('mouseenter', () => {
+                if (acc) showFlyout(acc, item);
+            });
+            item.addEventListener('mouseleave', () => {
+                scheduleHideFlyout();
+            });
+
+            const link = item.querySelector('.agy-view-usage-link');
+            if (link) {
+                link.onclick = (e) => {
+                    e.stopPropagation();
+                    if (acc) showFlyout(acc, item);
+                };
+            }
+
             item.onclick = async (e) => {
-                if (e.target.closest('.agy-usage-flyout') || e.target.closest('.agy-view-usage-link')) {
-                    return; // Don't switch if clicking the flyout itself
+                if (e.target.closest('.agy-view-usage-link') || e.target.closest('.agy-usage-flyout')) {
+                    return;
                 }
                 e.stopPropagation();
-                const email = item.getAttribute('data-email');
-                if (email && window.antigravityMultiAccount?.bindCascade) {
-                    await window.antigravityMultiAccount.bindCascade(currentCascadeId, email);
+                if (email) {
+                    if (window.antigravityMultiAccount?.bindCascade) {
+                        await window.antigravityMultiAccount.bindCascade(currentCascadeId, email);
+                    }
+                    if (window.antigravityMultiAccount?.setActiveAccount) {
+                        await window.antigravityMultiAccount.setActiveAccount(email);
+                    }
                     if (!cachedState.bindings) cachedState.bindings = {};
                     cachedState.bindings[currentCascadeId] = email;
+                    cachedState.active_default = email;
                     pillContainer.__renderKey = null;
                     scheduleRender();
-                    showToast(`✓ Switched chat to ${email}`);
+                    showToast(`✓ Switched chat to ${email.split('@')[0]}`);
                 }
                 dropdown.classList.remove('open');
+                if (flyout) flyout.classList.remove('visible');
             };
         });
 
@@ -682,12 +799,29 @@
     }
 
     // Close on outside click
-    document.addEventListener('click', () => {
+    document.addEventListener('click', (e) => {
         const dd = document.getElementById('agy-acc-dropdown');
-        if (dd) dd.classList.remove('open');
+        const fly = document.getElementById('agy-active-flyout');
+        const pill = document.getElementById('antigravity-account-pill');
+        if (dd && pill && !pill.contains(e.target)) {
+            dd.classList.remove('open');
+            if (fly) fly.classList.remove('visible');
+        }
     });
 
-    // Debounced observer
+    // Watchdog: ensures selector is attached, visible, and updated across chat transitions
+    setInterval(() => {
+        const pill = document.getElementById('antigravity-account-pill');
+        const { target } = findAttachmentTarget();
+        if (!pill || !document.body.contains(pill) || (target && pill.parentElement !== target) || !isVisible(pill)) {
+            scheduleRender();
+        }
+    }, 400);
+
+    window.addEventListener('popstate', scheduleRender);
+    window.addEventListener('hashchange', scheduleRender);
+
+    // Debounced mutation observer
     let debounceTimer = null;
     const observer = new MutationObserver((mutations) => {
         let shouldCheck = false;
@@ -704,7 +838,7 @@
             if (debounceTimer) clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => {
                 scheduleRender();
-            }, 150);
+            }, 120);
         }
     });
 

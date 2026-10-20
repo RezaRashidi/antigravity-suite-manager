@@ -49,6 +49,14 @@ function patchMultiAccount(dir) {
         try {
             const router = require('./multi_account_router');
             router.setBinding(cascadeId, email, model || '');
+            if (router.setActiveAccount) router.setActiveAccount(email);
+            return true;
+        } catch (_) { return false; }
+    });
+    electron_1.ipcMain.handle('multi-account:set-active-account', async (_event, email) => {
+        try {
+            const router = require('./multi_account_router');
+            if (router.setActiveAccount) router.setActiveAccount(email);
             return true;
         } catch (_) { return false; }
     });
@@ -78,6 +86,7 @@ function patchMultiAccount(dir) {
 const multiAccountAPI = {
     getState: () => electron_1.ipcRenderer.invoke('multi-account:get-state'),
     bindCascade: (cascadeId, email, model) => electron_1.ipcRenderer.invoke('multi-account:bind-cascade', cascadeId, email, model),
+    setActiveAccount: (email) => electron_1.ipcRenderer.invoke('multi-account:set-active-account', email),
     startLogin: () => electron_1.ipcRenderer.invoke('multi-account:start-login'),
 };
 electron_1.contextBridge.exposeInMainWorld('antigravityMultiAccount', multiAccountAPI);
