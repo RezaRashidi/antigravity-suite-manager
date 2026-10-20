@@ -38,6 +38,7 @@ dispatch_command() {
         rtl|patch-rtl) FORCE_INSTALL=true dispatch_rtl ;;
         update-rtl) update_rtl ;;
         checksums|fix-checksums|patch-checksums) fix_ide_checksums "${IDE_INSTALL_DIR:-/opt/antigravity}" ;;
+        benchmark|bench|speed-test) dispatch_benchmark "${CMD_ARGS[@]}" ;;
         update) dispatch_update ;;
         update-repo|self-update|update-self) update_suite_repo ;;
         restart-services|restart-service|restart-daemon|restart-daemons) restart_suite_services ;;

@@ -1040,6 +1040,7 @@ Allows updating the Antigravity Suite Manager codebase itself without broken sta
 | **Language Server Health** | `~/.config/Antigravity/logs/language_server.log` | `reconcile checked N, restored 0, cached N, dropped 0` |
 | **F5 Backend Reload** | `bin/lib/patch/patch_utils_reload.js` | Invokes `await ls.restartLanguageServer()` & strips stale handlers |
 | **Suite Self-Update** | `~/manage-antigravity.sh update-repo` | Git pull, recompile resampler, redeploy scripts, restart daemons |
+| **Speed Benchmark** | `~/manage-antigravity.sh benchmark` | Evaluates IPv6 blackhole, TLS latency, MCP tool bloat & TTFT |
 | **Services Restart** | `~/manage-antigravity.sh restart-services` | Systemd non-blocking reload & X11 icon injector recycle |
 | **Unit Test Suite** | `python3 -m unittest discover tests` | All 127 tests passing |
 
@@ -1361,6 +1362,18 @@ When two systems with identical accounts, models, and empty chat context exhibit
    - If an intermediate proxy or VPN terminates idle TCP connections (`WebChannel connection closed ... Retrying immediately`), every prompt incurs a cold TCP handshake and TLS 1.3 negotiation round-trip over the proxy (1.5s to 3s).
 5. **A/B Testing Assignment (`device_fingerprint`)**:
    - At initialization, the client transmits `device_fingerprint` to Google's backend, assigning the machine to Mendel experiment cohorts. Cohorts may route through deeper safety classification pipelines (e.g. Sonar monitors) or different inference server clusters.
+
+### 18.7 Automated Speed & Latency Benchmark Tool (`antigravity-benchmark.py`)
+A dedicated diagnostic tool measures the exact variables affecting Antigravity AI response speed:
+```bash
+~/manage-antigravity.sh benchmark
+# or directly:
+antigravity-benchmark.py [--json] [--skip-network]
+```
+- **Network & DNS Diagnostics**: Measures IPv4 vs IPv6 resolution, TCP handshake times, TLS 1.3 negotiation speed, and detects IPv6 blackhole timeouts.
+- **Context & MCP Bloat Analysis**: Counts active MCP servers, separates eager vs lazy tool definitions, calculates active skills/rules, and projects estimated initial system prompt token overhead.
+- **Language Server Process Health**: Scans live `language_server` instances, reports `GOMAXPROCS`, memory consumption (RSS), and tests localhost ConnectRPC loopback latency.
+- **Actionable Diagnosis**: Assigns a performance tier (`OPTIMAL`, `MODERATE`, `BOTTLENECKED`), estimates TTFT in seconds, and provides concrete remediation steps (e.g. disabling broken IPv6, converting eager MCP tools).
 
 ---
 

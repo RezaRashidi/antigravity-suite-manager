@@ -1,0 +1,101 @@
+"""
+Unit tests for the Antigravity AI performance and latency benchmark subsystem.
+"""
+
+import unittest
+from antigravity_suite.benchmark.models import (
+    BenchmarkReport,
+    ContextMetric,
+    NetworkMetric,
+    ProcessMetric,
+)
+from antigravity_suite.benchmark.evaluator import evaluate_bottlenecks
+from antigravity_suite.benchmark.reporter import format_report
+from antigravity_suite.benchmark.runner import run_benchmark
+
+
+class TestBenchmarkSubsystem(unittest.TestCase):
+    def test_models_serialization(self):
+        net = NetworkMetric(
+            host="example.com",
+            dns_ipv4_ms=1.5,
+            tcp_ipv4_ms=10.0,
+            tls_handshake_ms=25.0,
+            alpn_protocol="h2",
+            ipv6_blackhole=False,
+        )
+        ctx = ContextMetric(
+            mcp_servers=2,
+            mcp_eager_tools=5,
+            mcp_lazy_tools=10,
+            total_mcp_tools=15,
+            active_skills=4,
+            active_rules=2,
+            estimated_prompt_tokens=3500,
+        )
+        proc = ProcessMetric(
+            pid=1234,
+            client_type="hub",
+            gomaxprocs=4,
+            rss_mb=256.0,
+            port=33547,
+            loopback_ping_ms=0.5,
+        )
+        report = BenchmarkReport(
+            networks=[net],
+            context=ctx,
+            processes=[proc],
+            speed_tier="OPTIMAL",
+            estimated_ttft_sec="1.5s - 3.0s",
+        )
+        d = report.to_dict()
+        self.assertEqual(d["speed_tier"], "OPTIMAL")
+        self.assertEqual(len(d["networks"]), 1)
+        self.assertEqual(d["context"]["total_mcp_tools"], 15)
+        self.assertEqual(d["processes"][0]["pid"], 1234)
+
+    def test_evaluator_ipv6_blackhole_detection(self):
+        net = NetworkMetric(
+            host="daily-cloudcode-pa.googleapis.com",
+            ipv6_blackhole=True,
+            tcp_ipv4_ms=20.0,
+        )
+        ctx = ContextMetric(estimated_prompt_tokens=2000)
+        tier, ttft, b_list, r_list = evaluate_bottlenecks([net], ctx, [])
+        self.assertIn("BOTTLENECKED", tier)
+        self.assertTrue(any("IPv6 Blackhole" in b for b in b_list))
+        self.assertTrue(any("sysctl" in r for r in r_list))
+
+    def test_evaluator_prompt_bloat_detection(self):
+        net = NetworkMetric(host="cloudcode-pa.googleapis.com", tcp_ipv4_ms=15.0)
+        ctx = ContextMetric(
+            total_mcp_tools=200,
+            active_skills=50,
+            estimated_prompt_tokens=25000,
+        )
+        tier, ttft, b_list, r_list = evaluate_bottlenecks([net], ctx, [])
+        self.assertTrue(any("prefill bloat" in b for b in b_list))
+        self.assertTrue(any("lazy-loaded" in r for r in r_list))
+
+    def test_format_report(self):
+        report = BenchmarkReport(
+            networks=[NetworkMetric(host="test.com", tcp_ipv4_ms=12.3)],
+            context=ContextMetric(mcp_servers=1, total_mcp_tools=5),
+            processes=[ProcessMetric(pid=999, client_type="ide", port=3000)],
+            speed_tier="OPTIMAL",
+            estimated_ttft_sec="2.0s",
+        )
+        text = format_report(report)
+        self.assertIn("=== Antigravity AI Response Speed & Latency Benchmark ===", text)
+        self.assertIn("OPTIMAL", text)
+        self.assertIn("test.com", text)
+        self.assertIn("999", text)
+
+    def test_run_benchmark_smoke(self):
+        report = run_benchmark(skip_network=True)
+        self.assertIsInstance(report, BenchmarkReport)
+        self.assertIsNotNone(report.context)
+
+
+if __name__ == "__main__":
+    unittest.main()

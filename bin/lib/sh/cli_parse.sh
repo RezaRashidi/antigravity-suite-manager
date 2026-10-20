@@ -61,6 +61,7 @@ parse_cli_args() {
             update-ide) COMMAND="update"; SUB_COMMAND="ide"; shift ;;
             update-f5) COMMAND="update"; SUB_COMMAND="f5"; shift ;;
             update-repo|self-update|update-self) COMMAND="update-repo"; shift ;;
+            benchmark|bench|speed-test) COMMAND="benchmark"; shift; CMD_ARGS=("$@"); break ;;
             restart-services|restart-service|restart-daemon|restart-daemons) COMMAND="restart-services"; shift ;;
             status|all|app|ide|app1|app2|ide-shortcuts|update-rtl|clean-cache|help)
                 COMMAND="$1"; shift ;;

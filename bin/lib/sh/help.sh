@@ -36,6 +36,7 @@ Commands:
   update-rtl    Update antigravity-rtl to latest and re-apply
   update-f5     Re-apply manual F5 backend reload sync patch (alias for update f5)
   checksums     Verify and synchronize Antigravity IDE bundle integrity checksums
+  benchmark     Benchmark AI response speed, IPv6/proxy latency, and context bloat (alias: bench)
   export-history Export conversation history & brains to portable tarball [out]
   import-history Import & merge conversation history from archive <file>
   export-suite  Export suite configurations (rules, skills, plugins, MCP, accounts) [out]
