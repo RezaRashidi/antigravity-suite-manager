@@ -56,11 +56,12 @@ patch_selector() {
     cp "$tmp_dir/app.asar.patched" "$asar_file"
     rm -rf "$tmp_dir"
 
-    local t_skills="${REAL_HOME:-$HOME}/.gemini/config/skills"
-    mkdir -p "$t_skills" 2>/dev/null || true
     local r_dir; r_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-    for sk in whoami accounts switch; do
-        [ -d "${r_dir}/skills/${sk}" ] && cp -rf "${r_dir}/skills/${sk}" "$t_skills/" 2>/dev/null || true
+    for base in "${REAL_HOME:-$HOME}/.gemini" "${REAL_HOME:-$HOME}/.gemide"; do
+        mkdir -p "${base}/config/skills" 2>/dev/null || true
+        for sk in whoami accounts switch; do
+            [ -d "${r_dir}/skills/${sk}" ] && cp -rf "${r_dir}/skills/${sk}" "${base}/config/skills/" 2>/dev/null || true
+        done
     done
 
     if grep -qa "$patch_fingerprint" "$asar_file" || grep -qa "multi_account_ui" "$asar_file"; then

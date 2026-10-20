@@ -32,8 +32,9 @@ install: build
 	mkdir -p $(BINDIR)/lib
 	cp -rf bin/lib/* $(BINDIR)/lib/ 2>/dev/null || true
 	cp -f assets/antigravity-master-*.png $(ICONDIR)/ 2>/dev/null || true
-	mkdir -p $(HOME)/.gemini/config/skills
+	mkdir -p $(HOME)/.gemini/config/skills $(HOME)/.gemide/config/skills
 	cp -rf skills/whoami skills/accounts skills/switch $(HOME)/.gemini/config/skills/ 2>/dev/null || true
+	cp -rf skills/whoami skills/accounts skills/switch $(HOME)/.gemide/config/skills/ 2>/dev/null || true
 	@python3 -c 'import site, os; sp = site.getusersitepackages(); os.makedirs(sp, exist_ok=True); open(os.path.join(sp, "antigravity_suite.pth"), "w").write("$(CURDIR)/src\n")' 2>/dev/null || true
 	ln -sfn $(BINDIR)/manage-antigravity.sh $(HOME)/manage-antigravity.sh
 	@echo "Installation successful. Run '~/manage-antigravity.sh status' to inspect."
