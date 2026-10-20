@@ -54,6 +54,27 @@ patch_f5_reload() {
     fi
 }
 
+unpatch_f5() {
+    local asar_file="${APP_INSTALL_DIR:-/opt/antigravity2}/resources/app.asar"
+    if [ ! -f "$asar_file" ]; then
+        log_warn "app.asar not found at ${asar_file}."
+        return 0
+    fi
+    if ! grep -qa "restartLanguageServer" "$asar_file"; then
+        log_info "F5 reload patch is not applied. Nothing to revert."
+        return 0
+    fi
+
+    if grep -qa "multi_account_ui" "$asar_file"; then
+        log_info "Reverting F5 patch while preserving account selector..."
+        unpatch_antigravity
+        patch_selector
+    else
+        unpatch_antigravity
+    fi
+    log_success "F5 patch removed successfully."
+}
+
 unpatch_antigravity() {
     local asar_file="${APP_INSTALL_DIR:-/opt/antigravity2}/resources/app.asar"
     local orig_file="${asar_file}.orig"

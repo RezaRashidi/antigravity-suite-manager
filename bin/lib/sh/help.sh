@@ -28,18 +28,17 @@ Commands:
   list-instances  Show all created App and IDE instances and their history status (alias: list)
   set-history     Toggle instance history between 'shared' and 'isolated'
   remove-instance Delete an App or IDE instance and archive its profile (alias: remove)
-  f5            Re-apply manual F5 backend reload sync patch
+  f5            Apply manual F5 backend reload sync patch (isolated)
+  unpatch-f5    Revert F5 backend reload sync patch
+  selector      Apply prompt-bar account selector & multi-account patch (alias: patch-selector)
+  unpatch-selector Revert prompt-bar account selector patch (preserves F5)
+  unpatch       Restore clean unmodified original app.asar (revert all patches)
   rtl           Apply / re-apply antigravity-rtl to App and IDE
   update        Smart update components [all|app|ide|rtl|f5|checksums|repo|services] (preserves user data)
   update-repo   Update Antigravity Suite Manager repository, recompile, and redeploy
   restart-services Restart systemd history sync and X11 icon injector daemons
-  update-rtl    Update antigravity-rtl to latest and re-apply
-  update-f5     Re-apply manual F5 backend reload sync patch (alias for update f5)
-  checksums     Verify and synchronize Antigravity IDE bundle integrity checksums
   benchmark     Benchmark AI response speed, IPv6/proxy latency, and context bloat (alias: bench)
   multi-account Manage connected Google accounts, quotas & chat bindings (aliases: accounts, multiaccount)
-  patch-accounts Apply prompt-bar account selector & multi-account proxy patch
-  unpatch       Restore clean unmodified original app.asar (revert all patches)
   export-history Export conversation history & brains to portable tarball [out]
   import-history Import & merge conversation history from archive <file>
   export-suite  Export suite configurations (rules, skills, plugins, MCP, accounts) [out]

@@ -35,13 +35,15 @@ dispatch_command() {
         set-history) set_history_mode "${CMD_ARGS[@]}" ;;
         remove-instance) remove_instance "${CMD_ARGS[@]}" ;;
         f5|patch-f5) FORCE_INSTALL=true patch_f5_reload ;;
+        unpatch-f5) unpatch_f5 ;;
         rtl|patch-rtl) FORCE_INSTALL=true dispatch_rtl ;;
         update-rtl) update_rtl ;;
         checksums|fix-checksums|patch-checksums) fix_ide_checksums "${IDE_INSTALL_DIR:-/opt/antigravity}" ;;
         benchmark|bench|speed-test) dispatch_benchmark "${CMD_ARGS[@]}" ;;
         multi-account|multiaccount|accounts) dispatch_multi_account "${CMD_ARGS[@]}" ;;
-        patch-accounts|patch-selector) FORCE_INSTALL=true patch_f5_reload ;;
-        unpatch|restore|revert-patch) unpatch_antigravity ;;
+        patch-selector|selector|patch-accounts) FORCE_INSTALL=true patch_selector ;;
+        unpatch-selector|unpatch-accounts) unpatch_selector ;;
+        unpatch|restore|revert-patch|unpatch-all) unpatch_antigravity ;;
         update) dispatch_update ;;
         update-repo|self-update|update-self) update_suite_repo ;;
         restart-services|restart-service|restart-daemon|restart-daemons) restart_suite_services ;;

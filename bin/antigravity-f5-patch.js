@@ -2,7 +2,6 @@
 // ==============================================================================
 // Antigravity F5 Manual Backend Sync & Profile Isolation Patcher
 // ==============================================================================
-
 // Reference: execFile('xprop', ['-id', String(xid), '-f', 'WM_CLASS', '8s', '-set', 'WM_CLASS', wmClass]
 // Reference: let _lsPort = 0;
 const fs = require('fs');
@@ -12,7 +11,6 @@ const { patchKeybindings } = require('./lib/patch/patch_keybindings');
 const { patchUtils } = require('./lib/patch/patch_utils');
 const { patchTray } = require('./lib/patch/patch_tray');
 const { patchMain } = require('./lib/patch/patch_main');
-const { patchMultiAccount } = require('./lib/patch/patch_multi_account');
 
 const dir = process.argv[2];
 if (!dir || !fs.existsSync(dir)) {
@@ -20,16 +18,15 @@ if (!dir || !fs.existsSync(dir)) {
     process.exit(1);
 }
 
-console.log('[Patch] Patching unpacked asar in:', dir);
+console.log('[Patch] Patching F5 reload & window isolation in:', dir);
 patchLanguageServer(dir);
 patchIpcHandlers(dir);
 patchKeybindings(dir);
 patchUtils(dir);
 patchTray(dir);
 patchMain(dir);
-patchMultiAccount(dir);
 try {
     const markerPath = require('path').join(dir, 'dist', 'antigravity_f5_patch.marker');
     fs.writeFileSync(markerPath, 'ANTIGRAVITY_SUITE_F5_PATCH_V3\n', 'utf8');
 } catch (_) {}
-console.log('[Patch] All patches completed successfully.');
+console.log('[Patch] F5 reload & window isolation patch completed successfully.');
