@@ -47,8 +47,10 @@ function patchUtilsReload(utilsCode) {
             if (win && !win.isDestroyed() && win.webContents) {
                 try {
                     const curUrl = win.webContents.getURL();
-                    if (newPort && curUrl && /^https?:\/\/127\.0\.0\.1:\d+/i.test(curUrl)) {
-                        await win.loadURL(curUrl.replace(/https?:\/\/127\.0\.0\.1:\d+/, 'https://127.0.0.1:' + newPort));
+                    if (newPort && curUrl && curUrl.includes('127.0.0.1')) {
+                        const parsed = new URL(curUrl);
+                        parsed.port = String(newPort);
+                        await win.loadURL(parsed.toString());
                     } else {
                         win.webContents.reload();
                     }
