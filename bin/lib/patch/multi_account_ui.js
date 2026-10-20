@@ -1,87 +1,78 @@
 // ==============================================================================
 // Antigravity Multi-Account UI Injector: Prompt Bar Pill & Account Selector
-// High-performance, debounced, light & dark theme adaptive
+// Flush native styling, clear quota bars, light & dark theme adaptive
 // ==============================================================================
 
 (function initMultiAccountUI() {
     if (window.__antigravityMultiAccountUIInitialized) return;
     window.__antigravityMultiAccountUIInitialized = true;
 
-    console.log('[MultiAccountUI] Initializing prompt bar account selector...');
+    console.log('[MultiAccountUI] Initializing native prompt bar account selector...');
 
     let cachedState = { accounts: [], bindings: {} };
     let currentCascadeId = 'default';
     let isRenderScheduled = false;
 
-    // Inject styles
+    // Inject styles matching Antigravity native input-footer model selector
     let styleEl = document.getElementById('antigravity-multi-account-styles');
     if (!styleEl) {
         styleEl = document.createElement('style');
         styleEl.id = 'antigravity-multi-account-styles';
         styleEl.textContent = `
             :root {
-                --agy-pill-bg: rgba(0, 0, 0, 0.05);
-                --agy-pill-border: rgba(0, 0, 0, 0.14);
-                --agy-pill-text: #202124;
-                --agy-pill-hover: rgba(0, 0, 0, 0.09);
+                --agy-pill-text: #4b5563;
+                --agy-pill-text-hover: #111827;
+                --agy-pill-hover-bg: rgba(0, 0, 0, 0.05);
                 --agy-dropdown-bg: #ffffff;
-                --agy-dropdown-border: rgba(0, 0, 0, 0.14);
-                --agy-dropdown-shadow: 0 10px 28px rgba(0, 0, 0, 0.15);
-                --agy-dropdown-text: #202124;
-                --agy-dropdown-subtext: #5f6368;
-                --agy-dropdown-hover: rgba(0, 0, 0, 0.05);
-                --agy-dropdown-header: #5f6368;
-                --agy-dropdown-selected: rgba(66, 133, 244, 0.12);
-                --agy-quota-badge-bg: rgba(0, 0, 0, 0.06);
-                --agy-quota-gemini: #1a73e8;
-                --agy-quota-claude: #d93025;
-                --agy-btn-action-bg: rgba(0, 0, 0, 0.04);
-                --agy-btn-action-border: rgba(0, 0, 0, 0.12);
-                --agy-btn-action-hover: rgba(0, 0, 0, 0.08);
-                --agy-btn-action-text: #3c4043;
+                --agy-dropdown-border: #e5e7eb;
+                --agy-dropdown-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+                --agy-dropdown-text: #1f2937;
+                --agy-dropdown-subtext: #6b7280;
+                --agy-dropdown-hover: #f3f4f6;
+                --agy-dropdown-header: #4b5563;
+                --agy-dropdown-selected: rgba(59, 130, 246, 0.08);
+                --agy-quota-track: #e5e7eb;
+                --agy-btn-action-bg: #f9fafb;
+                --agy-btn-action-border: #d1d5db;
+                --agy-btn-action-hover: #f3f4f6;
+                --agy-btn-action-text: #374151;
             }
             html.dark, body.dark, [data-theme="dark"], .dark {
-                --agy-pill-bg: rgba(255, 255, 255, 0.08);
-                --agy-pill-border: rgba(255, 255, 255, 0.16);
-                --agy-pill-text: #e0e0e0;
-                --agy-pill-hover: rgba(255, 255, 255, 0.15);
+                --agy-pill-text: #9ca3af;
+                --agy-pill-text-hover: #f3f4f6;
+                --agy-pill-hover-bg: rgba(255, 255, 255, 0.08);
                 --agy-dropdown-bg: #1e1f22;
-                --agy-dropdown-border: rgba(255, 255, 255, 0.18);
-                --agy-dropdown-shadow: 0 10px 28px rgba(0, 0, 0, 0.75);
-                --agy-dropdown-text: #e0e0e0;
-                --agy-dropdown-subtext: #9aa0a6;
-                --agy-dropdown-hover: rgba(255, 255, 255, 0.08);
-                --agy-dropdown-header: #9aa0a6;
-                --agy-dropdown-selected: rgba(66, 133, 244, 0.22);
-                --agy-quota-badge-bg: rgba(0, 0, 0, 0.4);
-                --agy-quota-gemini: #8ab4f8;
-                --agy-quota-claude: #f28b82;
-                --agy-btn-action-bg: rgba(255, 255, 255, 0.07);
-                --agy-btn-action-border: rgba(255, 255, 255, 0.14);
-                --agy-btn-action-hover: rgba(255, 255, 255, 0.15);
-                --agy-btn-action-text: #e0e0e0;
+                --agy-dropdown-border: rgba(255, 255, 255, 0.12);
+                --agy-dropdown-shadow: 0 12px 30px rgba(0, 0, 0, 0.7);
+                --agy-dropdown-text: #f3f4f6;
+                --agy-dropdown-subtext: #9ca3af;
+                --agy-dropdown-hover: rgba(255, 255, 255, 0.06);
+                --agy-dropdown-header: #9ca3af;
+                --agy-dropdown-selected: rgba(59, 130, 246, 0.18);
+                --agy-quota-track: rgba(255, 255, 255, 0.12);
+                --agy-btn-action-bg: rgba(255, 255, 255, 0.05);
+                --agy-btn-action-border: rgba(255, 255, 255, 0.12);
+                --agy-btn-action-hover: rgba(255, 255, 255, 0.1);
+                --agy-btn-action-text: #e5e7eb;
             }
             @media (prefers-color-scheme: dark) {
                 :root:not(.light) {
-                    --agy-pill-bg: rgba(255, 255, 255, 0.08);
-                    --agy-pill-border: rgba(255, 255, 255, 0.16);
-                    --agy-pill-text: #e0e0e0;
-                    --agy-pill-hover: rgba(255, 255, 255, 0.15);
+                    --agy-pill-text: #9ca3af;
+                    --agy-pill-text-hover: #f3f4f6;
+                    --agy-pill-hover-bg: rgba(255, 255, 255, 0.08);
                     --agy-dropdown-bg: #1e1f22;
-                    --agy-dropdown-border: rgba(255, 255, 255, 0.18);
-                    --agy-dropdown-shadow: 0 10px 28px rgba(0, 0, 0, 0.75);
-                    --agy-dropdown-text: #e0e0e0;
-                    --agy-dropdown-subtext: #9aa0a6;
-                    --agy-dropdown-hover: rgba(255, 255, 255, 0.08);
-                    --agy-dropdown-header: #9aa0a6;
-                    --agy-dropdown-selected: rgba(66, 133, 244, 0.22);
-                    --agy-quota-badge-bg: rgba(0, 0, 0, 0.4);
-                    --agy-quota-gemini: #8ab4f8;
-                    --agy-quota-claude: #f28b82;
-                    --agy-btn-action-bg: rgba(255, 255, 255, 0.07);
-                    --agy-btn-action-border: rgba(255, 255, 255, 0.14);
-                    --agy-btn-action-hover: rgba(255, 255, 255, 0.15);
-                    --agy-btn-action-text: #e0e0e0;
+                    --agy-dropdown-border: rgba(255, 255, 255, 0.12);
+                    --agy-dropdown-shadow: 0 12px 30px rgba(0, 0, 0, 0.7);
+                    --agy-dropdown-text: #f3f4f6;
+                    --agy-dropdown-subtext: #9ca3af;
+                    --agy-dropdown-hover: rgba(255, 255, 255, 0.06);
+                    --agy-dropdown-header: #9ca3af;
+                    --agy-dropdown-selected: rgba(59, 130, 246, 0.18);
+                    --agy-quota-track: rgba(255, 255, 255, 0.12);
+                    --agy-btn-action-bg: rgba(255, 255, 255, 0.05);
+                    --agy-btn-action-border: rgba(255, 255, 255, 0.12);
+                    --agy-btn-action-hover: rgba(255, 255, 255, 0.1);
+                    --agy-btn-action-text: #e5e7eb;
                 }
             }
 
@@ -89,9 +80,9 @@
                 display: inline-flex;
                 align-items: center;
                 position: relative;
-                margin-left: 4px;
+                margin-left: 2px;
                 margin-right: 4px;
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                font-family: inherit;
                 z-index: 9999;
             }
             .agy-acc-pill-container.floating {
@@ -99,69 +90,80 @@
                 bottom: 20px;
                 right: 24px;
                 z-index: 999999;
-                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
             }
+
+            /* Flat button matching model selector */
             .agy-acc-pill-btn {
                 display: inline-flex;
                 align-items: center;
                 gap: 6px;
-                background: var(--agy-pill-bg);
-                border: 1px solid var(--agy-pill-border);
-                border-radius: 14px;
-                padding: 3px 10px;
+                background: transparent;
+                border: 1px solid transparent;
+                border-radius: 6px;
+                padding: 4px 8px;
                 color: var(--agy-pill-text);
                 font-size: 12px;
+                font-weight: 500;
                 cursor: pointer;
-                transition: all 0.15s ease;
+                transition: background 0.12s ease, color 0.12s ease;
                 user-select: none;
                 outline: none;
-                backdrop-filter: blur(8px);
             }
             .agy-acc-pill-btn:hover {
-                background: var(--agy-pill-hover);
-                color: var(--agy-pill-text);
+                background: var(--agy-pill-hover-bg);
+                color: var(--agy-pill-text-hover);
             }
+
             .agy-acc-avatar {
-                width: 16px;
-                height: 16px;
+                width: 15px;
+                height: 15px;
                 border-radius: 50%;
                 background: linear-gradient(135deg, #4285f4, #34a853);
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                font-size: 10px;
-                font-weight: bold;
+                font-size: 9px;
+                font-weight: 700;
                 color: #ffffff;
+                flex-shrink: 0;
             }
             .agy-acc-badge {
-                font-size: 11px;
+                font-size: 12px;
                 font-weight: 500;
-                max-width: 120px;
+                max-width: 130px;
                 overflow: hidden;
                 text-overflow: ellipsis;
                 white-space: nowrap;
-                color: var(--agy-pill-text);
+                color: inherit;
             }
-            .agy-quota-badge {
-                background: var(--agy-quota-badge-bg);
-                padding: 1px 6px;
-                border-radius: 8px;
-                font-size: 10px;
-                font-weight: 600;
-            }
-            .agy-quota-gemini { color: var(--agy-quota-gemini); }
-            .agy-quota-claude { color: var(--agy-quota-claude); }
 
+            /* Clean capacity indicator */
+            .agy-quota-badge {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                font-size: 11px;
+                font-weight: 600;
+                opacity: 0.9;
+            }
+            .agy-quota-dot {
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                display: inline-block;
+            }
+
+            /* Dropdown Menu */
             .agy-acc-dropdown {
                 position: absolute;
                 bottom: calc(100% + 8px);
                 left: 0;
-                min-width: 310px;
+                min-width: 320px;
                 background: var(--agy-dropdown-bg);
                 border: 1px solid var(--agy-dropdown-border);
-                border-radius: 10px;
+                border-radius: 8px;
                 box-shadow: var(--agy-dropdown-shadow);
-                padding: 8px 0;
+                padding: 6px 0;
                 display: none;
                 flex-direction: column;
                 z-index: 100000;
@@ -171,7 +173,7 @@
                 display: flex;
             }
             .agy-acc-header {
-                padding: 8px 14px 6px;
+                padding: 6px 14px 8px;
                 font-size: 11px;
                 font-weight: 600;
                 text-transform: uppercase;
@@ -182,41 +184,86 @@
                 justify-content: space-between;
                 align-items: center;
             }
+            .agy-acc-list {
+                max-height: 380px;
+                overflow-y: auto;
+            }
             .agy-acc-item {
                 display: flex;
-                align-items: center;
-                justify-content: space-between;
-                padding: 8px 14px;
+                flex-direction: column;
+                gap: 6px;
+                padding: 10px 14px;
                 cursor: pointer;
-                transition: background 0.15s ease;
+                transition: background 0.12s ease;
+                border-bottom: 1px solid var(--agy-dropdown-border);
+            }
+            .agy-acc-item:last-child {
+                border-bottom: none;
             }
             .agy-acc-item:hover {
                 background: var(--agy-dropdown-hover);
             }
             .agy-acc-item.selected {
                 background: var(--agy-dropdown-selected);
-                border-left: 3px solid #4285f4;
             }
-            .agy-acc-item-left {
+            .agy-acc-item-top {
                 display: flex;
-                flex-direction: column;
-                gap: 2px;
+                align-items: center;
+                justify-content: space-between;
             }
             .agy-acc-item-email {
                 font-size: 12px;
-                font-weight: 500;
+                font-weight: 600;
                 color: var(--agy-dropdown-text);
+                display: flex;
+                align-items: center;
+                gap: 6px;
             }
-            .agy-acc-item-sub {
-                font-size: 10px;
-                color: var(--agy-dropdown-subtext);
+            .agy-acc-active-tag {
+                font-size: 9px;
+                font-weight: 700;
+                padding: 1px 5px;
+                border-radius: 4px;
+                background: rgba(52, 168, 83, 0.15);
+                color: #34a853;
+                border: 1px solid rgba(52, 168, 83, 0.3);
             }
-            .agy-acc-item-right {
+            .agy-acc-tag-primary {
+                font-size: 9px;
+                font-weight: 600;
+                padding: 1px 5px;
+                border-radius: 4px;
+                background: rgba(66, 133, 244, 0.12);
+                color: #4285f4;
+            }
+
+            /* Capacity Progress Bars */
+            .agy-capacity-section {
                 display: flex;
                 flex-direction: column;
-                align-items: flex-end;
-                gap: 2px;
+                gap: 4px;
+                margin-top: 2px;
             }
+            .agy-capacity-row {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                font-size: 11px;
+                color: var(--agy-dropdown-subtext);
+            }
+            .agy-capacity-bar-track {
+                width: 100%;
+                height: 4px;
+                background: var(--agy-quota-track);
+                border-radius: 2px;
+                overflow: hidden;
+            }
+            .agy-capacity-bar-fill {
+                height: 100%;
+                border-radius: 2px;
+                transition: width 0.3s ease;
+            }
+
             .agy-acc-footer {
                 padding: 8px 10px 4px;
                 border-top: 1px solid var(--agy-dropdown-border);
@@ -231,28 +278,45 @@
                 border-radius: 6px;
                 color: var(--agy-btn-action-text);
                 font-size: 11px;
+                font-weight: 500;
                 cursor: pointer;
                 text-align: center;
             }
             .agy-acc-btn-action:hover {
                 background: var(--agy-btn-action-hover);
             }
+
+            /* Toast Notification */
+            .agy-toast {
+                position: fixed;
+                bottom: 68px;
+                right: 24px;
+                background: rgba(24, 24, 27, 0.92);
+                color: #ffffff;
+                font-size: 12px;
+                padding: 6px 14px;
+                border-radius: 6px;
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+                z-index: 9999999;
+                pointer-events: none;
+                transition: opacity 0.25s ease;
+            }
         `;
         document.head.appendChild(styleEl);
     }
 
-    function isDarkTheme() {
-        if (document.documentElement.classList.contains('dark') || document.body.classList.contains('dark')) return true;
-        if (document.documentElement.getAttribute('data-theme') === 'dark') return true;
-        try {
-            const bg = window.getComputedStyle(document.body).backgroundColor;
-            const rgb = bg.match(/\d+/g);
-            if (rgb && rgb.length >= 3) {
-                const brightness = (Number(rgb[0]) * 299 + Number(rgb[1]) * 587 + Number(rgb[2]) * 114) / 1000;
-                return brightness < 128;
-            }
-        } catch (_) {}
-        return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    function showToast(msg) {
+        let t = document.getElementById('antigravity-account-toast');
+        if (!t) {
+            t = document.createElement('div');
+            t.id = 'antigravity-account-toast';
+            t.className = 'agy-toast';
+            document.body.appendChild(t);
+        }
+        t.textContent = msg;
+        t.style.opacity = '1';
+        setTimeout(() => { if (t) t.style.opacity = '0'; }, 2400);
     }
 
     function detectCurrentCascadeId() {
@@ -300,7 +364,6 @@
                 if (btn.parentElement) return { target: btn.parentElement, floating: false };
             }
         }
-        // Fallback: floating container
         return { target: document.body, floating: true };
     }
 
@@ -311,6 +374,12 @@
             isRenderScheduled = false;
             renderPill();
         });
+    }
+
+    function getStatusColor(percent) {
+        if (percent >= 50) return '#34a853'; // Green
+        if (percent >= 20) return '#fbbc04'; // Amber
+        return '#ea4335'; // Red
     }
 
     function renderPill() {
@@ -329,54 +398,72 @@
         }
 
         const initial = (active.name || active.email || 'G')[0].toUpperCase();
+
+        // Build clean capacity indicator (no "Ready", no crowded text)
         let quotaText = '';
         if (active.quotas && active.quotas.length > 0) {
             const gQ = active.quotas.find(q => q.family === 'gemini');
             const cQ = active.quotas.find(q => q.family === 'claude');
-            const gVal = gQ ? `${Math.round(gQ.fraction * 100)}%` : '100%';
-            const cVal = cQ ? `${Math.round(cQ.fraction * 100)}%` : '100%';
-            quotaText = `<span class="agy-quota-badge agy-quota-gemini">G:${gVal}</span><span class="agy-quota-badge agy-quota-claude">3P:${cVal}</span>`;
-        } else {
-            quotaText = `<span class="agy-quota-badge agy-quota-gemini">Ready</span>`;
+            const lowestQ = [gQ, cQ].filter(Boolean).sort((a, b) => a.fraction - b.fraction)[0];
+            const pct = lowestQ ? Math.round(lowestQ.fraction * 100) : 100;
+            const color = getStatusColor(pct);
+            quotaText = `<span class="agy-quota-badge"><span class="agy-quota-dot" style="background:${color}"></span>${pct}%</span>`;
         }
 
-        const dark = isDarkTheme();
-        const renderKey = `${active.email}|${active.tier}|${quotaText}|${currentCascadeId}|${(cachedState.accounts || []).length}|${floating}|${dark}`;
+        const renderKey = `${active.email}|${quotaText}|${currentCascadeId}|${(cachedState.accounts || []).length}|${floating}`;
         if (pillContainer.__renderKey === renderKey) {
             return;
         }
         pillContainer.__renderKey = renderKey;
 
-        pillContainer.className = 'agy-acc-pill-container' + (floating ? ' floating' : '') + (dark ? ' dark' : '');
+        pillContainer.className = 'agy-acc-pill-container' + (floating ? ' floating' : '');
 
         pillContainer.innerHTML = `
-            <button class="agy-acc-pill-btn" type="button" id="agy-acc-toggle-btn" title="Antigravity Account Selector & Quota Telemetry">
+            <button class="agy-acc-pill-btn" type="button" id="agy-acc-toggle-btn" title="Antigravity Account Selector: ${active.email}">
                 <div class="agy-acc-avatar">${initial}</div>
                 <span class="agy-acc-badge">${active.email.split('@')[0]}</span>
                 ${quotaText}
-                <span style="font-size:9px;opacity:0.7;">▼</span>
+                <span style="font-size:8px;opacity:0.6;margin-left:1px;">▼</span>
             </button>
             <div class="agy-acc-dropdown" id="agy-acc-dropdown">
                 <div class="agy-acc-header">
                     <span>Google Accounts</span>
-                    <span style="font-size:9px;color:var(--agy-quota-gemini);">${active.tier || ''}</span>
+                    <span style="font-size:10px;font-weight:600;color:#3b82f6;">${active.tier || ''}</span>
                 </div>
                 <div class="agy-acc-list">
                     ${(cachedState.accounts || []).map(acc => {
                         const isSel = acc.email && acc.email.toLowerCase() === active.email.toLowerCase();
                         const gQ = (acc.quotas || []).find(q => q.family === 'gemini');
                         const cQ = (acc.quotas || []).find(q => q.family === 'claude');
-                        const gStr = gQ ? `G: ${Math.round(gQ.fraction * 100)}%` : 'G: 100%';
-                        const cStr = cQ ? `3P: ${Math.round(cQ.fraction * 100)}%` : '3P: 100%';
+                        const gPct = gQ ? Math.round(gQ.fraction * 100) : 100;
+                        const cPct = cQ ? Math.round(cQ.fraction * 100) : 100;
+                        const gCol = getStatusColor(gPct);
+                        const cCol = getStatusColor(cPct);
+
                         return `
                             <div class="agy-acc-item ${isSel ? 'selected' : ''}" data-email="${acc.email}">
-                                <div class="agy-acc-item-left">
-                                    <div class="agy-acc-item-email">${acc.email} ${acc.is_primary ? '(Primary)' : ''}</div>
-                                    <div class="agy-acc-item-sub">${acc.name || ''}</div>
+                                <div class="agy-acc-item-top">
+                                    <div class="agy-acc-item-email">
+                                        <span>${acc.email}</span>
+                                        ${acc.is_primary ? '<span class="agy-acc-tag-primary">Primary</span>' : ''}
+                                    </div>
+                                    ${isSel ? '<span class="agy-acc-active-tag">Active in chat</span>' : ''}
                                 </div>
-                                <div class="agy-acc-item-right">
-                                    <span class="agy-quota-gemini" style="font-size:10px;font-weight:bold;">${gStr}</span>
-                                    <span class="agy-quota-claude" style="font-size:10px;font-weight:bold;">${cStr}</span>
+                                <div class="agy-capacity-section">
+                                    <div class="agy-capacity-row">
+                                        <span>Gemini Capacity</span>
+                                        <span style="font-weight:600;color:${gCol};">${gPct}% remaining</span>
+                                    </div>
+                                    <div class="agy-capacity-bar-track">
+                                        <div class="agy-capacity-bar-fill" style="width:${gPct}%;background:${gCol};"></div>
+                                    </div>
+                                    <div class="agy-capacity-row" style="margin-top:2px;">
+                                        <span>Claude / 3P Capacity</span>
+                                        <span style="font-weight:600;color:${cCol};">${cPct}% remaining</span>
+                                    </div>
+                                    <div class="agy-capacity-bar-track">
+                                        <div class="agy-capacity-bar-fill" style="width:${cPct}%;background:${cCol};"></div>
+                                    </div>
                                 </div>
                             </div>
                         `;
@@ -384,12 +471,12 @@
                 </div>
                 <div class="agy-acc-footer">
                     <button class="agy-acc-btn-action" id="agy-acc-add-btn">+ Add Account</button>
-                    <button class="agy-acc-btn-action" id="agy-acc-refresh-btn">Refresh</button>
+                    <button class="agy-acc-btn-action" id="agy-acc-refresh-btn">Refresh Quotas</button>
                 </div>
             </div>
         `;
 
-        // Dropdown toggle
+        // Toggle dropdown
         const btn = document.getElementById('agy-acc-toggle-btn');
         const dropdown = document.getElementById('agy-acc-dropdown');
         if (btn && dropdown) {
@@ -399,7 +486,7 @@
             };
         }
 
-        // Account selection
+        // Switch account
         pillContainer.querySelectorAll('.agy-acc-item').forEach(item => {
             item.onclick = async (e) => {
                 e.stopPropagation();
@@ -410,6 +497,7 @@
                     cachedState.bindings[currentCascadeId] = email;
                     pillContainer.__renderKey = null;
                     scheduleRender();
+                    showToast(`✓ Switched chat to ${email}`);
                 }
                 dropdown.classList.remove('open');
             };
@@ -433,28 +521,24 @@
             refBtn.onclick = async (e) => {
                 e.stopPropagation();
                 await fetchState();
+                showToast('Quotas refreshed');
             };
         }
     }
 
-    // Close dropdown on outside click
+    // Close on outside click
     document.addEventListener('click', () => {
         const dd = document.getElementById('agy-acc-dropdown');
         if (dd) dd.classList.remove('open');
     });
 
-    // Observer: only trigger when target area or root classes change, debounced
+    // Observer: debounced, ignoring self-mutations
     let debounceTimer = null;
     const observer = new MutationObserver((mutations) => {
         let shouldCheck = false;
         for (const m of mutations) {
-            // Ignore mutations within the pill itself to eliminate infinite loops!
             if (m.target && m.target.closest && m.target.closest('#antigravity-account-pill')) {
                 continue;
-            }
-            if (m.type === 'attributes' && (m.attributeName === 'class' || m.attributeName === 'data-theme')) {
-                shouldCheck = true;
-                break;
             }
             if (m.type === 'childList') {
                 shouldCheck = true;
@@ -469,9 +553,8 @@
         }
     });
 
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'data-theme'] });
+    observer.observe(document.body, { childList: true, subtree: true });
 
-    // Initial state fetch
     fetchState();
     setInterval(fetchState, 30000);
 })();

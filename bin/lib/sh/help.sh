@@ -39,6 +39,7 @@ Commands:
   restart-services Restart systemd history sync and X11 icon injector daemons
   benchmark     Benchmark AI response speed, IPv6/proxy latency, and context bloat (alias: bench)
   multi-account Manage connected Google accounts, quotas & chat bindings (aliases: accounts, multiaccount)
+  trace         Live stream multi-account request routing and token swaps (alias: traffic)
   export-history Export conversation history & brains to portable tarball [out]
   import-history Import & merge conversation history from archive <file>
   export-suite  Export suite configurations (rules, skills, plugins, MCP, accounts) [out]

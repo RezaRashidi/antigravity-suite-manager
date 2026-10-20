@@ -67,6 +67,7 @@ parse_cli_args() {
             selector|patch-selector|patch-accounts) COMMAND="patch-selector"; shift ;;
             unpatch-selector|unpatch-accounts) COMMAND="unpatch-selector"; shift ;;
             unpatch|restore|revert-patch|unpatch-all) COMMAND="unpatch"; shift ;;
+            trace|monitor|traffic) COMMAND="traffic"; shift; break ;;
             restart-services|restart-service|restart-daemon|restart-daemons|25) COMMAND="restart-services"; shift ;;
             status|all|app|ide|app1|app2|ide-shortcuts|update-rtl|clean-cache|help)
                 COMMAND="$1"; shift ;;

@@ -13,12 +13,21 @@ const DEFAULT_PORT = 41999;
 const UPSTREAM_HOST = 'daily-cloudcode-pa.googleapis.com';
 const ACCOUNTS_DIR = process.env.ANTIGRAVITY_ACCOUNTS_DIR || path.join(os.homedir(), '.config', 'antigravity', 'accounts');
 const BINDINGS_FILE = path.join(ACCOUNTS_DIR, 'bindings.json');
+const TRAFFIC_LOG = path.join(ACCOUNTS_DIR, 'traffic.log');
 
 let _server = null;
 
 function ensureAccountsDir() {
     try {
         if (!fs.existsSync(ACCOUNTS_DIR)) fs.mkdirSync(ACCOUNTS_DIR, { recursive: true });
+    } catch (_) {}
+}
+
+function logTraffic(message) {
+    try {
+        ensureAccountsDir();
+        const line = `[${new Date().toISOString()}] ${message}\n`;
+        fs.appendFileSync(TRAFFIC_LOG, line, 'utf8');
     } catch (_) {}
 }
 
@@ -39,6 +48,7 @@ function setBinding(cascadeId, email, model = '') {
         const tmp = BINDINGS_FILE + '.tmp';
         fs.writeFileSync(tmp, JSON.stringify(b, null, 2), 'utf8');
         fs.renameSync(tmp, BINDINGS_FILE);
+        logTraffic(`[BIND] Chat: ${cascadeId} bound to account: ${email}`);
     } catch (e) {
         console.error('[MultiAccountRouter] Failed to write bindings:', e.message);
     }
@@ -199,15 +209,13 @@ async function resolveTokenForCascade(cascadeId) {
     const bindings = getBindings();
     const binding = bindings[cascadeId];
     if (!binding || !binding.email) {
-        // Transparent pass-through: do not touch native Authorization header
-        return null;
+        return null; // Transparent pass-through for primary/unbound chats
     }
     const accounts = loadAllAccounts();
     const target = accounts[binding.email];
     if (!target) return null;
     if (target.is_primary) {
-        // Native primary account handles its own OAuth tokens
-        return null;
+        return null; // Primary account uses its own native token
     }
     if (!target.token) return null;
 
@@ -242,6 +250,11 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
             }
 
             const token = await resolveTokenForCascade(cascadeId);
+            const bindings = getBindings();
+            const boundEmail = (cascadeId && bindings[cascadeId] && bindings[cascadeId].email) || 'Primary (Native)';
+            const tokenFingerprint = token ? `token: ...${token.slice(-6)}` : 'token: [Native LS Session]';
+            logTraffic(`Chat: [${cascadeId || 'general'}] -> Account: [${boundEmail}] | ${tokenFingerprint} | Path: ${req.url}`);
+
             const headers = { ...req.headers };
             headers.host = UPSTREAM_HOST;
 
@@ -250,8 +263,7 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
                 headers.authorization = `Bearer ${token}`;
             }
 
-            // CRITICAL: Preserve explicit Content-Length so Google Cloud Code PA
-            // does NOT reject chunked transfer encoding with HTTP 400 INVALID_ARGUMENT!
+            // Explicit Content-Length to avoid chunked rejection
             if (body.length > 0) {
                 headers['content-length'] = Buffer.byteLength(body);
             }
@@ -266,6 +278,7 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
                 headers: headers,
                 timeout: 0,
             }, (upRes) => {
+                logTraffic(`Chat: [${cascadeId || 'general'}] <- Upstream Response: ${upRes.statusCode}`);
                 res.writeHead(upRes.statusCode, upRes.headers);
                 upRes.pipe(res);
             });
@@ -273,6 +286,7 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
             req.on('aborted', () => upReq.destroy());
 
             upReq.on('error', (err) => {
+                logTraffic(`Chat: [${cascadeId || 'general'}] !! Upstream Error: ${err.message}`);
                 console.error('[MultiAccountRouter] Upstream error:', err.message);
                 if (!res.headersSent) {
                     res.writeHead(502, { 'Content-Type': 'application/json' });
@@ -295,6 +309,7 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
 
     _server.listen(port, '127.0.0.1', () => {
         console.log(`[MultiAccountRouter] Loopback proxy active on http://127.0.0.1:${port}`);
+        logTraffic(`MultiAccountRouter started on port ${port}`);
     });
 
     return _server;

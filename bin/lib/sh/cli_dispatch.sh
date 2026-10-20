@@ -44,6 +44,11 @@ dispatch_command() {
         patch-selector|selector|patch-accounts) FORCE_INSTALL=true patch_selector ;;
         unpatch-selector|unpatch-accounts) unpatch_selector ;;
         unpatch|restore|revert-patch|unpatch-all) unpatch_antigravity ;;
+        traffic|trace|monitor)
+            mkdir -p "${HOME}/.config/antigravity/accounts"
+            touch "${HOME}/.config/antigravity/accounts/traffic.log"
+            echo "Streaming real-time multi-account request traffic (Ctrl+C to exit)..."
+            tail -f "${HOME}/.config/antigravity/accounts/traffic.log" ;;
         update) dispatch_update ;;
         update-repo|self-update|update-self) update_suite_repo ;;
         restart-services|restart-service|restart-daemon|restart-daemons) restart_suite_services ;;
