@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import time
 from typing import Optional
 
@@ -13,49 +14,69 @@ from .account_discovery import call_cloudcode_rpc, call_ls_rpc, find_ls_ports_an
 from .models_system import PromptTestMetric
 
 
-def run_prompt_test() -> PromptTestMetric:
-    repo_candidate = os.path.expanduser("~/PhpstormProjects/antigravity-suite-manager")
-    if not os.path.isdir(repo_candidate):
-        repo_candidate = os.path.expanduser("~")
+def _ensure_bench_git_repo() -> str:
+    path = os.path.expanduser("~/PhpstormProjects/antigravity-suite-manager")
+    if os.path.isdir(os.path.join(path, ".git")):
+        return path
+    tmp_repo = "/tmp/antigravity-bench-repo"
+    os.makedirs(tmp_repo, exist_ok=True)
+    if not os.path.isdir(os.path.join(tmp_repo, ".git")):
+        subprocess.run(["git", "init"], cwd=tmp_repo, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        fpath = os.path.join(tmp_repo, "bench.txt")
+        if not os.path.isfile(fpath):
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write("probe\n")
+            subprocess.run(["git", "add", "."], cwd=tmp_repo, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return tmp_repo
 
-    ls_targets = find_ls_ports_and_csrf()
-    for pid, port, csrf in ls_targets:
-        payload = json.dumps({"repoRoot": repo_candidate}).encode("utf-8")
+
+def _get_stored_token() -> Optional[str]:
+    paths = [
+        "~/.gemini/jetski-standalone-oauth-token",
+        "~/.gemide/jetski-standalone-oauth-token",
+        "~/.antigravity-profile2/.gemini/jetski-standalone-oauth-token",
+    ]
+    for p in paths:
+        exp = os.path.expanduser(p)
+        if os.path.isfile(exp):
+            try:
+                with open(exp, "r", encoding="utf-8") as f:
+                    tok = json.load(f).get("token", {}).get("access_token")
+                if tok:
+                    return str(tok)
+            except Exception:
+                pass
+    return None
+
+
+def run_prompt_test() -> PromptTestMetric:
+    repo = _ensure_bench_git_repo()
+    for pid, port, csrf in find_ls_ports_and_csrf():
+        payload = json.dumps({"repoRoot": repo}).encode("utf-8")
         t0 = time.perf_counter()
         res = call_ls_rpc(port, csrf, "GenerateCommitMessage", payload=payload)
-        elapsed_ms = (time.perf_counter() - t0) * 1000
-
+        elapsed = (time.perf_counter() - t0) * 1000.0
         if res and "commitMessage" in res:
             msg = res["commitMessage"].get("commitMessageSummary", "")
             return PromptTestMetric(
                 prompt_text="GenerateCommitMessage (via LanguageServer)",
-                latency_ms=round(elapsed_ms, 2),
+                latency_ms=round(elapsed, 2),
                 success=True,
                 output_preview=msg[:120],
             )
 
-    tok_path = os.path.expanduser("~/.gemini/jetski-standalone-oauth-token")
-    if os.path.isfile(tok_path):
-        try:
-            with open(tok_path, "r", encoding="utf-8") as f:
-                acc_tok = json.load(f).get("token", {}).get("access_token", "")
-            if acc_tok:
-                t0 = time.perf_counter()
-                res = call_cloudcode_rpc(acc_tok, "fetchUserInfo")
-                elapsed_ms = (time.perf_counter() - t0) * 1000
-                if res:
-                    reg = res.get("regionCode", "US")
-                    return PromptTestMetric(
-                        prompt_text="fetchUserInfo (via CloudCode PA)",
-                        latency_ms=round(elapsed_ms, 2),
-                        success=True,
-                        output_preview=f"Region: {reg}, active session verified",
-                    )
-        except Exception as e:
+    tok = _get_stored_token()
+    if tok:
+        t0 = time.perf_counter()
+        res = call_cloudcode_rpc(tok, "fetchUserInfo")
+        elapsed = (time.perf_counter() - t0) * 1000.0
+        if res:
+            reg = res.get("regionCode", "US")
             return PromptTestMetric(
-                prompt_text="CloudCode Fallback",
-                success=False,
-                error=str(e),
+                prompt_text="fetchUserInfo (via CloudCode PA)",
+                latency_ms=round(elapsed, 2),
+                success=True,
+                output_preview=f"Region: {reg}, active session verified",
             )
 
     return PromptTestMetric(

@@ -6,29 +6,27 @@ from __future__ import annotations
 
 import os
 import platform
-import subprocess
-from typing import Dict
+from typing import Dict, Tuple
 
+from antigravity_suite.detect.scan import scan_installations
 from .models_system import EnvironmentMetric
 
 
-def _get_antigravity_version(path: str) -> str:
-    pkg = os.path.join(path, "resources", "app", "package.json")
-    if os.path.isfile(pkg):
-        try:
-            import json
-            with open(pkg, "r", encoding="utf-8") as f:
-                return str(json.load(f).get("version", "unknown"))
-        except Exception:
-            pass
-    ver_file = os.path.join(path, "version")
-    if os.path.isfile(ver_file):
-        try:
-            with open(ver_file, "r", encoding="utf-8") as f:
-                return f.read().strip()
-        except Exception:
-            pass
-    return "not installed"
+def _get_installed_versions() -> Tuple[str, str]:
+    app_v, ide_v = "not installed", "not installed"
+    try:
+        installs = scan_installations()
+        for item in installs:
+            t = item.get("type", "")
+            v = item.get("version", "unknown")
+            p = item.get("path", "")
+            if "App" in t and app_v == "not installed":
+                app_v = f"v{v} ({p})"
+            elif "IDE" in t and ide_v == "not installed":
+                ide_v = f"v{v} ({p})"
+    except Exception:
+        pass
+    return app_v, ide_v
 
 
 def _get_cpu_model() -> str:
@@ -62,7 +60,6 @@ def _get_active_proxies() -> Dict[str, str]:
         val = os.environ.get(var)
         if val:
             proxies[var.lower()] = val
-    # Check IDE settings.json
     ide_settings = os.path.expanduser("~/.config/Antigravity IDE/User/settings.json")
     if os.path.isfile(ide_settings):
         try:
@@ -78,6 +75,7 @@ def _get_active_proxies() -> Dict[str, str]:
 
 def collect_environment() -> EnvironmentMetric:
     tot_ram, avail_ram = _get_ram_mb()
+    app_ver, ide_ver = _get_installed_versions()
     try:
         loads = os.getloadavg()
         load_str = f"{loads[0]:.2f}, {loads[1]:.2f}, {loads[2]:.2f}"
@@ -92,7 +90,7 @@ def collect_environment() -> EnvironmentMetric:
         load_avg=load_str,
         ram_total_mb=round(tot_ram, 1),
         ram_avail_mb=round(avail_ram, 1),
-        app_version=_get_antigravity_version("/opt/antigravity2"),
-        ide_version=_get_antigravity_version("/opt/antigravity"),
+        app_version=app_ver,
+        ide_version=ide_ver,
         active_proxies=_get_active_proxies(),
     )

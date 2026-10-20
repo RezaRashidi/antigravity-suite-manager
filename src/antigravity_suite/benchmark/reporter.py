@@ -22,11 +22,12 @@ def format_report(report: BenchmarkReport) -> str:
 
     lines.append(f"{_BOLD}1. Network & Protocol Latencies:{_RESET}")
     for net in report.networks:
-        ip6_str = f"{_RED}BLACKHOLE TIMEOUT{_RESET}" if net.ipv6_blackhole else (f"{net.tcp_ipv6_ms} ms" if net.tcp_ipv6_ms else "n/a")
-        fake_tag = f" {_YELLOW}[TUN/Fake-IP Loopback]{_RESET}" if net.fake_ip_detected else ""
+        ip6_str = f"{_RED}TIMEOUT{_RESET}" if net.ipv6_blackhole else (f"{net.tcp_ipv6_ms} ms" if net.tcp_ipv6_ms else "n/a")
+        fake_tag = f" {_YELLOW}[TUN Loopback]{_RESET}" if net.fake_ip_detected else ""
         ip4_str = f"{net.tcp_ipv4_ms} ms{fake_tag}" if net.tcp_ipv4_ms else "n/a"
         tls_str = f"{net.tls_handshake_ms} ms" if net.tls_handshake_ms else "error"
-        lines.append(f"  - {net.host:36} | IPv4: {ip4_str:8} | IPv6: {ip6_str:10} | TLS ({net.alpn_protocol}): {tls_str}")
+        doh_tag = f" | DoH: {net.real_ip} ({net.doh_ms} ms)" if net.real_ip else ""
+        lines.append(f"  - {net.host:36} | IPv4: {ip4_str:8} | IPv6: {ip6_str:8} | TLS ({net.alpn_protocol}): {tls_str}{doh_tag}")
         if net.proxy_used:
             lines.append(f"    Proxy: {net.proxy_used}")
 

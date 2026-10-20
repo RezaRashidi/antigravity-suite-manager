@@ -10,6 +10,11 @@ from .models import ContextMetric, NetworkMetric, ProcessMetric
 from .models_system import AccountQuotaMetric, PromptTestMetric
 
 
+def _add_rec(recs: List[str], text: str) -> None:
+    if text not in recs:
+        recs.append(text)
+
+
 def evaluate_bottlenecks(
     networks: List[NetworkMetric],
     context: ContextMetric,
@@ -18,13 +23,13 @@ def evaluate_bottlenecks(
     prompt_test: Optional[PromptTestMetric] = None,
 ) -> Tuple[str, str, List[str], List[str]]:
     bottlenecks: List[str] = []
-    recommendations: List[str] = []
+    recs: List[str] = []
     base_latency = 2.0
 
     for net in networks:
         if net.ipv6_blackhole:
             bottlenecks.append(f"IPv6 Blackhole on {net.host}: connection stalled.")
-            recommendations.append("Disable IPv6 via sysctl to avoid 5-9s timeout.")
+            _add_rec(recs, "Disable IPv6 via sysctl to avoid 5-9s timeout.")
             base_latency += 7.0
         elif net.tcp_ipv4_ms and net.tcp_ipv4_ms > 250:
             bottlenecks.append(f"High network ping to {net.host}: {net.tcp_ipv4_ms} ms.")
@@ -32,7 +37,7 @@ def evaluate_bottlenecks(
 
         if net.tls_handshake_ms and net.tls_handshake_ms > 400:
             bottlenecks.append(f"Slow TLS handshake with {net.host}: {net.tls_handshake_ms} ms.")
-            recommendations.append("Verify proxy keep-alive to avoid repeated handshakes.")
+            _add_rec(recs, "Verify proxy keep-alive and connection pooling to avoid repeated TLS handshakes.")
             base_latency += 1.0
 
     if context.estimated_prompt_tokens > 15000:
@@ -40,7 +45,7 @@ def evaluate_bottlenecks(
             f"Prompt prefill bloat: ~{context.estimated_prompt_tokens} tokens "
             f"({context.total_mcp_tools} tools, {context.active_skills} skills)."
         )
-        recommendations.append("Convert eager MCP tools to lazy-loaded mode.")
+        _add_rec(recs, "Convert eager MCP tools to lazy-loaded mode.")
         base_latency += (context.estimated_prompt_tokens / 10000.0) * 1.5
 
     for acc in (accounts or []):
@@ -50,7 +55,7 @@ def evaluate_bottlenecks(
                     f"Low weekly quota on {acc.email or 'Account'}: {b.remaining_fraction * 100:.1f}% remaining. "
                     "Google Cloud Code deprioritizes and rate-limits low-quota tiers."
                 )
-                recommendations.append("Switch active account or wait for weekly quota reset window.")
+                _add_rec(recs, "Switch active account or wait for weekly quota reset window.")
                 base_latency += 2.5
 
     if prompt_test and prompt_test.latency_ms and prompt_test.latency_ms > 2500:
@@ -63,4 +68,4 @@ def evaluate_bottlenecks(
     else:
         tier, ttft = "BOTTLENECKED", f"{int(base_latency)}s - {int(base_latency + 4)}s"
 
-    return tier, ttft, bottlenecks, recommendations
+    return tier, ttft, bottlenecks, recs

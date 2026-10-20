@@ -28,6 +28,8 @@ class NetworkMetric:
     proxy_used: Optional[str] = None
     fake_ip_detected: bool = False
     resolved_ip: Optional[str] = None
+    doh_ms: Optional[float] = None
+    real_ip: Optional[str] = None
     error: Optional[str] = None
 
 
