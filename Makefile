@@ -24,6 +24,8 @@ install: build
 	install -m 755 bin/antigravity-detect.py $(BINDIR)/antigravity-detect.py
 	install -m 755 bin/antigravity-keyring.py $(BINDIR)/antigravity-keyring.py
 	install -m 755 bin/antigravity-checksums.py $(BINDIR)/antigravity-checksums.py 2>/dev/null || true
+	install -m 755 bin/antigravity-benchmark.py $(BINDIR)/antigravity-benchmark.py 2>/dev/null || true
+	install -m 755 bin/antigravity-multi-account.py $(BINDIR)/antigravity-multi-account.py 2>/dev/null || true
 	install -m 755 bin/antigravity-f5-patch.js $(BINDIR)/antigravity-f5-patch.js 2>/dev/null || true
 	install -m 755 bin/scale_icon $(BINDIR)/scale_icon
 	mkdir -p $(BINDIR)/lib

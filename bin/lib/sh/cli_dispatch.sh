@@ -39,6 +39,7 @@ dispatch_command() {
         update-rtl) update_rtl ;;
         checksums|fix-checksums|patch-checksums) fix_ide_checksums "${IDE_INSTALL_DIR:-/opt/antigravity}" ;;
         benchmark|bench|speed-test) dispatch_benchmark "${CMD_ARGS[@]}" ;;
+        multi-account|multiaccount|accounts) dispatch_multi_account "${CMD_ARGS[@]}" ;;
         update) dispatch_update ;;
         update-repo|self-update|update-self) update_suite_repo ;;
         restart-services|restart-service|restart-daemon|restart-daemons) restart_suite_services ;;

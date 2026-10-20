@@ -12,6 +12,7 @@ const { patchKeybindings } = require('./lib/patch/patch_keybindings');
 const { patchUtils } = require('./lib/patch/patch_utils');
 const { patchTray } = require('./lib/patch/patch_tray');
 const { patchMain } = require('./lib/patch/patch_main');
+const { patchMultiAccount } = require('./lib/patch/patch_multi_account');
 
 const dir = process.argv[2];
 if (!dir || !fs.existsSync(dir)) {
@@ -26,8 +27,9 @@ patchKeybindings(dir);
 patchUtils(dir);
 patchTray(dir);
 patchMain(dir);
+patchMultiAccount(dir);
 try {
     const markerPath = require('path').join(dir, 'dist', 'antigravity_f5_patch.marker');
-    fs.writeFileSync(markerPath, 'ANTIGRAVITY_SUITE_F5_PATCH_V2\n', 'utf8');
+    fs.writeFileSync(markerPath, 'ANTIGRAVITY_SUITE_F5_PATCH_V3\n', 'utf8');
 } catch (_) {}
 console.log('[Patch] All patches completed successfully.');

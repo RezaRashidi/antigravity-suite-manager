@@ -9,7 +9,7 @@ patch_f5_reload() {
         return 0
     fi
 
-    local patch_fingerprint="ANTIGRAVITY_SUITE_F5_PATCH_V2"
+    local patch_fingerprint="ANTIGRAVITY_SUITE_F5_PATCH_V3"
     if [ "$FORCE_INSTALL" != true ] && grep -qa "$patch_fingerprint" "$asar_file"; then
         log_info "F5 reload & profile isolation patch is already applied to app.asar. Skipping."
         return 0

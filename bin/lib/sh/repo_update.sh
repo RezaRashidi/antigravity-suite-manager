@@ -45,7 +45,7 @@ update_suite_repo() {
         for s in manage-antigravity.sh antigravity-generate-icons.py antigravity-apply-icon.py \
                  antigravity-merge-history.py antigravity-migration.py antigravity-detect.py \
                  antigravity-keyring.py antigravity-f5-patch.js antigravity-checksums.py \
-                 antigravity-benchmark.py; do
+                 antigravity-benchmark.py antigravity-multi-account.py; do
             if [ -f "${repo_dir}/bin/${s}" ]; then
                 cp -f "${repo_dir}/bin/${s}" "${LOCAL_BIN}/" 2>/dev/null || true
                 chmod +x "${LOCAL_BIN}/${s}" 2>/dev/null || true

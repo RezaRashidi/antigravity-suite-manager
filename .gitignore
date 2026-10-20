@@ -9,6 +9,8 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+.venv/
+uv.lock
 
 # Logs and runtime caches
 *.log
