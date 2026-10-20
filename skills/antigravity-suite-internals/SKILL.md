@@ -112,7 +112,73 @@ Both Hub and IDE rely on a compiled Go language server (`language_server`) provi
   - `https://cloudcode-pa.googleapis.com`: Corporate/enterprise endpoint (returns `403 Forbidden` for consumer Google AI Pro accounts).
   - `https://daily-cloudcode-pa.googleapis.com`: **Mandatory for consumer Google AI Pro / Google One accounts**.
 - `--csrf_token`: Session token required for authenticating loopback RPC HTTP/HTTPS requests.
-- `--subclient_type`: Informs backend telemetry of client mode (`ide` or `hub`).
+- `--subclient_type`: Informs backend telemetry of client mode (`ide`, `hub`, `cli`, `sdk`).
+
+#### Comprehensive Hidden & Advanced Flag Inventory
+Extracted from `/opt/antigravity2/resources/bin/language_server`:
+
+| Flag | Default | Description & Operational Impact |
+|:---|:---|:---|
+| `--web_bundle_path` | `""` | Directory or `.zip` holding compiled web UI to serve, overriding the binary's embedded web bundle. Allows live frontend debugging/patching without binary recompilation. |
+| `--model_api_client_type` | `ccpa` | Backend client driver: `ccpa` (Cloud Code PA) or `gemini`. Defaults to `ccpa`. |
+| `--limit_go_max_procs` | `4` | Caps runtime `GOMAXPROCS` to prevent CPU exhaustion on multi-core systems. |
+| `--persistent_mode` | `false` | Daemon mode: writes discovery file to disk and does not exit when IDE window or extension closes. |
+| `--exit_on_stdin_close` | `false` | Ties language server lifetime to stdin EOF. Used when parent process cannot signal across OS boundary (e.g. WSL). |
+| `--browser_eval_env` | `false` | Enables browser eval environment setup (pre-installed Playwright, CA certs, proxy/SSO). |
+| `--cdp_port` | `9222` | Port for Chrome DevTools Protocol browser automation. |
+| `--generative_service_addr`| `blade:...` | Generative service backend address (`blade:google.ai.generativelanguage.v1main.generativeservice-prod`). |
+| `--beyond_quota_bucket` | `""` | Quota bucket for Beyond API calls (`team/bucket` format). |
+| `--beyond_service_addr` | `""` | Address of Beyond generative service (Stubby client). |
+| `--is_google_internal` | `false` | Enables Google internal corporate features, Piper VCS, and Mendel flags. |
+| `--running_in_xbox` | `false` | Enables Xbox sandbox execution mode. |
+| `--xbox_tool_use_port` | `0` | Port for Xbox Tool Use gRPC server. |
+| `--zerog_*` | - | Google internal Zerog cloud VM integration (`--zerog_app_host_port`, `--zerog_http_socket_path`, `--zerog_tls_cert_path`, `--zerog_vm_ssh_key_path`). |
+| `--use_test_gaia` | `false` | Redirects OAuth endpoints to Google Gaia staging (`gaiastaging`). |
+| `--traffic_stream_selfid` | `""` | Census traffic stream isolation tag. |
+
+#### Fixed Port & Environment Variable Overrides
+The language server and IDE extension inspect specific environment variables at startup:
+
+- `JETSKI_FIXED_SERVER_PORT`: Overrides dynamic ConnectRPC HTTPS port assignment with a deterministic port.
+- `JETSKI_FIXED_LSP_PORT`: Overrides dynamic Language Server Protocol (LSP) port assignment.
+- `ANTIGRAVITY_VSCODE_HOST=1`: Instructs the language server to print sign-in URLs to stdout (`ANTIGRAVITY_OPEN_URL: <url>`) rather than attempting to launch a desktop browser (essential in WSL and headless SSH).
+- `AGY_BROWSER_ACTIVE_PORT_FILE`: Path to `DevToolsActivePort` used by the browser recording encoder.
+
+#### IDE STDIN Initial Handshake Architecture
+When launched by the Antigravity IDE (VS Code extension), the language server does NOT receive credentials via command-line flags. Instead, the extension spawns the binary and immediately writes a binary Protobuf message to **standard input (stdin)** before closing the stream:
+
+```protobuf
+message InitialHandshakeMetadata {
+  string ide_name = 1;              // "antigravity"
+  string ide_version = 2;           // "0.2.0"
+  string extension_name = 3;        // "antigravity"
+  string extension_path = 4;        // "/opt/antigravity/resources/app/extensions/antigravity"
+  string locale = 5;                // e.g. "en"
+  string device_fingerprint = 6;    // METADATA_INSTALLATION_ID UUID
+  string api_key = 7;               // OAuth access token ("ya29.a0...")
+  bool disable_telemetry = 8;       // true/false
+  string user_tier_id = 9;          // "g1-pro-tier"
+}
+```
+If this initial payload is malformed or missing, the language server logs:
+`"Failed to unmarshal initial Protobuf metadata from stdin: %v"` and immediately aborts startup.
+
+#### Host Bridge Connect Server (`hostBridgeServer.js`)
+To enable the language server to query and coordinate with the Electron host without coupling to Electron APIs:
+1. Electron starts an internal loopback ConnectRPC server on `127.0.0.1:<ephemeral_port>` with a 32-byte cryptographically random token.
+2. Spawns `language_server` with `--host_bridge_url=http://127.0.0.1:<port>` and `--host_bridge_token=<hex_token>`.
+3. Exposes `HostBridgeService`:
+   - `getUpdateStatus`: Reports app version and update availability.
+   - `applyUpdate`: Triggers graceful background update application.
+
+#### Crash Monitoring & Auto-Restart Circuit Breaker
+In `dist/languageServer.js`, Electron wraps the language server with an automated crash recovery watchdog:
+- `RESTART_WINDOW_MS`: `60000` (1 minute rolling window).
+- `MAX_RESTARTS`: `3` consecutive crash threshold.
+- `RESTART_COOLDOWN_MS`: `2000` (2 second delay before respawning).
+- **Crash Trigger Phrases**: The watchdog continuously tails stderr for:
+  `panic:`, `fatal error:`, `unexpected fault address`, `runtime:`, `running GoogleExitFunction`, `panic serving`.
+  When detected, the watchdog captures up to 100,000 bytes of stack trace into `language_server.log` and attempts restart. If 3 crashes occur within 60s, it enters permanent failure mode (`"Language server crashed 3 times in a row. Giving up."`).
 
 ### Key ConnectRPC Endpoints (`exa.language_server_pb.LanguageServerService`)
 
@@ -586,10 +652,21 @@ To ensure 100% parity across IDE and Desktop App without missing or miscategoriz
 ### 9. `state.vscdb` (VS Code Global State SQLite)
 Located at `~/.config/Antigravity IDE/User/globalStorage/state.vscdb`:
 - **Table**: `ItemTable (key TEXT PRIMARY KEY, value TEXT)`
-- **Key Entries**:
+- **Core Key Entries**:
   - `antigravityAuthStatus`: JSON containing `{ "name": "...", "email": "...", "apiKey": "..." }`.
-  - `antigravityUnifiedStateSync.userStatus`: Base64-encoded Protobuf caching user status, models, and tiers.
-  - `antigravityUnifiedStateSync.trajectorySummaries`: Base64-encoded Protobuf index of all conversations.
+  - `antigravityUnifiedStateSync.oauthToken`: Base64-encoded Protobuf envelope storing:
+    - `authStateWithContextSentinelKey`: JSON auth state object (`{"state": "signedIn", "isGcpTos": false, ...}`).
+    - `oauthTokenInfoSentinelKey`: Protobuf payload storing Google OAuth `access_token` (`ya29.a0...`), token type (`Bearer`), and Google `refresh_token` (`1//0cwz...`).
+  - `antigravityUnifiedStateSync.userStatus`: Base64-encoded Protobuf envelope (`UserStatusSentinelKey`) containing:
+    - Authenticated Google identity (display name, email address, profile avatar URL).
+    - Active tier specification (`id: "g1-pro-tier"`, name `"Google AI Pro"`, upgrade link `https://antigravity.google/g1-upgrade`).
+    - Available model catalog with thinking budget flags: `Gemini 3.8 Flash (High/Medium/Low)`, `Claude Sonnet 4.6 (Thinking)`, `Claude Opus 4.6 (Thinking)`, `GPT-OSS 120B (Medium)`.
+    - Supported multi-modal MIME types matrix (over 40 types: `application/json`, `text/x-python`, `application/pdf`, `video/mp4`, `image/webp`, `audio/opus`, etc.).
+    - Model deprecation notices and sunset policy metadata.
+  - `antigravityUnifiedStateSync.modelCredits`: Base64-encoded Protobuf envelope storing `minimumCreditAmountForUsageKey` and `availableCreditsSentinelKey`.
+  - `antigravityUnifiedStateSync.trajectorySummaries`: Base64-encoded Protobuf index caching all conversations and tree hierarchies for instant sidebar display.
+  - `antigravityUnifiedStateSync.agentPreferences`: Custom subagent prompt templates and execution flags.
+  - `antigravityUnifiedStateSync.sidebarWorkspaces`: Pinned and active workspace folders for the sidebar drawer.
 
 ---
 
@@ -965,4 +1042,254 @@ Allows updating the Antigravity Suite Manager codebase itself without broken sta
 | **Suite Self-Update** | `~/manage-antigravity.sh update-repo` | Git pull, recompile resampler, redeploy scripts, restart daemons |
 | **Services Restart** | `~/manage-antigravity.sh restart-services` | Systemd non-blocking reload & X11 icon injector recycle |
 | **Unit Test Suite** | `python3 -m unittest discover tests` | All 127 tests passing |
+
+---
+
+## 12. Policy Guardian & DeepMind Command Assessor Architecture
+
+### 12.1 Security & Safety Model Overview
+Antigravity integrates DeepMind's Autonomous General Intelligence (AGI) safety monitoring layer (`google3/gdm/security/agi_control/agent_monitoring`) directly into the agent execution pipeline. Before the agent executes bash commands or invokes file-altering tools, requests pass through **Policy Guardian** and the **Command Assessor**.
+
+### 12.2 Protobuf Configuration Architecture
+Defined in `google3/third_party/jetski/cortex_pb/cortex.proto` and configured via `CommandAssessorConfig` inside `CascadeExecutorConfig`:
+
+```protobuf
+message PolicyGuardianConfig {
+  bool enabled = 1;
+  string model_selection = 2;
+  string model_tier = 3;
+  FailMode fail_mode = 4;
+  bool antivirus_enabled = 5;
+  repeated string vetted_tools = 6;
+  int32 max_tool_rounds = 7;
+  bool enable_url_vetting = 8;
+  bool enable_denied_repeat_precheck = 9;
+  int32 http_timeout_seconds = 10;
+  bool antivirus_enforced = 11;
+  repeated string allowed = 12;
+  string tool_provider = 13;
+  bool use_v2 = 14;
+
+  enum FailMode {
+    FAIL_MODE_UNSPECIFIED = 0;
+    FAIL_OPEN = 1;   // If classifier times out, allow command execution with warning
+    FAIL_CLOSED = 2; // If classifier times out, strictly block command execution
+  }
+}
+
+message CommandAssessorConfig {
+  bool enabled = 1;
+  PolicyGuardianConfig policy_guardian_config = 2;
+  bool allow_experimental_monitors = 3;
+  bool allow_pss_experimental_monitors = 4;
+  repeated string active_tags = 5;
+  string sonar_monitors_config_textproto = 6;
+}
+```
+
+### 12.3 Execution Pipeline Hook Architecture
+The Language Server binds safety monitors across three execution phases:
+1. **Pre-Tool Hooks (`pretoolhooks.NewCommandAssessorHook`)**: Inspects proposed command string, flags, and paths. Blocks execution if destructive patterns match or if Sonar monitors flag safety violations.
+2. **Post-Tool Hooks (`posttoolhooks.NewCommandAssessorHook`)**: Audits command exit codes and output streams for unintended data exfiltration or privilege escalation.
+3. **Post-Invocation Hooks (`posthooks.NewCommandAssessorPostInvocationHook`)**: Assesses overall agent behavior against active tags and safety policies.
+
+### 12.4 Hardcoded Safety Guardrails
+Regardless of user settings, the following guardrails are enforced at runtime:
+- **Root Git Protection**: Blocks `git push --delete origin main`, `git push --delete origin master`, and forced root pushes (`--force`).
+- **Binary Execution Quarantine**: Freshly downloaded executables in `/tmp` or workspace cannot be executed without explicit user confirmation.
+- **Silent Privilege Escalation**: Silent `sudo` invocation without interactive terminal confirmation is rejected.
+
+---
+
+## 13. Battle Mode Architecture (Multi-Model Arena & Virtualized Filesystem)
+
+### 13.1 Concept & Purpose
+Battle Mode enables running multiple foundation models (e.g., Gemini 1.5 Pro, Claude 3.5 Sonnet, internal models) simultaneously on identical user tasks. Each model executes independently within an isolated workspace worktree. The user inspects competing implementations side-by-side and selects the winning branch.
+
+### 13.2 Virtualized Filesystem (`BattleModeFS`)
+To prevent concurrent models from corrupting the user's working directory, Antigravity implements `BattleModeFS` (`google3/third_party/jetski/fs/fs.(*BattleModeFS)`):
+- **Dynamic Redirection (`redirect`)**: Intercepts all file system calls (`ReadFile`, `WriteFile`, `MkdirAll`, `Remove`, `Rename`, `FindFiles`).
+- **Worktree Sandboxing**: Staged mutations are written to temporary worktrees located at `AppDataDir` / `GeminiDir` under unique arm identifiers.
+- **URI Mapping**: Uses `URISchemePrefix` and `NewPathFromURI` to resolve virtualized relative paths while preserving parent workspace reads.
+
+### 13.3 Battle Mode Protobuf Metadata
+Defined in `google3/third_party/jetski/cortex_pb/cortex.proto`:
+
+```protobuf
+message BattleModeMetadata {
+  repeated string cloned_workspace_uris = 1;
+  string parent_conversation_id = 2;
+  string model_info_override = 3;
+}
+
+message BattleModeInfo {
+  repeated string children_conversation_ids = 1;
+  string winning_conversation_id = 2;
+  int32 start_step_index = 3;
+  int32 end_step_index = 4;
+}
+```
+
+### 13.4 Arena Lifecycle Flow
+1. **Initiation**: User opens Battle Mode or navigates to `/battle/$battleId`.
+2. **Branching**: Language server clones workspace context, creating child trajectories (`children_conversation_ids`) with `is_battle_mode_fork = true`.
+3. **Parallel Execution**: Competing models run in parallel with decoupled tool execution environments.
+4. **Side-by-Side Review**: Web UI displays multi-column diff views and execution step histories.
+5. **Consolidation**: Upon selecting the winner (`winning_conversation_id`), mutations from `start_step_index` to `end_step_index` are cherry-picked into the base workspace. Competing worktrees are pruned.
+
+---
+
+## 14. Sidecars Subsystem & Process Lifecycle
+
+### 14.1 Architecture Overview
+Sidecars are auxiliary local services or microservices managed by the Antigravity Language Server. They provide custom agent tools, language runtime bridges, local databases, or specialized UI panels directly within the IDE and Desktop App.
+
+### 14.2 Protobuf Schema (`cortex.proto`)
+```protobuf
+message SidecarConfig {
+  string mode = 1;
+  string command = 2;
+  bool builtin = 3;
+  string restart_policy = 4;
+  repeated string args = 5;
+  string description = 6;
+  bool has_web_ui = 7;
+  map<string, string> env = 8;
+  string display_name = 9;
+  bool disabled = 10;
+  SidecarUIConfig ui_config = 11;
+  SidecarAgentPermissions agent_permissions = 12;
+  repeated SidecarArgumentDefinition arguments = 13;
+}
+
+message SidecarAgentPermissions {
+  repeated string workspace_uris = 1;
+  repeated string access_grants = 2;
+  bool allows_user_interactions = 3;
+}
+
+message SidecarUIConfig {
+  string display_name = 1;
+  repeated SidecarUIView views = 2;
+}
+
+message SidecarUIView {
+  string url = 1;
+  SidecarUIEntrypoint entrypoint = 2;
+  string path = 3;
+  string title = 4;
+  repeated string file_extensions = 5;
+}
+
+message SidecarStatusInfo {
+  string sidecar_id = 1;
+  SidecarConfig config = 2;
+  SidecarStatus status = 3;
+  string last_error = 4;
+  int64 start_time_ms = 5;
+}
+```
+
+### 14.3 Sidecar Process Manager (`LocalExecutor`)
+- **Port Allocation**: Dynamically assigns free loopback ports via `getUnusedUIPort`.
+- **Fault Tolerance**: Connects via `startupTolerantTransport` with exponential backoff retries.
+- **Security Boundaries**: Permissions enforced by `SidecarAgentPermissions`: Sidecars only access whitelisted `workspace_uris` and approved capability grants.
+
+---
+
+## 15. Frontend Router Registry & Hidden Internal Debug Views
+
+### 15.1 Client Route Table
+Extracted from `/opt/antigravity/resources/app/out/jetskiAgent/main.js`:
+
+```javascript
+var ls = {
+  settings: "/settings",
+  launchpad: "/launchpad",
+  debug: "/debug",
+  lsDebug: "/lsdebug",
+  stateSyncDebug: "/stateSyncDebug",
+  shared: "/s",
+  onboarding: "/onboarding",
+  home: "/",
+  knowledge: "/knowledge",
+  sidecars: "/sidecars",
+  automations: "/automations",
+  extensions: "/plugins",
+  plugins: "/plugins",
+  pluginsInstalled: "/plugins/installed",
+  pluginDetail: "/plugins/detail/$pluginPath",
+  sidecarDetail: "/sidecars/$sidecarId",
+  extensionDetail: "/plugins/$sidecarId",
+  history: "/history",
+  conversation: "/c/$cascadeId",
+  customView: "/view/$viewId",
+  multiConversation: "/multi",
+  battleMode: "/battle/$battleId",
+  newProject: "/new-project",
+  forkedConversation: "/forked/$sourceCascadeId"
+};
+```
+
+### 15.2 Secret & Diagnostic View Capabilities
+- **`/stateSyncDebug` (Unified State Sync Debugger)**: Interactive inspection tool for `ussClient`. Shows live protobuf topic streams, state synchronization keys (`oauthToken`, `userStatus`, `modelCredits`), topic pause/resume, and snapshot trees.
+- **`/lsdebug` (Language Server Debug Console)**: Real-time log streamer connected to the `JETSKI_LOG_MAIN` channel. Displays raw ConnectRPC frames, payload sizes, and internal Go goroutine errors.
+- **`/multi` (Multi-Conversation Canvas)**: Multi-column view allowing parallel conversation execution, synchronized scrolling, and cross-chat prompt replaying.
+- **`/sidecars` & `/sidecars/$sidecarId`**: Management console for starting, stopping, configuring arguments, and viewing embedded web UIs of active sidecar processes.
+- **`/view/$viewId`**: Host environment for generative UI widgets, artifact previews, and custom extension panels.
+
+---
+
+## 16. WebRTC Remote Control, Companion Origin & Mesh Relay
+
+### 16.1 Remote Pairing & Control Architecture
+Antigravity incorporates a peer-to-peer WebRTC stack (`github.com/pion/webrtc/v4`) within the Go Language Server. This allows pairing an active IDE or Hub session with external companion clients (browser companions, mobile devices, remote CLI terminals) without requiring open inbound firewall ports.
+
+### 16.2 ConnectRPC Methods & Protos
+- **Endpoint**: `/exa.language_server_pb.LanguageServerService/GetRemoteControlInfo`
+- **Request / Response**:
+  ```protobuf
+  message GetRemoteControlInfoRequest {}
+
+  message GetRemoteControlInfoResponse {
+    bool enabled = 1;
+    string instance_id = 2;
+    string companion_origin = 3;
+  }
+  ```
+- **User Settings (`jetbox_state.proto`)**:
+  - `remote_control_enabled`: Master switch.
+  - `remote_control_hostname`: Signaling and relay host.
+  - `cli_remote_control_hostname`: Specialized host for headless CLI remote pairing.
+- **Mendel Feature Flag**: `GetWebrtcMeshReady` gates WebRTC mesh routing across distributed development environments.
+
+### 16.3 Telemetry & Event Model (`RemoteControlEvent`)
+Monitors remote session quality and diagnostics:
+- Fields: `instance_id`, `protocol_version`, `client_version`, `duration_ms`, `disconnect_reason`, `reconnect_attempt`, `error_category`, `rpc_path`, `route`, `command_count`, `webrtc_connection_type`, `webrtc_command_error_count`.
+
+---
+
+## 17. Antigravity IDE Extension Commands, Custom Editors & Lineage
+
+### 17.1 VS Code Extension Architecture
+The IDE extension (`/opt/antigravity/resources/app/extensions/antigravity/`) acts as the presentation bridge between VS Code's extension host and the local Go Language Server.
+
+### 17.2 Registered Custom Editors
+Configured in `package.json`:
+- **`antigravity.workflowEditor`**: Graphical markdown editor for workflow authoring. Associated with `**/.agent/workflows/**/*.md`, `**/_agent/workflows/**/*.md`, and `**/.gemini/antigravity*/global_workflows/*.md`.
+- **`antigravity.ruleEditor`**: Custom UI for managing steering rules (`**/.agent/rules/**/*.md`, `**/_agent/rules/**/*.md`).
+
+### 17.3 Diagnostic & Maintenance Command Registry
+| Command ID | Function & Operational Use |
+|:---|:---|
+| `antigravity.simulateSegFault` | Deliberately causes a crash to test the language server auto-restart circuit breaker. |
+| `antigravity.persistentLanguageServer` | Toggles background persistent daemon mode (`--persistent_mode`). |
+| `antigravity.killLanguageServerAndReloadWindow` | Terminates active language server process and restarts window host. |
+| `antigravity.openPersistentLanguageServerLog` | Streams live stdout/stderr from language server into an editor output channel. |
+| `antigravity.startDemoMode` / `endDemoMode` | Toggles sandboxed demo environment for screen shares and workshops. |
+| `antigravity.resetOnboardingBackend` | Clears local onboarding flags in `app_state` and forces initial walkthrough. |
+| `antigravity.captureTraces` | Generates diagnostic trace bundle containing ConnectRPC timing and Go pprof dumps. |
+| `antigravity.migrateWindsurfSettings` | Imports settings, rules, and workflows from Windsurf configuration roots. |
+| `antigravity.importCursorSettings` | Imports configuration and extension rules from Cursor environments. |
+
 
