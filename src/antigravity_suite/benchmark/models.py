@@ -7,6 +7,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from .models_system import (
+    AccountQuotaMetric,
+    EnvironmentMetric,
+    PromptTestMetric,
+    QuotaBucket,
+)
+
 
 @dataclass
 class NetworkMetric:
@@ -19,6 +26,8 @@ class NetworkMetric:
     alpn_protocol: str = "unknown"
     ipv6_blackhole: bool = False
     proxy_used: Optional[str] = None
+    fake_ip_detected: bool = False
+    resolved_ip: Optional[str] = None
     error: Optional[str] = None
 
 
@@ -46,9 +55,12 @@ class ProcessMetric:
 
 @dataclass
 class BenchmarkReport:
+    env: EnvironmentMetric = field(default_factory=EnvironmentMetric)
+    accounts: List[AccountQuotaMetric] = field(default_factory=list)
     networks: List[NetworkMetric] = field(default_factory=list)
     context: ContextMetric = field(default_factory=ContextMetric)
     processes: List[ProcessMetric] = field(default_factory=list)
+    prompt_test: Optional[PromptTestMetric] = None
     speed_tier: str = "OPTIMAL"
     estimated_ttft_sec: str = "2s - 4s"
     bottlenecks: List[str] = field(default_factory=list)
@@ -60,7 +72,10 @@ class BenchmarkReport:
             "estimated_ttft": self.estimated_ttft_sec,
             "bottlenecks": self.bottlenecks,
             "recommendations": self.recommendations,
+            "environment": self.env.__dict__,
+            "accounts": [a.__dict__ for a in self.accounts],
             "networks": [m.__dict__ for m in self.networks],
             "context": self.context.__dict__,
             "processes": [p.__dict__ for p in self.processes],
+            "prompt_test": self.prompt_test.__dict__ if self.prompt_test else None,
         }

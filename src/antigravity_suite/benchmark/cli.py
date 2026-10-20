@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from typing import List, Optional
 
 from .reporter import format_report
@@ -17,25 +16,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Benchmark and diagnose Antigravity AI response speed and latency bottlenecks."
     )
-    parser.add_argument(
-        "--json",
-        action="store_true",
-        help="Output raw benchmark results as JSON",
-    )
-    parser.add_argument(
-        "--skip-network",
-        action="store_true",
-        help="Skip external network and TLS benchmark checks",
-    )
-    parser.add_argument(
-        "--host",
-        action="append",
-        dest="hosts",
-        help="Custom Cloud Code PA host(s) to benchmark",
-    )
+    parser.add_argument("--json", action="store_true", help="Output raw results as JSON")
+    parser.add_argument("--skip-network", action="store_true", help="Skip external network and TLS checks")
+    parser.add_argument("--skip-prompt", action="store_true", help="Skip live prompt turnaround test")
+    parser.add_argument("--host", action="append", dest="hosts", help="Custom host(s) to benchmark")
 
     args = parser.parse_args(argv)
-    report = run_benchmark(skip_network=args.skip_network, hosts=args.hosts)
+    report = run_benchmark(
+        skip_network=args.skip_network,
+        skip_prompt=args.skip_prompt,
+        hosts=args.hosts,
+    )
 
     if args.json:
         print(json.dumps(report.to_dict(), indent=2))

@@ -4,69 +4,63 @@ Latency evaluator and bottleneck diagnosis engine.
 
 from __future__ import annotations
 
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from .models import ContextMetric, NetworkMetric, ProcessMetric
+from .models_system import AccountQuotaMetric, PromptTestMetric
 
 
 def evaluate_bottlenecks(
     networks: List[NetworkMetric],
     context: ContextMetric,
     processes: List[ProcessMetric],
+    accounts: Optional[List[AccountQuotaMetric]] = None,
+    prompt_test: Optional[PromptTestMetric] = None,
 ) -> Tuple[str, str, List[str], List[str]]:
     bottlenecks: List[str] = []
     recommendations: List[str] = []
-    base_latency_sec = 2.0
+    base_latency = 2.0
 
     for net in networks:
         if net.ipv6_blackhole:
-            bottlenecks.append(
-                f"IPv6 Blackhole on {net.host}: connection stalled or timed out."
-            )
-            recommendations.append(
-                "Disable IPv6 via 'sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1' "
-                "to save 5-9 seconds per request."
-            )
-            base_latency_sec += 7.0
+            bottlenecks.append(f"IPv6 Blackhole on {net.host}: connection stalled.")
+            recommendations.append("Disable IPv6 via sysctl to avoid 5-9s timeout.")
+            base_latency += 7.0
         elif net.tcp_ipv4_ms and net.tcp_ipv4_ms > 250:
-            bottlenecks.append(
-                f"High network ping to {net.host}: {net.tcp_ipv4_ms} ms."
-            )
-            base_latency_sec += 1.5
+            bottlenecks.append(f"High network ping to {net.host}: {net.tcp_ipv4_ms} ms.")
+            base_latency += 1.5
 
         if net.tls_handshake_ms and net.tls_handshake_ms > 400:
-            bottlenecks.append(
-                f"Slow TLS handshake with {net.host}: {net.tls_handshake_ms} ms."
-            )
-            recommendations.append(
-                "Verify proxy keep-alive settings to prevent repeated TLS handshakes."
-            )
-            base_latency_sec += 1.0
+            bottlenecks.append(f"Slow TLS handshake with {net.host}: {net.tls_handshake_ms} ms.")
+            recommendations.append("Verify proxy keep-alive to avoid repeated handshakes.")
+            base_latency += 1.0
 
     if context.estimated_prompt_tokens > 15000:
         bottlenecks.append(
             f"Prompt prefill bloat: ~{context.estimated_prompt_tokens} tokens "
-            f"from {context.total_mcp_tools} MCP tools and {context.active_skills} skills."
+            f"({context.total_mcp_tools} tools, {context.active_skills} skills)."
         )
-        recommendations.append(
-            "Convert eager MCP tools to lazy-loaded mode or disable unused MCP servers."
-        )
-        base_latency_sec += (context.estimated_prompt_tokens / 10000.0) * 1.5
+        recommendations.append("Convert eager MCP tools to lazy-loaded mode.")
+        base_latency += (context.estimated_prompt_tokens / 10000.0) * 1.5
 
-    for proc in processes:
-        if proc.loopback_ping_ms and proc.loopback_ping_ms > 50:
-            bottlenecks.append(
-                f"Language Server PID {proc.pid} loopback lag: {proc.loopback_ping_ms} ms."
-            )
+    for acc in (accounts or []):
+        for b in acc.buckets:
+            if b.window == "weekly" and b.remaining_fraction < 0.25:
+                bottlenecks.append(
+                    f"Low weekly quota on {acc.email or 'Account'}: {b.remaining_fraction * 100:.1f}% remaining. "
+                    "Google Cloud Code deprioritizes and rate-limits low-quota tiers."
+                )
+                recommendations.append("Switch active account or wait for weekly quota reset window.")
+                base_latency += 2.5
 
-    if base_latency_sec <= 4.0:
-        tier = "OPTIMAL"
-        ttft = "1.5s - 3.5s"
-    elif base_latency_sec <= 8.0:
-        tier = "MODERATE"
-        ttft = "4.0s - 7.5s"
+    if prompt_test and prompt_test.latency_ms and prompt_test.latency_ms > 2500:
+        bottlenecks.append(f"Live prompt latency elevated: {prompt_test.latency_ms:.1f} ms.")
+
+    if base_latency <= 4.0:
+        tier, ttft = "OPTIMAL", "1.5s - 3.5s"
+    elif base_latency <= 8.0:
+        tier, ttft = "MODERATE", "4.0s - 7.5s"
     else:
-        tier = "BOTTLENECKED"
-        ttft = f"{int(base_latency_sec)}s - {int(base_latency_sec + 4)}s"
+        tier, ttft = "BOTTLENECKED", f"{int(base_latency)}s - {int(base_latency + 4)}s"
 
     return tier, ttft, bottlenecks, recommendations

@@ -40,7 +40,13 @@ def benchmark_endpoint(host: str) -> NetworkMetric:
     metric.dns_ipv6_ms, ip6 = resolve_dns(host, socket.AF_INET6)
 
     if ip4:
+        metric.resolved_ip = ip4
         metric.tcp_ipv4_ms, _ = measure_tcp(ip4, 443, socket.AF_INET, timeout=3.0)
+        is_synthetic = ip4.startswith(("198.18.", "198.19.", "127."))
+        is_sub_ms = metric.tcp_ipv4_ms is not None and metric.tcp_ipv4_ms < 1.0
+        if is_synthetic or is_sub_ms:
+            metric.fake_ip_detected = True
+
     if ip6:
         metric.tcp_ipv6_ms, err6 = measure_tcp(ip6, 443, socket.AF_INET6, timeout=3.0)
         if err6 == "TIMEOUT" or (metric.tcp_ipv6_ms is None and err6):

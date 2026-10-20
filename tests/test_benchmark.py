@@ -92,13 +92,21 @@ class TestBenchmarkSubsystem(unittest.TestCase):
         self.assertIn("999", text)
 
     def test_run_benchmark_smoke(self):
-        report = run_benchmark(skip_network=True)
+        report = run_benchmark(skip_network=True, skip_prompt=True)
         self.assertIsInstance(report, BenchmarkReport)
         self.assertIsNotNone(report.context)
+        self.assertIsNotNone(report.env)
+
+    def test_environment_and_account_smoke(self):
+        from antigravity_suite.benchmark import collect_environment, collect_accounts_and_quotas
+        env = collect_environment()
+        self.assertIsNotNone(env.os_name)
+        accs = collect_accounts_and_quotas()
+        self.assertIsInstance(accs, list)
 
     def test_cli_main_smoke(self):
         from antigravity_suite.benchmark.cli import main
-        code = main(["--skip-network"])
+        code = main(["--skip-network", "--skip-prompt"])
         self.assertIn(code, (0, 1))
 
 
