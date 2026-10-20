@@ -1,5 +1,5 @@
 // ==============================================================================
-// Antigravity Multi-Account Loopback Router & Reverse Proxy
+// Antigravity Multi-Account Loopback Router & Real-Time Telemetry Provider
 // ==============================================================================
 
 const http = require('http');
@@ -7,7 +7,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { URL } = require('url');
+const { execSync } = require('child_process');
 
 const DEFAULT_PORT = 41999;
 const UPSTREAM_HOST = 'daily-cloudcode-pa.googleapis.com';
@@ -16,6 +16,7 @@ const BINDINGS_FILE = path.join(ACCOUNTS_DIR, 'bindings.json');
 const TRAFFIC_LOG = path.join(ACCOUNTS_DIR, 'traffic.log');
 
 let _server = null;
+let _quotaCache = { timestamp: 0, accounts: [] };
 
 function ensureAccountsDir() {
     try {
@@ -104,6 +105,82 @@ function loadAllAccounts() {
         } catch (_) {}
     }
     return accounts;
+}
+
+function findLanguageServerInfo() {
+    try {
+        const pgrep = execSync('pgrep -a language_server', { encoding: 'utf8' });
+        const mPid = pgrep.match(/^(\d+)/m);
+        const mCsrf = pgrep.match(/--csrf_token(?:=|\s+)([0-9a-fA-F-]+)/);
+        if (!mPid || !mCsrf) return null;
+        const pid = mPid[1];
+        const csrf = mCsrf[1];
+        const ss = execSync('ss -tlpn', { encoding: 'utf8' });
+        const lines = ss.split('\n').filter(l => l.includes('pid=' + pid));
+        for (const l of lines) {
+            const mPort = l.match(/127\.0\.0\.1:(\d+)/);
+            if (mPort) return { port: parseInt(mPort[1], 10), csrf };
+        }
+    } catch (_) {}
+    return null;
+}
+
+function parseGroupsToBuckets(groups) {
+    const buckets = [];
+    for (const g of groups || []) {
+        const isGemini = (g.displayName || '').includes('Gemini');
+        const isClaude = (g.displayName || '').includes('Claude') || (g.displayName || '').includes('GPT');
+        const family = isGemini ? 'gemini' : (isClaude ? 'claude' : 'other');
+        for (const b of g.buckets || []) {
+            const win = (b.window || '').toLowerCase();
+            const tagWin = win.includes('5h') ? '5h' : 'weekly';
+            const frac = typeof b.remainingFraction === 'number' ? b.remainingFraction : 1.0;
+            buckets.push({
+                family,
+                window: tagWin,
+                label: b.displayName || (tagWin === '5h' ? 'Five Hour Limit' : 'Weekly Limit'),
+                fraction: frac,
+                percent: Math.round(frac * 100),
+                reset_time: b.resetTime || '',
+                description: b.description || '',
+            });
+        }
+    }
+    return buckets;
+}
+
+async function fetchLanguageServerTelemetry() {
+    const ls = findLanguageServerInfo();
+    if (!ls) return null;
+
+    return new Promise((resolve) => {
+        const req = https.request({
+            hostname: '127.0.0.1',
+            port: ls.port,
+            path: '/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary',
+            method: 'POST',
+            rejectUnauthorized: false,
+            headers: {
+                'Content-Type': 'application/json',
+                'x-codeium-csrf-token': ls.csrf,
+                'Content-Length': 2,
+            },
+            timeout: 2500,
+        }, (res) => {
+            let body = '';
+            res.on('data', c => body += c);
+            res.on('end', () => {
+                try {
+                    const d = JSON.parse(body);
+                    const groups = d?.response?.groups || [];
+                    resolve({ groups, buckets: parseGroupsToBuckets(groups) });
+                } catch (_) { resolve(null); }
+            });
+        });
+        req.on('error', () => resolve(null));
+        req.write('{}');
+        req.end();
+    });
 }
 
 function findLanguageServerBinary() {
@@ -202,6 +279,83 @@ async function refreshGoogleToken(account) {
         req.write(postData);
         req.end();
     });
+}
+
+async function fetchDirectAccountQuotas(account) {
+    if (!account || !account.token) return { status: 'no_token', buckets: [] };
+    const token = await refreshGoogleToken(account);
+    if (!token) return { status: 'auth_failed', buckets: [] };
+
+    return new Promise((resolve) => {
+        const req = https.request({
+            hostname: 'cloudcode-pa.googleapis.com',
+            port: 443,
+            path: '/v1internal:retrieveUserQuotaSummary',
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'Content-Length': 2,
+            },
+            timeout: 4000,
+        }, (res) => {
+            let body = '';
+            res.on('data', c => body += c);
+            res.on('end', () => {
+                try {
+                    if (res.statusCode === 200) {
+                        const d = JSON.parse(body);
+                        return resolve({ status: 'ok', buckets: parseGroupsToBuckets(d.groups || []) });
+                    }
+                    if (res.statusCode === 403) {
+                        return resolve({ status: 'no_license', message: 'Subscription Required', buckets: [] });
+                    }
+                    if (res.statusCode === 429) {
+                        return resolve({ status: 'exhausted', message: 'Resource Exhausted', buckets: [] });
+                    }
+                } catch (_) {}
+                resolve({ status: 'unknown', code: res.statusCode, buckets: [] });
+            });
+        });
+        req.on('error', () => resolve({ status: 'network_error', buckets: [] }));
+        req.write('{}');
+        req.end();
+    });
+}
+
+async function loadAllAccountsWithQuotas() {
+    const now = Date.now();
+    if (_quotaCache.accounts.length > 0 && (now - _quotaCache.timestamp < 30000)) {
+        return _quotaCache.accounts;
+    }
+
+    const accountsMap = loadAllAccounts();
+    const accountsList = Object.values(accountsMap);
+
+    // 1. Fetch live quotas from active Language Server
+    const lsTelemetry = await fetchLanguageServerTelemetry();
+
+    // 2. Populate quotas for each account
+    for (const acc of accountsList) {
+        if (acc.is_primary && lsTelemetry && lsTelemetry.buckets && lsTelemetry.buckets.length > 0) {
+            acc.quotas = lsTelemetry.buckets;
+            acc.license_status = 'ok';
+            acc.tier = acc.tier || 'TEAMS_TIER_PRO';
+        } else {
+            const direct = await fetchDirectAccountQuotas(acc);
+            acc.license_status = direct.status;
+            acc.license_message = direct.message || '';
+            acc.quotas = direct.buckets || [];
+            if (direct.status === 'no_license') {
+                acc.tier = 'No License (Subscription Required)';
+            } else if (direct.status === 'exhausted') {
+                acc.tier = 'Resource Exhausted';
+            }
+        }
+    }
+
+    _quotaCache = { timestamp: now, accounts: accountsList };
+    return accountsList;
 }
 
 async function resolveTokenForCascade(cascadeId) {
@@ -318,6 +472,7 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
 module.exports = {
     startMultiAccountRouter,
     loadAllAccounts,
+    loadAllAccountsWithQuotas,
     getBindings,
     setBinding,
 };

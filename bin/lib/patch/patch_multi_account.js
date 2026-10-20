@@ -40,7 +40,7 @@ function patchMultiAccount(dir) {
     electron_1.ipcMain.handle('multi-account:get-state', async () => {
         try {
             const router = require('./multi_account_router');
-            const accounts = Object.values(router.loadAllAccounts());
+            const accounts = await (router.loadAllAccountsWithQuotas ? router.loadAllAccountsWithQuotas() : Object.values(router.loadAllAccounts()));
             const bindings = router.getBindings();
             return { accounts, bindings, proxy_running: true };
         } catch (_) { return { accounts: [], bindings: {} }; }
