@@ -45,7 +45,7 @@ graph TD
 | **Language Server** | `/opt/antigravity2/resources/bin/language_server` | `/opt/antigravity/resources/app/extensions/antigravity/bin/language_server_linux_x64.bin` |
 | **Config / User Data** | `~/.config/Antigravity/` | `~/.config/Antigravity IDE/` |
 | **Product Spec** | `package.json` inside `resources/app.asar` | `resources/app/product.json` |
-| **Launcher** | `~/.local/bin/antigravity-1`, `antigravity-acc2` | `~/.local/bin/antigravity-ide` |
+| **Launcher** | `~/.local/bin/antigravity`, `antigravity-1`, `antigravity-acc2`, `antigravity-acc<N>` | `~/.local/bin/antigravity-ide` |
 | **Desktop Shortcut** | `~/.local/share/applications/antigravity-1.desktop` | `~/.local/share/applications/antigravity-ide.desktop` |
 
 ### 1.1 Antigravity IDE Process & Component Architecture
@@ -170,6 +170,13 @@ req = urllib.request.Request(
 with urllib.request.urlopen(req, context=ctx) as r:
     res = json.loads(r.read().decode())
 ```
+
+#### 5. Live Backend Reconnection & F5 Language Server Recycling
+When reloading the IDE window or pressing F5 to synchronize conversations:
+- The custom patch (`patch_utils_reload.js`) binds F5 / developer reload.
+- Strips stale event handlers to prevent duplicated RPC calls.
+- Executes `await ls.restartLanguageServer()` to force the Go language server process to restart cleanly and re-read SQLite and Protobuf state from disk.
+
 > [!NOTE]
 > Language server port is dynamically bound upon launch. Discover it via loopback listeners: `ss -tulpn | grep language_server`. CSRF token is parsed from `--csrf_token` command line arguments of the process.
 
@@ -304,6 +311,9 @@ graph TD
     Tag20 --> Tag20_14["Subfield 14: thinking_signature (bytes)"]
     Tag20 --> Tag20_16["Subfield 16: raw_thinking (string)"]
 
+    TagPayload -->|"step_type == 23"| Tag23["Tag 23 (CortexStepCheckpointGenerated)"]
+    Tag23 --> Tag23_30["Subfield 30: TrajectoryState (Subfield 4 = Authentic LLM Title)"]
+
     TagPayload -->|"step_type == 28"| Tag28["Tag 28 (CortexStepRunCommand)"]
     Tag28 --> Tag28_1["Subfield 1: command_line (string)"]
     Tag28 --> Tag28_2["Subfield 2: cwd (string)"]
@@ -330,6 +340,7 @@ graph TD
 |:---:|:---|:---:|:---|:---|
 | **14** | `USER_INPUT` | **19** | `CortexStepUserInput` | Subfield 1=`query`, Subfield 2=`user_response` (raw prompt), Subfield 3=`items` (`UserInputChunk`: 1=`clean_title`), Subfield 5=`images`, Subfield 9=`media` |
 | **15** | `PLANNER_RESPONSE` | **20** | `CortexStepPlannerResponse` | Subfield 1=`response` (markdown), Subfield 3=`thinking` (CoT), Subfield 6=`message_id`, Subfield 7=`tool_calls`, Subfield 8=`modified_response`, Subfield 16=`raw_thinking` |
+| **23** | `CHECKPOINT_GENERATED` | **23** / **30** | `CortexStepCheckpoint` | Subfield 30=`trajectory_state` (Subfield 4=`authentic_llm_title`) |
 | **28** | `RUN_COMMAND` | **28** | `CortexStepRunCommand` | Subfield 1=`command_line`, Subfield 2=`cwd`, Subfield 3=`is_daemon`, Subfield 5=`wait_ms_before_async` |
 | **42** | `SEARCH_WEB` | **42** | `CortexStepSearchWeb` | Subfield 1=`query`, Subfield 2=`results` |
 | **47** | `MCP_TOOL` | **47** | `CortexStepMcpTool` | Subfield 1=`server_name`, Subfield 2=`tool_name`, Subfield 3=`arguments_json` |
@@ -384,6 +395,11 @@ The top-level conversation summary message persisted inside SQLite `conversation
 | **18** | `has_active_children` | Varint | `bool` | True if multi-agent subagents are currently running |
 | **19** | `battle_mode_info` | Length-Delimited | `BattleModeInfo` | Multi-model arena / battle mode tracking info |
 | **20** | `source` | Varint | `CortexTrajectorySource` | Creation client source enum (1=USER, 2=IDE, etc.) |
+
+> [!CRITICAL]
+> **The Protobuf Tag 20 Gate (Empty Sidebar / 0 Chats Rendered)**:
+> In `CascadeTrajectorySummary` (`cascade.py`), Tag 20 encodes the client source enum (`1 = CASCADE_CLIENT` / IDE). If Tag 20 is emitted with value 1 in `agyhub_summaries_proto.pb` or `conversation_summaries.raw_summary`, the Antigravity Hub Desktop App classifies the session as foreign IDE-owned and applies its frontend double-elimination filter, hiding the conversation completely (`0 chats rendered`, sidebar shows empty folders). When serializing summaries for the Hub Desktop App or master pool, Tag 20 must NOT be emitted (`source == 0` or omit Tag 20 entirely).
+
 | **21** | `not_fully_idle` | Varint | `bool` | In-flight execution sentinel flag |
 | **22** | `trajectory_type` | Varint | `CortexTrajectoryType` | Trajectory type enum (4=CHAT) |
 | **23** | `killed` | Varint | `bool` | True if conversation was explicitly killed by user |
@@ -652,7 +668,19 @@ To run multiple Antigravity instances concurrently without credential collisions
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Hub Acc 1** | `antigravity-1` | `~` | `~/.gemini` | `--password-store=basic` | `primary@example.com` |
 | **Hub Acc 2** | `antigravity-acc2` | `~/.antigravity-profile2` | `~/.antigravity-profile2/.gemini` | `--password-store=basic` | `secondary@example.com` |
+| **Hub Acc N** | `antigravity-acc<N>`| `~/.antigravity-profile<N>` | `~/.antigravity-profile<N>/.gemini`| `--password-store=basic` | `custom@example.com` |
 | **IDE** | `antigravity-ide` | `~` | `~/.gemide` | `--password-store=basic` | `ide-dev@example.com` |
+
+### Dynamic Multi-Instance Architecture & Generic Launchers (`app_launcher.sh`)
+Bespoke, hardcoded scripts (`account1.sh`, `account2.sh`) have been completely eliminated. Generic launchers are dynamically written with two mission-critical safeguards:
+1. **Manual Restart Flag (`--restart` / `-r`)**:
+   Pass `--restart` to cleanly kill existing instance PIDs and start fresh without zombie lockups:
+   ```bash
+   antigravity --restart
+   antigravity-acc2 --restart
+   ```
+2. **Stale Binary Detection in RAM**:
+   When the Antigravity binary is updated while running, the kernel marks the running executable in `/proc/<pid>/exe` as `(deleted)`. The launcher detects this stale status and automatically restarts the process with the new version.
 
 ### 3-Way Unified History Architecture
 While accounts and auth remain isolated, conversation histories and brain artifacts are unified via symlinks:
@@ -740,12 +768,24 @@ When uniting history across multiple instances without data loss:
    - This ensures manual installations join the unified pool without overwriting existing data.
 
 ### 7.3 Authentic H1 Document Title Extraction Pipeline
-To prevent generic titles (`"Conversation"`, `"Untitled Conversation"`) or non-ASCII truncation:
+To prevent generic titles (`"Conversation"`, `"Untitled Conversation"`), user prompt leaking into headers, or non-ASCII truncation:
 1. **Annotations First**: Checks `annotations/<conv_id>.pbtxt` across all profile roots for user-renamed titles.
-2. **Markdown Artifact H1 Heading**: Scans the conversation's brain folder for markdown artifacts (`*.md`). Parses the first H1 header (`# Server Configuration And Deployment Strategy`) as the genuine human-readable title.
-3. **Prompt Fallback**: If no artifact H1 exists, extracts clean text from `<USER_REQUEST>` prompt tags (up to 80 chars).
+2. **Language Server Checkpoint Step 23**: Queries `<uuid>.db` for Step 23 (`CHECKPOINT_GENERATED`), decoding Protobuf Tag 30 (`TrajectoryState`), Subfield 4 (`Title`) generated asynchronously by the LLM.
+3. **Markdown Artifact H1 Heading**: Scans the conversation's brain folder for markdown artifacts (`*.md`). Parses the first H1 header (`# Server Configuration And Deployment Strategy`) as the genuine human-readable title.
+4. **Prompt Fallback**: If no artifact H1 exists, extracts clean text from `<USER_REQUEST>` prompt tags (up to 80 chars).
 
-### 7.4 Operational CLI Reference
+### 7.4 Dynamic Workspace Discovery (Elimination of Hardcoded Roots)
+Previous iterations relied on hardcoded container sets (`phpstormprojects`, `webstormprojects`, etc.). The system now dynamically learns workspaces:
+1. Queries `state.vscdb` (`recentlyOpenedPathsList`) for active project roots across all IDE instances.
+2. Inspects Git root identifiers for opened files.
+3. Automatically maps `outside-of-project` conversations without hardcoded personal path leaks.
+
+### 7.5 "2027y" Zero-Value Timestamp Rejection & Fallback Mechanics
+Go's uninitialized `time.Time{}` (`0001-01-01T00:00:00Z`) serializes to `-62135596800` Unix seconds, which encodes as a 10-byte signed varint and causes the UI to render `"2027y"` or `"Year 1 / Epoch 0"`:
+- Validates `dt.year > 2000` and explicitly rejects any incoming timestamp starting with `"0001"`.
+- Falls back to the physical filesystem modification time (`mtime`) of `<uuid>.db`.
+
+### 7.6 Operational CLI Reference
 
 | Command | Purpose |
 | :--- | :--- |
@@ -758,3 +798,90 @@ To prevent generic titles (`"Conversation"`, `"Untitled Conversation"`) or non-A
 > **Post-Sync IDE UI Refresh**:
 > After running `--rebuild` or a manual merge, reload the Antigravity IDE window to refresh the webview cache:
 > Press `Ctrl+Shift+P` -> select `Developer: Reload Window`.
+
+---
+
+## 8. Antigravity IDE Bundle Checksum Integrity & Corruption Dialog Prevention
+
+### 8.1 Mechanism
+Antigravity IDE (VS Code OSS) runs `IntegrityService` on startup to verify core bundle files against `/opt/antigravity/resources/app/product.json["checksums"]`.
+- Files checked: 11 core files under `out/` (`workbench.desktop.main.js`, `workbench.html`, `workbench-jetski-agent.html`, etc.).
+- Algorithm: SHA-256 base64 digest with trailing `=` stripped.
+- If any file hash mismatches, the dialog `"Your Antigravity IDE installation appears to be corrupt. Please reinstall."` is displayed.
+
+### 8.2 Cause
+Applying patches (`antigravity-rtl`, custom workbench reload buttons) alters bundle files without updating `product.json["checksums"]`.
+
+### 8.3 Fix & Tooling
+- Synchronizer tool: `~/.local/bin/antigravity-checksums` or `manage-antigravity.sh checksums`.
+- Verification command: `antigravity-checksums /opt/antigravity --verify`.
+- Automated hook: `patch_rtl.sh` and `suite_update.sh` automatically invoke `fix_ide_checksums` on patch apply and update.
+
+---
+
+## 9. X11 Window Class, System Tray Sync & Catmull-Rom Bicubic Resampling
+
+### 9.1 Multi-Resolution Resampler (`src/scale_icon.c`)
+Standard nearest-neighbor or bilinear image downsampling produces blurry window and taskbar icons. The suite compiles a native C resampler (`scale_icon`) using Catmull-Rom bicubic spline filtering:
+- Compiles to `~/.local/bin/scale_icon`.
+- Generates exact mipmap buffers across discrete resolution brackets: `16x16`, `24x24`, `32x32`, `48x48`, `64x64`, `128x128`, and `256x256`.
+
+### 9.2 Live X11 Window Injector (`antigravity-apply-icon.py`)
+A background daemon monitors window creation via `xdotool` / `xprop` and dynamically applies `_NET_WM_ICON` directly onto X11 surfaces:
+- Synchronizes tray icon caches in `/tmp/org.chromium.Chromium.*/status_icon_*.png`.
+- Maintains theme distinction: Account 1 (White/Black), Account 2 (Violet recolor).
+
+---
+
+## 10. Suite Repository Self-Update & Background Services Orchestration
+
+### 10.1 Self-Update Workflow (`bin/lib/sh/repo_update.sh`)
+Allows updating the Antigravity Suite Manager codebase itself without broken states:
+```bash
+~/manage-antigravity.sh update-repo
+# or via installer:
+./install.sh --update-repo
+```
+- **Discovery**: Resolves repo root dynamically via git and Python package inspection (`antigravity_suite.__file__`).
+- **Git Pull**: Pulls latest commits from `origin/main`.
+- **Recompilation**: Recompiles `src/scale_icon.c` with GCC `-O3`.
+- **Redeployment**: Synchronizes scripts and `bin/lib/` to `~/.local/bin`.
+- **Python Path**: Refreshes `antigravity_suite.pth` in user site-packages.
+- **Service Restart**: Automatically invokes background service restarts.
+
+### 10.2 Non-Blocking Background Services Restart (`sync_service.sh`)
+```bash
+~/manage-antigravity.sh restart-services
+# or via installer:
+./install.sh --restart-services
+```
+- Non-blocking systemd reload: `systemctl --user restart --no-block antigravity-sync.service` prevents shell freezing while `antigravity-merge-history.py --watch` shuts down.
+- Detached icon daemon recycling: Spawns `antigravity-apply-icon.py --daemon` decoupled with `nohup` and stdin redirection (`</dev/null >/dev/null 2>&1 &`).
+
+---
+
+## 11. Comprehensive Diagnostics & Checkpoint Matrix
+
+| Checkpoint | Target Path / Command | Expected Healthy State |
+| :--- | :--- | :--- |
+| **Protobuf Tag 20** | `src/antigravity_suite/proto/cascade.py` | Must NOT emit Tag 20 when `source == 0` |
+| **Protobuf Tag 1 vs 2** | `src/antigravity_suite/proto/cascade.py` | Tag 1 = Clean Title, Tag 2 = Preview Prompt |
+| **Checkpoint Step 23** | `src/antigravity_suite/history/extractor_checkpoint.py` | Decodes `Tag 30 -> Tag 4` from `<uuid>.db` for authentic LLM title |
+| **Timestamp Floor** | `src/antigravity_suite/history/item_metadata.py` | Rejects `0001%` dates; validates `dt.year > 2000` |
+| **Physical DB Deletion Guard** | `src/antigravity_suite/history/deletion_sync.py` | Never deletes conversation if `<uuid>.db` exists on disk (`size > 100`) |
+| **Watcher Inotify Quiescence** | `src/antigravity_suite/history/watcher_debounce.py` | Excludes `app_storage.json` & WAL; daemon sleeps at 0.0% CPU |
+| **IDE Checksum Integrity** | `bin/antigravity-checksums.py --verify` | All 11 bundle checksums match `product.json` (`isPure: true`) |
+| **Tray Icon Paths** | `~/.local/share/icons/` | `antigravity-1-tray.png` & `antigravity-acc2-tray.png` (48x48, 32x32, 24x24) |
+| **Launcher Tray Env** | `~/.local/bin/antigravity-1`, `antigravity-acc2` | Exports `ANTIGRAVITY_TRAY_ICON_PATH` |
+| **Tray Cache Sync** | `src/antigravity_suite/icon/tray_sync.py` | Scans `tempfile.gettempdir()`, `$TMPDIR`, `$XDG_RUNTIME_DIR`, `/run/user/<uid>`, `/tmp` |
+| **Dynamic Workspaces** | `src/antigravity_suite/history/projects_roots.py` | Queries `state.vscdb` (`recentlyOpenedPathsList`); dynamically learns containers |
+| **Hub vs IDE Partition** | `conversation_summaries.db` | `app_data_dir`: `antigravity` (Hub) vs `antigravity-ide` (IDE) |
+| **Hub Binary Proto** | `agyhub_summaries_proto.pb` | Contains ONLY Hub partition chats, NOT IDE workspace chats |
+| **IDE State** | `state.vscdb` (`trajectorySummaries`) | Contains ALL workspace chats (304 active records) |
+| **Audit Log** | `~/.gemini/antigravity/history_merger_audit.log` | JSONL records for all mutations |
+| **Language Server Health** | `~/.config/Antigravity/logs/language_server.log` | `reconcile checked N, restored 0, cached N, dropped 0` |
+| **F5 Backend Reload** | `bin/lib/patch/patch_utils_reload.js` | Invokes `await ls.restartLanguageServer()` & strips stale handlers |
+| **Suite Self-Update** | `~/manage-antigravity.sh update-repo` | Git pull, recompile resampler, redeploy scripts, restart daemons |
+| **Services Restart** | `~/manage-antigravity.sh restart-services` | Systemd non-blocking reload & X11 icon injector recycle |
+| **Unit Test Suite** | `python3 -m unittest discover tests` | All 127 tests passing |
+
