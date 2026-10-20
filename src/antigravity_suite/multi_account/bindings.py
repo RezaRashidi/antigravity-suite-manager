@@ -6,12 +6,11 @@ import json
 from pathlib import Path
 from typing import Dict, Optional
 from antigravity_suite.multi_account.models import ConversationBinding
+from antigravity_suite.multi_account.vault import get_accounts_dir
 
 
 def get_bindings_file() -> Path:
-    p = Path.home() / ".config" / "antigravity" / "accounts"
-    p.mkdir(parents=True, exist_ok=True)
-    return p / "bindings.json"
+    return get_accounts_dir() / "bindings.json"
 
 
 def load_bindings() -> Dict[str, ConversationBinding]:

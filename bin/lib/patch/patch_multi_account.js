@@ -39,13 +39,10 @@ function patchMultiAccount(dir) {
             const ipcSnippets = `
     electron_1.ipcMain.handle('multi-account:get-state', async () => {
         try {
-            const { spawnSync } = require('child_process');
-            const res = spawnSync('python3', ['-m', 'antigravity_suite.multi_account.cli', 'json'], { encoding: 'utf8', timeout: 4000 });
-            if (res.stdout) return JSON.parse(res.stdout);
-        } catch (_) {}
-        try {
             const router = require('./multi_account_router');
-            return { accounts: Object.values(router.loadAllAccounts()), bindings: router.getBindings(), proxy_running: true };
+            const accounts = Object.values(router.loadAllAccounts());
+            const bindings = router.getBindings();
+            return { accounts, bindings, proxy_running: true };
         } catch (_) { return { accounts: [], bindings: {} }; }
     });
     electron_1.ipcMain.handle('multi-account:bind-cascade', async (_event, cascadeId, email, model) => {
@@ -91,7 +88,7 @@ electron_1.contextBridge.exposeInMainWorld('antigravityMultiAccount', multiAccou
         }
     }
 
-    // 5. Patch utils.js for UI injection on dom-ready
+    // 5. Patch utils.js for UI injection on dom-ready and did-finish-load
     const utilsPath = path.join(distDir, 'utils.js');
     if (fs.existsSync(utilsPath)) {
         let utilsCode = fs.readFileSync(utilsPath, 'utf8');

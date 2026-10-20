@@ -11,9 +11,8 @@ const { URL } = require('url');
 
 const DEFAULT_PORT = 41999;
 const UPSTREAM_HOST = 'daily-cloudcode-pa.googleapis.com';
-const ACCOUNTS_DIR = path.join(os.homedir(), '.config', 'antigravity', 'accounts');
+const ACCOUNTS_DIR = process.env.ANTIGRAVITY_ACCOUNTS_DIR || path.join(os.homedir(), '.config', 'antigravity', 'accounts');
 const BINDINGS_FILE = path.join(ACCOUNTS_DIR, 'bindings.json');
-const PRIMARY_TOKEN_FILE = path.join(os.homedir(), '.gemini', 'jetski-standalone-oauth-token');
 
 let _server = null;
 
@@ -45,13 +44,28 @@ function setBinding(cascadeId, email, model = '') {
     }
 }
 
+function findPrimaryTokenFiles() {
+    const home = os.homedir();
+    const files = [];
+    try {
+        const entries = fs.readdirSync(home, { withFileTypes: true });
+        for (const ent of entries) {
+            if (ent.isDirectory() && ent.name.startsWith('.')) {
+                const p = path.join(home, ent.name, 'jetski-standalone-oauth-token');
+                if (fs.existsSync(p)) files.push(p);
+            }
+        }
+    } catch (_) {}
+    return files;
+}
+
 function loadAllAccounts() {
     ensureAccountsDir();
     const accounts = {};
     try {
         const files = fs.readdirSync(ACCOUNTS_DIR);
         for (const f of files) {
-            if (f.endsWith('.json') && f !== 'bindings.json') {
+            if (f.endsWith('.json') && f !== 'bindings.json' && f !== 'oauth_credentials.json') {
                 try {
                     const data = JSON.parse(fs.readFileSync(path.join(ACCOUNTS_DIR, f), 'utf8'));
                     if (data && data.email) accounts[data.email] = data;
@@ -60,9 +74,9 @@ function loadAllAccounts() {
         }
     } catch (_) {}
 
-    if (fs.existsSync(PRIMARY_TOKEN_FILE)) {
+    for (const tokenFile of findPrimaryTokenFiles()) {
         try {
-            const data = JSON.parse(fs.readFileSync(PRIMARY_TOKEN_FILE, 'utf8'));
+            const data = JSON.parse(fs.readFileSync(tokenFile, 'utf8'));
             let email = data.email;
             if (!email && data.id_token) {
                 const parts = data.id_token.split('.');
@@ -82,22 +96,45 @@ function loadAllAccounts() {
     return accounts;
 }
 
-function getOAuthClientCredentials() {
-    const paths = [
-        path.join(os.homedir(), '.gemide', 'oauth_credentials.json'),
-        path.join(os.homedir(), '.gemini', 'oauth_credentials.json'),
-        path.join(ACCOUNTS_DIR, 'oauth_credentials.json'),
-    ];
-    for (const p of paths) {
-        if (fs.existsSync(p)) {
-            try {
-                const d = JSON.parse(fs.readFileSync(p, 'utf8'));
-                if (d.client_id && d.client_secret) return { clientId: d.client_id, clientSecret: d.client_secret };
-            } catch (_) {}
-        }
+function findLanguageServerBinary() {
+    if (process.env.ANTIGRAVITY_LS_BINARY && fs.existsSync(process.env.ANTIGRAVITY_LS_BINARY)) {
+        return process.env.ANTIGRAVITY_LS_BINARY;
     }
-    const binCand = '/opt/antigravity2/resources/bin/language_server';
-    if (fs.existsSync(binCand)) {
+    if (process.resourcesPath) {
+        const cand = path.join(process.resourcesPath, 'bin', 'language_server');
+        if (fs.existsSync(cand)) return cand;
+    }
+    const searchDirs = ['/opt', os.homedir()];
+    for (const base of searchDirs) {
+        try {
+            if (fs.existsSync(base)) {
+                for (const sub of fs.readdirSync(base)) {
+                    const cand = path.join(base, sub, 'resources', 'bin', 'language_server');
+                    if (fs.existsSync(cand)) return cand;
+                }
+            }
+        } catch (_) {}
+    }
+    return null;
+}
+
+function getOAuthClientCredentials() {
+    const home = os.homedir();
+    try {
+        const entries = fs.readdirSync(home, { withFileTypes: true });
+        for (const ent of entries) {
+            if (ent.isDirectory() && ent.name.startsWith('.')) {
+                const p = path.join(home, ent.name, 'oauth_credentials.json');
+                if (fs.existsSync(p)) {
+                    const d = JSON.parse(fs.readFileSync(p, 'utf8'));
+                    if (d.client_id && d.client_secret) return { clientId: d.client_id, clientSecret: d.client_secret };
+                }
+            }
+        }
+    } catch (_) {}
+
+    const binCand = findLanguageServerBinary();
+    if (binCand && fs.existsSync(binCand)) {
         try {
             const raw = fs.readFileSync(binCand);
             const mSec = raw.toString('binary').match(/GOCSPX-[a-zA-Z0-9_\-]+/);
@@ -111,6 +148,7 @@ function getOAuthClientCredentials() {
 async function refreshGoogleToken(account) {
     if (!account || !account.token || !account.token.refresh_token) return account?.token?.access_token;
     const creds = getOAuthClientCredentials();
+    if (!creds.clientId || !creds.clientSecret) return account?.token?.access_token;
     const postData = new URLSearchParams({
         client_id: creds.clientId,
         client_secret: creds.clientSecret,
@@ -139,7 +177,6 @@ async function refreshGoogleToken(account) {
                         if (d.expires_in) {
                             account.token.expiry = new Date(Date.now() + d.expires_in * 1000).toISOString();
                         }
-                        // Persist if in accounts dir
                         if (account.email) {
                             const p = path.join(ACCOUNTS_DIR, `${account.email}.json`);
                             fs.writeFileSync(p, JSON.stringify(account, null, 2), 'utf8');
@@ -166,7 +203,6 @@ async function resolveTokenForCascade(cascadeId) {
     }
     let target = email && accounts[email] ? accounts[email] : null;
     if (!target) {
-        // Fallback to primary or first account
         target = Object.values(accounts).find(a => a.is_primary) || Object.values(accounts)[0];
     }
     if (!target || !target.token) return null;

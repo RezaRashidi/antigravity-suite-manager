@@ -7,13 +7,12 @@ import os
 from pathlib import Path
 from typing import Dict, List, Optional
 from antigravity_suite.multi_account.models import AccountRecord, AccountToken
-from antigravity_suite.multi_account.tokens import (
-    is_token_expired, parse_jwt_claims, refresh_access_token
-)
+from antigravity_suite.multi_account.tokens import parse_jwt_claims
 
 
 def get_accounts_dir() -> Path:
-    p = Path.home() / ".config" / "antigravity" / "accounts"
+    env_dir = os.environ.get("ANTIGRAVITY_ACCOUNTS_DIR")
+    p = Path(env_dir) if env_dir else (Path.home() / ".config" / "antigravity" / "accounts")
     p.mkdir(parents=True, exist_ok=True)
     return p
 
@@ -69,11 +68,11 @@ def save_account_to_vault(rec: AccountRecord) -> Path:
 def list_vault_accounts() -> List[AccountRecord]:
     accounts: Dict[str, AccountRecord] = {}
     for p in get_accounts_dir().glob("*.json"):
-        acc = load_account_from_file(p)
-        if acc:
-            accounts[acc.email] = acc
-    prim_p = Path.home() / ".gemini" / "jetski-standalone-oauth-token"
-    if prim_p.is_file():
+        if p.name != "bindings.json" and p.name != "oauth_credentials.json":
+            acc = load_account_from_file(p)
+            if acc:
+                accounts[acc.email] = acc
+    for prim_p in Path.home().glob(".*/jetski-standalone-oauth-token"):
         prim_acc = load_account_from_file(prim_p)
         if prim_acc:
             prim_acc.is_primary = True

@@ -10,15 +10,13 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
-from typing import Dict, Optional
+from antigravity_suite.multi_account.vault import get_accounts_dir
 
 DEFAULT_PROXY_PORT = 41999
 
 
 def get_pid_file() -> Path:
-    p = Path.home() / ".config" / "antigravity" / "accounts"
-    p.mkdir(parents=True, exist_ok=True)
-    return p / "proxy.pid"
+    return get_accounts_dir() / "proxy.pid"
 
 
 def is_proxy_running(port: int = DEFAULT_PROXY_PORT) -> bool:
