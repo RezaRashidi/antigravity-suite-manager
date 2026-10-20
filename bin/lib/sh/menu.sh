@@ -30,9 +30,10 @@ interactive_menu() {
     echo "23) Manage Backups & Snapshots (List, Create, Restore)"
     echo "24) Update Suite Manager Repository (git pull, build & deploy)"
     echo "25) Restart Background Services (Sync & Icon Daemon)"
+    echo "26) Benchmark AI Response Speed, Network Latencies & Context Bloat"
     echo "0) Exit"
     echo -e "${CYAN}-----------------------------------------------------${NC}"
-    read -rp "Select an option [0-25]: " choice
+    read -rp "Select an option [0-26]: " choice
 
     case "$choice" in
         1) install_antigravity_all ;;
@@ -60,6 +61,7 @@ interactive_menu() {
         23) menu_action_backups ;;
         24) update_suite_repo ;;
         25) restart_suite_services ;;
+        26) dispatch_benchmark ;;
         0) exit 0 ;;
         *) log_err "Invalid selection."; exit 1 ;;
     esac
