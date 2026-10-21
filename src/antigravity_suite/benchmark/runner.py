@@ -13,6 +13,7 @@ from .evaluator import evaluate_bottlenecks
 from .models import BenchmarkReport
 from .network import run_network_benchmarks
 from .prompt_test import run_prompt_test
+from .step_latency import collect_recent_message_latencies
 from .system import benchmark_processes
 
 
@@ -20,6 +21,8 @@ def run_benchmark(
     skip_network: bool = False,
     skip_prompt: bool = False,
     hosts: Optional[List[str]] = None,
+    messages_count: int = 10,
+    transcript_path: Optional[str] = None,
 ) -> BenchmarkReport:
     report = BenchmarkReport()
     report.env = collect_environment()
@@ -34,12 +37,15 @@ def run_benchmark(
     if not skip_prompt:
         report.prompt_test = run_prompt_test()
 
+    report.recent_messages = collect_recent_message_latencies(count=messages_count, transcript_path=transcript_path)
+
     tier, ttft, bottlenecks, recs = evaluate_bottlenecks(
         report.networks,
         report.context,
         report.processes,
         accounts=report.accounts,
         prompt_test=report.prompt_test,
+        recent_messages=report.recent_messages,
     )
     report.speed_tier = tier
     report.estimated_ttft_sec = ttft

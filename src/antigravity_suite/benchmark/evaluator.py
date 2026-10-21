@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import List, Optional, Tuple
 
 from .models import ContextMetric, NetworkMetric, ProcessMetric
+from .models_latency import MessageTurnMetric
 from .models_system import AccountQuotaMetric, PromptTestMetric
 
 
@@ -21,6 +22,7 @@ def evaluate_bottlenecks(
     processes: List[ProcessMetric],
     accounts: Optional[List[AccountQuotaMetric]] = None,
     prompt_test: Optional[PromptTestMetric] = None,
+    recent_messages: Optional[List[MessageTurnMetric]] = None,
 ) -> Tuple[str, str, List[str], List[str]]:
     bottlenecks: List[str] = []
     recs: List[str] = []
@@ -60,6 +62,12 @@ def evaluate_bottlenecks(
 
     if prompt_test and prompt_test.latency_ms and prompt_test.latency_ms > 2500:
         bottlenecks.append(f"Live prompt latency elevated: {prompt_test.latency_ms:.1f} ms.")
+
+    if recent_messages:
+        slow = [m for m in recent_messages if m.ttft_sec and m.ttft_sec >= 10.0]
+        if slow:
+            w = max(slow, key=lambda x: x.ttft_sec or 0.0)
+            bottlenecks.append(f"Recent interaction response lag: Msg {w.message_index} suffered {w.ttft_sec}s TTFT.")
 
     if base_latency <= 4.0:
         tier, ttft = "OPTIMAL", "1.5s - 3.5s"

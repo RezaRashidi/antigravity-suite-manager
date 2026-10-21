@@ -104,9 +104,37 @@ class TestBenchmarkSubsystem(unittest.TestCase):
         accs = collect_accounts_and_quotas()
         self.assertIsInstance(accs, list)
 
+    def test_recent_messages_step_latency(self):
+        import tempfile
+        from pathlib import Path
+        from antigravity_suite.benchmark.step_latency import collect_recent_message_latencies
+        from antigravity_suite.benchmark.reporter_history import format_recent_messages_section
+        with tempfile.NamedTemporaryFile("w+", suffix=".jsonl", delete=False) as tf:
+            tf.write('{"step_index":1,"type":"USER_INPUT","source":"USER_EXPLICIT","created_at":"2026-10-21T10:00:00Z","content":"Hello"}\n')
+            tf.write('{"step_index":2,"type":"PLANNER_RESPONSE","source":"MODEL","created_at":"2026-10-21T10:00:02Z"}\n')
+            tf.write('{"step_index":3,"type":"GENERIC","source":"MODEL","created_at":"2026-10-21T10:00:05Z"}\n')
+            tf.write('{"step_index":4,"type":"USER_INPUT","source":"USER_EXPLICIT","created_at":"2026-10-21T10:01:00Z","content":"Next"}\n')
+            tf.write('{"step_index":5,"type":"PLANNER_RESPONSE","source":"MODEL","created_at":"2026-10-21T10:01:01Z"}\n')
+            t_path = tf.name
+        try:
+            res = collect_recent_message_latencies(count=2, transcript_path=t_path)
+            self.assertEqual(len(res), 2)
+            self.assertEqual(res[0].ttft_sec, 2.0)
+            self.assertEqual(res[0].total_duration_sec, 5.0)
+            self.assertEqual(len(res[0].steps), 2)
+            self.assertEqual(res[1].ttft_sec, 1.0)
+            formatted = format_recent_messages_section(res, all_steps=True)
+            text = "\n".join(formatted)
+            self.assertIn("Recent Message Telemetry", text)
+            self.assertIn("Message 01/02", text)
+            self.assertIn("Message 02/02", text)
+            self.assertIn("Initial Model Response", text)
+        finally:
+            Path(t_path).unlink(missing_ok=True)
+
     def test_cli_main_smoke(self):
         from antigravity_suite.benchmark.cli import main
-        code = main(["--skip-network", "--skip-prompt"])
+        code = main(["--skip-network", "--skip-prompt", "--messages", "2", "--all-steps"])
         self.assertIn(code, (0, 1))
 
 

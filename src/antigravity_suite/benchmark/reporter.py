@@ -5,6 +5,7 @@ Terminal formatter and report generator for Antigravity speed benchmarks.
 from __future__ import annotations
 
 from .models import BenchmarkReport
+from .reporter_history import format_recent_messages_section
 from .reporter_sections import (
     format_account_section,
     format_env_section,
@@ -15,7 +16,7 @@ _GREEN, _YELLOW, _RED, _CYAN = "\033[92m", "\033[93m", "\033[91m", "\033[96m"
 _BOLD, _RESET = "\033[1m", "\033[0m"
 
 
-def format_report(report: BenchmarkReport) -> str:
+def format_report(report: BenchmarkReport, all_steps: bool = False) -> str:
     lines = [f"{_BOLD}{_CYAN}=== Antigravity AI Response Speed & Latency Benchmark ==={_RESET}\n"]
     tier_col = _GREEN if report.speed_tier == "OPTIMAL" else (_YELLOW if report.speed_tier == "MODERATE" else _RED)
     lines.append(f"Speed Rating: {tier_col}{_BOLD}{report.speed_tier}{_RESET} (Estimated TTFT: {report.estimated_ttft_sec})\n")
@@ -33,6 +34,7 @@ def format_report(report: BenchmarkReport) -> str:
 
     lines.extend(format_account_section(report.accounts))
     lines.extend(format_prompt_test_section(report.prompt_test))
+    lines.extend(format_recent_messages_section(report.recent_messages, all_steps=all_steps))
 
     lines.append(f"\n{_BOLD}Local Context & System Prompt Bloat:{_RESET}")
     c = report.context

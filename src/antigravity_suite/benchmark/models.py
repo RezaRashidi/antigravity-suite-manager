@@ -7,6 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from .models_latency import MessageTurnMetric
 from .models_system import (
     AccountQuotaMetric,
     EnvironmentMetric,
@@ -63,6 +64,7 @@ class BenchmarkReport:
     context: ContextMetric = field(default_factory=ContextMetric)
     processes: List[ProcessMetric] = field(default_factory=list)
     prompt_test: Optional[PromptTestMetric] = None
+    recent_messages: List[MessageTurnMetric] = field(default_factory=list)
     speed_tier: str = "OPTIMAL"
     estimated_ttft_sec: str = "2s - 4s"
     bottlenecks: List[str] = field(default_factory=list)
@@ -80,4 +82,5 @@ class BenchmarkReport:
             "context": self.context.__dict__,
             "processes": [p.__dict__ for p in self.processes],
             "prompt_test": self.prompt_test.__dict__ if self.prompt_test else None,
+            "recent_messages": [m.to_dict() for m in self.recent_messages],
         }
