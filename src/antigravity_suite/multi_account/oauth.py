@@ -21,11 +21,55 @@ class _OAuthHandler(http.server.BaseHTTPRequestHandler):
         url = urllib.parse.urlparse(self.path)
         qs = urllib.parse.parse_qs(url.query)
         if "code" in qs:
-            self.server.auth_code = qs["code"][0]  # type: ignore
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(b"<h2>Connected!</h2><p>You can close this tab.</p>")
+            code = qs["code"][0]
+            self.server.auth_code = code  # type: ignore
+            port = self.server.server_port
+            redirect_uri = f"http://127.0.0.1:{port}/callback"
+
+            # Immediately exchange token while user is on this request
+            rec = exchange_auth_code(code, redirect_uri)
+            self.server.account_record = rec  # type: ignore
+
+            if rec:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                html = (
+                    "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Connected!</title></head>"
+                    "<body style='font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;"
+                    "background:#0f172a;color:#f8fafc;display:flex;align-items:center;justify-content:center;"
+                    "height:100vh;margin:0;padding:20px;box-sizing:border-box;'>"
+                    "<div style='background:#1e293b;border:1px solid #334155;border-radius:12px;padding:32px;"
+                    "max-width:440px;width:100%;text-align:center;box-shadow:0 10px 25px rgba(0,0,0,0.5);'>"
+                    "<div style='width:52px;height:52px;border-radius:50%;background:rgba(34,197,94,0.15);"
+                    "color:#22c55e;font-size:26px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;'>✓</div>"
+                    f"<h2 style='margin:0 0 8px;font-size:22px;color:#f8fafc;'>Connected!</h2>"
+                    f"<p style='margin:0 0 16px;color:#94a3b8;font-size:15px;'>Successfully authenticated <b style='color:#38bdf8;'>{rec.email}</b>.</p>"
+                    "<p style='margin:0;color:#64748b;font-size:13px;'>You can close this tab and return to Antigravity.</p>"
+                    "</div>"
+                    "<script>setTimeout(()=>{ try { window.close(); } catch(_){} }, 2500);</script>"
+                    "</body></html>"
+                )
+                self.wfile.write(html.encode("utf-8"))
+            else:
+                self.send_response(500)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                html = (
+                    "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Authentication Failed</title></head>"
+                    "<body style='font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;"
+                    "background:#0f172a;color:#f8fafc;display:flex;align-items:center;justify-content:center;"
+                    "height:100vh;margin:0;padding:20px;box-sizing:border-box;'>"
+                    "<div style='background:#1e293b;border:1px solid #334155;border-radius:12px;padding:32px;"
+                    "max-width:440px;width:100%;text-align:center;box-shadow:0 10px 25px rgba(0,0,0,0.5);'>"
+                    "<div style='width:52px;height:52px;border-radius:50%;background:rgba(239,68,68,0.15);"
+                    "color:#ef4444;font-size:26px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;'>✕</div>"
+                    "<h2 style='margin:0 0 8px;font-size:22px;color:#f8fafc;'>Authentication Failed</h2>"
+                    "<p style='margin:0 0 16px;color:#94a3b8;font-size:15px;'>Failed to exchange Google OAuth authorization code.</p>"
+                    "<p style='margin:0;color:#64748b;font-size:13px;'>Check proxy / internet connection and try again.</p>"
+                    "</div></body></html>"
+                )
+                self.wfile.write(html.encode("utf-8"))
         else:
             self.send_response(400)
             self.end_headers()
@@ -35,7 +79,19 @@ class _OAuthHandler(http.server.BaseHTTPRequestHandler):
 
 
 def exchange_auth_code(code: str, redirect_uri: str) -> Optional[AccountRecord]:
+    import sys
+    import os
     cid, sec = get_oauth_credentials()
+    if not cid or not sec:
+        print("[OAuth] Error: Missing Google OAuth Client ID or Secret", file=sys.stderr)
+        return None
+
+    # Forward ide_http_proxy if standard proxy env is unset
+    if not os.environ.get("https_proxy") and os.environ.get("ide_http_proxy"):
+        os.environ["https_proxy"] = os.environ["ide_http_proxy"]
+    if not os.environ.get("http_proxy") and os.environ.get("ide_http_proxy"):
+        os.environ["http_proxy"] = os.environ["ide_http_proxy"]
+
     payload = {
         "code": code,
         "client_id": cid,
@@ -49,7 +105,7 @@ def exchange_auth_code(code: str, redirect_uri: str) -> Optional[AccountRecord]:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:
             d = json.loads(resp.read().decode("utf-8"))
             exp_in = d.get("expires_in", 3600)
             exp_dt = (
@@ -59,6 +115,7 @@ def exchange_auth_code(code: str, redirect_uri: str) -> Optional[AccountRecord]:
             claims = parse_jwt_claims(d.get("id_token", ""))
             email = claims.get("email", "")
             if not email:
+                print("[OAuth] Error: No email claim in id_token", file=sys.stderr)
                 return None
             rec = AccountRecord(
                 email=email,
@@ -68,14 +125,26 @@ def exchange_auth_code(code: str, redirect_uri: str) -> Optional[AccountRecord]:
                 id_token=d.get("id_token", ""),
             )
             save_account_to_vault(rec)
+            print(f"[OAuth] Successfully saved account {email} to vault", file=sys.stderr)
+
+            # Notify local router proxy immediately to invalidate cache and refresh UI
+            try:
+                notify_req = urllib.request.Request("http://127.0.0.1:41999/api/multi-account/state?refresh=1", method="GET")
+                with urllib.request.urlopen(notify_req, timeout=2) as _:
+                    pass
+            except Exception:
+                pass
+
             return rec
-    except Exception:
+    except Exception as e:
+        print(f"[OAuth] Token exchange failed: {e}", file=sys.stderr)
         return None
 
 
 def start_login_flow(open_browser: bool = True) -> Optional[AccountRecord]:
     srv = http.server.HTTPServer(("127.0.0.1", 0), _OAuthHandler)
     srv.auth_code = None  # type: ignore
+    srv.account_record = None  # type: ignore
     port = srv.server_port
     redirect_uri = f"http://127.0.0.1:{port}/callback"
     cid, _ = get_oauth_credentials()
@@ -92,5 +161,4 @@ def start_login_flow(open_browser: bool = True) -> Optional[AccountRecord]:
         webbrowser.open(url)
     srv.handle_request()
     srv.server_close()
-    code = getattr(srv, "auth_code", None)
-    return exchange_auth_code(code, redirect_uri) if code else None
+    return getattr(srv, "account_record", None)

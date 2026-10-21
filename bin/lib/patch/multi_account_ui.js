@@ -81,17 +81,39 @@
                 };
             });
             if (fly) { fly.onmouseenter = () => { if (hTimer) clearTimeout(hTimer); }; fly.onmouseleave = () => { hTimer = setTimeout(() => fly?.classList.remove("visible"), 250); }; }
-            document.getElementById("agy-acc-add")?.addEventListener("click", async (e) => { e.stopPropagation(); if (window.antigravityMultiAccount?.startLogin) await window.antigravityMultiAccount.startLogin(); else { try { await fetch(apiH() + "/api/multi-account/login", { method: "POST" }); toast("Browser login launched"); } catch (_) { alert("Add account via: manage-antigravity.sh multi-account login"); } } setTimeout(fetchState, 3000); }); document.getElementById("agy-acc-ref")?.addEventListener("click", async (e) => { e.stopPropagation(); await fetchState(true); toast("Refreshed limits"); });
+            document.getElementById("agy-acc-add")?.addEventListener("click", async (e) => {
+                e.stopPropagation();
+                if (window.antigravityMultiAccount?.startLogin) await window.antigravityMultiAccount.startLogin();
+                else {
+                    try {
+                        await fetch(apiH() + "/api/multi-account/login", { method: "POST" });
+                        toast("Browser login launched");
+                    } catch (_) {
+                        alert("Add account via: manage-antigravity.sh multi-account login");
+                    }
+                }
+                const prevCount = (state.accounts || []).length;
+                let attempts = 0;
+                const pollId = setInterval(async () => {
+                    attempts++;
+                    await fetchState(true);
+                    if ((state.accounts || []).length > prevCount || attempts >= 30) {
+                        clearInterval(pollId);
+                        if ((state.accounts || []).length > prevCount) toast("✓ Account added!");
+                    }
+                }, 2000);
+            });
+            document.getElementById("agy-acc-ref")?.addEventListener("click", async (e) => { e.stopPropagation(); await fetchState(true); toast("Refreshed limits"); });
         } catch (_) {}
     }
     function scheduleRender() { if (!rTimer) rTimer = setTimeout(() => { rTimer = null; render(); }, 60); } window.__antigravityRenderSelector = scheduleRender;
     document.addEventListener("click", (e) => {
         const dd = document.getElementById("agy-acc-dd"), pill = document.getElementById("antigravity-account-pill");
         if (dd && pill && !pill.contains(e.target)) { dd.classList.remove("open"); document.getElementById("agy-flyout")?.classList.remove("visible"); }
-        if (e.target.closest("[data-testid*=\"conversation\"], [class*=\"sidebar\"], [data-testid=\"new-conversation-button\"]")) { scheduleRender(); setTimeout(() => { scheduleRender(); void fetchState(); }, 200); }
+        if (e.target.closest("[data-testid*=\"conversation\"], [class*=\"sidebar\"], [data-testid=\"new-conversation-button\"]")) { scheduleRender(); setTimeout(() => { scheduleRender(); void fetchState(true); }, 200); }
     });
     const hookState = (fn) => function() { const r = fn.apply(this, arguments); scheduleRender(); void fetchState(); return r; };
-    if (history.pushState) history.pushState = hookState(history.pushState); if (history.replaceState) history.replaceState = hookState(history.replaceState); ['popstate', 'hashchange', 'focus'].forEach(ev => window.addEventListener(ev, () => { scheduleRender(); void fetchState(); }));
+    if (history.pushState) history.pushState = hookState(history.pushState); if (history.replaceState) history.replaceState = hookState(history.replaceState); ['popstate', 'hashchange', 'focus'].forEach(ev => window.addEventListener(ev, () => { scheduleRender(); void fetchState(true); }));
     window.addEventListener("resize", updateDdPos); window.addEventListener("keydown", (e) => { if (e.key === "F5" && !e.ctrlKey && !e.metaKey && !e.shiftKey) { render(); void fetchState(true); } });
     try { const mo = new MutationObserver(() => { const t = window.__antigravityFindTarget?.(), c = window.__antigravityDetectCascadeId?.(t?.target) || "default", p = document.getElementById("antigravity-account-pill"); if (!p || !document.body?.contains(p) || c !== cascadeId) { scheduleRender(); if (c !== cascadeId) void fetchState(); } }); if (document.body) mo.observe(document.body, { childList: true, subtree: true }); } catch (_) {}
     setInterval(() => { const p = document.getElementById("antigravity-account-pill"), t = window.__antigravityFindTarget?.(), c = window.__antigravityDetectCascadeId?.(t?.target) || "default"; if (!p || !document.body?.contains(p) || (t?.target && p.parentElement !== t.target) || c !== cascadeId) { scheduleRender(); if (c !== cascadeId) void fetchState(); } }, 250);
