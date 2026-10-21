@@ -152,13 +152,7 @@ def start_login_flow(open_browser: bool = True) -> Optional[AccountRecord]:
         "client_id": cid,
         "redirect_uri": redirect_uri,
         "response_type": "code",
-        "scope": (
-            "openid profile email "
-            "https://www.googleapis.com/auth/cloud-platform "
-            "https://www.googleapis.com/auth/aicode "
-            "https://www.googleapis.com/auth/cclog "
-            "https://www.googleapis.com/auth/experimentsandconfigs"
-        ),
+        "scope": "openid profile email https://www.googleapis.com/auth/cloud-platform",
         "access_type": "offline",
         "prompt": "select_account consent",
     }
