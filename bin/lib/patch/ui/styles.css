@@ -101,9 +101,7 @@ html.dark, body.dark, [data-theme="dark"], .dark {
     color: inherit;
 }
 .agy-acc-dropdown {
-    position: absolute;
-    bottom: calc(100% + 6px);
-    left: 0;
+    position: fixed;
     width: 270px;
     background: var(--agy-dropdown-bg);
     border: 1px solid var(--agy-dropdown-border);
@@ -112,20 +110,14 @@ html.dark, body.dark, [data-theme="dark"], .dark {
     padding: 4px 0;
     display: none;
     flex-direction: column;
-    z-index: 100000;
+    z-index: 1000000;
     color: var(--agy-dropdown-text);
 }
 .agy-acc-dropdown.open {
     display: flex;
 }
-.agy-acc-dropdown.downward {
-    top: calc(100% + 6px);
-    bottom: auto;
-}
-.agy-acc-dropdown.upward {
-    bottom: calc(100% + 6px);
-    top: auto;
-}
+.agy-acc-dropdown.downward {}
+.agy-acc-dropdown.upward {}
 .agy-acc-header {
     padding: 6px 12px;
     font-size: 11px;
@@ -212,10 +204,8 @@ html.dark, body.dark, [data-theme="dark"], .dark {
     background: rgba(59, 130, 246, 0.1);
 }
 .agy-usage-flyout {
-    position: absolute;
-    left: calc(100% + 8px);
-    bottom: 0;
-    max-height: calc(100vh - 100px);
+    position: fixed;
+    max-height: calc(100vh - 80px);
     overflow-y: auto;
     width: 320px;
     background: var(--agy-dropdown-bg);
@@ -226,12 +216,35 @@ html.dark, body.dark, [data-theme="dark"], .dark {
     display: none;
     flex-direction: column;
     gap: 10px;
-    z-index: 100005;
+    z-index: 1000005;
     color: var(--agy-dropdown-text);
     pointer-events: auto;
 }
 .agy-usage-flyout.visible {
     display: flex;
+}
+.agy-usage-footer {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    border-top: 1px solid var(--agy-dropdown-border);
+    padding-top: 8px;
+    margin-top: 2px;
+}
+.agy-flyout-logout-btn {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+.agy-flyout-logout-btn:hover {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: #ef4444;
 }
 .agy-usage-flyout-header {
     display: flex;

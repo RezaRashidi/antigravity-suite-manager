@@ -1,14 +1,34 @@
 // Antigravity Multi-Account UI: Flyout Template and Positioning
 (function initFlyoutModule() {
+    function formatReset(b) {
+        if (!b) return '';
+        const desc = b.description || '';
+        const m = desc.match(/refresh in ([^.]+)/i);
+        if (m) {
+            let s = m[1].trim();
+            s = s.replace(/(\d+)\s*days?/gi, '$1d').replace(/(\d+)\s*hours?/gi, '$1h').replace(/(\d+)\s*minutes?/gi, '$1m').replace(/,\s*/g, ' ');
+            return `Resets in ${s}`;
+        }
+        if (b.reset_time) {
+            const ms = new Date(b.reset_time).getTime() - Date.now();
+            if (ms > 0) {
+                const h = Math.floor(ms / 3600000), min = Math.floor((ms % 3600000) / 60000);
+                return h > 24 ? `Resets in ${Math.floor(h / 24)}d ${h % 24}h` : `Resets in ${h}h ${min}m`;
+            }
+        }
+        return '';
+    }
+
     function renderBucket(b) {
         if (!b) return '';
         const pct = typeof b.percent === 'number' ? b.percent : Math.round((b.fraction ?? 1) * 100);
         const color = pct >= 50 ? '#10b981' : (pct >= 20 ? '#f59e0b' : '#ef4444');
+        const rst = formatReset(b);
         return `
             <div class="agy-bucket-box">
                 <div class="agy-bucket-meta"><span>${b.label || 'Limit'}</span><span style="font-weight:600;color:${color}">${pct}%</span></div>
                 <div class="agy-bucket-bar-track"><div class="agy-bucket-bar-fill" style="width:${pct}%;background:${color}"></div></div>
-                ${b.description ? `<div class="agy-bucket-reset">${b.description}</div>` : ''}
+                ${rst ? `<div class="agy-bucket-reset">${rst}</div>` : ''}
             </div>
         `;
     }
@@ -40,12 +60,15 @@
             body = `<div style="font-size:11px;color:var(--agy-dropdown-subtext);padding:8px 0;">Loading usage telemetry...</div>`;
         }
 
+        const footer = !acc.is_primary ? `<div class="agy-usage-footer"><button class="agy-flyout-logout-btn" data-email="${email}">Log Out Account</button></div>` : '';
+
         return `
             <div class="agy-usage-flyout-header">
                 <div><div class="agy-usage-title">Usage limits</div><div class="agy-usage-email-sub">${email}</div></div>
                 <span class="agy-tier-badge">${tier.split(' ')[0]}</span>
             </div>
             ${body}
+            ${footer}
         `;
     };
 
@@ -54,18 +77,18 @@
         flyout.innerHTML = window.__antigravityBuildFlyout(acc);
         flyout.classList.add('visible');
 
-        if (dropdown && triggerEl) {
+        if (dropdown) {
             const ddRect = dropdown.getBoundingClientRect();
-            if (dropdown.classList.contains('downward')) {
-                flyout.style.top = '0px'; flyout.style.bottom = 'auto';
-            } else {
-                flyout.style.bottom = '0px'; flyout.style.top = 'auto';
-            }
+            const bOffset = Math.max(10, window.innerHeight - ddRect.bottom);
+            flyout.style.bottom = bOffset + 'px';
+            flyout.style.top = 'auto';
 
             if (ddRect.right + 330 > window.innerWidth) {
-                flyout.style.left = 'auto'; flyout.style.right = 'calc(100% + 8px)';
+                flyout.style.left = 'auto';
+                flyout.style.right = (window.innerWidth - ddRect.left + 6) + 'px';
             } else {
-                flyout.style.left = 'calc(100% + 8px)'; flyout.style.right = 'auto';
+                flyout.style.left = (ddRect.right + 6) + 'px';
+                flyout.style.right = 'auto';
             }
         }
     };
