@@ -60,7 +60,7 @@
             body = `<div style="font-size:11px;color:var(--agy-dropdown-subtext);padding:8px 0;">Loading usage telemetry...</div>`;
         }
 
-        const footer = `<div class="agy-usage-footer"><button class="agy-flyout-logout-btn" data-email="${email}">Log Out Account</button></div>`;
+        const footer = `<div class="agy-usage-footer"><button class="agy-flyout-logout-btn" data-email="${email}">Log Out (${email})</button></div>`;
 
         return `
             <div class="agy-usage-flyout-header">

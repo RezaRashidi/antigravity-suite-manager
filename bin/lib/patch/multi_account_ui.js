@@ -54,11 +54,10 @@
             const handle = active.email ? active.email.split("@")[0] : "Account", ddOld = pill.querySelector("#agy-acc-dd");
             if (ddOld?.classList.contains("open") && pill.dataset.email === active.email && pill.dataset.cid === cascadeId) return;
             pill.dataset.email = active.email; pill.dataset.cid = cascadeId;
-            (window.__antigravitySetHtml || ((e, s) => e.innerHTML = s))(pill, `<button class="agy-acc-pill-btn flex cursor-pointer items-center h-7 gap-1 rounded-full pl-2 pr-1.5 text-xs text-secondary-foreground select-none outline-none hover:bg-secondary transition-colors" type="button" id="agy-acc-btn" title="${active.email}"><span class="truncate max-w-[130px] font-medium">${handle}</span><span class="opacity-60 text-[9px] ml-0.5">▼</span></button><div class="agy-acc-dropdown" id="agy-acc-dd"><div class="agy-acc-header">Google Accounts</div><div class="agy-acc-list">${(state.accounts || []).map(a => `<div class="agy-acc-item ${a.email?.toLowerCase() === active.email?.toLowerCase() ? "selected" : ""}" data-email="${a.email}"><div class="agy-acc-item-left" style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;"><div class="agy-acc-avatar-sm">${(a.email || "G")[0].toUpperCase()}</div><div class="agy-acc-text-col" style="display:flex;flex-direction:column;min-width:0;flex:1;"><span class="agy-acc-email-text">${a.email.split("@")[0]}</span><span class="agy-acc-email-sub">${a.email}</span></div></div><div style="display:flex;align-items:center;gap:4px;flex-shrink:0;"><span style="width:14px;display:inline-block;text-align:center;color:#3b82f6;font-size:11px;font-weight:bold;flex-shrink:0;">${a.email?.toLowerCase() === active.email?.toLowerCase() ? "✓" : ""}</span><span class="agy-view-usage-link" data-email="${a.email}">Usage ›</span><span style="width:16px;display:inline-flex;justify-content:center;flex-shrink:0;"><button class="agy-acc-del-btn" data-email="${a.email}" title="Log out / Remove" style="background:none;border:none;cursor:pointer;opacity:0.6;font-size:12px;padding:2px 4px;border-radius:4px;color:inherit;" onmouseover="this.style.opacity='1';this.style.color='#ef4444';" onmouseout="this.style.opacity='0.6';this.style.color='';">✕</button></span></div></div>`).join("")}</div><div class="agy-acc-footer"><button class="agy-acc-btn-action" id="agy-acc-add">+ Add Account</button><button class="agy-acc-btn-action" id="agy-acc-logout">Log Out</button><button class="agy-acc-btn-action" id="agy-acc-ref">Refresh</button></div><div class="agy-usage-flyout" id="agy-flyout"></div></div>`);
+            (window.__antigravitySetHtml || ((e, s) => e.innerHTML = s))(pill, `<button class="agy-acc-pill-btn flex cursor-pointer items-center h-7 gap-1 rounded-full pl-2 pr-1.5 text-xs text-secondary-foreground select-none outline-none hover:bg-secondary transition-colors" type="button" id="agy-acc-btn" title="${active.email}"><span class="truncate max-w-[130px] font-medium">${handle}</span><span class="opacity-60 text-[9px] ml-0.5">▼</span></button><div class="agy-acc-dropdown" id="agy-acc-dd"><div class="agy-acc-header">Google Accounts</div><div class="agy-acc-list">${(state.accounts || []).map(a => `<div class="agy-acc-item ${a.email?.toLowerCase() === active.email?.toLowerCase() ? "selected" : ""}" data-email="${a.email}"><div class="agy-acc-item-left" style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;"><div class="agy-acc-avatar-sm">${(a.email || "G")[0].toUpperCase()}</div><div class="agy-acc-text-col" style="display:flex;flex-direction:column;min-width:0;flex:1;"><span class="agy-acc-email-text">${a.email.split("@")[0]}</span><span class="agy-acc-email-sub">${a.email}</span></div></div><div style="display:flex;align-items:center;gap:6px;flex-shrink:0;"><span style="color:#3b82f6;font-size:11px;font-weight:bold;">${a.email?.toLowerCase() === active.email?.toLowerCase() ? "✓" : ""}</span><span class="agy-view-usage-link" data-email="${a.email}">Usage ›</span></div></div>`).join("")}</div><div class="agy-acc-footer"><button class="agy-acc-btn-action" id="agy-acc-add">+ Add Account</button><button class="agy-acc-btn-action" id="agy-acc-ref">Refresh</button></div><div class="agy-usage-flyout" id="agy-flyout"></div></div>`);
             const btn = document.getElementById("agy-acc-btn"), dd = document.getElementById("agy-acc-dd"), fly = document.getElementById("agy-flyout");
             if (btn && dd) btn.onclick = (e) => { e.stopPropagation(); if (!dd.classList.toggle("open")) return fly?.classList.remove("visible"); updateDdPos(); void fetchState(); };
             let hTimer = null;
-            pill.querySelectorAll(".agy-acc-del-btn").forEach(delBtn => { delBtn.onclick = (e) => { e.stopPropagation(); doLogout(delBtn.getAttribute("data-email")); }; });
             if (fly) fly.onclick = (e) => { const lb = e.target.closest(".agy-flyout-logout-btn"); if (lb) { e.stopPropagation(); doLogout(lb.getAttribute("data-email")); } };
             pill.querySelectorAll(".agy-acc-item").forEach(item => {
                 const em = item.getAttribute("data-email");
@@ -68,10 +67,10 @@
                     window.__antigravityShowFlyout?.(fly, a, dd, item);
                     if (!a?.quotas?.length || Date.now() - lastF > 20000) { await fetchState(); a = state.accounts?.find(x => x.email === em); if (fly?.classList.contains("visible")) window.__antigravityShowFlyout?.(fly, a, dd, item); }
                 };
-                item.onmouseenter = showFly; item.onmouseleave = () => { hTimer = setTimeout(() => fly?.classList.remove("visible"), 250); };
-                item.querySelector(".agy-view-usage-link")?.addEventListener("click", (e) => { e.stopPropagation(); void showFly(); });
+                item.onmouseenter = showFly; item.onmouseleave = () => { hTimer = setTimeout(() => fly?.classList.remove("visible"), 350); };
+                item.querySelector(".agy-view-usage-link")?.addEventListener("click", (e) => { e.stopPropagation(); if (hTimer) clearTimeout(hTimer); void showFly(); });
                 item.onclick = async (e) => {
-                    if (e.target.closest(".agy-view-usage-link, .agy-usage-flyout, .agy-acc-del-btn")) return; e.stopPropagation();
+                    if (e.target.closest(".agy-view-usage-link, .agy-usage-flyout")) return; e.stopPropagation();
                     if (em) {
                         try { if (window.antigravityMultiAccount) await Promise.race([window.antigravityMultiAccount.bindCascade?.(cascadeId, em), new Promise(r => setTimeout(r, 200))]); } catch (_) {}
                         try { await fetch(apiH() + "/api/multi-account/bind", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cascadeId, email: em }) }); } catch (_) {}
@@ -80,11 +79,7 @@
                     dd.classList.remove("open"); fly?.classList.remove("visible");
                 };
             });
-            if (fly) { fly.onmouseenter = () => { if (hTimer) clearTimeout(hTimer); }; fly.onmouseleave = () => { hTimer = setTimeout(() => fly?.classList.remove("visible"), 250); }; }
-            document.getElementById("agy-acc-logout")?.addEventListener("click", (e) => {
-                e.stopPropagation();
-                if (active.email && active.email !== "Account") doLogout(active.email);
-            });
+            if (fly) { fly.onmouseenter = () => { if (hTimer) clearTimeout(hTimer); }; fly.onmouseleave = () => { hTimer = setTimeout(() => fly?.classList.remove("visible"), 350); }; }
             document.getElementById("agy-acc-add")?.addEventListener("click", async (e) => {
                 e.stopPropagation();
                 if (window.antigravityMultiAccount?.startLogin) await window.antigravityMultiAccount.startLogin();
