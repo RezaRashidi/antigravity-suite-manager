@@ -29,4 +29,5 @@ This document records the end-to-end diagnostic methodology, reverse-engineering
 - [21. Issue 19: Antigravity IDE Corruption Dialog & VS Code Checksum Integrity Synchronization](21_ide_installation_corrupt_checksum_integrity_fix.md)
 - [22. Issue 20: Elimination of Hardcoded Account Scripts & Dynamic Multi-Instance Architecture](22_elimination_of_hardcoded_account_scripts_and_unified_dynamic_launchers.md)
 - [23. Issue 21: Self-Update Engine & Background Service Orchestration](23_self_update_engine_and_background_service_orchestration.md)
-- [24. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
+- [24. Issue 22: Mid-Session Title Mutation & Test Suite Isolation Leak](24_mid_session_title_mutation_and_test_isolation_leak.md)
+- [25. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)

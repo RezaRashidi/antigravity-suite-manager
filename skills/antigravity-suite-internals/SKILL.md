@@ -1490,5 +1490,22 @@ Located in `google3/third_party/jetski/cortex/customizations/`:
 - Rather than dumping all installed skills into every conversation, `CascadeManager.narrowSkillsForRuntime` dynamically filters skills based on the active workspace type, repository structure, and opened files.
 - Injected skills supply brief descriptions in the system prompt. Deep procedural instructions inside `SKILL.md` are progressively fetched by the agent via `read_file` only when triggered.
 
+---
+
+## 22. Conversation Title Stability & Test Isolation Guardrails
+
+### 22.1 Priority Resolution Hierarchy
+Titles are resolved according to strict priority order in `title_resolver.py`:
+1. **Existing Clean Title**: Never overwritten by subsequent messages or model switches if non-generic.
+2. **Authentic LLM Summary**: Extracted from trajectory checkpoints or summary protobufs.
+3. **Restricted Brain Artifacts**: Limited exclusively to designated planning artifacts (`task.md`, `implementation_plan.md`, `architecture.md`). Arbitrary `*.md` files (such as incident reports or notes) are strictly excluded.
+4. **Workspace Name Fallback**: `<Workspace> Chat`.
+
+### 22.2 Test Suite Execution Isolation
+When running tests or isolated sub-profiles with an explicit `user_home`:
+- `get_candidate_homes()` strictly returns `{user_home}` and never falls back to host user home (`~`).
+- `scan_desktop_launchers()` is suppressed (`isolated=True`), preventing temporary test mergers from discovering or overwriting host IDE storage (`state.vscdb`) or SQLite indices.
+
+
 
 
