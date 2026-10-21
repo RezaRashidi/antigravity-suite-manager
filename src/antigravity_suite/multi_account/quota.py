@@ -36,7 +36,7 @@ def fetch_account_quotas(account: AccountRecord) -> List[QuotaBucket]:
         if res:
             account.token.access_token, account.token.expiry = res[0], res[1]
 
-    url = "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary"
+    url = "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary"
     req = urllib.request.Request(
         url,
         data=b"{}",
@@ -59,7 +59,7 @@ def fetch_account_quotas(account: AccountRecord) -> List[QuotaBucket]:
 def fetch_account_tier(account: AccountRecord) -> str:
     if not account.token or not account.token.access_token:
         return account.tier
-    url = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
+    url = "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
     req = urllib.request.Request(
         url,
         data=b"{}",

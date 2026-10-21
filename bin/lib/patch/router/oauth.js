@@ -76,12 +76,14 @@ function getOAuthClientCredentials() {
 }
 
 async function refreshGoogleToken(account) {
-    if (!account?.token?.refresh_token) return account?.token?.access_token;
+    const refreshToken = account?.token?.refresh_token || account?.refresh_token;
+    const currentAccess = (typeof account?.token === 'string') ? account.token : (account?.token?.access_token || account?.access_token);
+    if (!refreshToken) return currentAccess;
     const creds = getOAuthClientCredentials();
-    if (!creds.clientId || !creds.clientSecret) return account?.token?.access_token;
+    if (!creds.clientId || !creds.clientSecret) return currentAccess;
     const postData = new URLSearchParams({
         client_id: creds.clientId, client_secret: creds.clientSecret,
-        refresh_token: account.token.refresh_token, grant_type: 'refresh_token',
+        refresh_token: refreshToken, grant_type: 'refresh_token',
     }).toString();
 
     return new Promise((resolve) => {
@@ -99,18 +101,23 @@ async function refreshGoogleToken(account) {
                 try {
                     const d = JSON.parse(body);
                     if (d.access_token) {
-                        account.token.access_token = d.access_token;
-                        if (d.expires_in) account.token.expiry = new Date(Date.now() + d.expires_in * 1000).toISOString();
+                        if (typeof account.token === 'object' && account.token !== null) {
+                            account.token.access_token = d.access_token;
+                            if (d.expires_in) account.token.expiry = new Date(Date.now() + d.expires_in * 1000).toISOString();
+                        } else {
+                            account.token = d.access_token;
+                            if (d.expires_in) account.expires_at = new Date(Date.now() + d.expires_in * 1000).toISOString();
+                        }
                         if (account.email) {
                             fs.writeFileSync(path.join(ACCOUNTS_DIR, `${account.email}.json`), JSON.stringify(account, null, 2), 'utf8');
                         }
                         return resolve(d.access_token);
                     }
                 } catch (_) {}
-                resolve(account.token.access_token);
+                resolve(currentAccess);
             });
         });
-        req.on('error', () => resolve(account.token.access_token));
+        req.on('error', () => resolve(currentAccess));
         req.write(postData);
         req.end();
     });

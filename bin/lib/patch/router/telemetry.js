@@ -2,6 +2,7 @@
 const http = require('http'), https = require('https'), fs = require('fs');
 const { refreshGoogleToken } = require('./oauth.js');
 const { getProxyAgent } = require('./proxy_agent.js');
+const { logTraffic } = require('./bindings.js');
 let _quotaCache = { timestamp: 0, accounts: [] }, _cachedLs = null, _dirCache = {};
 
 function findLanguageServerInfo() {
@@ -72,9 +73,12 @@ async function fetchLanguageServerTelemetry() {
 async function fetchDirectAccountQuotas(account) {
     if (!account?.token) return { status: 'no_token', buckets: [] };
     const em = account.email;
-    if (_dirCache[em] && (Date.now() - _dirCache[em].ts < 30000)) return _dirCache[em].data;
+    if (_dirCache[em] && (Date.now() - _dirCache[em].ts < 60000)) return _dirCache[em].data;
     const token = await refreshGoogleToken(account);
-    if (!token) return { status: 'auth_failed', buckets: [] };
+    if (!token) {
+        logTraffic(`[QUOTA] [${em}] Auth token resolution failed`);
+        return { status: 'auth_failed', buckets: [] };
+    }
     return new Promise((resolve) => {
         const agent = getProxyAgent();
         const reqOpts = {
@@ -96,15 +100,30 @@ async function fetchDirectAccountQuotas(account) {
             res.on('end', () => {
                 let data = { status: 'unknown', buckets: [] };
                 try {
-                    if (res.statusCode === 200) data = { status: 'ok', buckets: parseGroupsToBuckets(JSON.parse(body).groups || []) };
-                    else if (res.statusCode === 403) data = { status: 'no_license', message: 'Subscription Required', buckets: [] };
-                    else if (res.statusCode === 429) data = { status: 'exhausted', message: 'Resource Exhausted', buckets: [] };
+                    if (res.statusCode === 200) {
+                        data = { status: 'ok', buckets: parseGroupsToBuckets(JSON.parse(body).groups || []) };
+                        logTraffic(`[QUOTA] [${em}] HTTP 200 | Buckets: ${data.buckets.length}`);
+                    } else if (res.statusCode === 403) {
+                        data = { status: 'no_license', message: 'Subscription Required', buckets: [] };
+                        logTraffic(`[QUOTA] [${em}] HTTP 403 (No License) | Body: ${body.slice(0, 150)}`);
+                    } else if (res.statusCode === 429) {
+                        const prevBuckets = _dirCache[em]?.data?.buckets || [];
+                        data = { status: prevBuckets.length ? 'ok' : 'exhausted', message: 'Resource Exhausted', buckets: prevBuckets };
+                        logTraffic(`[QUOTA] [${em}] HTTP 429 (Rate Limited) | Preserving ${prevBuckets.length} cached buckets`);
+                    } else {
+                        logTraffic(`[QUOTA] [${em}] HTTP ${res.statusCode} | Body: ${body.slice(0, 150)}`);
+                    }
                 } catch (_) {}
-                _dirCache[em] = { ts: Date.now(), data };
+                if (data.status === 'ok' || !_dirCache[em]?.data?.buckets?.length) {
+                    _dirCache[em] = { ts: Date.now(), data };
+                }
                 resolve(data);
             });
         });
-        req.on('error', () => resolve({ status: 'network_error', buckets: [] }));
+        req.on('error', (err) => {
+            logTraffic(`[QUOTA] [${em}] Network Error: ${err.message}`);
+            resolve({ status: 'network_error', buckets: [] });
+        });
         req.write('{}'); req.end();
     });
 }

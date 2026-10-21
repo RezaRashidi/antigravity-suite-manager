@@ -32,24 +32,28 @@ async function refreshQuotasAsync() {
             try {
                 const direct = await Promise.race([
                     fetchDirectAccountQuotas(acc),
-                    new Promise(r => setTimeout(() => r(null), 3000))
+                    new Promise(r => setTimeout(() => r(null), 8000))
                 ]);
                 if (direct && direct.status === 'ok' && direct.buckets?.length > 0) {
-                    acc.quotas = direct.buckets; acc.license_status = 'ok'; acc.tier = acc.tier || 'TEAMS_TIER_PRO';
+                    acc.quotas = direct.buckets; acc.license_status = 'ok';
+                    if (!acc.tier || acc.tier === 'UNKNOWN_TIER' || acc.tier === 'No License') acc.tier = 'FREE';
                     return;
                 }
                 if (acc.is_primary && lsTelemetry?.buckets?.length > 0) {
-                    acc.quotas = lsTelemetry.buckets; acc.license_status = 'ok'; acc.tier = acc.tier || 'TEAMS_TIER_PRO';
+                    acc.quotas = lsTelemetry.buckets; acc.license_status = 'ok';
+                    if (!acc.tier || acc.tier === 'UNKNOWN_TIER' || acc.tier === 'No License') acc.tier = 'TEAMS_TIER_PRO';
                     return;
                 }
                 const prev = _quotaCache.accounts?.find(a => a.email?.toLowerCase() === acc.email?.toLowerCase());
                 if (prev?.quotas?.length) {
                     acc.quotas = prev.quotas; acc.license_status = prev.license_status; acc.tier = prev.tier;
                 } else {
-                    acc.license_status = direct?.status || 'unknown'; acc.license_message = direct?.message || '';
+                    acc.license_status = direct?.status || (direct === null ? 'loading' : 'unknown');
+                    acc.license_message = direct?.message || '';
                     acc.quotas = direct?.buckets || [];
                     if (direct?.status === 'no_license') acc.tier = 'No License';
                     else if (direct?.status === 'exhausted') acc.tier = 'Resource Exhausted';
+                    else if (!acc.tier || acc.tier === 'UNKNOWN_TIER') acc.tier = 'FREE';
                 }
             } catch (_) {}
         }));
