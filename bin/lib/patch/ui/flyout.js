@@ -19,9 +19,14 @@
         let body = '';
 
         if (acc.quotas && acc.quotas.length > 0) {
-            const gemini = acc.quotas.filter(q => q.family === 'gemini');
-            const claude = acc.quotas.filter(q => q.family === 'claude');
-            const other = acc.quotas.filter(q => q.family !== 'gemini' && q.family !== 'claude');
+            const seen = new Set(), uq = acc.quotas.filter(q => {
+                const k = `${q.family}:${q.window}`;
+                if (seen.has(k)) return false;
+                seen.add(k); return true;
+            });
+            const gemini = uq.filter(q => q.family === 'gemini');
+            const claude = uq.filter(q => q.family === 'claude');
+            const other = uq.filter(q => q.family !== 'gemini' && q.family !== 'claude');
             let gh = '';
             if (gemini.length) gh += `<div class="agy-usage-group"><div class="agy-group-title">Gemini Models</div>${gemini.map(renderBucket).join('')}</div>`;
             if (claude.length) gh += `<div class="agy-usage-group" style="margin-top:6px;"><div class="agy-group-title">Claude and GPT models</div>${claude.map(renderBucket).join('')}</div>`;
@@ -51,9 +56,11 @@
 
         if (dropdown && triggerEl) {
             const ddRect = dropdown.getBoundingClientRect();
-            const trRect = triggerEl.getBoundingClientRect();
-            const topOffset = Math.max(0, trRect.top - ddRect.top - 20);
-            flyout.style.top = `${topOffset}px`;
+            if (dropdown.classList.contains('downward')) {
+                flyout.style.top = '0px'; flyout.style.bottom = 'auto';
+            } else {
+                flyout.style.bottom = '0px'; flyout.style.top = 'auto';
+            }
 
             if (ddRect.right + 330 > window.innerWidth) {
                 flyout.style.left = 'auto'; flyout.style.right = 'calc(100% + 8px)';

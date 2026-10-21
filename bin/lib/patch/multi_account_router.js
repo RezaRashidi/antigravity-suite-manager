@@ -17,26 +17,26 @@ async function refreshQuotasAsync() {
         ]);
         await Promise.all(accountsList.map(async (acc) => {
             try {
-                if (acc.is_primary && lsTelemetry?.buckets?.length > 0) {
-                    acc.quotas = lsTelemetry.buckets; acc.license_status = 'ok'; acc.tier = acc.tier || 'TEAMS_TIER_PRO';
-                    return;
-                }
                 const direct = await Promise.race([
                     fetchDirectAccountQuotas(acc),
                     new Promise(r => setTimeout(() => r(null), 3500))
                 ]);
                 if (direct && direct.status === 'ok' && direct.buckets?.length > 0) {
                     acc.quotas = direct.buckets; acc.license_status = 'ok'; acc.tier = acc.tier || 'TEAMS_TIER_PRO';
+                    return;
+                }
+                if (acc.is_primary && lsTelemetry?.buckets?.length > 0) {
+                    acc.quotas = lsTelemetry.buckets; acc.license_status = 'ok'; acc.tier = acc.tier || 'TEAMS_TIER_PRO';
+                    return;
+                }
+                const prev = _quotaCache.accounts?.find(a => a.email?.toLowerCase() === acc.email?.toLowerCase());
+                if (prev?.quotas?.length) {
+                    acc.quotas = prev.quotas; acc.license_status = prev.license_status; acc.tier = prev.tier;
                 } else {
-                    const prev = _quotaCache.accounts?.find(a => a.email === acc.email);
-                    if (prev?.quotas?.length) {
-                        acc.quotas = prev.quotas; acc.license_status = prev.license_status; acc.tier = prev.tier;
-                    } else {
-                        acc.license_status = direct?.status || 'unknown'; acc.license_message = direct?.message || '';
-                        acc.quotas = direct?.buckets || [];
-                        if (direct?.status === 'no_license') acc.tier = 'No License';
-                        else if (direct?.status === 'exhausted') acc.tier = 'Resource Exhausted';
-                    }
+                    acc.license_status = direct?.status || 'unknown'; acc.license_message = direct?.message || '';
+                    acc.quotas = direct?.buckets || [];
+                    if (direct?.status === 'no_license') acc.tier = 'No License';
+                    else if (direct?.status === 'exhausted') acc.tier = 'Resource Exhausted';
                 }
             } catch (_) {}
         }));

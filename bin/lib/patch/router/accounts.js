@@ -35,35 +35,30 @@ function findPrimaryTokenFiles() {
 
 function loadAllAccounts() {
     ensureAccountsDir();
-    const accounts = {};
+    const accounts = {}, primary = path.join(os.homedir(), '.gemini', 'jetski-standalone-oauth-token');
     try {
-        const files = fs.readdirSync(ACCOUNTS_DIR);
-        for (const f of files) {
+        for (const f of fs.readdirSync(ACCOUNTS_DIR)) {
             if (f.endsWith('.json') && f !== 'bindings.json' && f !== 'oauth_credentials.json') {
                 try {
-                    const data = JSON.parse(fs.readFileSync(path.join(ACCOUNTS_DIR, f), 'utf8'));
-                    if (data && data.email) accounts[data.email] = data;
+                    const d = JSON.parse(fs.readFileSync(path.join(ACCOUNTS_DIR, f), 'utf8'));
+                    if (d && d.email) { d.is_primary = false; accounts[d.email.toLowerCase()] = d; }
                 } catch (_) {}
             }
         }
     } catch (_) {}
-
-    for (const tokenFile of findPrimaryTokenFiles()) {
+    for (const f of findPrimaryTokenFiles()) {
         try {
-            const data = JSON.parse(fs.readFileSync(tokenFile, 'utf8'));
-            let email = data.email;
-            if (!email && data.id_token) {
-                const parts = data.id_token.split('.');
-                if (parts[1]) {
-                    const claims = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
-                    email = claims.email;
-                }
+            const d = JSON.parse(fs.readFileSync(f, 'utf8'));
+            let em = d.email;
+            if (!em && d.id_token) {
+                const parts = d.id_token.split('.');
+                if (parts[1]) em = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8')).email;
             }
-            if (email) {
-                data.email = email;
-                data.is_primary = true;
-                if (!accounts[email]) accounts[email] = data;
-                else accounts[email].is_primary = true;
+            if (em) {
+                const k = em.toLowerCase(), isPrim = (f === primary);
+                d.email = em; d.is_primary = isPrim;
+                if (!accounts[k]) accounts[k] = d;
+                else if (isPrim) accounts[k].is_primary = true;
             }
         } catch (_) {}
     }

@@ -30,11 +30,14 @@ function findLanguageServerInfo() {
 }
 
 function parseGroupsToBuckets(groups) {
-    const buckets = [];
+    const buckets = [], seen = new Set();
     for (const g of groups || []) {
         const fam = (g.displayName || '').includes('Gemini') ? 'gemini' : (((g.displayName || '').includes('Claude') || (g.displayName || '').includes('GPT')) ? 'claude' : 'other');
         for (const b of g.buckets || []) {
             const win = (b.window || '').toLowerCase().includes('5h') ? '5h' : 'weekly', frac = typeof b.remainingFraction === 'number' ? b.remainingFraction : 1.0;
+            const k = `${fam}:${win}`;
+            if (seen.has(k)) continue;
+            seen.add(k);
             buckets.push({ family: fam, window: win, fraction: frac, percent: Math.round(frac * 100), label: b.displayName || (win === '5h' ? 'Five Hour Limit' : 'Weekly Limit'), reset_time: b.resetTime || '', description: b.description || '' });
         }
     }

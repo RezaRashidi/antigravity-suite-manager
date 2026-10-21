@@ -15,7 +15,7 @@
             try { res = await Promise.race([window.antigravityMultiAccount.getState(), new Promise((_, r) => setTimeout(() => r(0), 300))]); } catch (_) {}
         }
         if (!res?.accounts?.length) { try { const r = await fetch(apiH() + "/api/multi-account/state"); res = await r.json(); } catch (_) {} }
-        if (res?.accounts?.length) { state = res; render(); }
+        if (res?.accounts?.length) { const seen = new Set(); res.accounts = res.accounts.filter(a => a?.email && !seen.has(a.email.toLowerCase()) && seen.add(a.email.toLowerCase())); state = res; render(); }
     }
     function getActive() {
         const b = state.bindings?.[cascadeId], em = (typeof b === "object" ? b?.email : b) || state.active_default || state.bindings?.__active_account;
