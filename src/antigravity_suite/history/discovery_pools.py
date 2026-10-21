@@ -34,7 +34,7 @@ def discover_all_history_sources(
 ) -> Tuple[List[str], List[str], List[str]]:
     """Discovers all conversation databases, brain directories, and IDE stores."""
     homes = get_candidate_homes(user_home)
-    search_roots = get_profile_search_roots(homes) | scan_desktop_launchers(homes)
+    search_roots = get_profile_search_roots(homes) | scan_desktop_launchers(homes, isolated=bool(user_home))
     conv_dirs: Set[str] = set()
     brain_dirs: Set[str] = set()
     ide_candidates: Set[str] = set()

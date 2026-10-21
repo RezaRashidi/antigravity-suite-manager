@@ -16,7 +16,10 @@ from antigravity_suite.config import get_user_home
 
 def get_candidate_homes(user_home: Optional[Union[str, Path]] = None) -> Set[str]:
     """Collect candidate user home directories."""
-    effective_home = str(user_home) if user_home else str(get_user_home())
+    if user_home:
+        h = str(Path(user_home).resolve())
+        return {h, os.path.dirname(h)} if ".antigravity-profile" in h else {h}
+    effective_home = str(get_user_home())
     homes: Set[str] = set()
     if effective_home:
         homes.add(effective_home)
@@ -52,8 +55,10 @@ def get_profile_search_roots(homes: Set[str]) -> Set[str]:
     return roots
 
 
-def scan_desktop_launchers(homes: Set[str]) -> Set[str]:
+def scan_desktop_launchers(homes: Set[str], isolated: bool = False) -> Set[str]:
     """Inspect desktop launchers for custom data directories."""
+    if isolated:
+        return set()
     locs = ["/usr/share/applications", "/usr/local/share/applications"] + [os.path.join(h, ".local", "share", "applications") for h in homes]
     custom_roots: Set[str] = set()
     for d_dir in locs:

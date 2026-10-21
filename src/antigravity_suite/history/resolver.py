@@ -35,8 +35,8 @@ def resolve_conversation_item(
     force_rebuild: bool = False,
     cached_stats: Optional[Dict[str, Tuple[float, int, float, int]]] = None,
 ) -> None:
-    """Evaluates and synchronizes an individual conversation entry in SQLite and Proto index."""
-    audit, journal = get_audit_logger(), get_sync_journal()
+    audit = get_audit_logger(effective_master / "history_merger_audit.log")
+    journal = get_sync_journal(effective_master / "history_sync_journal.log")
     db_file = master_conv_dir / f"{conv_id}.db"
     tr_file = master_brain_dir / conv_id / ".system_generated" / "logs" / "transcript.jsonl"
     curr_raw = all_summaries.get(conv_id)

@@ -48,7 +48,7 @@ def find_brain_folder(t_str: str, db_str: str) -> str:
 
 
 def extract_brain_title(brain_folder: str) -> str:
-    """Extracts authentic H1 title from task.md, implementation_plan.md, or any .md artifact."""
+    """Extracts authentic H1 title from task.md, implementation_plan.md, or architecture.md."""
     if not brain_folder or not os.path.isdir(brain_folder):
         return ""
     for art_name in ["task.md", "implementation_plan.md", "architecture.md"]:
@@ -64,15 +64,4 @@ def extract_brain_title(brain_folder: str) -> str:
                                 return art_title
             except Exception:
                 pass
-    for af_path in glob.glob(os.path.join(brain_folder, "*.md")):
-        try:
-            with open(af_path, "r", encoding="utf-8", errors="ignore") as af:
-                for l in af:
-                    l_clean = l.strip()
-                    if l_clean.startswith("# ") and len(l_clean) > 3:
-                        art_title = l_clean[2:].strip()
-                        if art_title and art_title.lower() not in GENERIC_BLACKLIST:
-                            return art_title
-        except Exception:
-            pass
     return ""

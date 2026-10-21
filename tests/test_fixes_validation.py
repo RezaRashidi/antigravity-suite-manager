@@ -2052,6 +2052,31 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             info2 = get_annotation_info(gemini_dir, cid)
             self.assertEqual(info2["title"], "Real Authentic Title")
 
+    def test_get_candidate_homes_strict_isolation_when_user_home_provided(self):
+        """Verifies that an explicitly specified user_home never leaks the host user home."""
+        from antigravity_suite.history.discovery_roots import get_candidate_homes
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            homes = get_candidate_homes(user_home=td)
+            self.assertEqual(homes, {str(Path(td).resolve())})
+            self.assertNotIn(os.path.expanduser("~"), homes)
+
+    def test_extract_brain_title_ignores_arbitrary_markdown_artifacts(self):
+        """Verifies that extract_brain_title ignores arbitrary documents like incident reports."""
+        from antigravity_suite.history.extractor_brain import extract_brain_title
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            b_dir = Path(td)
+            # Create a non-planning artifact
+            report_file = b_dir / "INC-20261021-01-Downtime.md"
+            report_file.write_text("# 📋 Production Incident Report\nDetails here...")
+            self.assertEqual(extract_brain_title(str(b_dir)), "")
+
+            # Create an authentic planning artifact
+            plan_file = b_dir / "task.md"
+            plan_file.write_text("# Authentic Task Plan Title\nSteps...")
+            self.assertEqual(extract_brain_title(str(b_dir)), "Authentic Task Plan Title")
+
 
 if __name__ == "__main__":
     unittest.main()
