@@ -1,17 +1,51 @@
 #!/usr/bin/env bash
 # Command execution dispatcher
 
+run_wizard_flow() {
+    if declare -f run_installer_workflow >/dev/null 2>&1; then
+        STEP_BY_STEP=true
+        START_STEP=1
+        run_installer_workflow
+    else
+        handle_wizard_command
+    fi
+}
+
+run_installer_step() {
+    local s="$1"
+    if declare -f run_step >/dev/null 2>&1; then
+        STEP_BY_STEP=true
+        START_STEP="$(get_step_num "$s")"
+        run_installer_workflow
+    else
+        handle_wizard_command "--step" "$s"
+    fi
+}
+
+run_installer_only_step() {
+    local s="$1"
+    if declare -f run_step >/dev/null 2>&1; then
+        ONLY_STEP="$(get_step_num "$s")"
+        run_installer_workflow
+    else
+        handle_wizard_command "--only-step" "$s"
+    fi
+}
+
 dispatch_command() {
-    if [ -z "$COMMAND" ]; then
+    if [ -z "$COMMAND" ] || [ "$COMMAND" = "center" ] || [ "$COMMAND" = "control-center" ]; then
         interactive_menu
         return 0
     fi
     case "$COMMAND" in
+        classic-menu) show_classic_menu ;;
+        wizard) run_wizard_flow ;;
+        wizard_step) run_installer_step "$START_STEP" ;;
+        only_step) run_installer_only_step "$ONLY_STEP" ;;
         detect) auto_detect_installations; detect_installations ;;
         install) dispatch_install ;;
         keyring) dispatch_keyring ;;
         paths) handle_paths_command ;;
-        wizard|setup|center|control-center) handle_wizard_command ;;
         status) resolve_dynamic_urls; check_status ;;
         all) install_antigravity_all ;;
         app) install_antigravity_app ;;

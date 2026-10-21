@@ -19,6 +19,13 @@ step_4_deploy_scripts() {
         fi
     fi
 
+    # Deploy install.sh entrypoint
+    if [ -f "${SCRIPT_DIR}/install.sh" ]; then
+        cp -f "${SCRIPT_DIR}/install.sh" "${TARGET_BIN}/" 2>/dev/null || sudo -n cp -f "${SCRIPT_DIR}/install.sh" "${TARGET_BIN}/" 2>/dev/null || true
+        chmod +x "${TARGET_BIN}/install.sh" 2>/dev/null || true
+        ln -sfn "${TARGET_BIN}/install.sh" "${REAL_HOME}/install.sh" 2>/dev/null || true
+    fi
+
     # Register antigravity_suite package in user and system site-packages
     local py_ver
     py_ver=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo "3")
@@ -40,6 +47,6 @@ step_4_deploy_scripts() {
     fi
 
     ln -sfn "${TARGET_BIN}/manage-antigravity.sh" "${REAL_HOME}/manage-antigravity.sh"
-    chown -R "${REAL_USER}:${REAL_USER}" "$TARGET_BIN" "$TARGET_ICONS" "$TARGET_CONF" "${REAL_HOME}/manage-antigravity.sh" 2>/dev/null || true
+    chown -R "${REAL_USER}:${REAL_USER}" "$TARGET_BIN" "$TARGET_ICONS" "$TARGET_CONF" "${REAL_HOME}/manage-antigravity.sh" "${REAL_HOME}/install.sh" 2>/dev/null || true
     echo -e "${GREEN}[OK] Installed management tools to ${TARGET_BIN} and symlinked ~/manage-antigravity.sh${NC}"
 }

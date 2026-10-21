@@ -16,6 +16,7 @@ bin/scale_icon: src/scale_icon.c
 
 install: build
 	@mkdir -p $(BINDIR) $(ICONDIR)
+	install -m 755 install.sh $(BINDIR)/install.sh
 	install -m 755 bin/manage-antigravity.sh $(BINDIR)/manage-antigravity.sh
 	install -m 755 bin/antigravity-generate-icons.py $(BINDIR)/antigravity-generate-icons.py
 	install -m 755 bin/antigravity-apply-icon.py $(BINDIR)/antigravity-apply-icon.py
@@ -37,7 +38,8 @@ install: build
 	cp -rf skills/whoami skills/accounts skills/switch $(HOME)/.gemide/config/skills/ 2>/dev/null || true
 	@python3 -c 'import site, os; sp = site.getusersitepackages(); os.makedirs(sp, exist_ok=True); open(os.path.join(sp, "antigravity_suite.pth"), "w").write("$(CURDIR)/src\n")' 2>/dev/null || true
 	ln -sfn $(BINDIR)/manage-antigravity.sh $(HOME)/manage-antigravity.sh
-	@echo "Installation successful. Run '~/manage-antigravity.sh status' to inspect."
+	ln -sfn $(BINDIR)/install.sh $(HOME)/install.sh
+	@echo "Installation successful. Run '~/manage-antigravity.sh' or '~/install.sh' to inspect."
 
 clean:
 	rm -f bin/scale_icon /tmp/scaled_*.raw /tmp/raw_*_1024.raw

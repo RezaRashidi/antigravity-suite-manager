@@ -5,9 +5,20 @@ parse_cli_args() {
     COMMAND=""
     SUB_COMMAND=""
     CMD_ARGS=()
+    START_STEP=1
+    ONLY_STEP=0
+    NON_INTERACTIVE=false
 
     while [ $# -gt 0 ]; do
         case "$1" in
+            --step|-s) COMMAND="wizard_step"; START_STEP="$2"; shift 2 ;;
+            --only-step|-o) COMMAND="only_step"; ONLY_STEP="$2"; shift 2 ;;
+            --wizard|-w) COMMAND="wizard"; shift ;;
+            --install-antigravity|-i) COMMAND="install"; SUB_COMMAND="all"; shift ;;
+            -y|--yes) NON_INTERACTIVE=true; shift ;;
+            -u) COMMAND="update"; SUB_COMMAND="all"; shift ;;
+            --menu|--center|--control-center) COMMAND="center"; shift ;;
+            --classic-menu) COMMAND="classic-menu"; shift ;;
             --app-url) APP_URL="$2"; shift 2 ;;
             --ide-url) IDE_URL="$2"; shift 2 ;;
             --app-dir) APP_INSTALL_DIR="$2"; CLI_APP_DIR_SPECIFIED=true; shift 2 ;;

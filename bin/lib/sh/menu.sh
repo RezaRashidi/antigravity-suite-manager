@@ -2,6 +2,27 @@
 # Interactive menu loop and routing
 
 interactive_menu() {
+    local sdir
+    sdir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)"
+    local detect_py="${sdir}/bin/antigravity-detect.py"
+    [ ! -f "$detect_py" ] && detect_py="${sdir}/antigravity-detect.py"
+    [ ! -f "$detect_py" ] && detect_py="${REAL_HOME}/.local/bin/antigravity-detect.py"
+
+    if [ -f "$detect_py" ] && command -v python3 >/dev/null 2>&1; then
+        set +e
+        python3 "$detect_py" --control-center
+        local code=$?
+        set -e
+        if [ "$code" -eq 10 ]; then
+            run_wizard_flow
+        fi
+        return 0
+    fi
+
+    show_classic_menu
+}
+
+show_classic_menu() {
     echo -e "${CYAN}=====================================================${NC}"
     echo -e "${CYAN}   Antigravity & Antigravity IDE Suite Manager       ${NC}"
     echo -e "${CYAN}=====================================================${NC}"

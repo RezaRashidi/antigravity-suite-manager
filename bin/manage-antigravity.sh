@@ -22,11 +22,33 @@ if [ -z "$LIB_SH_DIR" ]; then
     exit 1
 fi
 
+LIB_INSTALLER_DIR=""
+for cand in "${SCRIPT_DIR}/lib/installer" "/usr/local/bin/lib/installer" "${HOME}/.local/bin/lib/installer"; do
+    if [ -d "$cand" ]; then
+        LIB_INSTALLER_DIR="$cand"
+        break
+    fi
+done
+
 # Source environment definitions first
 # shellcheck source=/dev/null
 source "${LIB_SH_DIR}/env.sh"
 
-# Source all sub-scripts
+# Source installer step modules if available
+if [ -n "$LIB_INSTALLER_DIR" ]; then
+    for mod in "${LIB_INSTALLER_DIR}"/*.sh; do
+        [ -f "$mod" ] || continue
+        case "$(basename "$mod")" in
+            env.sh|bootstrap.sh|cli.sh) continue ;;
+            *)
+                # shellcheck source=/dev/null
+                source "$mod" 2>/dev/null || true
+                ;;
+        esac
+    done
+fi
+
+# Source all management sub-scripts
 for mod in "${LIB_SH_DIR}"/*.sh; do
     [ -f "$mod" ] || continue
     [ "$(basename "$mod")" = "env.sh" ] && continue
