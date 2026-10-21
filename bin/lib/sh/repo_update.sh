@@ -3,7 +3,16 @@
 
 find_suite_repo_root() {
     local candidate
-    for candidate in "$SCRIPT_DIR" "${SCRIPT_DIR}/.." "${REAL_HOME}/PhpstormProjects/antigravity-suite-manager"; do
+    for candidate in \
+        "$SCRIPT_DIR" \
+        "${SCRIPT_DIR}/.." \
+        "$PWD" \
+        "${PWD}/.." \
+        "${REAL_HOME}/antigravity-suite-manager" \
+        "${REAL_HOME}/PhpstormProjects/antigravity-suite-manager" \
+        "${REAL_HOME}/projects/antigravity-suite-manager" \
+        "${REAL_HOME}/src/antigravity-suite-manager" \
+        "/opt/antigravity-suite-manager"; do
         if [ -d "${candidate}/.git" ]; then
             echo "$(cd -P "$candidate" && pwd)"
             return 0
@@ -42,19 +51,21 @@ update_suite_repo() {
 
     log_info "Redeploying suite scripts and libraries to ${LOCAL_BIN}..."
     if [ -d "${repo_dir}/bin" ]; then
-        for s in manage-antigravity.sh antigravity-generate-icons.py antigravity-apply-icon.py \
-                 antigravity-merge-history.py antigravity-migration.py antigravity-detect.py \
-                 antigravity-keyring.py antigravity-f5-patch.js antigravity-checksums.py \
-                 antigravity-benchmark.py antigravity-multi-account.py; do
-            if [ -f "${repo_dir}/bin/${s}" ]; then
-                cp -f "${repo_dir}/bin/${s}" "${LOCAL_BIN}/" 2>/dev/null || true
-                chmod +x "${LOCAL_BIN}/${s}" 2>/dev/null || true
-            fi
+        mkdir -p "${LOCAL_BIN}"
+        for f in "${repo_dir}/bin"/*; do
+            [ -f "$f" ] || continue
+            cp -f "$f" "${LOCAL_BIN}/" 2>/dev/null || true
+            chmod +x "${LOCAL_BIN}/$(basename "$f")" 2>/dev/null || true
         done
         if [ -d "${repo_dir}/bin/lib" ]; then
             mkdir -p "${LOCAL_BIN}/lib"
             cp -rf "${repo_dir}/bin/lib/"* "${LOCAL_BIN}/lib/" 2>/dev/null || true
         fi
+    fi
+    if [ -f "${repo_dir}/install.sh" ]; then
+        cp -f "${repo_dir}/install.sh" "${LOCAL_BIN}/" 2>/dev/null || true
+        chmod +x "${LOCAL_BIN}/install.sh" 2>/dev/null || true
+        ln -sfn "${LOCAL_BIN}/install.sh" "${REAL_HOME}/install.sh" 2>/dev/null || true
     fi
 
     local py_ver
