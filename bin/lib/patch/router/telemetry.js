@@ -1,6 +1,6 @@
 // Multi-Account Router: Telemetry & Live Quota Summaries
 const http = require('http'), https = require('https'), fs = require('fs');
-const { refreshGoogleToken } = require('./oauth');
+const { refreshGoogleToken } = require('./oauth.js');
 let _quotaCache = { timestamp: 0, accounts: [] }, _cachedLs = null, _dirCache = {};
 
 function findLanguageServerInfo() {

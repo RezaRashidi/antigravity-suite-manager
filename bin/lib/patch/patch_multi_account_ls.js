@@ -6,8 +6,8 @@ function patchLanguageServer(distDir) {
     const lsPath = path.join(distDir, 'languageServer.js');
     if (!fs.existsSync(lsPath)) return;
     let code = fs.readFileSync(lsPath, 'utf8');
-    if (!code.includes("require('./multi_account_router')")) {
-        code = "try { require('./multi_account_router').startMultiAccountRouter(); } catch (_) {}\n" + code;
+    if (!code.includes("require('./multi_account_router.js')")) {
+        code = "try { require('./multi_account_router.js').startMultiAccountRouter(); } catch (_) {}\n" + code;
     }
     code = code.replace(
         "'--cloud_code_endpoint',\n            'https://daily-cloudcode-pa.googleapis.com'",
@@ -20,7 +20,7 @@ function unpatchLanguageServer(distDir) {
     const lsPath = path.join(distDir, 'languageServer.js');
     if (!fs.existsSync(lsPath)) return;
     let code = fs.readFileSync(lsPath, 'utf8');
-    code = code.replace("try { require('./multi_account_router').startMultiAccountRouter(); } catch (_) {}\n", "");
+    code = code.replace("try { require('./multi_account_router.js').startMultiAccountRouter(); } catch (_) {}\n", "");
     code = code.replace(
         "(process.env.ANTIGRAVITY_CLOUD_CODE_ENDPOINT || 'http://127.0.0.1:41999')",
         "'https://daily-cloudcode-pa.googleapis.com'"

@@ -1,10 +1,10 @@
 // Multi-Account Router: Loopback HTTP Proxy Server
 const http = require('http');
 const https = require('https');
-const { getBindings, getActiveAccountEmail, logTraffic } = require('./bindings');
-const { loadAllAccounts } = require('./accounts');
-const { refreshGoogleToken } = require('./oauth');
-const { handleApiRequest, tryInterceptCommand } = require('./api');
+const { getBindings, getActiveAccountEmail, logTraffic } = require('./bindings.js');
+const { loadAllAccounts } = require('./accounts.js');
+const { refreshGoogleToken } = require('./oauth.js');
+const { handleApiRequest, tryInterceptCommand } = require('./api.js');
 
 const DEFAULT_PORT = 41999;
 const UPSTREAM_HOST = 'daily-cloudcode-pa.googleapis.com';

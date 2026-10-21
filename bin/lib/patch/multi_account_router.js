@@ -1,8 +1,8 @@
 // Multi-Account Router: Gateway and Facade Module
-const { getBindings, setBinding, setActiveAccount, getActiveAccountEmail } = require('./router/bindings');
-const { loadAllAccounts } = require('./router/accounts');
-const { fetchLanguageServerTelemetry, fetchDirectAccountQuotas, _quotaCache } = require('./router/telemetry');
-const { startMultiAccountRouter } = require('./router/server');
+const { getBindings, setBinding, setActiveAccount, getActiveAccountEmail } = require('./router/bindings.js');
+const { loadAllAccounts } = require('./router/accounts.js');
+const { fetchLanguageServerTelemetry, fetchDirectAccountQuotas, _quotaCache } = require('./router/telemetry.js');
+const { startMultiAccountRouter } = require('./router/server.js');
 
 let _refreshing = false;
 
@@ -63,7 +63,7 @@ function removeAccount(email) {
     if (!email) return;
     try {
         const fs = require('fs'), path = require('path');
-        const { ACCOUNTS_DIR } = require('./router/bindings');
+        const { ACCOUNTS_DIR } = require('./router/bindings.js');
         const target = path.join(ACCOUNTS_DIR, `${email}.json`);
         if (fs.existsSync(target)) fs.unlinkSync(target);
         if (_quotaCache?.accounts) _quotaCache.accounts = _quotaCache.accounts.filter(a => a.email !== email);

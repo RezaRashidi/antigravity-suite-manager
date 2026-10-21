@@ -1,6 +1,6 @@
 // Multi-Account Router: Web API and In-Chat Remote Control Interceptor
-const { getBindings, setBinding, setActiveAccount, getActiveAccountEmail, logTraffic } = require('./bindings');
-const { loadAllAccounts } = require('./accounts');
+const { getBindings, setBinding, setActiveAccount, getActiveAccountEmail, logTraffic } = require('./bindings.js');
+const { loadAllAccounts } = require('./accounts.js');
 
 function handleApiRequest(req, res, bodyStr) {
     if (!req.url.startsWith('/api/multi-account') && req.url !== '/ui_bundle.js') return false;

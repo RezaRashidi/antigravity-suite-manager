@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const https = require('https');
-const { ACCOUNTS_DIR } = require('./bindings');
+const { ACCOUNTS_DIR } = require('./bindings.js');
 
 function findLanguageServerBinary() {
     if (process.env.ANTIGRAVITY_LS_BINARY && fs.existsSync(process.env.ANTIGRAVITY_LS_BINARY)) {

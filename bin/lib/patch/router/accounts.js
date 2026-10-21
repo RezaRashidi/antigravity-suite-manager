@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { ACCOUNTS_DIR, ensureAccountsDir } = require('./bindings');
+const { ACCOUNTS_DIR, ensureAccountsDir } = require('./bindings.js');
 
 function findPrimaryTokenFiles() {
     const homes = [os.homedir()];

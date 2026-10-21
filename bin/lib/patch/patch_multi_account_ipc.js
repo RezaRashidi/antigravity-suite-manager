@@ -10,7 +10,7 @@ function patchIpcAndPreload(distDir) {
             const snippets = `
     electron_1.ipcMain.handle('multi-account:get-state', async () => {
         try {
-            const router = require('./multi_account_router');
+            const router = require('./multi_account_router.js');
             let accounts = router.loadAllAccountsWithQuotasSync ? router.loadAllAccountsWithQuotasSync() : Object.values(router.loadAllAccounts());
             if (!accounts?.some(a => a.quotas?.length) && router.loadAllAccountsWithQuotas) {
                 try { accounts = await Promise.race([router.loadAllAccountsWithQuotas(), new Promise(r => setTimeout(() => r(accounts), 800))]); } catch (_) {}
@@ -19,12 +19,12 @@ function patchIpcAndPreload(distDir) {
             const bindings = router.getBindings();
             return { accounts, bindings, active_default: router.getActiveAccountEmail ? router.getActiveAccountEmail() : bindings.__active_account, proxy_running: true };
         } catch (_) {
-            try { const router = require('./multi_account_router'); return { accounts: Object.values(router.loadAllAccounts()), bindings: router.getBindings() }; } catch (e) { return { accounts: [], bindings: {} }; }
+            try { const router = require('./multi_account_router.js'); return { accounts: Object.values(router.loadAllAccounts()), bindings: router.getBindings() }; } catch (e) { return { accounts: [], bindings: {} }; }
         }
     });
     electron_1.ipcMain.handle('multi-account:bind-cascade', async (_event, cascadeId, email, model) => {
         try {
-            const router = require('./multi_account_router');
+            const router = require('./multi_account_router.js');
             router.setBinding(cascadeId, email, model || '');
             if (router.setActiveAccount) router.setActiveAccount(email);
             return true;
@@ -32,7 +32,7 @@ function patchIpcAndPreload(distDir) {
     });
     electron_1.ipcMain.handle('multi-account:set-active-account', async (_event, email) => {
         try {
-            const router = require('./multi_account_router');
+            const router = require('./multi_account_router.js');
             if (router.setActiveAccount) router.setActiveAccount(email);
             return true;
         } catch (_) { return false; }
@@ -50,7 +50,7 @@ function patchIpcAndPreload(distDir) {
     });
     electron_1.ipcMain.handle('multi-account:remove-account', async (_event, email) => {
         try {
-            const router = require('./multi_account_router');
+            const router = require('./multi_account_router.js');
             if (router.removeAccount) router.removeAccount(email);
             return true;
         } catch (_) { return false; }

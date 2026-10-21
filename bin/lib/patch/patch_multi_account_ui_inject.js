@@ -17,12 +17,21 @@ function copySubsystemFiles(distDir) {
     const patchDir = path.dirname(__filename);
     for (const f of ['multi_account_router.js', 'multi_account_ui.js']) {
         const src = path.join(patchDir, f);
-        if (fs.existsSync(src)) fs.copyFileSync(src, path.join(distDir, f));
+        if (fs.existsSync(src)) {
+            fs.copyFileSync(src, path.join(distDir, f));
+            if (f === 'multi_account_router.js') {
+                fs.copyFileSync(src, path.join(distDir, 'multi_account_router.cjs'));
+            }
+        }
     }
     for (const d of ['router', 'ui']) {
         const src = path.join(patchDir, d);
         if (fs.existsSync(src)) copyFolderRecursiveSync(src, path.join(distDir, d));
     }
+    const routerPkg = path.join(distDir, 'router', 'package.json');
+    try {
+        fs.writeFileSync(routerPkg, JSON.stringify({ type: 'commonjs' }, null, 2), 'utf8');
+    } catch (_) {}
 }
 
 function unpatchUiInjection(distDir) {
@@ -33,7 +42,7 @@ function unpatchUiInjection(distDir) {
         code = code.replace(/try\s*\{\s*const (?:cssPath|uiCodePath)[\s\S]*?console\.error\('\[MultiAccount\] UI injection error:'[^\n]*\n\s*\}/g, '');
         fs.writeFileSync(utilsPath, code, 'utf8');
     }
-    for (const f of ['multi_account_router.js', 'multi_account_ui.js']) {
+    for (const f of ['multi_account_router.js', 'multi_account_router.cjs', 'multi_account_ui.js']) {
         const p = path.join(distDir, f);
         if (fs.existsSync(p)) fs.unlinkSync(p);
     }

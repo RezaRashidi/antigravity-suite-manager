@@ -9,16 +9,32 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const require = createRequire(import.meta.url);
 
+function getRouter() {
+    try {
+        return require('./multi_account_router.cjs');
+    } catch (_) {
+        try {
+            return require('./multi_account_router.js');
+        } catch (e) {
+            console.error('[MultiAccount IDE] Failed to load router:', e?.message || e);
+            return null;
+        }
+    }
+}
+
 try {
-    const router = require('./multi_account_router.js');
+    const router = getRouter();
     if (router?.startMultiAccountRouter) router.startMultiAccountRouter(41999);
-} catch (_) {}
+} catch (e) {
+    console.error('[MultiAccount IDE] Error starting router:', e?.message || e);
+}
 
 function registerIpc() {
     try {
         if (ipcMain._multiAccountRegistered) return;
         ipcMain._multiAccountRegistered = true;
-        const router = require('./multi_account_router.js');
+        const router = getRouter();
+        if (!router) return;
         ipcMain.handle('multi-account:get-state', async () => {
             const accounts = router.loadAllAccountsWithQuotasSync ? router.loadAllAccountsWithQuotasSync() : Object.values(router.loadAllAccounts());
             return { accounts, bindings: router.getBindings(), active_default: router.getActiveAccountEmail?.() };
