@@ -19,7 +19,7 @@ def scan_app_clones(curr_app: str = "", real_home: str | None = None) -> List[Di
     clones: List[Dict[str, Any]] = []
 
     acc2_profile = os.path.join(home, ".antigravity-profile2")
-    has_other = os.path.isdir(acc2_profile) or os.path.isfile(os.path.join(local_bin, "antigravity-acc2")) or any(
+    has_other = os.path.isdir(acc2_profile) or any(
         os.path.isdir(p) and ".bak" not in p and ".removed" not in p for p in glob.glob(os.path.join(home, ".antigravity-profile-app-*"))
     )
 
@@ -44,7 +44,7 @@ def scan_app_clones(curr_app: str = "", real_home: str | None = None) -> List[Di
             "status": "Running" if acc1_run else "Stopped",
         })
 
-    if os.path.isdir(acc2_profile) or os.path.isfile(os.path.join(local_bin, "antigravity-acc2")):
+    if os.path.isdir(acc2_profile):
         acc2_run = subprocess.run(["pgrep", "-f", "antigravity-profile2.*Antigravity"], capture_output=True).returncode == 0
         acc2_shared = os.path.islink(os.path.join(acc2_profile, ".gemini", "antigravity"))
         acc2_cache = os.path.join(acc2_profile, ".gemini", "cache", "antigravity-keyring-unavailable")

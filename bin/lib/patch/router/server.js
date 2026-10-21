@@ -57,12 +57,19 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
 
             if (tryInterceptCommand(req, res, bodyStr, cascadeId)) return;
 
-            const boundEmail = (cascadeId && bindings[cascadeId]?.email) || getActiveAccountEmail(loadAllAccounts()) || 'Primary (Native)';
-            const token = await resolveTokenForCascade(cascadeId), tokenFp = token ? `token: ...${token.slice(-6)}` : 'token: [Native LS Session]';
-            logTraffic(`Chat: [${cascadeId || 'general'}] -> Account: [${boundEmail}] | ${tokenFp} | Path: ${req.url}`);
+            const isGen = req.url && (req.url.includes('streamGenerateContent') || req.url.includes('generateContent'));
+            let token = null, boundEmail = 'Primary (Native)';
+            if (isGen) {
+                boundEmail = (cascadeId && bindings[cascadeId]?.email) || getActiveAccountEmail(loadAllAccounts()) || 'Primary (Native)';
+                token = await resolveTokenForCascade(cascadeId);
+                const tokenFp = token ? `token: ...${token.slice(-6)}` : 'token: [Native LS Session]';
+                logTraffic(`ChatGen: [${cascadeId || 'general'}] -> Account: [${boundEmail}] | ${tokenFp} | Path: ${req.url}`);
+            } else {
+                logTraffic(`ControlPlane: [${cascadeId || 'system'}] -> Native LS Session | Path: ${req.url}`);
+            }
 
             const headers = { ...req.headers, host: UPSTREAM_HOST };
-            if (token) headers.authorization = `Bearer ${token}`;
+            if (isGen && token) headers.authorization = `Bearer ${token}`;
             if (body.length > 0) headers['content-length'] = Buffer.byteLength(body);
             delete headers['transfer-encoding']; delete headers['connection'];
 
@@ -73,7 +80,7 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
             if (agent) upOpts.agent = agent;
 
             const upReq = https.request(upOpts, (upRes) => {
-                logTraffic(`Chat: [${cascadeId || 'general'}] <- Upstream Response: ${upRes.statusCode}`);
+                logTraffic(`${isGen ? 'ChatGen' : 'ControlPlane'}: [${cascadeId || 'general'}] <- Upstream Response: ${upRes.statusCode}`);
                 res.writeHead(upRes.statusCode, upRes.headers);
                 upRes.pipe(res);
             });

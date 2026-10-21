@@ -40,7 +40,7 @@ def apply_icon_to_windows() -> None:
     try:
         atom_icon, atom_cardinal = x11.XInternAtom(display, b'_NET_WM_ICON', False), x11.XInternAtom(display, b'CARDINAL', False)
         atom_class, atom_string = x11.XInternAtom(display, b'WM_CLASS', False), x11.XInternAtom(display, b'STRING', False)
-        has_other = os.path.isdir(os.path.join(REAL_HOME, ".antigravity-profile2")) or os.path.isfile(os.path.join(REAL_HOME, ".local/bin/antigravity-acc2")) or bool(glob.glob(os.path.join(REAL_HOME, ".antigravity-profile-app-*")))
+        has_other = os.path.isdir(os.path.join(REAL_HOME, ".antigravity-profile2")) or bool(glob.glob(os.path.join(REAL_HOME, ".antigravity-profile-app-*")))
         cls_acc1, cls_acc2, cls_ide = (b'antigravity-1\0antigravity-1\0' if has_other else b'antigravity\0antigravity\0'), b'antigravity-2\0antigravity-2\0', b'antigravity-ide\0antigravity-ide\0'
 
         res = subprocess.run(['xwininfo', '-root', '-tree'], capture_output=True, text=True)
