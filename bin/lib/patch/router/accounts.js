@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { spawnSync } = require('child_process');
 const { ACCOUNTS_DIR, ensureAccountsDir } = require('./bindings.js');
 
 function findPrimaryTokenFiles() {
@@ -33,6 +34,39 @@ function findPrimaryTokenFiles() {
     return files;
 }
 
+function readTokenFromKeyring() {
+    try {
+        const rh = process.env.REAL_HOME || os.homedir();
+        const py = process.platform === 'win32' ? 'python' : (process.env.PYTHON || 'python3');
+        const sDirs = [
+            process.env.ANTIGRAVITY_SUITE_DIR,
+            path.join(rh, 'PhpstormProjects', 'antigravity-suite-manager'),
+            path.join(rh, '.antigravity-suite-manager'),
+            path.join(rh, 'antigravity-suite-manager'),
+        ].filter(Boolean);
+        const pypath = sDirs.map(d => path.join(d, 'src')).join(':') + (process.env.PYTHONPATH ? ':' + process.env.PYTHONPATH : '');
+        const script = 'import sys; from antigravity_suite.auth.keyring_dbus import get_token_from_keyring; t = get_token_from_keyring(); sys.stdout.write(t if t else "")';
+        const env = { ...process.env, REAL_HOME: rh, PYTHONPATH: pypath };
+        const res = spawnSync(py, ['-c', script], { env, timeout: 2000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+        const raw = res?.stdout ? res.stdout.trim() : '';
+        if (raw && raw.startsWith('{')) {
+            try {
+                const targetPath = path.join(rh, '.gemini', 'jetski-standalone-oauth-token');
+                fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+                if (!fs.existsSync(targetPath)) {
+                    fs.writeFileSync(targetPath, raw, { encoding: 'utf8', mode: 0o600 });
+                }
+                const cacheDir = path.join(rh, '.gemini', 'cache');
+                fs.mkdirSync(cacheDir, { recursive: true });
+                const marker = path.join(cacheDir, 'antigravity-keyring-unavailable');
+                if (!fs.existsSync(marker)) fs.writeFileSync(marker, '', 'utf8');
+            } catch (_) {}
+            return raw;
+        }
+    } catch (_) {}
+    return null;
+}
+
 function loadAllAccounts() {
     ensureAccountsDir();
     const accounts = {}, primary = path.join(os.homedir(), '.gemini', 'jetski-standalone-oauth-token');
@@ -61,6 +95,25 @@ function loadAllAccounts() {
                 else if (isPrim) accounts[k].is_primary = true;
             }
         } catch (_) {}
+    }
+    const hasPrimary = Object.values(accounts).some(a => a.is_primary);
+    if (!hasPrimary) {
+        const kToken = readTokenFromKeyring();
+        if (kToken) {
+            try {
+                const d = JSON.parse(kToken);
+                let em = d.email;
+                if (!em && d.id_token) {
+                    const parts = d.id_token.split('.');
+                    if (parts[1]) em = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8')).email;
+                }
+                if (em) {
+                    d.email = em;
+                    d.is_primary = true;
+                    accounts[em.toLowerCase()] = d;
+                }
+            } catch (_) {}
+        }
     }
     return accounts;
 }

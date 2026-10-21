@@ -70,8 +70,32 @@ sync_selector_skills() {
     done
 }
 
+ensure_keyring_decoupled() {
+    log_info "Ensuring keyring storage mode is decoupled (Normal File Storage)..."
+    local s_dir; s_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)"
+    if declare -f set_keyring_mode >/dev/null 2>&1; then
+        set_keyring_mode "all" "normal" >/dev/null 2>&1 || true
+    elif declare -f keyring_command >/dev/null 2>&1; then
+        keyring_command set all normal >/dev/null 2>&1 || true
+    elif [ -f "${s_dir}/bin/antigravity-keyring.py" ]; then
+        python3 "${s_dir}/bin/antigravity-keyring.py" set all normal >/dev/null 2>&1 || true
+    elif [ -f "${LOCAL_BIN}/antigravity-keyring.py" ]; then
+        python3 "${LOCAL_BIN}/antigravity-keyring.py" set all normal >/dev/null 2>&1 || true
+    fi
+
+    for c_dir in "${REAL_HOME:-$HOME}/.gemini/cache" "${REAL_HOME:-$HOME}/.gemide/cache" "${REAL_HOME:-$HOME}/.gemini/antigravity-ide/cache"; do
+        mkdir -p "$c_dir" 2>/dev/null || true
+        touch "${c_dir}/antigravity-keyring-unavailable" 2>/dev/null || true
+    done
+
+    if [ ! -f "${REAL_HOME:-$HOME}/.gemini/jetski-standalone-oauth-token" ]; then
+        python3 -c "from antigravity_suite.auth.keyring_apply import apply_mode_for_app1; apply_mode_for_app1('normal', migrate_token=True)" 2>/dev/null || true
+    fi
+}
+
 patch_selector_app() {
     ensure_selector_dirs
+    ensure_keyring_decoupled
     local asar="${APP_INSTALL_DIR}/resources/app.asar"
     local p_js; p_js="$(get_selector_patch_js)"
 
@@ -254,6 +278,7 @@ check_and_prep_ide_ls() {
 
 patch_selector_ide() {
     ensure_selector_dirs
+    ensure_keyring_decoupled
     local ide="${IDE_INSTALL_DIR}"
     local p_js; p_js="$(get_selector_patch_js)"
 
@@ -309,6 +334,7 @@ unpatch_selector_ide() {
 }
 
 patch_selector() {
+    ensure_keyring_decoupled
     for arg in "$@"; do [ "$arg" = "--force" ] || [ "$arg" = "-f" ] && FORCE_INSTALL=true; done
     case "${SUB_COMMAND:-${1:-all}}" in
         app) patch_selector_app "$@" ;;

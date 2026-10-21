@@ -11,10 +11,10 @@
     --agy-dropdown-header: #4b5563;
     --agy-dropdown-selected: rgba(59, 130, 246, 0.08);
     --agy-quota-track: #e5e7eb;
-    --agy-btn-action-bg: #f9fafb;
-    --agy-btn-action-border: #d1d5db;
-    --agy-btn-action-hover: #f3f4f6;
-    --agy-btn-action-text: #374151;
+    --agy-btn-action-bg: transparent;
+    --agy-btn-action-border: transparent;
+    --agy-btn-action-hover: rgba(0, 0, 0, 0.05);
+    --agy-btn-action-text: #6b7280;
 }
 html.dark, body.dark, [data-theme="dark"], .dark, body.vs-dark, .vs-dark, body.hc-black, .hc-black {
     --agy-pill-text: #9ca3af;
@@ -29,10 +29,10 @@ html.dark, body.dark, [data-theme="dark"], .dark, body.vs-dark, .vs-dark, body.h
     --agy-dropdown-header: #9ca3af;
     --agy-dropdown-selected: rgba(59, 130, 246, 0.18);
     --agy-quota-track: rgba(255, 255, 255, 0.12);
-    --agy-btn-action-bg: rgba(255, 255, 255, 0.05);
-    --agy-btn-action-border: rgba(255, 255, 255, 0.12);
-    --agy-btn-action-hover: rgba(255, 255, 255, 0.1);
-    --agy-btn-action-text: #e5e7eb;
+    --agy-btn-action-bg: transparent;
+    --agy-btn-action-border: transparent;
+    --agy-btn-action-hover: rgba(255, 255, 255, 0.06);
+    --agy-btn-action-text: #9ca3af;
 }
 @media (prefers-color-scheme: dark) {
     :root:not(.light) {
@@ -48,10 +48,10 @@ html.dark, body.dark, [data-theme="dark"], .dark, body.vs-dark, .vs-dark, body.h
         --agy-dropdown-header: #9ca3af;
         --agy-dropdown-selected: rgba(59, 130, 246, 0.18);
         --agy-quota-track: rgba(255, 255, 255, 0.12);
-        --agy-btn-action-bg: rgba(255, 255, 255, 0.05);
-        --agy-btn-action-border: rgba(255, 255, 255, 0.12);
-        --agy-btn-action-hover: rgba(255, 255, 255, 0.1);
-        --agy-btn-action-text: #e5e7eb;
+        --agy-btn-action-bg: transparent;
+        --agy-btn-action-border: transparent;
+        --agy-btn-action-hover: rgba(255, 255, 255, 0.06);
+        --agy-btn-action-text: #9ca3af;
     }
 }
 .agy-acc-pill-container {
@@ -336,25 +336,32 @@ html.dark, body.dark, [data-theme="dark"], .dark, body.vs-dark, .vs-dark, body.h
     line-height: 1.3;
 }
 .agy-acc-footer {
-    padding: 6px 10px;
+    padding: 4px 8px;
     border-top: 1px solid var(--agy-dropdown-border);
     display: flex;
     gap: 6px;
+    align-items: center;
 }
 .agy-acc-btn-action {
     flex: 1;
-    padding: 4px 8px;
-    background: var(--agy-btn-action-bg);
-    border: 1px solid var(--agy-btn-action-border);
-    border-radius: 6px;
-    color: var(--agy-btn-action-text);
+    padding: 5px 8px;
+    background: transparent;
+    border: none;
+    border-radius: 5px;
+    color: var(--agy-dropdown-subtext);
     font-size: 11px;
     font-weight: 500;
     cursor: pointer;
     text-align: center;
+    transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+    user-select: none;
+    outline: none;
+    opacity: 0.85;
 }
 .agy-acc-btn-action:hover {
-    background: var(--agy-btn-action-hover);
+    background: var(--agy-dropdown-hover);
+    color: var(--agy-dropdown-text);
+    opacity: 1;
 }
 .agy-toast {
     position: fixed;
