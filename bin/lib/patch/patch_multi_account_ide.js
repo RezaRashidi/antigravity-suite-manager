@@ -39,22 +39,57 @@ if [ ! -f "$BIN" ]; then
 fi
 
 PROXY_ENDPOINT="\${ANTIGRAVITY_CLOUD_CODE_ENDPOINT:-http://127.0.0.1:41999}"
+
+# Auto-spawn router fallback if default port 41999 is not listening
+if [[ "$PROXY_ENDPOINT" == *"41999"* ]]; then
+    if ! (exec 3<>/dev/tcp/127.0.0.1/41999) 2>/dev/null; then
+        ROUTER_SCRIPT="$DIR/../../out/multi_account_router.cjs"
+        if [ -f "$ROUTER_SCRIPT" ]; then
+            (node -e "require('$ROUTER_SCRIPT').startMultiAccountRouter(41999)" >/dev/null 2>&1 &)
+            for i in {1..20}; do
+                (exec 3<>/dev/tcp/127.0.0.1/41999) 2>/dev/null && break
+                sleep 0.1
+            done
+        fi
+    fi
+fi
+
+PROXY_ALIVE=0
+if (exec 3<>/dev/tcp/127.0.0.1/41999) 2>/dev/null; then
+    PROXY_ALIVE=1
+fi
+
 ARGS=()
 HAS_ENDPOINT=0
+SKIP_NEXT=0
 
 for arg in "$@"; do
+    if [[ $SKIP_NEXT -eq 1 ]]; then
+        if [[ $PROXY_ALIVE -eq 1 ]]; then
+            ARGS+=("\${PROXY_ENDPOINT}")
+        else
+            ARGS+=("$arg")
+        fi
+        SKIP_NEXT=0
+        continue
+    fi
     if [[ "$arg" == --cloud_code_endpoint=* ]] || [[ "$arg" == "-cloud_code_endpoint="* ]]; then
-        ARGS+=("--cloud_code_endpoint=\${PROXY_ENDPOINT}")
+        if [[ $PROXY_ALIVE -eq 1 ]]; then
+            ARGS+=("--cloud_code_endpoint=\${PROXY_ENDPOINT}")
+        else
+            ARGS+=("$arg")
+        fi
         HAS_ENDPOINT=1
-    elif [[ "$arg" == "https://cloudcode-pa.googleapis.com" ]] || [[ "$arg" == "https://daily-cloudcode-pa.googleapis.com" ]]; then
-        ARGS+=("\${PROXY_ENDPOINT}")
+    elif [[ "$arg" == "--cloud_code_endpoint" ]] || [[ "$arg" == "-cloud_code_endpoint" ]]; then
+        ARGS+=("$arg")
+        SKIP_NEXT=1
         HAS_ENDPOINT=1
     else
         ARGS+=("$arg")
     fi
 done
 
-if [[ $HAS_ENDPOINT -eq 0 ]]; then
+if [[ $HAS_ENDPOINT -eq 0 && $PROXY_ALIVE -eq 1 ]]; then
     ARGS+=("--cloud_code_endpoint=\${PROXY_ENDPOINT}")
 fi
 

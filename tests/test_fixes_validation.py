@@ -2018,7 +2018,7 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
 
             cid = "c4ddc3ee-7c6e-44ee-9038-65e276ff4bb4"
             ide_title = "Simple Persian Greeting"
-            ide_proto = build_cascade_summary(cid, ide_title, ide_title, 2, workspace_uri="file:///home/reza/PhpstormProjects/antigravity-suite-manager")
+            ide_proto = build_cascade_summary(cid, ide_title, ide_title, 2, workspace_uri="file:///home/user/workspace/antigravity-suite-manager")
 
             with sqlite3.connect(str(vscdb_path)) as v_con:
                 v_con.execute("CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value TEXT);")
@@ -2050,7 +2050,7 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
         """Verifies that pick_first_valid_title rejects fallback Chat titles so authentic titles win."""
         from antigravity_suite.history.title_resolver import pick_first_valid_title, resolve_best_title
         
-        self.assertIsNone(pick_first_valid_title(["K6 Chat", "Conversation", "Desktop: /home/reza"], set()))
+        self.assertIsNone(pick_first_valid_title(["K6 Chat", "Conversation", "Desktop: /home/user"], set()))
         self.assertEqual(pick_first_valid_title(["K6 Chat", "Fix MariaDB User Permissions"], set()), "Fix MariaDB User Permissions")
         
         # Test that resolve_best_title allows LLM/checkpoint to override existing fallback

@@ -91,9 +91,36 @@ function removeAccount(email) {
     try {
         const fs = require('fs'), path = require('path');
         const { ACCOUNTS_DIR } = require('./router/bindings.js');
+        const { findPrimaryTokenFiles } = require('./router/accounts.js');
         const target = path.join(ACCOUNTS_DIR, `${email}.json`);
         if (fs.existsSync(target)) fs.unlinkSync(target);
-        if (_quotaCache?.accounts) _quotaCache.accounts = _quotaCache.accounts.filter(a => a.email !== email);
+
+        try {
+            for (const f of fs.readdirSync(ACCOUNTS_DIR)) {
+                if (f.toLowerCase() === `${email.toLowerCase()}.json`) {
+                    const p = path.join(ACCOUNTS_DIR, f);
+                    if (fs.existsSync(p)) fs.unlinkSync(p);
+                }
+            }
+        } catch (_) {}
+
+        for (const f of findPrimaryTokenFiles()) {
+            try {
+                const d = JSON.parse(fs.readFileSync(f, 'utf8'));
+                let em = d.email;
+                if (!em && d.id_token) {
+                    const parts = d.id_token.split('.');
+                    if (parts[1]) em = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8')).email;
+                }
+                if (em && em.toLowerCase() === email.toLowerCase()) {
+                    fs.unlinkSync(f);
+                }
+            } catch (_) {}
+        }
+
+        if (_quotaCache?.accounts) {
+            _quotaCache.accounts = _quotaCache.accounts.filter(a => (a.email || '').toLowerCase() !== email.toLowerCase());
+        }
     } catch (_) {}
 }
 

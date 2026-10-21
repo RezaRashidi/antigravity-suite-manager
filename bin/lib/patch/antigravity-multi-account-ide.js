@@ -1,5 +1,5 @@
 // Antigravity Multi-Account IDE Main-Process Injection Hook
-import { app, ipcMain, BrowserWindow } from 'electron';
+import * as electronModule from 'electron';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -8,6 +8,20 @@ import { createRequire } from 'module';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const require = createRequire(import.meta.url);
+
+const electron = electronModule.default || electronModule;
+let app = electronModule.app || electron.app;
+let ipcMain = electronModule.ipcMain || electron.ipcMain;
+let BrowserWindow = electronModule.BrowserWindow || electron.BrowserWindow;
+
+if (!app) {
+    try {
+        const el = require('electron');
+        app = el.app || el.default?.app;
+        ipcMain = el.ipcMain || el.default?.ipcMain;
+        BrowserWindow = el.BrowserWindow || el.default?.BrowserWindow;
+    } catch (_) {}
+}
 
 function getRouter() {
     try {
@@ -88,14 +102,16 @@ function injectToWebContents(wc) {
     } catch (_) {}
 }
 
-app.on('browser-window-created', (_event, win) => {
-    win.webContents.on('dom-ready', () => injectToWebContents(win.webContents));
-    win.webContents.on('did-finish-load', () => injectToWebContents(win.webContents));
-});
-app.on('web-contents-created', (_event, contents) => {
-    contents.on('dom-ready', () => injectToWebContents(contents));
-    contents.on('did-finish-load', () => injectToWebContents(contents));
-});
-app.whenReady().then(() => {
-    try { for (const win of BrowserWindow.getAllWindows()) injectToWebContents(win.webContents); } catch (_) {}
-});
+if (app) {
+    app.on('browser-window-created', (_event, win) => {
+        win.webContents.on('dom-ready', () => injectToWebContents(win.webContents));
+        win.webContents.on('did-finish-load', () => injectToWebContents(win.webContents));
+    });
+    app.on('web-contents-created', (_event, contents) => {
+        contents.on('dom-ready', () => injectToWebContents(contents));
+        contents.on('did-finish-load', () => injectToWebContents(contents));
+    });
+    app.whenReady().then(() => {
+        try { for (const win of BrowserWindow?.getAllWindows?.() || []) injectToWebContents(win.webContents); } catch (_) {}
+    });
+}

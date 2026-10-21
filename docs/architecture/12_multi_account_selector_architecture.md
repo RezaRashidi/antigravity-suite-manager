@@ -85,7 +85,7 @@ The Multi-Account Selector subsystem enables seamless, per-conversation Google a
   - Identifies active conversation via `window.location` regex and DOM data attributes (`data-cascade-id`).
 
 ### 3.2 UI Controller & Visual Components (`multi_account_ui.js`, `ui/flyout.js`)
-- Pill button renders current account username (e.g., `rezalast4m`).
+- Pill button renders current account username (e.g., `username`).
 - Interactive dropdown lists all registered accounts with checkmark badges for the active chat.
 - Flyout panel displays discrete SLA quota bars for:
   - **Gemini Models**: Weekly Limit Remaining and Five Hour Limit Remaining.
