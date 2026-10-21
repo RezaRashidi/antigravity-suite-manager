@@ -127,11 +127,10 @@ class TestBenchmarkSubsystem(unittest.TestCase):
             self.assertEqual(res[1].ttft_sec, 1.0)
             formatted = format_recent_messages_section(res, all_steps=True)
             text = "\n".join(formatted)
-            self.assertIn("Recent Message Telemetry", text)
-            self.assertIn("Message 01/02", text)
-            self.assertIn("Input Volume", text)
-            self.assertIn("Output Volume", text)
-            self.assertIn("Aggregate Volume Summary", text)
+            self.assertIn("Volume Cluster Performance", text)
+            self.assertIn("Recent Interactions", text)
+            self.assertIn("Aggregate Volume", text)
+            self.assertIn("Expanded Step Timelines", text)
         finally:
             Path(t_path).unlink(missing_ok=True)
 
