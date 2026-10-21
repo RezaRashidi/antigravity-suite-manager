@@ -8,7 +8,7 @@ const { handleApiRequest, tryInterceptCommand } = require('./api');
 
 const DEFAULT_PORT = 41999;
 const UPSTREAM_HOST = 'daily-cloudcode-pa.googleapis.com';
-let _server = null;
+let _server = null, _lastCascadeId = null, _lastCascadeTs = 0;
 
 async function resolveTokenForAccount(email) {
     if (!email) return null;
@@ -43,25 +43,27 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
             let cascadeId = null;
             try {
                 const parsed = JSON.parse(bodyStr);
-                cascadeId = parsed.cascadeId || parsed.conversationId || parsed.trajectoryId;
+                cascadeId = parsed.cascadeId || parsed.conversationId || parsed.trajectoryId || parsed.cascade_id || parsed.conversation_id || parsed.trajectory_id;
             } catch (_) {
-                const match = bodyStr.match(/"(?:cascadeId|conversationId)":\s*"([a-zA-Z0-9_\-]+)"/);
+                const match = bodyStr.match(/"(?:cascadeId|conversationId|trajectoryId|cascade_id|conversation_id|trajectory_id)":\s*"([a-zA-Z0-9_\-]+)"/);
                 if (match) cascadeId = match[1];
             }
+            const bindings = getBindings();
+            if (!cascadeId) { for (const bid of Object.keys(bindings)) if (!bid.startsWith('__') && bid !== 'default' && bid.length >= 8 && bodyStr.includes(bid)) { cascadeId = bid; break; } }
+            if (!cascadeId) { const m = bodyStr.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i); if (m) cascadeId = m[1]; }
+            if (!cascadeId && _lastCascadeId && (Date.now() - _lastCascadeTs < 30000)) cascadeId = _lastCascadeId;
+            if (cascadeId) { _lastCascadeId = cascadeId; _lastCascadeTs = Date.now(); }
 
             if (tryInterceptCommand(req, res, bodyStr, cascadeId)) return;
 
-            const bindings = getBindings();
             const boundEmail = (cascadeId && bindings[cascadeId]?.email) || getActiveAccountEmail(loadAllAccounts()) || 'Primary (Native)';
-            const token = await resolveTokenForCascade(cascadeId);
-            const tokenFp = token ? `token: ...${token.slice(-6)}` : 'token: [Native LS Session]';
+            const token = await resolveTokenForCascade(cascadeId), tokenFp = token ? `token: ...${token.slice(-6)}` : 'token: [Native LS Session]';
             logTraffic(`Chat: [${cascadeId || 'general'}] -> Account: [${boundEmail}] | ${tokenFp} | Path: ${req.url}`);
 
             const headers = { ...req.headers, host: UPSTREAM_HOST };
             if (token) headers.authorization = `Bearer ${token}`;
             if (body.length > 0) headers['content-length'] = Buffer.byteLength(body);
-            delete headers['transfer-encoding'];
-            delete headers['connection'];
+            delete headers['transfer-encoding']; delete headers['connection'];
 
             const upReq = https.request({
                 hostname: UPSTREAM_HOST, port: 443, path: req.url, method: req.method, headers, timeout: 0,

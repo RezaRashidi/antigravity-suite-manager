@@ -61,8 +61,7 @@ function setBinding(cascadeId, email, model = '') {
     ensureAccountsDir();
     const b = getBindings();
     b[cascadeId] = { cascade_id: cascadeId, email, model, updated_at: new Date().toISOString() };
-    b.__active_account = email;
-    _activeAccountEmail = email;
+    if (cascadeId === '__default__' || cascadeId === 'default') { b.__active_account = email; _activeAccountEmail = email; }
     try {
         const tmp = BINDINGS_FILE + '.tmp';
         fs.writeFileSync(tmp, JSON.stringify(b, null, 2), 'utf8');

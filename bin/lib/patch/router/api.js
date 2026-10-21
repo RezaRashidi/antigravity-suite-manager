@@ -32,7 +32,7 @@ function handleApiRequest(req, res, bodyStr) {
             const data = JSON.parse(bodyStr);
             if (data.cascadeId && data.email) {
                 setBinding(data.cascadeId, data.email, data.model || '');
-                if (data.active) setActiveAccount(data.email);
+                if (data.active && (data.cascadeId === '__default__' || data.cascadeId === 'default')) setActiveAccount(data.email);
             }
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ ok: true }));

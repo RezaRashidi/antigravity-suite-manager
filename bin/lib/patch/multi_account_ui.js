@@ -4,8 +4,8 @@
     let state = { accounts: [], bindings: {} }, cascadeId = "default", rTimer = null, lastF = 0;
     const apiH = () => window.__AGY_ROUTER_HOST__ || localStorage.getItem("agy_router_host") || "http://127.0.0.1:41999";
     function toast(msg) {
-        let t = document.getElementById("antigravity-account-toast") || document.createElement("div");
-        t.id = "antigravity-account-toast"; t.className = "agy-toast"; if (!t.parentElement && document.body) document.body.appendChild(t);
+        let t = document.getElementById("antigravity-account-toast") || Object.assign(document.createElement("div"), { id: "antigravity-account-toast", className: "agy-toast" });
+        if (!t.parentElement && document.body) document.body.appendChild(t);
         t.textContent = msg; t.style.opacity = "1"; setTimeout(() => t.style.opacity = "0", 2000);
     }
     async function fetchState(force = false) {
@@ -15,8 +15,8 @@
         if (res?.accounts?.length) { const seen = new Set(); res.accounts = res.accounts.filter(a => a?.email && !seen.has(a.email.toLowerCase()) && seen.add(a.email.toLowerCase())); state = res; render(); }
     }
     function getActive() {
-        const b = state.bindings?.[cascadeId], em = (typeof b === "object" ? b?.email : b) || state.active_default || state.bindings?.__active_account;
-        return state.accounts?.find(a => a.email && a.email.toLowerCase() === em?.toLowerCase()) || state.accounts?.[0] || { email: "Account" };
+        const b = state.bindings?.[cascadeId], em = (typeof b === "object" ? b?.email : b), d = state.active_default || state.bindings?.__active_account;
+        return (em && state.accounts?.find(a => a.email && a.email.toLowerCase() === em.toLowerCase())) || state.accounts?.find(a => a.email && a.email.toLowerCase() === d?.toLowerCase()) || state.accounts?.[0] || { email: "Account" };
     }
     async function doLogout(em) {
         if (!em || !confirm(`Log out and remove ${em}?`)) return;
@@ -38,10 +38,13 @@
     }
     function render() {
         try {
-            cascadeId = window.__antigravityDetectCascadeId ? window.__antigravityDetectCascadeId() : "default";
-            const targetInfo = window.__antigravityFindTarget ? window.__antigravityFindTarget() : null;
-            if (!targetInfo?.target) return;
-            const { target, insertAfter, floating } = targetInfo, active = getActive();
+            const targetInfo = window.__antigravityFindTarget ? window.__antigravityFindTarget() : null; if (!targetInfo?.target) return;
+            const newCid = window.__antigravityDetectCascadeId ? window.__antigravityDetectCascadeId(targetInfo.target) : "default";
+            if (cascadeId && cascadeId.startsWith("chat_") && newCid && !newCid.startsWith("chat_") && state.bindings?.[cascadeId]) {
+                const em = state.bindings[cascadeId]; delete state.bindings[cascadeId]; state.bindings[newCid] = em;
+                void fetch(apiH() + "/api/multi-account/bind", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cascadeId: newCid, email: em }) });
+            }
+            cascadeId = newCid; const { target, insertAfter, floating } = targetInfo, active = getActive();
             let pill = document.getElementById("antigravity-account-pill");
             if (!pill || pill.parentElement !== target) {
                 if (pill) pill.remove(); pill = document.createElement("div"); pill.id = "antigravity-account-pill";
@@ -70,9 +73,9 @@
                 item.onclick = async (e) => {
                     if (e.target.closest(".agy-view-usage-link, .agy-usage-flyout, .agy-acc-del-btn")) return; e.stopPropagation();
                     if (em) {
-                        try { if (window.antigravityMultiAccount) { await Promise.race([window.antigravityMultiAccount.bindCascade?.(cascadeId, em), new Promise(r => setTimeout(r, 200))]); await Promise.race([window.antigravityMultiAccount.setActiveAccount?.(em), new Promise(r => setTimeout(r, 200))]); } } catch (_) {}
-                        try { await fetch(apiH() + "/api/multi-account/bind", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cascadeId, email: em, active: true }) }); } catch (_) {}
-                        if (!state.bindings) state.bindings = {}; state.bindings[cascadeId] = em; state.active_default = em; render(); toast(`✓ Switched chat to ${em.split("@")[0]}`);
+                        try { if (window.antigravityMultiAccount) await Promise.race([window.antigravityMultiAccount.bindCascade?.(cascadeId, em), new Promise(r => setTimeout(r, 200))]); } catch (_) {}
+                        try { await fetch(apiH() + "/api/multi-account/bind", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cascadeId, email: em }) }); } catch (_) {}
+                        if (!state.bindings) state.bindings = {}; state.bindings[cascadeId] = em; render(); toast(`✓ Switched chat to ${em.split("@")[0]}`);
                     }
                     dd.classList.remove("open"); fly?.classList.remove("visible");
                 };
@@ -85,14 +88,12 @@
     document.addEventListener("click", (e) => {
         const dd = document.getElementById("agy-acc-dd"), pill = document.getElementById("antigravity-account-pill");
         if (dd && pill && !pill.contains(e.target)) { dd.classList.remove("open"); document.getElementById("agy-flyout")?.classList.remove("visible"); }
-        if (e.target.closest("[data-testid*="conversation"], [class*="sidebar"], [data-testid="new-conversation-button"]")) { scheduleRender(); setTimeout(() => { scheduleRender(); void fetchState(); }, 200); }
+        if (e.target.closest("[data-testid*=\"conversation\"], [class*=\"sidebar\"], [data-testid=\"new-conversation-button\"]")) { scheduleRender(); setTimeout(() => { scheduleRender(); void fetchState(); }, 200); }
     });
     const hookState = (fn) => function() { const r = fn.apply(this, arguments); scheduleRender(); void fetchState(); return r; };
-    if (history.pushState) history.pushState = hookState(history.pushState); if (history.replaceState) history.replaceState = hookState(history.replaceState);
-    ['popstate', 'hashchange'].forEach(ev => window.addEventListener(ev, () => { scheduleRender(); void fetchState(); }));
-    window.addEventListener("resize", updateDdPos); window.addEventListener("focus", () => void fetchState());
-    window.addEventListener("keydown", (e) => { if (e.key === "F5" && !e.ctrlKey && !e.metaKey && !e.shiftKey) { render(); void fetchState(true); } });
-    try { const mo = new MutationObserver(() => { const curCid = window.__antigravityDetectCascadeId?.() || "default", p = document.getElementById("antigravity-account-pill"); if (!p || !document.body?.contains(p) || curCid !== cascadeId) { scheduleRender(); if (curCid !== cascadeId) void fetchState(); } }); if (document.body) mo.observe(document.body, { childList: true, subtree: true }); } catch (_) {}
-    setInterval(() => { const pill = document.getElementById("antigravity-account-pill"), tInfo = window.__antigravityFindTarget?.(), curCid = window.__antigravityDetectCascadeId?.() || "default"; if (!pill || !document.body?.contains(pill) || (tInfo?.target && pill.parentElement !== tInfo.target) || curCid !== cascadeId) { scheduleRender(); if (curCid !== cascadeId) void fetchState(); } }, 250);
+    if (history.pushState) history.pushState = hookState(history.pushState); if (history.replaceState) history.replaceState = hookState(history.replaceState); ['popstate', 'hashchange', 'focus'].forEach(ev => window.addEventListener(ev, () => { scheduleRender(); void fetchState(); }));
+    window.addEventListener("resize", updateDdPos); window.addEventListener("keydown", (e) => { if (e.key === "F5" && !e.ctrlKey && !e.metaKey && !e.shiftKey) { render(); void fetchState(true); } });
+    try { const mo = new MutationObserver(() => { const t = window.__antigravityFindTarget?.(), c = window.__antigravityDetectCascadeId?.(t?.target) || "default", p = document.getElementById("antigravity-account-pill"); if (!p || !document.body?.contains(p) || c !== cascadeId) { scheduleRender(); if (c !== cascadeId) void fetchState(); } }); if (document.body) mo.observe(document.body, { childList: true, subtree: true }); } catch (_) {}
+    setInterval(() => { const p = document.getElementById("antigravity-account-pill"), t = window.__antigravityFindTarget?.(), c = window.__antigravityDetectCascadeId?.(t?.target) || "default"; if (!p || !document.body?.contains(p) || (t?.target && p.parentElement !== t.target) || c !== cascadeId) { scheduleRender(); if (c !== cascadeId) void fetchState(); } }, 250);
     render(); fetchState(); setTimeout(() => fetchState(true), 1500); setInterval(fetchState, 30000);
 })();
