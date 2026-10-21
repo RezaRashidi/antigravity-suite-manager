@@ -136,25 +136,90 @@ def handle_control_center_traffic(manage_sh: str) -> None:
     input("\nPress Enter to return to Control Center...")
 
 
-def handle_control_center_selector_patch(manage_sh: str) -> None:
+def handle_control_center_selector_patch(manage_sh: str, unified: List[Dict[str, Any]] | None = None) -> None:
     print(f"\n{CYAN}--- Prompt-Bar Multi-Account Selector Patch ---{NC}")
     print("  [1] Apply / Update Prompt-Bar Multi-Account Selector Patch\n  [2] Revert / Unpatch Prompt-Bar Selector Patch (Preserves F5)\n  [0] Return")
     c = input("Select action [1-2, Default: 1]: ").strip()
-    if c in ["1", ""]:
-        subprocess.run(["bash", manage_sh, "selector"], check=False)
-    elif c == "2":
-        subprocess.run(["bash", manage_sh, "unpatch-selector"], check=False)
+    if c in ["0"]:
+        return
+    action_cmd = "unpatch-selector" if c == "2" else "selector"
+
+    if unified and len(unified) > 0:
+        print(f"\n{BOLD}Target Instances for Selector Patch:{NC}")
+        print("  [A] All Detected Instances (IDE & App)")
+        for idx, item in enumerate(unified, 1):
+            print(f"  [{idx}] {item['name']} ({item['type']}) at {item['engine_path']}")
+        print("  [0] Cancel")
+        t_choice = input(f"Select target [A, 1-{len(unified)}, Default: A]: ").strip()
+        if t_choice in ["0"]:
+            return
+        if t_choice.upper() in ["A", ""]:
+            subprocess.run(["bash", manage_sh, action_cmd, "all", "--force"], check=False)
+        elif t_choice.isdigit() and 1 <= int(t_choice) <= len(unified):
+            target_item = unified[int(t_choice) - 1]
+            itype = "ide" if "IDE" in target_item.get("type", "") else "app"
+            dir_flag = "--ide-dir" if itype == "ide" else "--app-dir"
+            subprocess.run(["bash", manage_sh, action_cmd, itype, dir_flag, target_item["engine_path"], "--force"], check=False)
+        else:
+            print(f"{RED}[ERROR] Invalid target selection.{NC}")
+    else:
+        subprocess.run(["bash", manage_sh, action_cmd, "all", "--force"], check=False)
     input("\nPress Enter to return to Control Center...")
 
 
-def handle_control_center_f5_patch(manage_sh: str) -> None:
+def handle_control_center_f5_patch(manage_sh: str, unified: List[Dict[str, Any]] | None = None) -> None:
     print(f"\n{CYAN}--- F5 Manual Sync Backend Reload Patch ---{NC}")
     print("  [1] Apply / Re-apply F5 Backend Reload Patch\n  [2] Revert / Unpatch F5 Reload Patch\n  [0] Return")
     c = input("Select action [1-2, Default: 1]: ").strip()
-    if c in ["1", ""]:
-        subprocess.run(["bash", manage_sh, "f5"], check=False)
-    elif c == "2":
-        subprocess.run(["bash", manage_sh, "unpatch-f5"], check=False)
+    if c in ["0"]:
+        return
+    action_cmd = "unpatch-f5" if c == "2" else "f5"
+
+    app_instances = [it for it in (unified or []) if "IDE" not in it.get("type", "")]
+    if app_instances:
+        print(f"\n{BOLD}Target App Instance for F5 Patch:{NC}")
+        print("  [A] All App Instances")
+        for idx, item in enumerate(app_instances, 1):
+            print(f"  [{idx}] {item['name']} at {item['engine_path']}")
+        print("  [0] Cancel")
+        t_choice = input(f"Select target [A, 1-{len(app_instances)}, Default: A]: ").strip()
+        if t_choice in ["0"]:
+            return
+        if t_choice.upper() in ["A", ""]:
+            for it in app_instances:
+                subprocess.run(["bash", manage_sh, action_cmd, "--app-dir", it["engine_path"], "--force"], check=False)
+        elif t_choice.isdigit() and 1 <= int(t_choice) <= len(app_instances):
+            target_item = app_instances[int(t_choice) - 1]
+            subprocess.run(["bash", manage_sh, action_cmd, "--app-dir", target_item["engine_path"], "--force"], check=False)
+        else:
+            print(f"{RED}[ERROR] Invalid target selection.{NC}")
+    else:
+        subprocess.run(["bash", manage_sh, action_cmd, "--force"], check=False)
+    input("\nPress Enter to return to Control Center...")
+
+
+def handle_control_center_rtl_patch(manage_sh: str, unified: List[Dict[str, Any]] | None = None) -> None:
+    print(f"\n{CYAN}--- RTL Layout & Font Patch (mmnaderi/antigravity-rtl) ---{NC}")
+    if unified and len(unified) > 0:
+        print("  [A] All Detected Instances (IDE & App)")
+        for idx, item in enumerate(unified, 1):
+            print(f"  [{idx}] {item['name']} ({item['type']}) at {item['engine_path']}")
+        print("  [0] Cancel")
+        t_choice = input(f"Select target [A, 1-{len(unified)}, Default: A]: ").strip()
+        if t_choice in ["0"]:
+            return
+        if t_choice.upper() in ["A", ""]:
+            subprocess.run(["bash", manage_sh, "rtl", "all", "--force"], check=False)
+        elif t_choice.isdigit() and 1 <= int(t_choice) <= len(unified):
+            target_item = unified[int(t_choice) - 1]
+            itype = "ide" if "IDE" in target_item.get("type", "") else "app"
+            dir_flag = "--ide-dir" if itype == "ide" else "--app-dir"
+            subprocess.run(["bash", manage_sh, "rtl", itype, dir_flag, target_item["engine_path"], "--force"], check=False)
+        else:
+            print(f"{RED}[ERROR] Invalid target selection.{NC}")
+    else:
+        r_tgt = input("Select RTL target [1: All, 2: App, 3: IDE, Default: 1]: ").strip()
+        subprocess.run(["bash", manage_sh, "rtl", "all" if r_tgt in ["1", ""] else ("app" if r_tgt == "2" else "ide"), "--force"], check=False)
     input("\nPress Enter to return to Control Center...")
 
 

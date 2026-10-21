@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import unittest
+import unittest.mock
 import tempfile
 import os
 import shutil
@@ -1912,6 +1913,34 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             r_args = mock_sub.call_args[0][0]
             self.assertIn("--force", r_args)
             self.assertIn("rtl", r_args)
+
+            mock_sub.reset_mock()
+            with unittest.mock.patch("builtins.input", return_value="1"):
+                handle_unified_patches_and_reinstall("T", u_item, "/opt/test", "/bin/manage.sh")
+                self.assertTrue(mock_sub.called)
+                t_args = mock_sub.call_args[0][0]
+                self.assertIn("--force", t_args)
+                self.assertIn("selector", t_args)
+                self.assertIn("/opt/test", t_args)
+
+    def test_control_center_selector_patch_target_selection(self):
+        """Verifies handle_control_center_selector_patch prompts for target and passes explicit args."""
+        from antigravity_suite.detect.control_center_actions import handle_control_center_selector_patch
+        unified = [
+            {"name": "Antigravity IDE", "type": "Antigravity IDE", "engine_path": "/opt/antigravity-ide"},
+            {"name": "Antigravity", "type": "Antigravity App", "engine_path": "/opt/Antigravity-x64"},
+        ]
+        with unittest.mock.patch("subprocess.run") as mock_sub:
+            # Action: 1 (apply), Target: 2 (Antigravity App)
+            with unittest.mock.patch("builtins.input", side_effect=["1", "2", ""]):
+                handle_control_center_selector_patch("/bin/manage.sh", unified)
+                self.assertTrue(mock_sub.called)
+                args = mock_sub.call_args[0][0]
+                self.assertIn("selector", args)
+                self.assertIn("app", args)
+                self.assertIn("--app-dir", args)
+                self.assertIn("/opt/Antigravity-x64", args)
+                self.assertIn("--force", args)
 
     def test_patch_utils_reload_replaces_stale_handler(self):
         """Verifies patchUtilsReload strips old/broken onRestartRequested and injects restartLanguageServer."""

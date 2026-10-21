@@ -50,9 +50,24 @@ patch_f5_reload() {
     local tmp_dir
     tmp_dir=$(mktemp -d /tmp/asar_patch_XXXXXX)
 
-    npx --yes asar extract "$asar_file" "$tmp_dir/unpacked"
-    node "$patch_js" "$tmp_dir/unpacked"
-    npx --yes asar pack "$tmp_dir/unpacked" "$tmp_dir/app.asar.patched" --unpack "*.node"
+    if ! run_asar extract "$asar_file" "$tmp_dir/unpacked"; then
+        log_err "Failed to extract ${asar_file}."
+        rm -rf "$tmp_dir"
+        return 1
+    fi
+
+    if ! node "$patch_js" "$tmp_dir/unpacked"; then
+        log_err "F5 patch script failed."
+        rm -rf "$tmp_dir"
+        return 1
+    fi
+
+    if ! run_asar pack "$tmp_dir/unpacked" "$tmp_dir/app.asar.patched" --unpack "*.node"; then
+        log_err "Failed to pack patched app.asar."
+        rm -rf "$tmp_dir"
+        return 1
+    fi
+
     cp "$tmp_dir/app.asar.patched" "$asar_file"
     rm -rf "$tmp_dir"
 

@@ -60,8 +60,12 @@ parse_cli_args() {
             rtl|patch-rtl)
                 COMMAND="rtl"; shift
                 if [ -n "$1" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
-            f5|patch-f5) COMMAND="f5"; shift ;;
-            unpatch-f5) COMMAND="unpatch-f5"; shift ;;
+            f5|patch-f5)
+                COMMAND="f5"; shift
+                if [ -n "$1" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
+            unpatch-f5)
+                COMMAND="unpatch-f5"; shift
+                if [ -n "$1" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
             set-icons|icons)
                 COMMAND="set-icons"; shift
                 if [ -n "$1" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
@@ -75,8 +79,12 @@ parse_cli_args() {
             update-repo|self-update|update-self|24) COMMAND="update-repo"; shift ;;
             benchmark|bench|speed-test|26) COMMAND="benchmark"; shift; CMD_ARGS=("$@"); break ;;
             multi-account|multiaccount|accounts|27) COMMAND="multi-account"; shift; CMD_ARGS=("$@"); break ;;
-            selector|patch-selector|patch-accounts) COMMAND="patch-selector"; shift ;;
-            unpatch-selector|unpatch-accounts) COMMAND="unpatch-selector"; shift ;;
+            selector|patch-selector|patch-accounts)
+                COMMAND="patch-selector"; shift
+                if [ -n "$1" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
+            unpatch-selector|unpatch-accounts)
+                COMMAND="unpatch-selector"; shift
+                if [ -n "$1" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
             unpatch|restore|revert-patch|unpatch-all) COMMAND="unpatch"; shift ;;
             trace|monitor|traffic) COMMAND="traffic"; shift; break ;;
             restart-services|restart-service|restart-daemon|restart-daemons|25) COMMAND="restart-services"; shift ;;

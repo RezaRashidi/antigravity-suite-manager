@@ -68,15 +68,15 @@ dispatch_command() {
         list-instances) list_instances ;;
         set-history) set_history_mode "${CMD_ARGS[@]}" ;;
         remove-instance) remove_instance "${CMD_ARGS[@]}" ;;
-        f5|patch-f5) auto_detect_installations; FORCE_INSTALL=true patch_f5_reload ;;
-        unpatch-f5) auto_detect_installations; unpatch_f5 ;;
+        f5|patch-f5) dispatch_f5 ;;
+        unpatch-f5) dispatch_unpatch_f5 ;;
         rtl|patch-rtl) FORCE_INSTALL=true dispatch_rtl ;;
         update-rtl) update_rtl ;;
         checksums|fix-checksums|patch-checksums) fix_ide_checksums "${IDE_INSTALL_DIR:-/opt/antigravity}" ;;
         benchmark|bench|speed-test) dispatch_benchmark "${CMD_ARGS[@]}" ;;
         multi-account|multiaccount|accounts) dispatch_multi_account "${CMD_ARGS[@]}" ;;
-        patch-selector|selector|patch-accounts) auto_detect_installations; FORCE_INSTALL=true patch_selector ;;
-        unpatch-selector|unpatch-accounts) auto_detect_installations; unpatch_selector ;;
+        patch-selector|selector|patch-accounts) FORCE_INSTALL=true dispatch_selector ;;
+        unpatch-selector|unpatch-accounts) dispatch_unpatch_selector ;;
         unpatch|restore|revert-patch|unpatch-all) auto_detect_installations; unpatch_antigravity ;;
         traffic|trace|monitor)
             mkdir -p "${HOME}/.config/antigravity/accounts"

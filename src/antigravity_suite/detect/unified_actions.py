@@ -67,4 +67,16 @@ def handle_unified_patches_and_reinstall(choice: str, u_item: Dict[str, Any], en
     elif choice.upper() == "F" and "IDE" not in u_item.get("type", ""):
         print(f"\n{CYAN}Applying F5 reload & isolation patch to {eng_p}...{NC}")
         subprocess.run(["bash", manage_sh, "f5", "--app-dir", eng_p, "--force"], check=False)
+    elif choice.upper() == "T":
+        inst_name = u_item.get("name", u_item.get("type", "Instance"))
+        print(f"\n{CYAN}--- Multi-Account Selector Patch ({inst_name}) ---{NC}")
+        print("  [1] Apply / Update Selector Patch\n  [2] Revert / Unpatch Selector Patch\n  [0] Cancel")
+        sel_c = input("Select action [1-2, Default: 1]: ").strip()
+        if sel_c in ["1", ""]:
+            print(f"\n{CYAN}Applying Multi-Account Selector patch to {u_item['type']} at {eng_p}...{NC}")
+            subprocess.run(["bash", manage_sh, "selector", c_type, flag, eng_p, "--force"], check=False)
+        elif sel_c == "2":
+            print(f"\n{CYAN}Reverting Multi-Account Selector patch from {u_item['type']} at {eng_p}...{NC}")
+            subprocess.run(["bash", manage_sh, "unpatch-selector", c_type, flag, eng_p], check=False)
+
 

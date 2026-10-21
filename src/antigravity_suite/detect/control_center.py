@@ -23,6 +23,7 @@ from antigravity_suite.detect.control_center_actions import (
     handle_control_center_launch,
     handle_control_center_merge_history,
     handle_control_center_multi_account,
+    handle_control_center_rtl_patch,
     handle_control_center_selector_patch,
     handle_control_center_status,
     handle_control_center_steps,
@@ -107,13 +108,11 @@ def run_control_center() -> None:
             subprocess.run(["bash", manage_sh, "update-repo"], check=False)
             input("\nPress Enter to return to Control Center...")
         elif choice.upper() == "T":
-            handle_control_center_selector_patch(manage_sh)
+            handle_control_center_selector_patch(manage_sh, unified)
         elif choice.upper() == "F":
-            handle_control_center_f5_patch(manage_sh)
+            handle_control_center_f5_patch(manage_sh, unified)
         elif choice.upper() == "R":
-            r_tgt = input("Select RTL target [1: All, 2: App, 3: IDE, Default: 1]: ").strip()
-            subprocess.run(["bash", manage_sh, "rtl", "all" if r_tgt in ["1", ""] else ("app" if r_tgt == "2" else "ide")], check=False)
-            input("\nPress Enter to return to Control Center...")
+            handle_control_center_rtl_patch(manage_sh, unified)
         elif choice.upper() == "O":
             handle_control_center_icons(manage_sh)
         elif choice.upper() == "G":

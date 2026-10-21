@@ -41,6 +41,34 @@ dispatch_rtl() {
     esac
 }
 
+dispatch_selector() {
+    auto_detect_installations
+    case "${SUB_COMMAND:-all}" in
+        app) patch_selector_app "$@" ;;
+        ide) patch_selector_ide "$@" ;;
+        all|*) patch_selector "$@" ;;
+    esac
+}
+
+dispatch_unpatch_selector() {
+    auto_detect_installations
+    case "${SUB_COMMAND:-all}" in
+        app) unpatch_selector_app "$@" ;;
+        ide) unpatch_selector_ide "$@" ;;
+        all|*) unpatch_selector "$@" ;;
+    esac
+}
+
+dispatch_f5() {
+    auto_detect_installations
+    FORCE_INSTALL=true patch_f5_reload "$@"
+}
+
+dispatch_unpatch_f5() {
+    auto_detect_installations
+    unpatch_f5 "$@"
+}
+
 dispatch_keyring() {
     if [ ${#CMD_ARGS[@]} -eq 0 ]; then
         configure_keyring_interactive
