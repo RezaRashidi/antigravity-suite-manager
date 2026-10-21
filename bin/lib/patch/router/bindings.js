@@ -4,7 +4,7 @@ const path = require('path');
 const os = require('os');
 
 const ACCOUNTS_DIR = process.env.ANTIGRAVITY_ACCOUNTS_DIR ||
-    path.join(os.homedir(), '.config', 'antigravity', 'accounts');
+    path.join(process.env.REAL_HOME || os.homedir(), '.config', 'antigravity', 'accounts');
 const BINDINGS_FILE = path.join(ACCOUNTS_DIR, 'bindings.json');
 const TRAFFIC_LOG = path.join(ACCOUNTS_DIR, 'traffic.log');
 

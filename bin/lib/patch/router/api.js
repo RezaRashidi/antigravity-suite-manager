@@ -42,6 +42,18 @@ function handleApiRequest(req, res, bodyStr) {
         } catch (_) { res.writeHead(400); res.end(JSON.stringify({ error: 'bad json' })); }
         return true;
     }
+    if (req.url === '/api/multi-account/remove' && req.method === 'POST') {
+        try {
+            const data = JSON.parse(bodyStr);
+            if (data.email) {
+                const { removeAccount } = require('../multi_account_router');
+                if (removeAccount) removeAccount(data.email);
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true }));
+        } catch (_) { res.writeHead(400); res.end(JSON.stringify({ error: 'bad json' })); }
+        return true;
+    }
     return false;
 }
 

@@ -47,12 +47,12 @@ def discover_watch_targets(effective_master: Path, home: Path) -> Tuple[List[str
     candidate_vscdbs = discover_candidate_vscdbs(home, ide_candidates)
 
     extra_dirs = list(set(
-        [str(Path(p).parent) for p in candidate_vscdbs if os.path.isdir(Path(p).parent)]
+        [str(Path(p).parent) for p in candidate_vscdbs if os.path.isdir(Path(p).parent) and "globalstorage" in str(p).lower()]
         + [str(home / ".config" / "Antigravity"), str(home / ".config" / "Antigravity IDE")]
         + [str(p / ".config" / "Antigravity") for p in home.glob(".antigravity-profile*") if os.path.isdir(p / ".config" / "Antigravity")]
         + [str(p / ".config" / "Antigravity IDE") for p in home.glob(".antigravity-profile*") if os.path.isdir(p / ".config" / "Antigravity IDE")]
     ))
-    extra_files = [str(p) for p in candidate_vscdbs]
+    extra_files = [str(p) for p in candidate_vscdbs if "globalstorage" in str(p).lower()]
 
     watch_conv_dirs = list(set([str(effective_master / "conversations")] + conv_pools))
     watch_brain_dirs = list(set([str(effective_master / "brain")] + brain_pools))

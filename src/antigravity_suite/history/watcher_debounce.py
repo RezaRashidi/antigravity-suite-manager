@@ -10,23 +10,31 @@ from typing import Optional, Tuple
 
 def is_relevant_event(ev_path: str) -> bool:
     """Checks whether an event path is relevant for triggering history synchronization."""
+    norm = ev_path.lower()
+    if "workspacestorage" in norm:
+        return False
     base = os.path.basename(ev_path)
     if (
         not base
         or base.startswith("conversation_summaries")
+        or base.startswith(".")
         or base.endswith(".pbtxt")
         or base.endswith(".pb")
         or base.endswith("-wal")
         or base.endswith("-shm")
+        or base.endswith(".tmp")
+        or base.endswith(".log")
+        or base.endswith(".lock")
         or base == "transcript_full.jsonl"
         or base == "app_storage.json"
     ):
         return False
+    if base.endswith(".vscdb"):
+        return "globalstorage" in norm
     return (
         base.endswith(".db")
         or base.endswith(".jsonl")
         or base.endswith(".md")
-        or base.endswith(".vscdb")
     )
 
 

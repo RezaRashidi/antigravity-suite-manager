@@ -12,7 +12,11 @@ from antigravity_suite.multi_account.tokens import parse_jwt_claims
 
 def get_accounts_dir() -> Path:
     env_dir = os.environ.get("ANTIGRAVITY_ACCOUNTS_DIR")
-    p = Path(env_dir) if env_dir else (Path.home() / ".config" / "antigravity" / "accounts")
+    if env_dir:
+        p = Path(env_dir)
+    else:
+        real_h = Path(os.environ["REAL_HOME"]) if "REAL_HOME" in os.environ else Path.home()
+        p = real_h / ".config" / "antigravity" / "accounts"
     p.mkdir(parents=True, exist_ok=True)
     return p
 
@@ -72,12 +76,16 @@ def list_vault_accounts() -> List[AccountRecord]:
             acc = load_account_from_file(p)
             if acc:
                 accounts[acc.email] = acc
-    for prim_p in Path.home().glob(".*/jetski-standalone-oauth-token"):
-        prim_acc = load_account_from_file(prim_p)
-        if prim_acc:
-            prim_acc.is_primary = True
-            accounts.setdefault(prim_acc.email, prim_acc)
-            accounts[prim_acc.email].is_primary = True
+    homes = [Path.home()]
+    if "REAL_HOME" in os.environ and Path(os.environ["REAL_HOME"]).is_dir():
+        homes.append(Path(os.environ["REAL_HOME"]))
+    for h in homes:
+        for prim_p in h.glob(".*/jetski-standalone-oauth-token"):
+            prim_acc = load_account_from_file(prim_p)
+            if prim_acc:
+                prim_acc.is_primary = True
+                accounts.setdefault(prim_acc.email, prim_acc)
+                accounts[prim_acc.email].is_primary = True
     return list(accounts.values())
 
 

@@ -36,47 +36,53 @@ def ingest_vscdb_summaries(
     for vscdb_p in candidate_vscdbs:
         if not vscdb_p.is_file():
             continue
+        v_con = None
         try:
-            with sqlite3.connect(str(vscdb_p), timeout=15.0) as v_con:
-                rows = v_con.cursor().execute(
-                    "SELECT value FROM ItemTable WHERE key IN ('antigravityUnifiedStateSync.trajectorySummaries', 'antigravityUnifiedStateSync');"
-                ).fetchall()
-                for r in rows:
-                    if not r[0]:
-                        continue
-                    entries = extract_entries_from_proto(base64.b64decode(r[0]))
-                    for u_id, p_bin in entries.items():
-                        if tombstones and u_id in tombstones:
-                            continue
-                        raw = extract_pure_binary_summary(p_bin)
-                        if not raw:
-                            continue
-                        parsed = parse_cascade_summary(raw)
-                        db_p = master_conv_dir / f"{u_id}.db"
-                        tr_p = master_conv_dir.parent / "brain" / u_id / ".system_generated" / "logs" / "transcript.jsonl"
-                        conv_prompts = clean_prompts if clean_prompts is not None else extract_conv_prompts(db_p, tr_p)
-                        ide_sum, ide_annot = (parsed.get("summary") or "").strip(), (parsed.get("title") or "").strip()
+            v_con = sqlite3.connect(str(vscdb_p), timeout=15.0)
+            rows = v_con.cursor().execute(
+                "SELECT value FROM ItemTable WHERE key IN ('antigravityUnifiedStateSync.trajectorySummaries', 'antigravityUnifiedStateSync');"
+            ).fetchall()
+            for r in rows:
+                if not r[0]: continue
+                entries = extract_entries_from_proto(base64.b64decode(r[0]))
+                for u_id, p_bin in entries.items():
+                    if tombstones and u_id in tombstones: continue
+                    raw = extract_pure_binary_summary(p_bin)
+                    if not raw: continue
+                    parsed = parse_cascade_summary(raw)
 
-                        ide_title = ""
-                        for cand in [ide_sum, ide_annot]:
-                            if cand and is_clean_title(cand) and not is_prompt_text(cand, conv_prompts) and cand not in ["Conversation", "Untitled Conversation"]:
-                                ide_title = cand
-                                break
+                    curr_parsed, curr_t = None, ""
+                    if u_id in all_summaries:
+                        curr_parsed = parse_cascade_summary(all_summaries[u_id])
+                        curr_t = (curr_parsed.get("title") or curr_parsed.get("summary") or "").strip()
+                        is_fb = curr_t in ["Conversation", "Untitled Conversation"] or curr_t.endswith(" Chat")
+                        if curr_t and is_clean_title(curr_t) and not is_fb and "@[" not in curr_t:
+                            continue
 
-                        if u_id in all_summaries:
-                            curr_parsed = parse_cascade_summary(all_summaries[u_id])
-                            curr_t = (curr_parsed.get("title") or curr_parsed.get("summary") or "").strip()
-                            is_fb = curr_t in ["Conversation", "Untitled Conversation"] or curr_t.endswith(" Chat")
-                            if curr_t and is_clean_title(curr_t) and not is_fb and "@[" not in curr_t:
-                                continue
-                            if update_existing_from_ide(u_id, ide_title, curr_t, curr_parsed, conv_prompts, all_summaries, db_p, cur, master_conv_dir, pinned_set):
-                                ide_ingested_total += 1
-                        else:
-                            title_to_use = ide_title or ide_sum or ide_annot or "Conversation"
-                            insert_new_from_ide(u_id, title_to_use, parsed, all_summaries, db_p, con, master_conv_dir, pinned_set)
+                    db_p = master_conv_dir / f"{u_id}.db"
+                    tr_p = master_conv_dir.parent / "brain" / u_id / ".system_generated" / "logs" / "transcript.jsonl"
+                    conv_prompts = clean_prompts if clean_prompts is not None else extract_conv_prompts(db_p, tr_p)
+                    ide_sum, ide_annot = (parsed.get("summary") or "").strip(), (parsed.get("title") or "").strip()
+
+                    ide_title = ""
+                    for cand in [ide_sum, ide_annot]:
+                        if cand and is_clean_title(cand) and not is_prompt_text(cand, conv_prompts) and cand not in ["Conversation", "Untitled Conversation"]:
+                            ide_title = cand
+                            break
+
+                    if u_id in all_summaries and curr_parsed is not None:
+                        if update_existing_from_ide(u_id, ide_title, curr_t, curr_parsed, conv_prompts, all_summaries, db_p, cur, master_conv_dir, pinned_set):
                             ide_ingested_total += 1
-                con.commit()
+                    else:
+                        title_to_use = ide_title or ide_sum or ide_annot or "Conversation"
+                        insert_new_from_ide(u_id, title_to_use, parsed, all_summaries, db_p, con, master_conv_dir, pinned_set)
+                        ide_ingested_total += 1
+            con.commit()
         except Exception:
             pass
+        finally:
+            if v_con:
+                try: v_con.close()
+                except Exception: pass
 
     return ide_ingested_total

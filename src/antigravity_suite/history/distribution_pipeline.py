@@ -37,14 +37,7 @@ def finalize_and_distribute_history(
     """Enriches state.vscdb, serializes Hub proto, replicates profiles, and writes annotations."""
     try:
         cur = con.cursor()
-        stats.ide_state_ingested = ingest_vscdb_summaries(
-            candidate_vscdbs=candidate_vscdbs,
-            all_summaries=all_summaries,
-            master_conv_dir=master_conv_dir,
-            con=con,
-            pinned_set=pinned_ids,
-            tombstones=tombstones,
-        )
+
 
         serialize_master_proto(master_proto, all_summaries)
 

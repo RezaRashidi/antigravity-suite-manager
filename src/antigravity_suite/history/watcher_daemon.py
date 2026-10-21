@@ -27,7 +27,7 @@ def watch_mode(
     master = Path(master_gemini).resolve() if master_gemini else (home / ".gemini" / "antigravity")
     running = True
 
-    def _sig(signum: int, frame: object) -> None:
+    def _sig(signum: int, _f: object) -> None:
         nonlocal running
         print(f"\n[Antigravity Watcher] Received signal {signum}, stopping...", flush=True)
         running = False
@@ -36,16 +36,13 @@ def watch_mode(
     signal.signal(signal.SIGTERM, _sig)
     print("[Antigravity Watcher] Initializing real-time history synchronization daemon...", flush=True)
 
-    try:
-        merge_histories(master, quiet=True, user_home=home)
-    except Exception as e:
-        print(f"[Antigravity Watcher] Warning: Initial merge error: {e}", flush=True)
+    try: merge_histories(master, quiet=True, user_home=home)
+    except Exception as e: print(f"[Antigravity Watcher] Warning: Initial merge error: {e}", flush=True)
 
     conv_dirs, brain_dirs, extra_dirs, extra_files = discover_watch_targets(master, home)
     last_snap = get_mtime_snapshot(conv_dirs, brain_dirs, extra_files)
     inotify = LinuxInotifyWatcher()
-    if inotify.available:
-        inotify.sync_watch_targets(conv_dirs, brain_dirs, extra_dirs)
+    if inotify.available: inotify.sync_watch_targets(conv_dirs, brain_dirs, extra_dirs)
 
     tracker, last_disc = DebounceTracker(debounce_seconds), time.time()
 
@@ -59,12 +56,17 @@ def watch_mode(
                     inotify.sync_watch_targets(conv_dirs, brain_dirs, extra_dirs)
 
             if inotify.available:
-                for ev in inotify.wait_for_events(timeout_sec=2.0):
+                evs = inotify.wait_for_events(timeout_sec=2.0)
+                matched = False
+                for ev in evs:
                     if os.path.isdir(ev):
                         inotify.add_watch_dir(ev)
-                    if is_relevant_event(ev):
+                    elif is_relevant_event(ev):
                         tracker.record_change(ev, now)
+                        matched = True
                         break
+                if evs and not matched and tracker.burst_count == 0:
+                    time.sleep(0.5)
             else:
                 cur_snap = get_mtime_snapshot(conv_dirs, brain_dirs)
                 for f, mt in cur_snap.items():
@@ -76,19 +78,19 @@ def watch_mode(
             should_trig, reason = tracker.should_trigger(time.time())
             if should_trig:
                 print(f"[Antigravity Watcher] Sync triggered: {reason} on {tracker.pending_file}...", flush=True)
-                try:
-                    merge_histories(master, quiet=True, user_home=home, skip_backup=True)
-                except Exception as e:
-                    print(f"[Antigravity Watcher] Merge error: {e}", flush=True)
+                try: merge_histories(master, quiet=True, user_home=home, skip_backup=True)
+                except Exception as e: print(f"[Antigravity Watcher] Merge error: {e}", flush=True)
+                time.sleep(1.0)
                 if inotify.available:
                     inotify.drain_events()
                     inotify.sync_watch_targets(conv_dirs, brain_dirs)
                 else:
                     last_snap = get_mtime_snapshot(conv_dirs, brain_dirs)
                 tracker.reset()
-        except Exception as e:
-            if running:
-                time.sleep(5.0)
+            elif tracker.burst_count > 0:
+                time.sleep(0.5)
+        except Exception:
+            if running: time.sleep(3.0)
 
     if inotify.available:
         inotify.close()

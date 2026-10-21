@@ -16,6 +16,7 @@ from antigravity_suite.cli.handlers import (
     handle_restore_chat,
     print_report,
 )
+from antigravity_suite.history.lock import ProcessLock
 from antigravity_suite.history.merger import merge_histories
 from antigravity_suite.history.watcher import watch_mode
 
@@ -43,6 +44,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.restore_chat:
         return handle_restore_chat(args.restore_chat, master_gemini=args.master)
     if args.watch:
+        lock = ProcessLock("antigravity_history_watcher")
+        if not lock.acquire(non_blocking=True):
+            if not args.quiet:
+                print("[Antigravity Watcher] Another watcher daemon is already running. Exiting.", file=sys.stderr)
+            return 0
         try:
             watch_mode(master_gemini=args.master)
             return 0
@@ -51,6 +57,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         except Exception as e:
             print(f"Fatal daemon error: {e}", file=sys.stderr)
             return 1
+        finally:
+            lock.release()
+
+    sync_lock = ProcessLock("antigravity_history_sync")
+    if not sync_lock.acquire(non_blocking=bool(args.quiet), timeout_sec=0.0 if args.quiet else 10.0):
+        if not args.quiet:
+            print("[Antigravity History] Another merge is in progress. Exiting.", file=sys.stderr)
+        return 0
 
     try:
         stats = merge_histories(
@@ -69,6 +83,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     except Exception as e:
         print(f"Error during synchronization: {e}", file=sys.stderr)
         return 1
+    finally:
+        sync_lock.release()
 
 
 if __name__ == "__main__":

@@ -41,7 +41,17 @@ function patchIpcAndPreload(distDir) {
         try {
             const { spawn } = require('child_process');
             const py = process.platform === 'win32' ? 'python' : (process.env.PYTHON || 'python3');
-            spawn(py, ['-m', 'antigravity_suite.multi_account.cli', 'login'], { detached: true, stdio: 'ignore' }).unref();
+            const rh = process.env.REAL_HOME || require('os').homedir();
+            const sDirs = [process.env.ANTIGRAVITY_SUITE_DIR, require('path').join(rh, 'PhpstormProjects', 'antigravity-suite-manager'), require('path').join(rh, '.antigravity-suite-manager')].filter(Boolean);
+            const env = { ...process.env, REAL_HOME: rh, ANTIGRAVITY_ACCOUNTS_DIR: process.env.ANTIGRAVITY_ACCOUNTS_DIR || require('path').join(rh, '.config', 'antigravity', 'accounts'), PYTHONPATH: sDirs.map(d => require('path').join(d, 'src')).join(':') + (process.env.PYTHONPATH ? ':' + process.env.PYTHONPATH : '') };
+            spawn(py, ['-m', 'antigravity_suite.multi_account.cli', 'login'], { detached: true, stdio: 'ignore', env }).unref();
+            return true;
+        } catch (_) { return false; }
+    });
+    electron_1.ipcMain.handle('multi-account:remove-account', async (_event, email) => {
+        try {
+            const router = require('./multi_account_router');
+            if (router.removeAccount) router.removeAccount(email);
             return true;
         } catch (_) { return false; }
     });
@@ -63,33 +73,19 @@ function patchIpcAndPreload(distDir) {
     if (fs.existsSync(preloadPath)) {
         let code = fs.readFileSync(preloadPath, 'utf8');
         if (!code.includes("'antigravityMultiAccount'")) {
-            const snippet = `
-const multiAccountAPI = {
-    getState: () => electron_1.ipcRenderer.invoke('multi-account:get-state'),
-    bindCascade: (cascadeId, email, model) => electron_1.ipcRenderer.invoke('multi-account:bind-cascade', cascadeId, email, model),
-    setActiveAccount: (email) => electron_1.ipcRenderer.invoke('multi-account:set-active-account', email),
-    startLogin: () => electron_1.ipcRenderer.invoke('multi-account:start-login'),
-    log: (msg) => electron_1.ipcRenderer.invoke('multi-account:log', msg),
-};
-electron_1.contextBridge.exposeInMainWorld('antigravityMultiAccount', multiAccountAPI);
-`;
-            fs.writeFileSync(preloadPath, code + '\n' + snippet, 'utf8');
+            const snippet = `\nconst multiAccountAPI = { getState: () => electron_1.ipcRenderer.invoke('multi-account:get-state'), bindCascade: (c, e, m) => electron_1.ipcRenderer.invoke('multi-account:bind-cascade', c, e, m), setActiveAccount: (e) => electron_1.ipcRenderer.invoke('multi-account:set-active-account', e), removeAccount: (e) => electron_1.ipcRenderer.invoke('multi-account:remove-account', e), startLogin: () => electron_1.ipcRenderer.invoke('multi-account:start-login'), log: (m) => electron_1.ipcRenderer.invoke('multi-account:log', m) };\nelectron_1.contextBridge.exposeInMainWorld('antigravityMultiAccount', multiAccountAPI);\n`;
+            fs.writeFileSync(preloadPath, code + snippet, 'utf8');
         }
     }
 }
 
 function unpatchIpcAndPreload(distDir) {
-    const ipcPath = path.join(distDir, 'ipcHandlers.js');
+    const ipcPath = path.join(distDir, 'ipcHandlers.js'), preloadPath = path.join(distDir, 'preload.js');
     if (fs.existsSync(ipcPath)) {
-        let code = fs.readFileSync(ipcPath, 'utf8');
-        code = code.replace(/electron_1\.ipcMain\.handle\('multi-account:get-state'[\s\S]*?electron_1\.ipcMain\.handle\('multi-account:log'[\s\S]*?\}\);/g, '');
-        fs.writeFileSync(ipcPath, code, 'utf8');
+        fs.writeFileSync(ipcPath, fs.readFileSync(ipcPath, 'utf8').replace(/electron_1\.ipcMain\.handle\('multi-account:get-state'[\s\S]*?\}\);/g, ''), 'utf8');
     }
-    const preloadPath = path.join(distDir, 'preload.js');
     if (fs.existsSync(preloadPath)) {
-        let code = fs.readFileSync(preloadPath, 'utf8');
-        code = code.replace(/const multiAccountAPI = \{[\s\S]*?electron_1\.contextBridge\.exposeInMainWorld\('antigravityMultiAccount', multiAccountAPI\);/g, '');
-        fs.writeFileSync(preloadPath, code, 'utf8');
+        fs.writeFileSync(preloadPath, fs.readFileSync(preloadPath, 'utf8').replace(/const multiAccountAPI = \{[\s\S]*?exposeInMainWorld\('antigravityMultiAccount'[\s\S]*?\);\n?/g, ''), 'utf8');
     }
 }
 

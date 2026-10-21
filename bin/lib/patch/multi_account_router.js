@@ -59,7 +59,16 @@ async function loadAllAccountsWithQuotas() {
     return loadAllAccountsWithQuotasSync();
 }
 
-setTimeout(() => { refreshQuotasAsync().catch(() => {}); }, 100);
+function removeAccount(email) {
+    if (!email) return;
+    try {
+        const fs = require('fs'), path = require('path');
+        const { ACCOUNTS_DIR } = require('./router/bindings');
+        const target = path.join(ACCOUNTS_DIR, `${email}.json`);
+        if (fs.existsSync(target)) fs.unlinkSync(target);
+        if (_quotaCache?.accounts) _quotaCache.accounts = _quotaCache.accounts.filter(a => a.email !== email);
+    } catch (_) {}
+}
 
 module.exports = {
     startMultiAccountRouter,
@@ -67,6 +76,7 @@ module.exports = {
     loadAllAccountsWithQuotas,
     loadAllAccountsWithQuotasSync,
     refreshQuotasAsync,
+    removeAccount,
     getBindings,
     setBinding,
     setActiveAccount,
