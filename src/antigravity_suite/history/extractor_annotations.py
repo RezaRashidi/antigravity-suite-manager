@@ -25,7 +25,8 @@ def get_annotation_info(gemini_dir: Union[str, Path], conv_id: str) -> dict:
             m = re.search(r'title\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', content)
             if m:
                 clean_title = decode_pbtxt_string(m.group(1))
-                if clean_title and clean_title not in ["Conversation", "Untitled Conversation"] and "@[" not in clean_title:
+                is_fb = clean_title in ["Conversation", "Untitled Conversation"] or clean_title.endswith(" Chat") or clean_title.startswith("Desktop:")
+                if clean_title and not is_fb and "@[" not in clean_title:
                     info["title"] = clean_title
             if re.search(r'pinned\s*:\s*true', content, re.IGNORECASE):
                 info["pinned"] = True

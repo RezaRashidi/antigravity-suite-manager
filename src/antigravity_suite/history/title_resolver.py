@@ -24,12 +24,13 @@ def pick_first_valid_title(candidates: Iterable[Optional[str]], prompt_cands: Se
         if not cand or not isinstance(cand, str):
             continue
         s = cand.strip()
+        is_fb = s.endswith(" Chat") or s.startswith("Desktop:") or s in generic_names
         if (
             s
             and is_clean_title(s)
             and not is_prompt_text(s, prompt_cands)
             and not is_raw_prompt_sentence(s, prompt_cands)
-            and s not in generic_names
+            and not is_fb
         ):
             return s
     return None

@@ -73,10 +73,11 @@ def persist_conversation_item(
     )
     upsert_summary(con, model)
 
-    if final_title and is_clean_title(final_title):
+    is_fb_title = final_title.endswith(" Chat") or final_title.startswith("Desktop:") or final_title in ["Conversation", "Untitled Conversation"]
+    if final_title and is_clean_title(final_title) and not is_fb_title:
         sync_annotation_file(effective_master, conv_id, final_title, pinned=meta["is_pinned"], archived=meta["is_archived"], force=True)
     elif meta["is_pinned"] or meta["is_archived"]:
-        sync_annotation_file(effective_master, conv_id, "Conversation", pinned=meta["is_pinned"], archived=meta["is_archived"], force=False)
+        sync_annotation_file(effective_master, conv_id, "", pinned=meta["is_pinned"], archived=meta["is_archived"], force=False)
 
     if meta["has_db"] and ws_uri:
         try:

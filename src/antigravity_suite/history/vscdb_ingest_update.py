@@ -64,7 +64,11 @@ def update_existing_from_ide(
     )
     all_summaries[u_id] = new_bin
     cur.execute("UPDATE conversation_summaries SET title=?, raw_summary=? WHERE conversation_id=?", (ide_title, new_bin, u_id))
-    sync_annotation_file(master_conv_dir.parent, u_id, ide_title, pinned=is_pin, archived=is_arc, force=True)
-    from antigravity_suite.history.checkpoint_sync import ensure_db_checkpoint_title
-    ensure_db_checkpoint_title(db_p, u_id, ide_title)
+    is_fb_ide = ide_title.endswith(" Chat") or ide_title.startswith("Desktop:") or ide_title in ["Conversation", "Untitled Conversation"]
+    if ide_title and not is_fb_ide:
+        sync_annotation_file(master_conv_dir.parent, u_id, ide_title, pinned=is_pin, archived=is_arc, force=True)
+        from antigravity_suite.history.checkpoint_sync import ensure_db_checkpoint_title
+        ensure_db_checkpoint_title(db_p, u_id, ide_title)
+    elif is_pin or is_arc:
+        sync_annotation_file(master_conv_dir.parent, u_id, "", pinned=is_pin, archived=is_arc, force=False)
     return True

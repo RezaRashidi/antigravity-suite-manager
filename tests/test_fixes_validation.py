@@ -2017,6 +2017,41 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
                 self.assertIsNotNone(s23_row)
                 self.assertEqual(parse_step23_checkpoint_title(s23_row[0]), "Simple Persian Greeting")
 
+    def test_pick_first_valid_title_rejects_workspace_chat_fallback(self):
+        """Verifies that pick_first_valid_title rejects fallback Chat titles so authentic titles win."""
+        from antigravity_suite.history.title_resolver import pick_first_valid_title, resolve_best_title
+        
+        self.assertIsNone(pick_first_valid_title(["K6 Chat", "Conversation", "Desktop: /home/reza"], set()))
+        self.assertEqual(pick_first_valid_title(["K6 Chat", "Fix MariaDB User Permissions"], set()), "Fix MariaDB User Permissions")
+        
+        # Test that resolve_best_title allows LLM/checkpoint to override existing fallback
+        res, src = resolve_best_title(
+            existing_candidates=["K6 Chat"],
+            llm_candidates=["Fix MariaDB User Permissions"],
+            clean_artifact_title="",
+            prompt_cands=set()
+        )
+        self.assertEqual(res, "Fix MariaDB User Permissions")
+        self.assertEqual(src, "llm_summary")
+
+    def test_sync_annotation_file_rejects_fallback_titles(self):
+        """Verifies that annotations never persist fallback titles like K6 Chat."""
+        from antigravity_suite.history.extractor_annotations import sync_annotation_file, get_annotation_info
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as td:
+            gemini_dir = Path(td)
+            cid = "test-conv-fb"
+            # Attempting to force sync a fallback title should NOT write it
+            sync_annotation_file(gemini_dir, cid, "K6 Chat", force=True)
+            info = get_annotation_info(gemini_dir, cid)
+            self.assertIsNone(info["title"])
+
+            # Writing an authentic title should succeed
+            sync_annotation_file(gemini_dir, cid, "Real Authentic Title", force=True)
+            info2 = get_annotation_info(gemini_dir, cid)
+            self.assertEqual(info2["title"], "Real Authentic Title")
+
 
 if __name__ == "__main__":
     unittest.main()

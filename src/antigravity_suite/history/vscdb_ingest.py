@@ -66,7 +66,8 @@ def ingest_vscdb_summaries(
 
                     ide_title = ""
                     for cand in [ide_sum, ide_annot]:
-                        if cand and is_clean_title(cand) and not is_prompt_text(cand, conv_prompts) and cand not in ["Conversation", "Untitled Conversation"]:
+                        cand_fb = cand.endswith(" Chat") or cand.startswith("Desktop:") or cand in ["Conversation", "Untitled Conversation"]
+                        if cand and is_clean_title(cand) and not is_prompt_text(cand, conv_prompts) and not cand_fb:
                             ide_title = cand
                             break
 
@@ -74,7 +75,8 @@ def ingest_vscdb_summaries(
                         if update_existing_from_ide(u_id, ide_title, curr_t, curr_parsed, conv_prompts, all_summaries, db_p, cur, master_conv_dir, pinned_set):
                             ide_ingested_total += 1
                     else:
-                        title_to_use = ide_title or ide_sum or ide_annot or "Conversation"
+                        clean_cands = [c for c in [ide_sum, ide_annot] if c and is_clean_title(c) and not c.endswith(" Chat") and not c.startswith("Desktop:") and c not in ["Conversation", "Untitled Conversation"]]
+                        title_to_use = ide_title or (clean_cands[0] if clean_cands else "Conversation")
                         insert_new_from_ide(u_id, title_to_use, parsed, all_summaries, db_p, con, master_conv_dir, pinned_set)
                         ide_ingested_total += 1
             con.commit()

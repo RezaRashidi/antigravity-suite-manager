@@ -40,10 +40,8 @@ def synchronize_master_summaries(
     cur.execute("UPDATE conversation_summaries SET source='' WHERE source='CORTEX_TRAJECTORY_SOURCE_CASCADE_CLIENT';")
     if tombstones:
         cur.executemany("DELETE FROM conversation_summaries WHERE conversation_id = ?;", [(t,) for t in tombstones])
-        try:
-            cur.executemany("DELETE FROM conversations_fts WHERE conversation_id = ?;", [(t,) for t in tombstones])
-        except Exception:
-            pass
+        try: cur.executemany("DELETE FROM conversations_fts WHERE conversation_id = ?;", [(t,) for t in tombstones])
+        except Exception: pass
     con.commit()
     existing_rows = load_existing_summaries(master_sum_db)
 
@@ -68,6 +66,7 @@ def synchronize_master_summaries(
     if candidate_vscdbs:
         from antigravity_suite.history.vscdb_sync import ingest_vscdb_summaries
         ingest_vscdb_summaries(candidate_vscdbs, all_summaries, master_conv_dir, con, pinned_set=pinned_set, tombstones=tombstones)
+        existing_rows = load_existing_summaries(master_sum_db)
 
     all_conv_ids = collect_all_conversation_ids(
         master_conv_dir=master_conv_dir,

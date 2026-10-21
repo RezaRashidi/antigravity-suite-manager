@@ -66,7 +66,10 @@ def insert_new_from_ide(
         workspace_uris=ws_str, project_id=effective_pid or "", source="", app_data_dir="antigravity",
     )
     upsert_summary(con, model)
-    sync_annotation_file(master_conv_dir.parent, u_id, title_to_use, pinned=is_pin, archived=is_arc, force=True)
-    if title_to_use and not title_to_use.endswith(" Chat") and title_to_use not in ["Conversation", "Untitled Conversation"]:
+    is_fb_t = title_to_use.endswith(" Chat") or title_to_use.startswith("Desktop:") or title_to_use in ["Conversation", "Untitled Conversation"]
+    if title_to_use and not is_fb_t:
+        sync_annotation_file(master_conv_dir.parent, u_id, title_to_use, pinned=is_pin, archived=is_arc, force=True)
         from antigravity_suite.history.checkpoint_sync import ensure_db_checkpoint_title
         ensure_db_checkpoint_title(db_p, u_id, title_to_use)
+    elif is_pin or is_arc:
+        sync_annotation_file(master_conv_dir.parent, u_id, "", pinned=is_pin, archived=is_arc, force=False)
