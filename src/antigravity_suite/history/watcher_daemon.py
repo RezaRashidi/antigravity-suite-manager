@@ -80,7 +80,8 @@ def watch_mode(
                 print(f"[Antigravity Watcher] Sync triggered: {reason} on {tracker.pending_file}...", flush=True)
                 try: merge_histories(master, quiet=True, user_home=home, skip_backup=True)
                 except Exception as e: print(f"[Antigravity Watcher] Merge error: {e}", flush=True)
-                time.sleep(1.0)
+                cd_end = time.time() + 30.0
+                while running and time.time() < cd_end: time.sleep(1.0)
                 if inotify.available:
                     inotify.drain_events()
                     inotify.sync_watch_targets(conv_dirs, brain_dirs)
