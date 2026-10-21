@@ -5,6 +5,7 @@ const { getBindings, getActiveAccountEmail, logTraffic } = require('./bindings.j
 const { loadAllAccounts } = require('./accounts.js');
 const { refreshGoogleToken } = require('./oauth.js');
 const { handleApiRequest, tryInterceptCommand } = require('./api.js');
+const { getProxyAgent } = require('./proxy_agent.js');
 
 const DEFAULT_PORT = 41999;
 const UPSTREAM_HOST = 'daily-cloudcode-pa.googleapis.com';
@@ -65,9 +66,13 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
             if (body.length > 0) headers['content-length'] = Buffer.byteLength(body);
             delete headers['transfer-encoding']; delete headers['connection'];
 
-            const upReq = https.request({
+            const agent = getProxyAgent();
+            const upOpts = {
                 hostname: UPSTREAM_HOST, port: 443, path: req.url, method: req.method, headers, timeout: 0,
-            }, (upRes) => {
+            };
+            if (agent) upOpts.agent = agent;
+
+            const upReq = https.request(upOpts, (upRes) => {
                 logTraffic(`Chat: [${cascadeId || 'general'}] <- Upstream Response: ${upRes.statusCode}`);
                 res.writeHead(upRes.statusCode, upRes.headers);
                 upRes.pipe(res);

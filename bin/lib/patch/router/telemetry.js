@@ -1,6 +1,7 @@
 // Multi-Account Router: Telemetry & Live Quota Summaries
 const http = require('http'), https = require('https'), fs = require('fs');
 const { refreshGoogleToken } = require('./oauth.js');
+const { getProxyAgent } = require('./proxy_agent.js');
 let _quotaCache = { timestamp: 0, accounts: [] }, _cachedLs = null, _dirCache = {};
 
 function findLanguageServerInfo() {
@@ -75,7 +76,22 @@ async function fetchDirectAccountQuotas(account) {
     const token = await refreshGoogleToken(account);
     if (!token) return { status: 'auth_failed', buckets: [] };
     return new Promise((resolve) => {
-        const req = https.request({ hostname: 'daily-cloudcode-pa.googleapis.com', port: 443, method: 'POST', path: '/v1internal:retrieveUserQuotaSummary', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'User-Agent': 'Antigravity/2.23.1', 'Content-Length': 2 }, timeout: 3500 }, (res) => {
+        const agent = getProxyAgent();
+        const reqOpts = {
+            hostname: 'daily-cloudcode-pa.googleapis.com',
+            port: 443,
+            method: 'POST',
+            path: '/v1internal:retrieveUserQuotaSummary',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'User-Agent': 'Antigravity/2.23.1',
+                'Content-Length': 2
+            },
+            timeout: 7000
+        };
+        if (agent) reqOpts.agent = agent;
+        const req = https.request(reqOpts, (res) => {
             let body = ''; res.on('data', c => body += c);
             res.on('end', () => {
                 let data = { status: 'unknown', buckets: [] };
