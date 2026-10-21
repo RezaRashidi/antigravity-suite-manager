@@ -82,7 +82,7 @@ def merge_histories(
     )
 
     con, all_summaries = synchronize_master_summaries(
-        effective_master, m_conv_dir, m_brain_dir, m_sum_db, m_proto, stats, pinned_ids, home, tombstones, candidate_vscdbs
+        effective_master, m_conv_dir, m_brain_dir, m_sum_db, m_proto, stats, pinned_ids, home, tombstones, candidate_vscdbs, force_rebuild
     )
 
     finalize_and_distribute_history(

@@ -16,7 +16,7 @@
     --agy-btn-action-hover: #f3f4f6;
     --agy-btn-action-text: #374151;
 }
-html.dark, body.dark, [data-theme="dark"], .dark {
+html.dark, body.dark, [data-theme="dark"], .dark, body.vs-dark, .vs-dark, body.hc-black, .hc-black {
     --agy-pill-text: #9ca3af;
     --agy-pill-text-hover: #f3f4f6;
     --agy-pill-hover-bg: rgba(255, 255, 255, 0.08);
@@ -61,14 +61,16 @@ html.dark, body.dark, [data-theme="dark"], .dark {
     margin-left: 2px;
     margin-right: 4px;
     font-family: inherit;
-    z-index: 9999;
+    z-index: auto;
 }
 .agy-acc-pill-container.floating {
     position: fixed;
     bottom: 20px;
     right: 24px;
-    z-index: 999999;
+    z-index: 2000;
 }
+.part.statusbar .agy-acc-pill-container { height: 100%; margin: 0 4px; }
+.part.statusbar .agy-acc-pill-btn { height: 100%; padding: 0 6px; border-radius: 0; color: inherit; font-size: 11px; }
 .agy-acc-pill-btn {
     display: inline-flex;
     align-items: center;
@@ -110,7 +112,7 @@ html.dark, body.dark, [data-theme="dark"], .dark {
     padding: 4px 0;
     display: none;
     flex-direction: column;
-    z-index: 1000000;
+    z-index: 2000;
     color: var(--agy-dropdown-text);
 }
 .agy-acc-dropdown.open {
@@ -216,7 +218,7 @@ html.dark, body.dark, [data-theme="dark"], .dark {
     display: none;
     flex-direction: column;
     gap: 10px;
-    z-index: 1000005;
+    z-index: 2005;
     color: var(--agy-dropdown-text);
     pointer-events: auto;
 }

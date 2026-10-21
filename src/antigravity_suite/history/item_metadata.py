@@ -13,6 +13,7 @@ from typing import Any, Dict, Optional, Set, Tuple
 
 from antigravity_suite.history.collector import get_db_trajectory_meta
 from antigravity_suite.history.sqlite_store import get_actual_steps_count
+from antigravity_suite.history.step_timestamp import get_fallback_authentic_timestamp
 from antigravity_suite.history.transcript_info import clean_iso_ts, get_transcript_timestamps
 from antigravity_suite.history.extractor import get_annotation_info
 
@@ -40,29 +41,31 @@ def resolve_item_metadata(
     t_created, t_user_input, t_modified = get_transcript_timestamps(transcript_file)
 
     sql_mtime = clean_iso_ts(existing_rows[conv_id][3]) if conv_id in existing_rows and existing_rows[conv_id][3] else None
-    sql_user_input = (
-        clean_iso_ts(existing_rows[conv_id][5])
-        if conv_id in existing_rows and len(existing_rows[conv_id]) > 5 and existing_rows[conv_id][5]
-        else None
-    )
+    if sql_mtime and "2026-10-20 22:5" in sql_mtime: sql_mtime = None
+    sql_user_input = clean_iso_ts(existing_rows[conv_id][5]) if conv_id in existing_rows and len(existing_rows[conv_id]) > 5 and existing_rows[conv_id][5] else None
 
     t_clean_created = clean_iso_ts(t_created)
     t_clean_user_input = clean_iso_ts(t_user_input)
     t_clean_modified = clean_iso_ts(t_modified)
 
     parsed_modified = clean_iso_ts(parsed_raw.get("last_modified_iso"))
+    if parsed_modified and "2026-10-20 22:5" in parsed_modified: parsed_modified = None
     parsed_user_input = clean_iso_ts(parsed_raw.get("last_user_input_iso"))
+    if parsed_user_input and "2026-10-20 22:5" in parsed_user_input: parsed_user_input = None
     parsed_created = clean_iso_ts(parsed_raw.get("created_iso"))
+    if parsed_created and "2026-10-20 22:5" in parsed_created: parsed_created = None
 
-    final_modified_iso = t_clean_modified or parsed_modified or sql_mtime or file_mtime_iso
-    if not final_modified_iso or final_modified_iso.startswith("0001"):
-        final_modified_iso = file_mtime_iso
+    fb_ts = None
+    if "2026-10-20 22:5" in file_mtime_iso or not (t_clean_modified or parsed_modified or sql_mtime):
+        fb_ts = get_fallback_authentic_timestamp(db_file, master_brain_dir / conv_id)
+        if fb_ts and "2026-10-20 22:5" in file_mtime_iso: file_mtime_iso = fb_ts
+
+    final_modified_iso = t_clean_modified or parsed_modified or sql_mtime or t_clean_created or fb_ts or file_mtime_iso
+    if not final_modified_iso or final_modified_iso.startswith("0001"): final_modified_iso = file_mtime_iso
     final_user_input_iso = t_clean_user_input or parsed_user_input or sql_user_input or final_modified_iso
-    if not final_user_input_iso or final_user_input_iso.startswith("0001"):
-        final_user_input_iso = final_modified_iso
+    if not final_user_input_iso or final_user_input_iso.startswith("0001"): final_user_input_iso = final_modified_iso
     final_created_iso = t_clean_created or parsed_created or final_user_input_iso or final_modified_iso
-    if not final_created_iso or final_created_iso.startswith("0001"):
-        final_created_iso = final_modified_iso
+    if not final_created_iso or final_created_iso.startswith("0001"): final_created_iso = final_modified_iso
 
     anno_info = get_annotation_info(effective_master, conv_id)
     raw_pinned = bool(parsed_raw.get("pinned", False))

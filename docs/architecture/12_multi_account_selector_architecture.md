@@ -92,6 +92,28 @@ The Multi-Account Selector subsystem enables seamless, per-conversation Google a
   - **Claude and GPT Models**: Weekly Limit Remaining and Five Hour Limit Remaining.
   - Live reset timestamps (e.g., resets in X days, Y hours).
 
+### 3.3 IDE Multi-Account Selector Integration (`patch_multi_account_ide.js`)
+- **Host Environment**: Injected into Antigravity IDE (`/opt/antigravity`) workbench shell (`workbench.desktop.main.js`).
+- **Z-Index Layer Hierarchy**:
+  - VS Code Quick-Pick, Command Palette, and Global Modals render at `z-index: 2550`.
+  - The Account Selector container uses `z-index: auto` / `2000` to prevent leaking above command palettes or chat search popups.
+- **Dynamic Viewport Anchoring (`updateDdPos`)**:
+  - The dropdown element uses `position: fixed` calculated from the anchor button's bounding rectangle.
+  - An active `resize` event listener continuously recomputes `bottom/top/left/right` offsets during window or container resizing.
+  - If the anchor button is scrolled out of the visible viewport, open dropdowns and flyout menus automatically close.
+- **Quota Telemetry Freshness & Synchronization**:
+  - Switching conversation chats or focusing the IDE window triggers a proactive `/api/multi-account/state` background sync.
+  - Hovering on "Usage ›" triggers immediate telemetry revalidation if cached data is older than 20 seconds.
+  - Manual "Refresh" button explicitly executes an upstream bypass refresh (`?refresh=1`).
+
+### 3.4 Quota Fallback & Routing Mechanics
+- **Per-Conversation Pinning**:
+  - Individual conversations (`cascadeId`) are bound to specific Google accounts in `bindings.json`.
+  - Unpinned or freshly opened chats inherit the global `__active_account`.
+- **Automatic Fallback Clarification**:
+  - **Cross-Account Failover**: The router does **not** silently switch Google accounts on HTTP 429 (`RESOURCE_EXHAUSTED`). If account A is exhausted, the user explicitly switches via the selector pill or in-chat `/switch` command to maintain audit integrity.
+  - **Internal Model Fallback**: Upstream Google Language Server internally falls back between priority models (e.g., Gemini 1.5 Pro to Gemini 1.5 Flash) when weekly quota is exhausted, but operates strictly within the active account's token scope.
+
 ---
 
 ## 4. F5 Backend Sync Architecture

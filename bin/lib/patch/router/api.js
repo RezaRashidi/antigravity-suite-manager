@@ -8,24 +8,21 @@ function handleApiRequest(req, res, bodyStr) {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', '*');
     if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return true; }
-
     if (req.url === '/ui_bundle.js' || req.url === '/api/multi-account/bundle.js') {
         try {
             const fs = require('fs'), path = require('path'), b = path.join(__dirname, '..');
-            const css = fs.readFileSync(path.join(b, 'ui', 'styles.css'), 'utf8');
-            const fly = fs.readFileSync(path.join(b, 'ui', 'flyout.js'), 'utf8');
-            const mnt = fs.readFileSync(path.join(b, 'ui', 'mount.js'), 'utf8');
-            const ui = fs.readFileSync(path.join(b, 'multi_account_ui.js'), 'utf8');
+            const css = fs.readFileSync(path.join(b, 'ui', 'styles.css'), 'utf8'), fly = fs.readFileSync(path.join(b, 'ui', 'flyout.js'), 'utf8');
+            const mnt = fs.readFileSync(path.join(b, 'ui', 'mount.js'), 'utf8'), ui = fs.readFileSync(path.join(b, 'multi_account_ui.js'), 'utf8');
             const out = `(()=>{const s=document.createElement('style');s.textContent=${JSON.stringify(css)};document.head.appendChild(s);})();\n${fly}\n${mnt}\n${ui}`;
             res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8' });
             res.end(out);
         } catch (e) { res.writeHead(500); res.end('// Bundle error'); }
         return true;
     }
-    if (req.url === '/api/multi-account/state') {
-        const { _quotaCache } = require('./telemetry'), raw = Object.values(loadAllAccounts());
-        const accounts = (_quotaCache.accounts && _quotaCache.accounts.length) ? _quotaCache.accounts : raw;
-        const bindings = getBindings();
+    if (req.url.startsWith('/api/multi-account/state')) {
+        const mar = require('../multi_account_router'), raw = Object.values(loadAllAccounts());
+        if (req.url.includes('refresh')) mar.refreshQuotasAsync().catch(() => {});
+        const accounts = mar.loadAllAccountsWithQuotasSync(), bindings = getBindings();
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ accounts, bindings, active_default: getActiveAccountEmail(raw) }));
         return true;
@@ -45,13 +42,20 @@ function handleApiRequest(req, res, bodyStr) {
     if (req.url === '/api/multi-account/remove' && req.method === 'POST') {
         try {
             const data = JSON.parse(bodyStr);
-            if (data.email) {
-                const { removeAccount } = require('../multi_account_router');
-                if (removeAccount) removeAccount(data.email);
-            }
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ok: true }));
+            if (data.email) require('../multi_account_router').removeAccount?.(data.email);
+            res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true }));
         } catch (_) { res.writeHead(400); res.end(JSON.stringify({ error: 'bad json' })); }
+        return true;
+    }
+    if (req.url === '/api/multi-account/login' && req.method === 'POST') {
+        try {
+            const { spawn } = require('child_process'), rh = process.env.REAL_HOME || require('os').homedir();
+            const py = process.platform === 'win32' ? 'python' : (process.env.PYTHON || 'python3');
+            const sDirs = [process.env.ANTIGRAVITY_SUITE_DIR, require('path').join(rh, 'PhpstormProjects', 'antigravity-suite-manager'), require('path').join(rh, '.antigravity-suite-manager')].filter(Boolean);
+            const env = { ...process.env, REAL_HOME: rh, ANTIGRAVITY_ACCOUNTS_DIR: process.env.ANTIGRAVITY_ACCOUNTS_DIR || require('path').join(rh, '.config', 'antigravity', 'accounts'), PYTHONPATH: sDirs.map(d => require('path').join(d, 'src')).join(':') + (process.env.PYTHONPATH ? ':' + process.env.PYTHONPATH : '') };
+            spawn(py, ['-m', 'antigravity_suite.multi_account.cli', 'login'], { detached: true, stdio: 'ignore', env }).unref();
+            res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true }));
+        } catch (_) { res.writeHead(500); res.end(JSON.stringify({ error: 'login spawn failed' })); }
         return true;
     }
     return false;

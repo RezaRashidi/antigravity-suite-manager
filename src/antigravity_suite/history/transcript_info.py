@@ -56,37 +56,31 @@ def get_transcript_timestamps(transcript_path: Path) -> Tuple[Optional[str], Opt
                 tail_lines.pop(0)
 
             clean_lines = [line.strip() for line in tail_lines if line.strip()]
-            if clean_lines:
+            for line in reversed(clean_lines):
                 try:
-                    last_modified_time = json.loads(clean_lines[-1]).get("created_at")
-                except Exception:
-                    pass
-                for line in reversed(clean_lines):
-                    try:
-                        obj = json.loads(line)
-                        if obj.get("type") == "USER_INPUT":
-                            last_user_input_time = obj.get("created_at")
-                            break
-                    except Exception:
-                        continue
+                    obj = json.loads(line)
+                    if not last_modified_time and obj.get("created_at"): last_modified_time = obj.get("created_at")
+                    if not last_user_input_time and obj.get("type") == "USER_INPUT" and obj.get("created_at"): last_user_input_time = obj.get("created_at")
+                    if last_modified_time and last_user_input_time: break
+                except Exception: continue
 
-            if not last_user_input_time and fsize > chunk_size:
+            if (not last_user_input_time or not last_modified_time) and fsize > chunk_size:
                 larger_chunk = min(fsize, 262144)
                 f.seek(fsize - larger_chunk)
                 t_lines = f.read(larger_chunk).decode("utf-8", errors="ignore").splitlines()
-                if fsize > larger_chunk and t_lines:
-                    t_lines.pop(0)
+                if fsize > larger_chunk and t_lines: t_lines.pop(0)
                 for line in reversed(t_lines):
                     line_s = line.strip()
-                    if line_s and "USER_INPUT" in line_s:
-                        try:
-                            obj = json.loads(line_s)
-                            if obj.get("type") == "USER_INPUT":
-                                last_user_input_time = obj.get("created_at")
-                                break
-                        except Exception:
-                            continue
+                    if not line_s: continue
+                    try:
+                        obj = json.loads(line_s)
+                        if not last_modified_time and obj.get("created_at"): last_modified_time = obj.get("created_at")
+                        if not last_user_input_time and obj.get("type") == "USER_INPUT" and obj.get("created_at"): last_user_input_time = obj.get("created_at")
+                        if last_modified_time and last_user_input_time: break
+                    except Exception: continue
 
+        last_modified_time = last_modified_time or last_user_input_time or created_time
+        last_user_input_time = last_user_input_time or created_time or last_modified_time
         return created_time, last_user_input_time, last_modified_time
     except Exception:
         return None, None, None

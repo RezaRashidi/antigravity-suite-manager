@@ -51,7 +51,7 @@
             if (gemini.length) gh += `<div class="agy-usage-group"><div class="agy-group-title">Gemini Models</div>${gemini.map(renderBucket).join('')}</div>`;
             if (claude.length) gh += `<div class="agy-usage-group" style="margin-top:6px;"><div class="agy-group-title">Claude and GPT models</div>${claude.map(renderBucket).join('')}</div>`;
             if (other.length) gh += `<div class="agy-usage-group" style="margin-top:6px;"><div class="agy-group-title">Other Models</div>${other.map(renderBucket).join('')}</div>`;
-            body = gh + `<div class="agy-usage-note">Within each group, models share a weekly limit and a 5-hour limit.</div>`;
+            body = gh;
         } else if (acc.license_status === 'no_license') {
             body = `<div class="agy-usage-alert alert-warning"><div style="font-weight:600;margin-bottom:2px;">Subscription Required</div><div>This account does not have an active Gemini license.</div></div>`;
         } else if (acc.license_status === 'exhausted') {
@@ -71,25 +71,23 @@
             ${footer}
         `;
     };
-
+    function setHtml(el, str) {
+        try {
+            if (!window.__agyPolicy && window.trustedTypes?.createPolicy) { for (const p of ['renderCodeBlock', 'tokenizeToString', 'google#safe', 'dompurify']) { try { window.__agyPolicy = window.trustedTypes.createPolicy(p, { createHTML: s => s }); break; } catch (_) {} } }
+            if (window.__agyPolicy?.createHTML) { el.innerHTML = window.__agyPolicy.createHTML(str); return; }
+        } catch (_) {}
+        el.innerHTML = str;
+    }
+    window.__antigravitySetHtml = setHtml;
     window.__antigravityShowFlyout = function(flyout, acc, dropdown, triggerEl) {
         if (!flyout) return;
-        flyout.innerHTML = window.__antigravityBuildFlyout(acc);
+        setHtml(flyout, window.__antigravityBuildFlyout(acc));
         flyout.classList.add('visible');
-
         if (dropdown) {
-            const ddRect = dropdown.getBoundingClientRect();
-            const bOffset = Math.max(10, window.innerHeight - ddRect.bottom);
-            flyout.style.bottom = bOffset + 'px';
-            flyout.style.top = 'auto';
-
-            if (ddRect.right + 330 > window.innerWidth) {
-                flyout.style.left = 'auto';
-                flyout.style.right = (window.innerWidth - ddRect.left + 6) + 'px';
-            } else {
-                flyout.style.left = (ddRect.right + 6) + 'px';
-                flyout.style.right = 'auto';
-            }
+            const ddRect = dropdown.getBoundingClientRect(), bOffset = Math.max(10, window.innerHeight - ddRect.bottom);
+            flyout.style.bottom = bOffset + 'px'; flyout.style.top = 'auto';
+            if (ddRect.right + 330 > window.innerWidth) { flyout.style.left = 'auto'; flyout.style.right = (window.innerWidth - ddRect.left + 6) + 'px'; }
+            else { flyout.style.left = (ddRect.right + 6) + 'px'; flyout.style.right = 'auto'; }
         }
     };
 })();

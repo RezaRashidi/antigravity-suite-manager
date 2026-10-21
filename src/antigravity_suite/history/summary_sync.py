@@ -29,6 +29,7 @@ def synchronize_master_summaries(
     user_home: Optional[Path] = None,
     tombstones: Optional[Set[str]] = None,
     candidate_vscdbs: Optional[List[str]] = None,
+    force_rebuild: bool = False,
 ) -> Tuple[sqlite3.Connection, Dict[str, bytes]]:
     """Synchronizes conversation metadata in SQLite conversation_summaries.db and proto dict."""
     home = Path(user_home).resolve() if user_home else get_user_home()
@@ -42,6 +43,8 @@ def synchronize_master_summaries(
         cur.executemany("DELETE FROM conversation_summaries WHERE conversation_id = ?;", [(t,) for t in tombstones])
         try: cur.executemany("DELETE FROM conversations_fts WHERE conversation_id = ?;", [(t,) for t in tombstones])
         except Exception: pass
+    cur.execute("CREATE TABLE IF NOT EXISTS sync_file_stats (conv_id TEXT PRIMARY KEY, db_mtime REAL, db_size INTEGER, tr_mtime REAL, tr_size INTEGER);")
+    cached_stats = {r[0]: (r[1], r[2], r[3], r[4]) for r in cur.execute("SELECT conv_id, db_mtime, db_size, tr_mtime, tr_size FROM sync_file_stats;").fetchall()}
     con.commit()
     existing_rows = load_existing_summaries(master_sum_db)
 
@@ -79,18 +82,14 @@ def synchronize_master_summaries(
 
     for conv_id in sorted(all_conv_ids):
         resolve_conversation_item(
-            conv_id=conv_id,
-            effective_master=effective_master,
-            master_conv_dir=master_conv_dir,
-            master_brain_dir=master_brain_dir,
-            existing_rows=existing_rows,
-            all_summaries=all_summaries,
-            cur=cur,
-            con=con,
-            stats=stats,
-            pinned_set=pinned_set,
-            project_mappings=project_mappings,
+            conv_id=conv_id, effective_master=effective_master, master_conv_dir=master_conv_dir,
+            master_brain_dir=master_brain_dir, existing_rows=existing_rows, all_summaries=all_summaries,
+            cur=cur, con=con, stats=stats, pinned_set=pinned_set, project_mappings=project_mappings,
+            force_rebuild=force_rebuild, cached_stats=cached_stats,
         )
+
+    if stats.dirty_conv_ids:
+        cur.executemany("INSERT OR REPLACE INTO sync_file_stats VALUES (?, ?, ?, ?, ?);", [(cid, cached_stats[cid][0], cached_stats[cid][1], cached_stats[cid][2], cached_stats[cid][3]) for cid in stats.dirty_conv_ids if cid in cached_stats])
 
     all_summaries = {cid: raw for cid, raw in all_summaries.items() if cid in all_conv_ids}
     con.commit()

@@ -41,13 +41,20 @@ def sync_conversations_fts(
             except Exception:
                 pass
         proj = project_id or ""
-        row = cur.execute("SELECT rowid FROM conversations_fts WHERE conversation_id = ? AND chunk_index = -1;", (conv_id,)).fetchone()
+        arc_val = 1 if archived else 0
+        row = cur.execute(
+            "SELECT rowid, last_modified_time, step_count, title, workspace, project, archived FROM conversations_fts WHERE conversation_id = ? AND chunk_index = -1;",
+            (conv_id,)
+        ).fetchone()
         if row:
+            if (row[1] == nanos and row[2] == step_count and row[3] == (title or "")
+                    and row[4] == ws_name and row[5] == proj and row[6] == arc_val):
+                return
             cur.execute("""
                 UPDATE conversations_fts
                 SET last_modified_time = ?, step_count = ?, last_step_created_at = ?, title = ?, workspace = ?, project = ?, archived = ?
                 WHERE rowid = ?;
-            """, (nanos, step_count, nanos, title or "", ws_name, proj, 1 if archived else 0, row[0]))
+            """, (nanos, step_count, nanos, title or "", ws_name, proj, arc_val, row[0]))
         else:
             cur.execute("""
                 INSERT INTO conversations_fts (

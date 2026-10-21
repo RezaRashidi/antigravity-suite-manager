@@ -48,7 +48,7 @@ async function refreshQuotasAsync() {
 function loadAllAccountsWithQuotasSync() {
     const raw = Object.values(loadAllAccounts());
     if (!_quotaCache.accounts || _quotaCache.accounts.length === 0) _quotaCache.accounts = raw;
-    if (Date.now() - _quotaCache.timestamp > 45000) refreshQuotasAsync().catch(() => {});
+    if (Date.now() - _quotaCache.timestamp > 20000) refreshQuotasAsync().catch(() => {});
     return _quotaCache.accounts && _quotaCache.accounts.length ? _quotaCache.accounts : raw;
 }
 

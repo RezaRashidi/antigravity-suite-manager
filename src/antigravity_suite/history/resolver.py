@@ -11,6 +11,7 @@ from antigravity_suite.history.item_persistence import persist_conversation_item
 from antigravity_suite.history.journal import get_sync_journal
 from antigravity_suite.history.models import SyncStats
 from antigravity_suite.history.projects import get_project_id_for_workspace, normalize_workspace_uri
+from antigravity_suite.history.resolver_clean import is_item_clean
 from antigravity_suite.history.resolver_heal import heal_workspace_uri
 from antigravity_suite.history.title_resolver import resolve_best_title
 from antigravity_suite.history.transcript_info import clean_iso_ts, get_transcript_timestamps
@@ -31,12 +32,20 @@ def resolve_conversation_item(
     stats: SyncStats,
     pinned_set: Optional[Set[str]] = None,
     project_mappings: Optional[Dict[str, str]] = None,
+    force_rebuild: bool = False,
+    cached_stats: Optional[Dict[str, Tuple[float, int, float, int]]] = None,
 ) -> None:
     """Evaluates and synchronizes an individual conversation entry in SQLite and Proto index."""
     audit, journal = get_audit_logger(), get_sync_journal()
     db_file = master_conv_dir / f"{conv_id}.db"
+    tr_file = master_brain_dir / conv_id / ".system_generated" / "logs" / "transcript.jsonl"
     curr_raw = all_summaries.get(conv_id)
-    parsed_raw = parse_cascade_summary(curr_raw) if curr_raw else {}
+    parsed_raw = parse_cascade_summary(curr_raw) if (curr_raw and pinned_set is not None) else {}
+
+    if is_item_clean(conv_id, db_file, tr_file, existing_rows, all_summaries, pinned_set, parsed_raw, cached_stats=cached_stats, force=force_rebuild):
+        return
+    if not parsed_raw and curr_raw:
+        parsed_raw = parse_cascade_summary(curr_raw)
 
     meta = resolve_item_metadata(conv_id, effective_master, db_file, master_brain_dir, existing_rows, parsed_raw, pinned_set)
     curr_title = existing_rows[conv_id][0] if conv_id in existing_rows else ""
@@ -75,12 +84,13 @@ def resolve_conversation_item(
         target_step_cnt, user_step, meta, ws_uri, proj_id, target_app_data_dir
     )
 
-    action_label = "TITLE_UPDATED" if curr_title != final_title else "SYNCHRONIZED"
-    journal.record_chat_action(
-        conv_id=conv_id, action=action_label, title=final_title, title_source=title_source,
-        old_title=curr_title, partition=target_app_data_dir, partition_reason="unified_history",
-        step_count=target_step_cnt, mutations=["sqlite", "proto", "vscdb", "anno"],
-    )
+    act = "TITLE_UPDATED" if curr_title != final_title else "SYNCHRONIZED"
+    journal.record_chat_action(conv_id=conv_id, action=act, title=final_title, title_source=title_source, old_title=curr_title, partition=target_app_data_dir, partition_reason="unified_history", step_count=target_step_cnt, mutations=["sqlite", "proto", "vscdb", "anno"])
+
+    if cached_stats is not None:
+        db_s = db_file.stat() if db_file.is_file() else None
+        tr_s = tr_file.stat() if tr_file.is_file() else None
+        cached_stats[conv_id] = (db_s.st_mtime if db_s else 0.0, db_s.st_size if db_s else 0, tr_s.st_mtime if tr_s else 0.0, tr_s.st_size if tr_s else 0)
 
     stats.conversations_updated += 1
     stats.dirty_conv_ids.add(conv_id)

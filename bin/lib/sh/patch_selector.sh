@@ -1,61 +1,24 @@
 #!/usr/bin/env bash
-# Antigravity Account Selector & Multi-Account Subsystem Patcher
+# Antigravity Account Selector Patcher (App & IDE)
 
-ensure_app_install_dir() {
-    [ -n "$APP_INSTALL_DIR" ] && [ -f "${APP_INSTALL_DIR}/resources/app.asar" ] && return 0
+ensure_selector_dirs() {
     auto_detect_installations 2>/dev/null || true
-    [ -n "$APP_INSTALL_DIR" ] && [ -f "${APP_INSTALL_DIR}/resources/app.asar" ] && return 0
-    for c in "$ANTIGRAVITY_DETECTED_APP" "/opt/Antigravity-x64" "/opt/antigravity2" "/opt/antigravity" "${REAL_HOME:-$HOME}/.local/share/antigravity"; do
-        [ -n "$c" ] && [ -f "${c}/resources/app.asar" ] && { APP_INSTALL_DIR="$c"; return 0; }
+    for c in "$APP_INSTALL_DIR" "$ANTIGRAVITY_DETECTED_APP" "/opt/antigravity2" "/opt/antigravity"; do
+        [ -n "$c" ] && [ -f "${c}/resources/app.asar" ] && { APP_INSTALL_DIR="$c"; break; }
+    done
+    for c in "$IDE_INSTALL_DIR" "$ANTIGRAVITY_DETECTED_IDE" "/opt/antigravity" "/opt/antigravity-ide"; do
+        [ -n "$c" ] && [ -d "${c}/resources/app/out" ] && { IDE_INSTALL_DIR="$c"; break; }
     done
 }
 
-patch_selector() {
-    for arg in "$@"; do [ "$arg" = "--force" ] || [ "$arg" = "-f" ] && FORCE_INSTALL=true; done
-    ensure_app_install_dir
-    local asar_file="${APP_INSTALL_DIR}/resources/app.asar"
-    if [ ! -f "$asar_file" ]; then
-        log_warn "app.asar not found at ${asar_file}. Skipping selector patch."
-        return 0
-    fi
+get_selector_patch_js() {
+    local base="${SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+    for cand in "${base}/bin/antigravity-selector-patch.js" "${LOCAL_BIN}/antigravity-selector-patch.js"; do
+        [ -f "$cand" ] && { echo "$cand"; return 0; }
+    done
+}
 
-    local patch_fingerprint="ANTIGRAVITY_SUITE_SELECTOR_PATCH_V1"
-    if [ "$FORCE_INSTALL" != true ] && grep -qa "$patch_fingerprint" "$asar_file"; then
-        log_info "Account selector patch is already applied to app.asar. Skipping."
-        return 0
-    fi
-
-    log_info "Ensuring permissions before selector patch..."
-    fix_permissions "$APP_INSTALL_DIR"
-
-    local patch_js="${LOCAL_BIN}/antigravity-selector-patch.js"
-    if [ ! -f "$patch_js" ]; then
-        local s_dir
-        s_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-        [ -f "${s_dir}/bin/antigravity-selector-patch.js" ] && patch_js="${s_dir}/bin/antigravity-selector-patch.js"
-        [ -f "${s_dir}/antigravity-selector-patch.js" ] && patch_js="${s_dir}/antigravity-selector-patch.js"
-    fi
-    if [ ! -f "$patch_js" ]; then
-        log_err "antigravity-selector-patch.js not found in ${LOCAL_BIN} or script dir."
-        return 1
-    fi
-
-    local orig_file="${asar_file}.orig"
-    if [ ! -f "$orig_file" ] && [ -f "$asar_file" ]; then
-        log_info "Creating permanent pristine backup at ${orig_file}..."
-        cp -p "$asar_file" "$orig_file"
-    fi
-
-    local tmp_dir
-    tmp_dir=$(mktemp -d /tmp/asar_patch_XXXXXX)
-
-    log_info "Applying account selector patch..."
-    npx --yes asar extract "$asar_file" "$tmp_dir/unpacked"
-    node "$patch_js" "$tmp_dir/unpacked"
-    npx --yes asar pack "$tmp_dir/unpacked" "$tmp_dir/app.asar.patched" --unpack "*.node"
-    cp "$tmp_dir/app.asar.patched" "$asar_file"
-    rm -rf "$tmp_dir"
-
+sync_selector_skills() {
     local r_dir; r_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
     for base in "${REAL_HOME:-$HOME}/.gemini" "${REAL_HOME:-$HOME}/.gemide"; do
         mkdir -p "${base}/config/skills" 2>/dev/null || true
@@ -63,48 +26,64 @@ patch_selector() {
             [ -d "${r_dir}/skills/${sk}" ] && cp -rf "${r_dir}/skills/${sk}" "${base}/config/skills/" 2>/dev/null || true
         done
     done
+}
 
-    if grep -qa "$patch_fingerprint" "$asar_file" || grep -qa "multi_account_ui" "$asar_file"; then
-        log_success "Account selector patch applied and verified successfully."
-    else
-        log_err "Verification failed: Selector patch marker not found in ${asar_file}!"
-        return 1
+patch_selector_app() {
+    ensure_selector_dirs
+    local asar="${APP_INSTALL_DIR}/resources/app.asar" p_js; p_js="$(get_selector_patch_js)"
+    [ ! -f "$asar" ] || [ -z "$p_js" ] && return 0
+    if [ "$FORCE_INSTALL" != true ] && grep -qa "ANTIGRAVITY_SUITE_SELECTOR_PATCH_V1" "$asar"; then
+        log_info "Account selector already applied to app.asar."; return 0
     fi
+    log_info "Applying account selector to Antigravity App..."; fix_permissions "$APP_INSTALL_DIR"
+    local orig="${asar}.orig"; [ ! -f "$orig" ] && cp -p "$asar" "$orig"
+    local tmp; tmp=$(mktemp -d /tmp/asar_patch_XXXXXX)
+    npx --yes asar extract "$asar" "$tmp/unpacked" && node "$p_js" --app "$tmp/unpacked" && \
+    npx --yes asar pack "$tmp/unpacked" "$tmp/app.asar.patched" --unpack "*.node" && \
+    cp "$tmp/app.asar.patched" "$asar"; rm -rf "$tmp"
+    sync_selector_skills; log_success "Account selector applied to App."
+}
+
+unpatch_selector_app() {
+    ensure_selector_dirs
+    local asar="${APP_INSTALL_DIR}/resources/app.asar" p_js; p_js="$(get_selector_patch_js)"
+    [ ! -f "$asar" ] || [ -z "$p_js" ] && return 0
+    log_info "Removing account selector from App..."; fix_permissions "$APP_INSTALL_DIR"
+    local tmp; tmp=$(mktemp -d /tmp/asar_patch_XXXXXX)
+    npx --yes asar extract "$asar" "$tmp/unpacked" && node "$p_js" --app --unpatch "$tmp/unpacked" && \
+    npx --yes asar pack "$tmp/unpacked" "$tmp/app.asar.patched" --unpack "*.node" && \
+    cp "$tmp/app.asar.patched" "$asar"; rm -rf "$tmp"; log_success "App selector unpatched."
+}
+
+patch_selector_ide() {
+    ensure_selector_dirs
+    local ide="${IDE_INSTALL_DIR}" p_js; p_js="$(get_selector_patch_js)"
+    [ ! -d "$ide" ] || [ -z "$p_js" ] && return 0
+    local marker="${ide}/resources/app/out/antigravity_ide_selector_patch.marker"
+    if [ "$FORCE_INSTALL" != true ] && [ -f "$marker" ]; then
+        log_info "Account selector already applied to IDE."; return 0
+    fi
+    log_info "Applying account selector to Antigravity IDE..."; fix_permissions "$ide"
+    node "$p_js" --ide "$ide"; sync_selector_skills
+    fix_ide_checksums "$ide"; log_success "Account selector applied to IDE."
+}
+
+unpatch_selector_ide() {
+    ensure_selector_dirs
+    local ide="${IDE_INSTALL_DIR}" p_js; p_js="$(get_selector_patch_js)"
+    [ ! -d "$ide" ] || [ -z "$p_js" ] && return 0
+    log_info "Removing account selector from IDE..."; fix_permissions "$ide"
+    node "$p_js" --ide --unpatch "$ide"
+    fix_ide_checksums "$ide"; log_success "IDE selector unpatched."
+}
+
+patch_selector() {
+    for arg in "$@"; do [ "$arg" = "--force" ] || [ "$arg" = "-f" ] && FORCE_INSTALL=true; done
+    patch_selector_app "$@"
+    patch_selector_ide "$@"
 }
 
 unpatch_selector() {
-    ensure_app_install_dir
-    local asar_file="${APP_INSTALL_DIR}/resources/app.asar"
-    if [ ! -f "$asar_file" ]; then
-        log_warn "app.asar not found at ${asar_file}."
-        return 0
-    fi
-
-    local patch_fingerprint="ANTIGRAVITY_SUITE_SELECTOR_PATCH_V1"
-    if ! grep -qa "$patch_fingerprint" "$asar_file" && ! grep -qa "multi_account_ui" "$asar_file"; then
-        log_info "Account selector patch is not applied. Nothing to revert."
-        return 0
-    fi
-
-    log_info "Removing account selector patch from app.asar..."
-    fix_permissions "$APP_INSTALL_DIR"
-
-    local patch_js="${LOCAL_BIN}/antigravity-selector-patch.js"
-    if [ ! -f "$patch_js" ]; then
-        local s_dir
-        s_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-        [ -f "${s_dir}/bin/antigravity-selector-patch.js" ] && patch_js="${s_dir}/bin/antigravity-selector-patch.js"
-        [ -f "${s_dir}/antigravity-selector-patch.js" ] && patch_js="${s_dir}/antigravity-selector-patch.js"
-    fi
-
-    local tmp_dir
-    tmp_dir=$(mktemp -d /tmp/asar_patch_XXXXXX)
-
-    npx --yes asar extract "$asar_file" "$tmp_dir/unpacked"
-    node "$patch_js" --unpatch "$tmp_dir/unpacked"
-    npx --yes asar pack "$tmp_dir/unpacked" "$tmp_dir/app.asar.patched" --unpack "*.node"
-    cp "$tmp_dir/app.asar.patched" "$asar_file"
-    rm -rf "$tmp_dir"
-
-    log_success "Account selector patch successfully removed (F5 patch preserved if present)."
+    unpatch_selector_app "$@"
+    unpatch_selector_ide "$@"
 }

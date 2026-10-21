@@ -34,7 +34,7 @@ def ingest_vscdb_summaries(
     cur = con.cursor()
 
     for vscdb_p in candidate_vscdbs:
-        if not vscdb_p.is_file():
+        if not vscdb_p.is_file() or "globalstorage" not in str(vscdb_p).lower():
             continue
         v_con = None
         try:
@@ -59,15 +59,17 @@ def ingest_vscdb_summaries(
                         if curr_t and is_clean_title(curr_t) and not is_fb and "@[" not in curr_t:
                             continue
 
+                    ide_sum, ide_annot = (parsed.get("summary") or "").strip(), (parsed.get("title") or "").strip()
+                    cands = [c for c in [ide_sum, ide_annot] if c and is_clean_title(c) and not (c.endswith(" Chat") or c.startswith("Desktop:") or c in ["Conversation", "Untitled Conversation"])]
+                    if not cands and u_id in all_summaries:
+                        continue
+
                     db_p = master_conv_dir / f"{u_id}.db"
                     tr_p = master_conv_dir.parent / "brain" / u_id / ".system_generated" / "logs" / "transcript.jsonl"
                     conv_prompts = clean_prompts if clean_prompts is not None else extract_conv_prompts(db_p, tr_p)
-                    ide_sum, ide_annot = (parsed.get("summary") or "").strip(), (parsed.get("title") or "").strip()
-
                     ide_title = ""
-                    for cand in [ide_sum, ide_annot]:
-                        cand_fb = cand.endswith(" Chat") or cand.startswith("Desktop:") or cand in ["Conversation", "Untitled Conversation"]
-                        if cand and is_clean_title(cand) and not is_prompt_text(cand, conv_prompts) and not cand_fb:
+                    for cand in cands:
+                        if not is_prompt_text(cand, conv_prompts):
                             ide_title = cand
                             break
 

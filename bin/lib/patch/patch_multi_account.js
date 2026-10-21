@@ -36,4 +36,6 @@ function unpatchMultiAccount(dir) {
     console.log('[Patch] Multi-account files and markers removed from dist.');
 }
 
-module.exports = { patchMultiAccount, unpatchMultiAccount };
+const { patchIdeMultiAccount, unpatchIdeMultiAccount } = require('./patch_multi_account_ide');
+
+module.exports = { patchMultiAccount, unpatchMultiAccount, patchIdeMultiAccount, unpatchIdeMultiAccount };

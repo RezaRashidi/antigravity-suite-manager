@@ -18,12 +18,23 @@ from antigravity_suite.proto.cascade_submessages import (
 )
 from antigravity_suite.proto.wire import read_varint
 
+_CASCADE_CACHE: Dict[bytes, Dict[Any, Any]] = {}
+
+
+def clear_cascade_cache() -> None:
+    """Clears the cascade summary cache."""
+    _CASCADE_CACHE.clear()
+
 
 def parse_cascade_summary(data: bytes) -> Dict[Any, Any]:
     """Parses a Protobuf binary CascadeTrajectorySummary into a dictionary."""
-    res: Dict[Any, Any] = {}
     if not data:
-        return res
+        return {}
+    cached = _CASCADE_CACHE.get(data)
+    if cached is not None:
+        return cached.copy()
+
+    res: Dict[Any, Any] = {}
     if b"\x80\x92\xb8\xc3\x98\xfe\xff\xff\xff\x01" in data:
         res["has_bad_timestamp"] = True
 
@@ -71,4 +82,7 @@ def parse_cascade_summary(data: bytes) -> Dict[Any, Any]:
             break
 
     resolve_cascade_identity(tag_strings, res)
-    return res
+    if len(_CASCADE_CACHE) > 5000:
+        _CASCADE_CACHE.clear()
+    _CASCADE_CACHE[data] = res
+    return res.copy()

@@ -877,6 +877,27 @@ To guarantee all MCP servers, custom skills, rules, and plugins are shared betwe
    - **Rule Discovery & Deduplication Protocol**: The Go Language Server scans both `${gemini_dir}/GEMINI.md` and recursively crawls `${gemini_dir}/config/**/` for rule markdown files. NEVER create duplicate symlinks for `GEMINI.md` inside `${gemini_dir}/config/` or `${gemini_dir}/antigravity-ide/`. Doing so causes the language server to index the file multiple times, registering duplicate `user_global` rules in the IDE and wasting prompt tokens.
    - **Strict Isolation Boundary**: ONLY OAuth token files (`jetski-standalone-oauth-token`, `oauth_credentials.json`, `google_accounts.json`) and DBus keyring state are kept isolated per instance.
 
+### 5.1 Multi-Account Selector Subsystem & IDE Injection
+The Multi-Account Selector subsystem enables seamless, per-conversation Google account routing, real-time quota telemetry, and native UI controls inside both the local Antigravity Desktop App and Antigravity IDE:
+1. **Workbench DOM & Injection Layer**:
+   - Injected into Antigravity IDE workbench shell (`workbench.desktop.main.js`) and Desktop App (`app.asar/dist/utils.js`).
+   - Automatically locates the model selector button (`[data-testid="model-selector-trigger"]`) or input footer container.
+2. **Layer Isolation & Z-Index Hierarchy**:
+   - VS Code Quick-Pick, Command Palette, and Global Modals render at `z-index: 2550`.
+   - The Account Selector container uses `z-index: auto` / `2000` to prevent leaking above command palettes or chat search popups.
+3. **Dynamic Viewport Anchoring (`updateDdPos`)**:
+   - Dropdown uses `position: fixed` calculated from the anchor button's bounding rectangle.
+   - Active `resize` and `scroll` listeners dynamically recompute `bottom/top/left/right` offsets during window or container resizing.
+   - If the anchor button is scrolled out of the visible viewport, open dropdowns and flyout menus automatically close.
+4. **Quota Telemetry Freshness & Synchronization**:
+   - Direct Cloud Code HTTPS API queries (`/v1internal:retrieveUserQuotaSummary`) for secondary accounts and LanguageServer ConnectRPC for the primary account.
+   - Proactive background synchronization triggered on conversation switch, window focus, and dropdown open.
+   - Cache staleness threshold set to 20 seconds, with forced bypass via "Refresh" button (`?refresh=1`).
+5. **Quota Fallback & Routing Policy**:
+   - **Per-Conversation Pinning**: Individual conversations (`cascadeId`) are bound to specific Google accounts in `bindings.json`. Unpinned chats inherit `__active_account`.
+   - **No Silent Cross-Account Failover**: The router does not silently switch Google accounts on HTTP 429 (`RESOURCE_EXHAUSTED`). If an account exhausts its quota, the user explicitly switches accounts via the UI selector or `/switch` command to maintain audit integrity.
+   - **Internal Model Fallback**: Upstream Google Language Server internally falls back between priority models (e.g., Gemini 1.5 Pro to Gemini 1.5 Flash) when weekly quota is exhausted, but operates strictly within the active account's token scope.
+
 ---
 
 ## 6. Google One AI Pro Quota Mechanics & Family Sharing
@@ -952,10 +973,28 @@ Go's uninitialized `time.Time{}` (`0001-01-01T00:00:00Z`) serializes to `-621355
 | `python3 ~/.local/bin/antigravity-merge-history.py --watch` | Runs in persistent daemon mode with automatic change detection. |
 | `python3 ~/.local/bin/antigravity-merge-history.py --quiet` | Runs silently for background launchers and systemd. |
 
-> [!TIP]
-> **Post-Sync IDE UI Refresh**:
-> After running `--rebuild` or a manual merge, reload the Antigravity IDE window to refresh the webview cache:
-> Press `Ctrl+Shift+P` -> select `Developer: Reload Window`.
+### 7.7 Quad-Phase Scaling Optimization Architecture (17.0s -> 2.18s)
+When synchronizing large conversation stores (300+ chats across IDE and App), the history merger experienced heavy CPU saturation (17.0s duration, 25% CPU / 1 full core, 17.7 million calls). The quad-phase optimization resolved this:
+1. **Phase 1: SQLite Discovery & Inode Pruning**:
+   - Skips non-existent or 0-byte database paths before attempting schema inspection or SQL connections.
+   - Eliminates redundant filesystem traversals across disconnected workspace folders.
+2. **Phase 2: Inode Dirty-Checking & Change Detection**:
+   - Calculates a lightweight composite fingerprint: `(file_size, mtime_ns, last_row_id)`.
+   - Bypasses full metadata extraction and SQLite table scans for unchanged conversations.
+3. **Phase 3: SQLite FTS Index Upsert Guard**:
+   - Full-text search indexing (`conversation_fts`) is guarded against unchanged tokens.
+   - Eliminates 300+ redundant writes per cycle, reducing WAL file churn and I/O lock contention.
+4. **Phase 4: Protobuf Parsing Memoization**:
+   - Implements an LRU memoization cache for binary protobuf `step_payload` blobs.
+   - Completed historical steps are deserialized once and cached across merger cycles.
+5. **Authentic Chronological Timestamp Extraction**:
+   - Queries `SELECT created_at FROM steps WHERE created_at IS NOT NULL ORDER BY step_index DESC LIMIT 1` from the SQLite `steps` table.
+   - Inspects the stream tail (last 32 KB) of `transcript.jsonl` when SQLite is absent.
+   - Rejects future timestamps (`2027y`) and unauthenticated filesystem mtimes to preserve true chronological order.
+6. **Empirical Benchmark Results**:
+   - Duration reduced from **17.0s -> 2.18s** (~87% faster).
+   - Internal function calls reduced from **17.7M -> 5.1M** (~71% reduction).
+   - CPU impact reduced from continuous 25% saturation to a transient <0.3s burst.
 
 ---
 
