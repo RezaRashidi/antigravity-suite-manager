@@ -125,6 +125,15 @@ Automate account management directly from your keyboard without touching the mou
 - **Dynamic Token Rewriting**: Inspects every `streamGenerateContent` request, identifies the active conversation (`cascadeId`), and injects the corresponding account's Google Bearer token.
 - **Official Consumer Scopes**: Uses official Antigravity consumer OAuth client credentials (`1071006060591-...`) to ensure full entitlement for personal Gmail and Google One AI Premium users.
 
+### 5. 🔒 Singleton Background OAuth CLI Daemon
+- **Unified Login Lock (`login.pid`)**: When initiating account login via the UI (`+ Add Account`) or CLI, the suite acquires a cross-process lock (`~/.config/antigravity/accounts/login.pid`).
+- **Zero Collision Between App & IDE**: If login is triggered in the Desktop App while the IDE is running (or vice-versa), only a single background OAuth listener spins up, preventing duplicate processes and callback port conflicts.
+- **180-Second Stale Lock Auto-Recovery**: If a previous login process was interrupted, abandoned, or killed abruptly, stale locks older than 180 seconds are automatically reclaimed without blocking new logins.
+
+### 6. 🌐 Network Telemetry Isolation & Error Resilience
+- **HostBridge Exclusion**: The in-process proxy router deliberately excludes internal Electron communication channels (specifically `HostBridgeServer` on port `39967`) and restricts port scans.
+- **Zero `write EPIPE` Crashes**: Prevents unexpected socket resets or broken pipes when internal IPC servers drop unhandled probes, guaranteeing 100% stable background telemetry even across intermittent internet drops.
+
 ---
 
 ## 🚀 Key Features at a Glance
@@ -159,6 +168,11 @@ Automate account management directly from your keyboard without touching the mou
 
 ### 8. ⚙️ Universal Skills, Rules (`GEMINI.md`) & MCP Sync
 - **Single Source of Truth**: Custom instructions (`GEMINI.md`), skills (`skills/`), agent rules, and MCP servers (`mcp_config.json`) are maintained in `~/.gemini` and unified across App and IDE.
+
+### 9. 🌿 Experimental Conversation Forking (`conversationForking`)
+- **Historical Branching**: Fork and branch conversations at any turn or step into the current workspace or an isolated Git worktree without affecting the original thread.
+- **IDE Native Integration**: Automatically unlocks the `Fork Conversation` action button on assistant responses and the `Fork in current workspace` context menu option across `main.js`, `workbench.desktop.main.js`, and `jetskiAgent/main.js`.
+- **Desktop App Enablement**: Activated via runtime experiment overrides (`enable-conversation-forking` & `enable-fork-in-new-worktree`) in `ui/mount.js` and `localStorage`, backed directly by the Language Server's native `forkConversation` RPC engine.
 
 ---
 
@@ -224,6 +238,25 @@ Sample live output:
 [2026-10-22T08:16:10Z] ChatGen: [e0e1533f-...] -> Account: [work@gmail.com]  | token: ...7hBGki | Path: /v1internal:streamGenerateContent?alt=sse
 [2026-10-22T08:16:11Z] ChatGen: [e0e1533f-...] <- Upstream Response: 200
 ```
+
+### 🌿 Experimental Conversation Forking Guide
+
+With conversation forking enabled, you can branch an existing chat at any point in its history to explore alternate directions or test code changes without losing the original conversation.
+
+```
+                    ┌── Turn 1 ── Turn 2 ── Turn 3 (Original Conversation continues)
+Main Conversation ──┤
+                    └── [Fork Button] ── Turn 3b (Alternate Fork in Current Workspace)
+```
+
+#### Where the Fork Controls Appear:
+1. **Turn Response Action Bar**: Next to the standard *Copy* and *Thumbs Up/Down* feedback buttons on assistant responses, a **Fork Conversation** icon button (`aria-label: Fork Conversation`) will appear.
+2. **Conversation Context Menu**: Right-clicking a conversation in the history or sidebar exposes **"Fork in current workspace"**.
+
+#### Architecture & Activation Details:
+- **IDE Activation**: `bin/lib/patch/patch_conversation_forking.js` unlocks the React gating conditions (`conversationForking.enabled`) in `main.js`, `vs/workbench/workbench.desktop.main.js`, and `jetskiAgent/main.js`.
+- **Desktop App Activation**: Injected via `ui/mount.js` which configures `jetski.developer.customFlagOverrides` (`enable-conversation-forking`, `enable-fork-in-new-worktree`) in `window.localStorage` and activates `window.__APP_CONFIG__.devMode`.
+- **Language Server Backend**: The underlying language server binary handles `forkConversation` natively, cloning the trajectory metadata, step sequence, and workspace context cleanly.
 
 ---
 

@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { patchUiInjection, unpatchUiInjection } = require('./patch_multi_account_ui_inject');
+const { patchIdeConversationForking, unpatchIdeConversationForking } = require('./patch_conversation_forking');
 
 function copyFileSafe(src, dst) {
     if (fs.existsSync(src)) {
@@ -182,6 +183,7 @@ function patchIdeMultiAccount(ideDir) {
         }
     }
     patchIdeLanguageServer(ideDir);
+    patchIdeConversationForking(ideDir);
     const marker = path.join(outDir, 'antigravity_ide_selector_patch.marker');
     try { fs.writeFileSync(marker, 'ANTIGRAVITY_SUITE_IDE_SELECTOR_PATCH_V1\n', 'utf8'); } catch (_) {}
 }
@@ -201,6 +203,7 @@ function unpatchIdeMultiAccount(ideDir) {
     const hookDst = path.join(outDir, 'antigravity-multi-account-ide.js');
     if (fs.existsSync(hookDst)) fs.unlinkSync(hookDst);
     unpatchIdeLanguageServer(ideDir);
+    unpatchIdeConversationForking(ideDir);
 
     const marker = path.join(outDir, 'antigravity_ide_selector_patch.marker');
     if (fs.existsSync(marker)) fs.unlinkSync(marker);

@@ -1,5 +1,18 @@
 // Antigravity Multi-Account UI: Target Detection and Cascade Identification
 (function initMountModule() {
+    try {
+        if (typeof window !== 'undefined') {
+            if (window.__APP_CONFIG__) window.__APP_CONFIG__.devMode = true;
+            const k = 'jetski.developer.customFlagOverrides';
+            let f = {};
+            try { f = JSON.parse(window.localStorage.getItem(k) || '{}'); } catch (_) {}
+            if (!f['enable-conversation-forking'] || !f['enable-fork-in-new-worktree']) {
+                f['enable-conversation-forking'] = true;
+                f['enable-fork-in-new-worktree'] = true;
+                window.localStorage.setItem(k, JSON.stringify(f));
+            }
+        }
+    } catch (_) {}
     window.__antigravityDetectCascadeId = function(targetEl) {
         try {
             const ref = targetEl || document.getElementById('antigravity-account-pill') || document.querySelector('[data-testid="model-selector-trigger"]');
