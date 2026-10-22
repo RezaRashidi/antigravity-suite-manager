@@ -55,9 +55,11 @@ show_classic_menu() {
     echo "27) Multi-Account Manager (Vault, Login, Bindings & Quotas)"
     echo "28) Apply Prompt-Bar Multi-Account Selector Patch"
     echo "29) Revert / Unpatch Prompt-Bar Multi-Account Selector Patch"
+    echo "30) Apply Experimental Conversation Forking Patch (App & IDE)"
+    echo "31) Revert / Unpatch Conversation Forking Patch"
     echo "0) Exit"
     echo -e "${CYAN}-----------------------------------------------------${NC}"
-    read -rp "Select an option [0-29]: " choice
+    read -rp "Select an option [0-31]: " choice
 
     case "$choice" in
         1) install_antigravity_all ;;
@@ -89,6 +91,8 @@ show_classic_menu() {
         27) dispatch_multi_account ;;
         28) FORCE_INSTALL=true patch_selector ;;
         29) unpatch_selector ;;
+        30) FORCE_INSTALL=true patch_fork_all ;;
+        31) unpatch_fork_all ;;
         0) exit 0 ;;
         *) log_err "Invalid selection."; exit 1 ;;
     esac

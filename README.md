@@ -172,7 +172,8 @@ Automate account management directly from your keyboard without touching the mou
 ### 9. 🌿 Experimental Conversation Forking (`conversationForking`)
 - **Historical Branching**: Fork and branch conversations at any turn or step into the current workspace or an isolated Git worktree without affecting the original thread.
 - **IDE Native Integration**: Automatically unlocks the `Fork Conversation` action button on assistant responses and the `Fork in current workspace` context menu option across `main.js`, `workbench.desktop.main.js`, and `jetskiAgent/main.js`.
-- **Desktop App Enablement**: Activated via runtime experiment overrides (`enable-conversation-forking` & `enable-fork-in-new-worktree`) in `ui/mount.js` and `localStorage`, backed directly by the Language Server's native `forkConversation` RPC engine.
+- **Desktop App Enablement**: Activated via runtime experiment overrides (`enable-conversation-forking`, `enable-fork-in-new-worktree`, `enable-fork-at-historical-step`), backed directly by the Language Server's native `forkConversation` RPC engine.
+- **Standalone Modular Patch**: Decoupled into its own independent CLI commands (`manage-antigravity.sh fork` / `unpatch-fork`) and Control Center option (`[J]`), with unwanted developer status bar footers cleanly eliminated.
 
 ---
 
@@ -249,13 +250,34 @@ Main Conversation ──┤
                     └── [Fork Button] ── Turn 3b (Alternate Fork in Current Workspace)
 ```
 
+#### Dedicated Standalone Patch Commands:
+Forking is decoupled into its own independent, toggleable patch module:
+```bash
+# Apply conversation forking patch to both App & IDE
+./bin/manage-antigravity.sh fork
+
+# Apply selectively to App or IDE
+./bin/manage-antigravity.sh fork app
+./bin/manage-antigravity.sh fork ide
+
+# Revert / Unpatch conversation forking
+./bin/manage-antigravity.sh unpatch-fork
+./bin/manage-antigravity.sh unpatch-fork app
+./bin/manage-antigravity.sh unpatch-fork ide
+
+# Or manage interactively via Control Center:
+./bin/manage-antigravity.sh center    # Select [J] Conversation Forking
+```
+
 #### Where the Fork Controls Appear:
 1. **Turn Response Action Bar**: Next to the standard *Copy* and *Thumbs Up/Down* feedback buttons on assistant responses, a **Fork Conversation** icon button (`aria-label: Fork Conversation`) will appear.
 2. **Conversation Context Menu**: Right-clicking a conversation in the history or sidebar exposes **"Fork in current workspace"**.
 
 #### Architecture & Activation Details:
-- **IDE Activation**: `bin/lib/patch/patch_conversation_forking.js` unlocks the React gating conditions (`conversationForking.enabled`) in `main.js`, `vs/workbench/workbench.desktop.main.js`, and `jetskiAgent/main.js`.
-- **Desktop App Activation**: Injected via `ui/mount.js` which configures `jetski.developer.customFlagOverrides` (`enable-conversation-forking`, `enable-fork-in-new-worktree`) in `window.localStorage` and activates `window.__APP_CONFIG__.devMode`.
+- **Standalone Patcher**: Decoupled into `bin/lib/sh/patch_fork.sh`, `bin/antigravity-fork-patch.js`, and `bin/lib/patch/patch_conversation_forking.js`.
+- **IDE Activation**: Unlocks the React gating conditions (`conversationForking.enabled`) in `main.js`, `vs/workbench/workbench.desktop.main.js`, and `jetskiAgent/main.js`, automatically maintaining `product.json` integrity and checksums.
+- **Desktop App Activation**: Configures early main-world flags via Electron `webFrame` in `preload.js` and seeds `jetski.developer.customFlagOverrides` (`enable-conversation-forking`, `enable-fork-in-new-worktree`, `enable-fork-at-historical-step`).
+- **Clean UI (No Developer Status Bar)**: Prevents and suppresses the unwanted bottom developer status bar ("Reset State") using multi-tier styling and DOM lifecycle guards (`preload.js` isolated style injection, `styles.css`, and `mount.js`).
 - **Language Server Backend**: The underlying language server binary handles `forkConversation` natively, cloning the trajectory metadata, step sequence, and workspace context cleanly.
 
 ---

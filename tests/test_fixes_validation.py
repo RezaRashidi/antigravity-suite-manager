@@ -2123,9 +2123,55 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             patched_main = main_js.read_text()
             self.assertIn("ANTIGRAVITY_DESKTOP_NAME", patched_main)
 
+    def test_patch_app_and_ide_conversation_forking(self):
+        """Verifies patchAppConversationForking & patchIdeConversationForking apply and unpatch cleanly."""
+        import tempfile
+        import subprocess
+        with tempfile.TemporaryDirectory() as td:
+            dist = Path(td) / "dist"
+            dist.mkdir()
+            ls_js = dist / "languageServer.js"
+            ls_js.write_text("const args = [\n            '--enable_sidecars',\n        ];")
+            preload_js = dist / "preload.js"
+            preload_js.write_text("console.log('original preload');")
+
+            patch_script = Path(__file__).resolve().parent.parent / "bin" / "lib" / "patch" / "patch_conversation_forking.js"
+            cmd_patch = ["node", "-e", f"const p = require('{patch_script}'); p.patchAppConversationForking('{td}');"]
+            subprocess.run(cmd_patch, check=True)
+
+            self.assertIn("--dev_mode", ls_js.read_text())
+            patched_preload = preload_js.read_text()
+            self.assertIn("FORK_EXP_PRELOAD_START", patched_preload)
+            self.assertIn("enable-conversation-forking", patched_preload)
+            self.assertIn("agy-hide-dev-footer", patched_preload)
+            self.assertTrue((dist / "antigravity_fork_patch.marker").exists())
+
+            # Test unpatch
+            cmd_unpatch = ["node", "-e", f"const p = require('{patch_script}'); p.unpatchAppConversationForking('{td}');"]
+            subprocess.run(cmd_unpatch, check=True)
+            self.assertNotIn("--dev_mode", ls_js.read_text())
+            self.assertNotIn("FORK_EXP_PRELOAD_START", preload_js.read_text())
+            self.assertFalse((dist / "antigravity_fork_patch.marker").exists())
+
+        # Test IDE patch
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "resources" / "app" / "out"
+            out.mkdir(parents=True)
+            main_ide = out / "main.js"
+            main_ide.write_text('const f = this.config.get("conversationForking")?.enabled??!1;')
+
+            cmd_ide_patch = ["node", "-e", f"const p = require('{patch_script}'); p.patchIdeConversationForking('{td}');"]
+            subprocess.run(cmd_ide_patch, check=True)
+            self.assertIn('/*FORK_EXP*/!0', main_ide.read_text())
+
+            cmd_ide_unpatch = ["node", "-e", f"const p = require('{patch_script}'); p.unpatchIdeConversationForking('{td}');"]
+            subprocess.run(cmd_ide_unpatch, check=True)
+            self.assertIn('.get("conversationForking")?.enabled??!1', main_ide.read_text())
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

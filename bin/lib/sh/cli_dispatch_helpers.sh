@@ -69,6 +69,24 @@ dispatch_unpatch_f5() {
     unpatch_f5 "$@"
 }
 
+dispatch_fork() {
+    auto_detect_installations
+    case "${SUB_COMMAND:-all}" in
+        app) patch_fork_app "$@" ;;
+        ide) patch_fork_ide "$@" ;;
+        all|*) patch_fork_all "$@" ;;
+    esac
+}
+
+dispatch_unpatch_fork() {
+    auto_detect_installations
+    case "${SUB_COMMAND:-all}" in
+        app) unpatch_fork_app "$@" ;;
+        ide) unpatch_fork_ide "$@" ;;
+        all|*) unpatch_fork_all "$@" ;;
+    esac
+}
+
 dispatch_keyring() {
     if [ ${#CMD_ARGS[@]} -eq 0 ]; then
         configure_keyring_interactive

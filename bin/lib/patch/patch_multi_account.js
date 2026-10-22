@@ -29,6 +29,7 @@ function unpatchMultiAccount(dir) {
     unpatchIpcAndPreload(distDir);
     unpatchUiInjection(distDir);
 
+
     try {
         const markerPath = path.join(distDir, 'antigravity_selector_patch.marker');
         if (fs.existsSync(markerPath)) fs.unlinkSync(markerPath);

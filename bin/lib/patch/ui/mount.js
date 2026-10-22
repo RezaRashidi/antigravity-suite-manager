@@ -6,9 +6,10 @@
             const k = 'jetski.developer.customFlagOverrides';
             let f = {};
             try { f = JSON.parse(window.localStorage.getItem(k) || '{}'); } catch (_) {}
-            if (!f['enable-conversation-forking'] || !f['enable-fork-in-new-worktree']) {
+            if (!f['enable-conversation-forking'] || !f['enable-fork-in-new-worktree'] || !f['enable-fork-at-historical-step']) {
                 f['enable-conversation-forking'] = true;
                 f['enable-fork-in-new-worktree'] = true;
+                f['enable-fork-at-historical-step'] = true;
                 window.localStorage.setItem(k, JSON.stringify(f));
             }
         }
@@ -85,4 +86,31 @@
         } catch (_) {}
         return null;
     };
+
+    function hideDevFooter() {
+        try {
+            const btns = document.querySelectorAll('button[title="Reset State"], button[title*="Reset"]');
+            for (const btn of btns) {
+                const bar = btn.closest('.shrink-0') || btn.closest('[data-screenshot-volatile]') || btn.closest('.border-t') || btn.parentElement;
+                if (bar && bar.style.display !== 'none') {
+                    bar.style.setProperty('display', 'none', 'important');
+                    bar.style.setProperty('height', '0px', 'important');
+                    bar.style.setProperty('visibility', 'hidden', 'important');
+                }
+            }
+        } catch (_) {}
+    }
+    window.__antigravityHideDevFooter = hideDevFooter;
+    hideDevFooter();
+    if (typeof document !== 'undefined') {
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', hideDevFooter);
+        }
+        try {
+            const mo = new MutationObserver(hideDevFooter);
+            if (document.body) mo.observe(document.body, { childList: true, subtree: true });
+            else document.addEventListener('DOMContentLoaded', () => { if (document.body) mo.observe(document.body, { childList: true, subtree: true }); });
+        } catch (_) {}
+    }
 })();
+

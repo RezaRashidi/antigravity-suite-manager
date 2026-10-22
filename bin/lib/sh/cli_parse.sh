@@ -85,6 +85,12 @@ parse_cli_args() {
             unpatch-selector|unpatch-accounts)
                 COMMAND="unpatch-selector"; shift
                 if [ -n "$1" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
+            fork|patch-fork)
+                COMMAND="fork"; shift
+                if [ -n "$1" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
+            unpatch-fork)
+                COMMAND="unpatch-fork"; shift
+                if [ -n "$1" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
             unpatch|restore|revert-patch|unpatch-all) COMMAND="unpatch"; shift ;;
             trace|monitor|traffic) COMMAND="traffic"; shift; break ;;
             restart-services|restart-service|restart-daemon|restart-daemons|25) COMMAND="restart-services"; shift ;;

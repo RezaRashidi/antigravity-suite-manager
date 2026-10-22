@@ -17,6 +17,7 @@ from antigravity_suite.detect.control_center_actions import (
     handle_control_center_clone,
     handle_control_center_export_import,
     handle_control_center_f5_patch,
+    handle_control_center_fork_patch,
     handle_control_center_icons,
     handle_control_center_install,
     handle_control_center_keyring_global,
@@ -56,8 +57,9 @@ def render_control_center_overview(unified: List[Dict[str, Any]]) -> None:
     print("  [N] Install New Binary       [U] Smart Update All         [W] Step-by-Step Wizard")
     print("  [S] Run Setup Step (1-8)     [V] Version & Status Table   [P] Update Repository\n")
     print(f"{BOLD}{CYAN}[ PATCHES & CUSTOMIZATION ]{NC}")
-    print("  [T] Multi-Account Selector   [F] F5 Reload Patch          [R] Apply RTL Patch")
-    print("  [O] Icons & Visual Theme     [G] Keyring Storage Mode     [X] Clean Download Cache\n")
+    print("  [T] Multi-Account Selector   [J] Conversation Forking     [F] F5 Reload Patch")
+    print("  [R] Apply RTL Patch          [O] Icons & Visual Theme     [G] Keyring Storage Mode")
+    print("  [X] Clean Download Cache\n")
     print(f"{BOLD}{CYAN}[ ACCOUNTS & SYSTEM ]{NC}")
     print("  [A] Multi-Account Manager    [M] Live Request Traffic     [K] Speed Benchmark")
     print("  [D] Restart Services         [Q] Exit Setup")
@@ -109,6 +111,8 @@ def run_control_center() -> None:
             input("\nPress Enter to return to Control Center...")
         elif choice.upper() == "T":
             handle_control_center_selector_patch(manage_sh, unified)
+        elif choice.upper() == "J":
+            handle_control_center_fork_patch(manage_sh, unified)
         elif choice.upper() == "F":
             handle_control_center_f5_patch(manage_sh, unified)
         elif choice.upper() == "R":

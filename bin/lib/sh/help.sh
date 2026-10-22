@@ -40,6 +40,8 @@ Commands:
   unpatch-f5    Revert F5 backend reload sync patch
   selector      Apply prompt-bar account selector & multi-account patch (alias: patch-selector)
   unpatch-selector Revert prompt-bar account selector patch (preserves F5)
+  fork          Apply experimental conversation forking patch to App and IDE (alias: patch-fork)
+  unpatch-fork  Revert conversation forking patch
   unpatch       Restore clean unmodified original app.asar (revert all patches)
   rtl           Apply / re-apply antigravity-rtl to App and IDE
   update        Smart update components [all|app|ide|rtl|f5|checksums|repo|services] (preserves user data)

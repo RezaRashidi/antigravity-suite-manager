@@ -378,3 +378,24 @@ html.dark, body.dark, [data-theme="dark"], .dark, body.vs-dark, .vs-dark, body.h
     pointer-events: none;
     transition: opacity 0.25s ease;
 }
+
+/* ==========================================================================
+   Dev mode status bar / "Reset State" footer removal
+   ========================================================================== */
+div.shrink-0:has(button[title="Reset State"]),
+div[data-screenshot-volatile]:has(button[title="Reset State"]),
+div:has(> div[data-screenshot-volatile] button[title="Reset State"]),
+div.shrink-0:has(button[title*="Reset"]),
+div:has(> button[title="Reset State"]) {
+    display: none !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    max-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
+    overflow: hidden !important;
+}
+

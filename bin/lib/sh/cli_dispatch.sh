@@ -77,6 +77,8 @@ dispatch_command() {
         multi-account|multiaccount|accounts) dispatch_multi_account "${CMD_ARGS[@]}" ;;
         patch-selector|selector|patch-accounts) FORCE_INSTALL=true dispatch_selector ;;
         unpatch-selector|unpatch-accounts) dispatch_unpatch_selector ;;
+        fork|patch-fork) FORCE_INSTALL=true dispatch_fork "${CMD_ARGS[@]}" ;;
+        unpatch-fork) dispatch_unpatch_fork "${CMD_ARGS[@]}" ;;
         unpatch|restore|revert-patch|unpatch-all) auto_detect_installations; unpatch_antigravity ;;
         traffic|trace|monitor)
             mkdir -p "${HOME}/.config/antigravity/accounts"

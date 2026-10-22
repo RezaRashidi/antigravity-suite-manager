@@ -19,24 +19,27 @@ get_selector_patch_js() {
     local s_dir; s_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)"
     local cand
     for cand in \
-        "${LOCAL_BIN}/antigravity-selector-patch.js" \
         "${s_dir}/antigravity-selector-patch.js" \
         "${s_dir}/bin/antigravity-selector-patch.js" \
         "${SCRIPT_DIR}/antigravity-selector-patch.js" \
         "${SCRIPT_DIR}/bin/antigravity-selector-patch.js" \
         "${REAL_HOME}/antigravity-suite-manager/bin/antigravity-selector-patch.js" \
         "${REAL_HOME}/PhpstormProjects/antigravity-suite-manager/bin/antigravity-selector-patch.js" \
+        "${LOCAL_BIN}/antigravity-selector-patch.js" \
         "/usr/local/bin/antigravity-selector-patch.js"; do
         if [ -f "$cand" ]; then
-            if [ ! -f "${LOCAL_BIN}/antigravity-selector-patch.js" ]; then
+            if [ "$cand" != "${LOCAL_BIN}/antigravity-selector-patch.js" ]; then
                 mkdir -p "${LOCAL_BIN}"
                 cp -f "$cand" "${LOCAL_BIN}/antigravity-selector-patch.js" 2>/dev/null || true
                 chmod +x "${LOCAL_BIN}/antigravity-selector-patch.js" 2>/dev/null || true
-            fi
-            local cand_dir; cand_dir="$(dirname "$cand")"
-            if [ -d "${cand_dir}/lib/patch" ]; then
-                mkdir -p "${LOCAL_BIN}/lib"
-                cp -rf "${cand_dir}/lib/patch" "${LOCAL_BIN}/lib/" 2>/dev/null || true
+                local cand_dir; cand_dir="$(dirname "$cand")"
+                if [ -d "${cand_dir}/lib/patch" ]; then
+                    mkdir -p "${LOCAL_BIN}/lib"
+                    cp -rf "${cand_dir}/lib/patch" "${LOCAL_BIN}/lib/" 2>/dev/null || true
+                elif [ -d "${cand_dir}/../lib/patch" ]; then
+                    mkdir -p "${LOCAL_BIN}/lib"
+                    cp -rf "${cand_dir}/../lib/patch" "${LOCAL_BIN}/lib/" 2>/dev/null || true
+                fi
             fi
             echo "$cand"
             return 0
