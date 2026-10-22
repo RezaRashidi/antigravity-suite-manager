@@ -227,6 +227,135 @@ Sample live output:
 
 ---
 
+## 👥 Multi-Instance Cloning & Cross-Clone Synchronization
+
+Beyond per-chat account switching, Antigravity Suite Manager features an **Unlimited Multi-Instance Cloning Engine** that lets you run multiple independent Antigravity App and IDE windows side-by-side with independent system tray icons, distinct taskbar entries, and automated real-time history synchronization.
+
+```
++-----------------------------------------------------------------------------------+
+|                        Multi-Instance & Clone Topology                            |
+|                                                                                   |
+|  +--------------------+   +--------------------+   +---------------------------+  |
+|  | Antigravity App 1  |   | Antigravity App 2  |   | Antigravity IDE (VS Code) |  |
+|  | (Primary Profile)  |   | (Custom Violet Glow)|   | (Code Edition)            |  |
+|  | WM_CLASS:          |   | WM_CLASS:          |   | WM_CLASS:                 |  |
+|  | antigravity-1      |   | antigravity-2      |   | antigravity-ide           |  |
+|  +---------+----------+   +---------+----------+   +-------------+-------------+  |
+|            |                        |                            |                |
+|            |                        v                            |                |
+|            |              +--------------------+                 |                |
+|            |              | App Clone 3 / Work |                 |                |
+|            |              | (Amber Orange Glow)|                 |                |
+|            |              +---------+----------+                 |                |
+|            |                        |                            |                |
+|            +-------------------+----+----------------------------+                |
+|                                |                                                  |
+|                                v                                                  |
+|  +-----------------------------------------------------------------------------+  |
+|  | Real-Time Cross-Instance History Synchronization Engine                    |  |
+|  | - SQLite WAL Mode (.db-wal) Multi-Process Concurrency                       |  |
+|  | - Quad-Phase History Merger Daemon (antigravity-merge-history.py --watch)  |  |
+|  | - Unified Conversation Summaries DB & Brain Artifacts Topology              |  |
+|  | - Step 23 Checkpoint Synchronization & Fallback Title Guard                 |  |
+|  +-----------------------------------------------------------------------------+  |
++-----------------------------------------------------------------------------------+
+```
+
+### 1. Creating and Cloning Instances
+
+Clone any App or IDE instance with an interactive wizard or a single command:
+
+```bash
+# Launch the interactive instance creation wizard:
+~/manage-antigravity.sh create-instance
+# Alias: ~/manage-antigravity.sh add
+
+# Or via the Control Center dashboard:
+~/manage-antigravity.sh center    # Select [C] Clone / Add New Instance
+```
+
+#### What the Cloning Engine Configures:
+1. **Target Type**: Choose between **Antigravity App** (Desktop Electron app) or **Antigravity IDE** (VS Code fork).
+2. **Auto-Incrementing ID or Custom Name**: Automatically suggests the next numeric counter (e.g., `3`, `4`) or accepts custom named profiles (e.g., `work`, `client-a`).
+3. **History Synchronization Mode**:
+   - **Shared Mode (`--shared`, Default)**: Connects the clone to the universal conversation mesh. Any conversation created or updated in Clone 1, Clone 2, or IDE is instantly mirrored and queryable across all instances!
+   - **Isolated Mode (`--isolated`)**: Gives the clone a private, quarantined conversation database and brain directory (ideal for confidential client work).
+4. **Visual Accent Themes & Glows**: Choose custom Catmull-Rom resampled icon glows so you instantly identify running windows on your dock:
+   - Violet / Magenta (0.52)
+   - Emerald Green (0.33)
+   - Amber Orange (0.12)
+   - Royal Sapphire Blue (0.60)
+   - Ruby Rose (0.85)
+   - Cyan / Teal (0.45)
+5. **Taskbar De-Grouping (`WM_CLASS`)**: Generates custom `.desktop` launchers and assigns unique window classes (`antigravity-app-<id>`, `antigravity-ide-<id>`) so GNOME and Ubuntu Dock never collapse distinct clones into one group.
+
+### 2. Managing Clones and Profiles
+
+```bash
+# List all active App and IDE instances, history modes, and profiles:
+~/manage-antigravity.sh list-instances
+
+# Toggle an instance's history mode between shared and isolated:
+~/manage-antigravity.sh set-history <instance-id> [shared|isolated]
+
+# Delete an instance and cleanly archive its profile:
+~/manage-antigravity.sh remove-instance <instance-id>
+```
+
+### 3. Background Synchronization Engine (`antigravity-merge-history.py`)
+
+When running in **Shared Mode**, cross-instance synchronization is handled by the **Quad-Phase History Merger Daemon**:
+- **SQLite WAL Concurrency**: All SQLite reads and writes use Write-Ahead Logging (`.db-wal`), completely eliminating locked database errors.
+- **Background Daemon (`--watch`)**: Runs silently via systemd user service (`antigravity-history-sync.service`), monitoring changes across all instance roots.
+- **Step 23 Checkpoint Sync**: Prevents authentic IDE chat titles from being polluted by generic fallback titles when switching between App and IDE.
+- **Singleton Lock Protection**: Uses `/tmp/antigravity_history_merger.lock` to prevent CPU-intensive daemon races.
+
+---
+
+## 🔬 Diagnostics, Benchmarking & Disaster Recovery
+
+### 1. AI Latency & Context Bloat Benchmark
+
+Diagnose network latency, proxy overhead, and per-step response intervals across your Antigravity setup:
+
+```bash
+# Run standard latency benchmark:
+~/manage-antigravity.sh benchmark
+
+# View per-message step intervals and token throughput:
+~/manage-antigravity.sh benchmark --all-steps
+
+# Output benchmark results as structured JSON:
+~/manage-antigravity.sh benchmark --json
+```
+
+Measures:
+- IPv4/IPv6 and HTTP/HTTPS proxy latency against Google Cloud Code endpoints.
+- Message input character volume vs output token generation throughput.
+- Per-message turnaround speed and step latency breakdown.
+
+### 2. Leaked Session Splicer & Conversation Restoration
+
+In the rare event of a sudden machine crash or concurrent session leakage across conversation boundaries, use the **Leaked Session Splicer** to surgically rescue and transplant conversation steps:
+
+```bash
+# Dry-run inspection (simulates step migration without modifying files):
+python3 scripts/splice_leaked_session.py
+
+# Live execution with automated pre-flight snapshot backup:
+python3 scripts/splice_leaked_session.py --execute
+```
+
+This tool:
+- Surgically migrates SQLite rows from `<source_cid>.db` into `<target_cid>.db`.
+- Re-indexes step ordering to guarantee contiguous `step_index` sequences.
+- Transplants transcript logs (`transcript.jsonl` and `transcript_full.jsonl`) with proper offset shifting.
+- Migrates associated background task logs (`.system_generated/tasks/`).
+- Atomically updates master step counts in `conversation_summaries.db`.
+
+
+---
+
 ## 🛠️ Suite Management CLI Reference
 
 ```bash
@@ -311,7 +440,7 @@ graph TD
 For deep engineering specifications, wire protocols, database schemas, and forensics investigations:
 
 * **[Forensics & Debugging Guide](docs/forensics/README.md)** (`docs/forensics/`):
-  25 detailed incident investigations covering Protobuf tag parsing, ConnectRPC loopbacks, 2027y timestamp fixes, OAuth client collision resolutions, and Language Server checkpoint hooks.
+  26 detailed incident investigations covering Protobuf tag parsing, ConnectRPC loopbacks, 2027y timestamp fixes, OAuth client collision resolutions, cross-conversation session splicing, and Language Server checkpoint hooks.
 * **[Storage Architecture & Specifications](docs/architecture/README.md)** (`docs/architecture/`):
   13 architectural specifications covering process mapping, directory taxonomies, SQLite wire protocols, Protobuf reflection, and multi-account selector internals ([Chapter 12](docs/architecture/12_multi_account_selector_architecture.md)).
 

@@ -31,4 +31,5 @@ This document records the end-to-end diagnostic methodology, reverse-engineering
 - [23. Issue 21: Self-Update Engine & Background Service Orchestration](23_self_update_engine_and_background_service_orchestration.md)
 - [24. Issue 22: Mid-Session Title Mutation & Test Suite Isolation Leak](24_mid_session_title_mutation_and_test_isolation_leak.md)
 - [25. Issue 23: Consumer vs. Enterprise OAuth Client ID Collision & "NO LICENSE" Denial](25_consumer_vs_enterprise_oauth_client_id_collision_and_license_denial.md)
-- [26. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
+- [26. Issue 24: Cross-Conversation Session Splicing & Transcript Reconstitution](26_cross_conversation_session_leakage_and_transcript_splicer.md)
+- [27. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
