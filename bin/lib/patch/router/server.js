@@ -1,4 +1,5 @@
 // Multi-Account Router: Loopback HTTP Proxy Server
+['stdout', 'stderr'].forEach(s => { if (process[s]?.on) process[s].on('error', e => { if (e && (e.code === 'EPIPE' || e.code === 'ERR_STREAM_DESTROYED')) return; }); });
 const http = require('http');
 const https = require('https');
 const { getBindings, setBinding, getActiveAccountEmail, logTraffic } = require('./bindings.js');

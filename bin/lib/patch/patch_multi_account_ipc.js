@@ -8,6 +8,8 @@ function patchIpcAndPreload(distDir) {
         let code = fs.readFileSync(ipcPath, 'utf8');
         if (!code.includes("electron_1.ipcMain.handle('multi-account:get-state'")) {
             const snippets = `
+    ['stdout', 'stderr'].forEach(s => { if (process[s]?.on) process[s].on('error', e => { if (e && (e.code === 'EPIPE' || e.code === 'ERR_STREAM_DESTROYED')) return; }); });
+    process.on('uncaughtException', e => { if (e && (e.code === 'EPIPE' || e.message?.includes('EPIPE'))) return; });
     electron_1.ipcMain.handle('multi-account:get-state', async () => {
         try {
             const router = require('./multi_account_router.js');

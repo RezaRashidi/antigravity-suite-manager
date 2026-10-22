@@ -2106,6 +2106,39 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             plan_file.write_text("# Authentic Task Plan Title\nSteps...")
             self.assertEqual(extract_brain_title(str(b_dir)), "Authentic Task Plan Title")
 
+    def test_patch_main_epipe_suppression_and_log_guard(self):
+        """Verifies patchMain applies EPIPE suppression to dist/main.js and electron-log console transport."""
+        import tempfile
+        import subprocess
+        with tempfile.TemporaryDirectory() as td:
+            dist = Path(td) / "dist"
+            dist.mkdir()
+            main_js = dist / "main.js"
+            main_js.write_text("const gotTheLock = electron_1.app.requestSingleInstanceLock();\nObject.assign(console, main_1.default.functions);")
+
+            log_dir = Path(td) / "node_modules" / "electron-log" / "src" / "node" / "transports"
+            log_dir.mkdir(parents=True)
+            console_js = log_dir / "console.js"
+            console_js.write_text("const consoleLogFn = consoleMethods[message.level] || consoleMethods.info;\n      consoleLogFn(...message.data);")
+
+            patch_script = Path(__file__).resolve().parent.parent / "bin" / "lib" / "patch" / "patch_main.js"
+            cmd = ["node", "-e", f"const {{ patchMain, unpatchMain }} = require('{patch_script}'); patchMain('{td}');"]
+            subprocess.run(cmd, check=True)
+
+            patched_main = main_js.read_text()
+            self.assertIn("EPIPE_SUPPRESSION_START", patched_main)
+            self.assertIn("__guardedConsoleWrite", patched_main)
+
+            patched_log = console_js.read_text()
+            self.assertIn("EPIPE_LOG_GUARD", patched_log)
+
+            # Test unpatchMain
+            cmd_unpatch = ["node", "-e", f"const {{ patchMain, unpatchMain }} = require('{patch_script}'); unpatchMain('{td}');"]
+            subprocess.run(cmd_unpatch, check=True)
+            unpatched_main = main_js.read_text()
+            self.assertNotIn("EPIPE_SUPPRESSION_START", unpatched_main)
+            self.assertNotIn("__guardedConsoleWrite", unpatched_main)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5,15 +5,23 @@ from __future__ import annotations
 import datetime
 import http.server
 import json
+import os
+import signal
+import sys
+import time
 import urllib.parse
 import urllib.request
 import webbrowser
 from typing import Optional
+from antigravity_suite.multi_account.lock import acquire_pid_lock, release_pid_lock
 from antigravity_suite.multi_account.models import AccountRecord, AccountToken
 from antigravity_suite.multi_account.tokens import (
     get_oauth_credentials, parse_jwt_claims
 )
-from antigravity_suite.multi_account.vault import save_account_to_vault
+from antigravity_suite.multi_account.vault import get_accounts_dir, save_account_to_vault
+
+acquire_login_lock = acquire_pid_lock
+release_login_lock = release_pid_lock
 
 
 class _OAuthHandler(http.server.BaseHTTPRequestHandler):
@@ -141,32 +149,37 @@ def exchange_auth_code(code: str, redirect_uri: str) -> Optional[AccountRecord]:
         return None
 
 
-def start_login_flow(open_browser: bool = True) -> Optional[AccountRecord]:
+def start_login_flow(open_browser: bool = True, timeout: int = 180) -> Optional[AccountRecord]:
+    acquire_login_lock()
     srv = http.server.HTTPServer(("127.0.0.1", 0), _OAuthHandler)
+    srv.timeout = timeout
     srv.auth_code = None  # type: ignore
     srv.account_record = None  # type: ignore
-    port = srv.server_port
-    redirect_uri = f"http://127.0.0.1:{port}/callback"
-    cid, _ = get_oauth_credentials()
-    scopes = (
-        "openid profile email "
-        "https://www.googleapis.com/auth/cloud-platform "
-        "https://www.googleapis.com/auth/userinfo.email "
-        "https://www.googleapis.com/auth/userinfo.profile "
-        "https://www.googleapis.com/auth/cclog "
-        "https://www.googleapis.com/auth/experimentsandconfigs"
-    )
-    params = {
-        "client_id": cid,
-        "redirect_uri": redirect_uri,
-        "response_type": "code",
-        "scope": scopes,
-        "access_type": "offline",
-        "prompt": "select_account consent",
-    }
-    url = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
-    if open_browser:
-        webbrowser.open(url)
-    srv.handle_request()
-    srv.server_close()
-    return getattr(srv, "account_record", None)
+    try:
+        port = srv.server_port
+        redirect_uri = f"http://127.0.0.1:{port}/callback"
+        cid, _ = get_oauth_credentials()
+        scopes = (
+            "openid profile email "
+            "https://www.googleapis.com/auth/cloud-platform "
+            "https://www.googleapis.com/auth/userinfo.email "
+            "https://www.googleapis.com/auth/userinfo.profile "
+            "https://www.googleapis.com/auth/cclog "
+            "https://www.googleapis.com/auth/experimentsandconfigs"
+        )
+        params = {
+            "client_id": cid,
+            "redirect_uri": redirect_uri,
+            "response_type": "code",
+            "scope": scopes,
+            "access_type": "offline",
+            "prompt": "select_account consent",
+        }
+        url = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
+        if open_browser:
+            webbrowser.open(url)
+        srv.handle_request()
+        return getattr(srv, "account_record", None)
+    finally:
+        srv.server_close()
+        release_login_lock()

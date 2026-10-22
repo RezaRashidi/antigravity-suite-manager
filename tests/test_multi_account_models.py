@@ -50,3 +50,14 @@ class TestMultiAccountModels(unittest.TestCase):
         self.assertNotIn("884354919052", cid)
         self.assertTrue(sec.startswith("GOCSPX-"))
         self.assertEqual(len(sec), 35)
+
+    def test_login_lock_lifecycle(self):
+        import os
+        from antigravity_suite.multi_account.oauth import acquire_login_lock, release_login_lock
+        from antigravity_suite.multi_account.vault import get_accounts_dir
+        acquire_login_lock()
+        pid_file = get_accounts_dir() / "login.pid"
+        self.assertTrue(pid_file.exists())
+        self.assertEqual(int(pid_file.read_text().strip()), os.getpid())
+        release_login_lock()
+        self.assertFalse(pid_file.exists())
