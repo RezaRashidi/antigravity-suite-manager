@@ -1,5 +1,4 @@
 // Multi-Account Router: Loopback HTTP Proxy Server
-['stdout', 'stderr'].forEach(s => { if (process[s]?.on) process[s].on('error', e => { if (e && (e.code === 'EPIPE' || e.code === 'ERR_STREAM_DESTROYED')) return; }); });
 const http = require('http');
 const https = require('https');
 const { getBindings, setBinding, getActiveAccountEmail, logTraffic } = require('./bindings.js');
@@ -94,6 +93,8 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
             });
 
             req.on('aborted', () => upReq.destroy());
+            req.on('error', () => upReq.destroy());
+            res.on('error', () => upReq.destroy());
             upReq.on('error', (err) => {
                 logTraffic(`Chat: [${cascadeId || 'general'}] !! Upstream Error: ${err.message}`);
                 if (!res.headersSent) { res.writeHead(502, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: err.message })); }

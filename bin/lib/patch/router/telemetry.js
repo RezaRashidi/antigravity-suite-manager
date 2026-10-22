@@ -8,6 +8,12 @@ let _quotaCache = { timestamp: 0, accounts: [] }, _cachedLs = null, _dirCache = 
 function findLanguageServerInfo() {
     if (_cachedLs && (Date.now() - _cachedLs.ts < 300000)) return _cachedLs;
     try {
+        let lsPort = null;
+        try {
+            const ls = require('../languageServer');
+            if (typeof ls?.getLsPort === 'function') lsPort = ls.getLsPort();
+        } catch (_) {}
+
         for (const pid of fs.readdirSync('/proc')) {
             if (!/^\d+$/.test(pid)) continue;
             try {
@@ -15,12 +21,23 @@ function findLanguageServerInfo() {
                 if (cmd.includes('language_server') && cmd.includes('--csrf_token')) {
                     const mCsrf = cmd.match(/--csrf_token\0([0-9a-fA-F-]+)/) || cmd.match(/--csrf_token=([0-9a-fA-F-]+)/);
                     if (!mCsrf) continue;
+
+                    if (lsPort && typeof lsPort === 'number') {
+                        _cachedLs = { ports: [lsPort], csrf: mCsrf[1], ts: Date.now() };
+                        return _cachedLs;
+                    }
+
+                    const mBridge = cmd.match(/--host_bridge_url=https?:\/\/127\.0\.0\.1:(\d+)/);
+                    const bridgePort = mBridge ? parseInt(mBridge[1], 10) : null;
+
                     const net = fs.readFileSync('/proc/' + pid + '/net/tcp', 'utf8'), ports = [];
                     for (const line of net.split('\n')) {
                         const m = line.trim().split(/\s+/);
-                        if (m[1] && m[1].startsWith('0100007F:')) {
+                        if (m[1] && m[1].startsWith('0100007F:') && m[3] === '0A') {
                             const p = parseInt(m[1].split(':')[1], 16);
-                            if (p && !ports.includes(p)) ports.push(p);
+                            if (p && p !== bridgePort && p > 1024 && p !== 6379 && p !== 27017 && !ports.includes(p)) {
+                                ports.push(p);
+                            }
                         }
                     }
                     if (ports.length) { _cachedLs = { ports, csrf: mCsrf[1], ts: Date.now() }; return _cachedLs; }

@@ -1,9 +1,4 @@
 // Antigravity Multi-Account IDE Main-Process Injection Hook
-['stdout', 'stderr'].forEach(s => {
-    if (process[s]?.on) process[s].on('error', e => { if (e && (e.code === 'EPIPE' || e.code === 'ERR_STREAM_DESTROYED')) return; });
-});
-process.on('uncaughtException', e => { if (e && (e.code === 'EPIPE' || e.message?.includes('EPIPE'))) return; });
-
 import * as electronModule from 'electron';
 import fs from 'fs';
 import path from 'path';

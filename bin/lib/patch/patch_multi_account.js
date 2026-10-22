@@ -4,14 +4,12 @@ const path = require('path');
 const { patchLanguageServer, unpatchLanguageServer } = require('./patch_multi_account_ls');
 const { patchIpcAndPreload, unpatchIpcAndPreload } = require('./patch_multi_account_ipc');
 const { patchUiInjection, unpatchUiInjection } = require('./patch_multi_account_ui_inject');
-const { patchMain, unpatchMain } = require('./patch_main');
 
 function patchMultiAccount(dir) {
     console.log('[Patch] Applying Multi-Account subsystem patches in:', dir);
     const distDir = path.join(dir, 'dist');
     if (!fs.existsSync(distDir)) return;
 
-    patchMain(dir);
     patchUiInjection(distDir);
     patchLanguageServer(distDir);
     patchIpcAndPreload(distDir);
@@ -27,7 +25,6 @@ function unpatchMultiAccount(dir) {
     const distDir = path.join(dir, 'dist');
     if (!fs.existsSync(distDir)) return;
 
-    unpatchMain(dir);
     unpatchLanguageServer(distDir);
     unpatchIpcAndPreload(distDir);
     unpatchUiInjection(distDir);
