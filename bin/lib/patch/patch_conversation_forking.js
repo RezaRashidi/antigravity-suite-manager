@@ -84,6 +84,14 @@ try {
                     f['enable-conversation-forking'] = true;
                     f['enable-fork-in-new-worktree'] = true;
                     f['enable-fork-at-historical-step'] = true;
+                    f['enable-aux-pane-redesign'] = true;
+                    f['enable-thought-editing'] = true;
+                    f['enable-thought-steering-from-selection'] = true;
+                    f['enable-battle-mode'] = true;
+                    f['enable-battle-contrib-variants'] = true;
+                    f['enable-battle-mode-custom-agents'] = true;
+                    f['jetski-autonomous-mode'] = true;
+                    f['labs-autonomous-mode'] = true;
                     window.localStorage.setItem(k, JSON.stringify(f));
                 } catch (_) {}
                 try {
@@ -106,6 +114,14 @@ try {
     f['enable-conversation-forking'] = true;
     f['enable-fork-in-new-worktree'] = true;
     f['enable-fork-at-historical-step'] = true;
+    f['enable-aux-pane-redesign'] = true;
+    f['enable-thought-editing'] = true;
+    f['enable-thought-steering-from-selection'] = true;
+    f['enable-battle-mode'] = true;
+    f['enable-battle-contrib-variants'] = true;
+    f['enable-battle-mode-custom-agents'] = true;
+    f['jetski-autonomous-mode'] = true;
+    f['labs-autonomous-mode'] = true;
     window.localStorage.setItem(k, JSON.stringify(f));
 } catch (_) {}
 /* FORK_EXP_PRELOAD_END */
