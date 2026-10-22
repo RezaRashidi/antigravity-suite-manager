@@ -34,7 +34,7 @@ get_selector_patch_js() {
                 chmod +x "${LOCAL_BIN}/antigravity-selector-patch.js" 2>/dev/null || true
             fi
             local cand_dir; cand_dir="$(dirname "$cand")"
-            if [ -d "${cand_dir}/lib/patch" ] && [ ! -d "${LOCAL_BIN}/lib/patch" ]; then
+            if [ -d "${cand_dir}/lib/patch" ]; then
                 mkdir -p "${LOCAL_BIN}/lib"
                 cp -rf "${cand_dir}/lib/patch" "${LOCAL_BIN}/lib/" 2>/dev/null || true
             fi
@@ -50,7 +50,7 @@ get_selector_patch_js() {
             mkdir -p "${LOCAL_BIN}"
             cp -f "$cand" "${LOCAL_BIN}/antigravity-selector-patch.js" 2>/dev/null || true
             chmod +x "${LOCAL_BIN}/antigravity-selector-patch.js" 2>/dev/null || true
-            if [ -d "${r_dir}/bin/lib/patch" ] && [ ! -d "${LOCAL_BIN}/lib/patch" ]; then
+            if [ -d "${r_dir}/bin/lib/patch" ]; then
                 mkdir -p "${LOCAL_BIN}/lib"
                 cp -rf "${r_dir}/bin/lib/patch" "${LOCAL_BIN}/lib/" 2>/dev/null || true
             fi

@@ -26,7 +26,7 @@ function patchIpcAndPreload(distDir) {
         try {
             const router = require('./multi_account_router.js');
             router.setBinding(cascadeId, email, model || '');
-            if (router.setActiveAccount) router.setActiveAccount(email);
+            if (router.setActiveAccount && (cascadeId === 'default' || cascadeId === '__default__' || cascadeId.startsWith('draft_') || cascadeId.startsWith('chat_'))) router.setActiveAccount(email);
             return true;
         } catch (_) { return false; }
     });

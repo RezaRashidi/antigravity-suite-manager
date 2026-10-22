@@ -55,7 +55,7 @@ function registerIpc() {
         });
         ipcMain.handle('multi-account:bind-cascade', async (_e, c, em, m) => {
             router.setBinding(c, em, m || '');
-            if ((c === '__default__' || c === 'default') && router.setActiveAccount) router.setActiveAccount(em);
+            if ((c === '__default__' || c === 'default' || c.startsWith('draft_') || c.startsWith('chat_')) && router.setActiveAccount) router.setActiveAccount(em);
             return true;
         });
         ipcMain.handle('multi-account:set-active-account', async (_e, em) => {

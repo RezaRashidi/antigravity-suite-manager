@@ -32,7 +32,7 @@ function handleApiRequest(req, res, bodyStr) {
             const data = JSON.parse(bodyStr);
             if (data.cascadeId && data.email) {
                 setBinding(data.cascadeId, data.email, data.model || '');
-                if (data.active && (data.cascadeId === '__default__' || data.cascadeId === 'default')) setActiveAccount(data.email);
+                if (data.active && (data.cascadeId === '__default__' || data.cascadeId === 'default' || data.cascadeId.startsWith('draft_') || data.cascadeId.startsWith('chat_'))) setActiveAccount(data.email);
             }
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ ok: true }));
@@ -79,7 +79,8 @@ function tryInterceptCommand(req, res, bodyStr, cascadeId) {
         const arg = cmd.replace('/switch', '').trim();
         const target = accounts.find((a, i) => String(i + 1) === arg || (a.email && a.email.toLowerCase().includes(arg.toLowerCase())));
         if (target) {
-            setBinding(cascadeId, target.email); setActiveAccount(target.email);
+            setBinding(cascadeId, target.email);
+            if (!cascadeId || cascadeId === '__default__' || cascadeId === 'default' || cascadeId.startsWith('draft_') || cascadeId.startsWith('chat_')) setActiveAccount(target.email);
             reply = `✓ **Switched conversation to:** \`${target.email}\`\n\nAll subsequent messages in this session will use this account.`;
             logTraffic(`[REMOTE_CMD] Switched cascade [${cascadeId}] to [${target.email}]`);
         } else { reply = `❌ Account not found for: \`${arg}\`\n\nType \`/accounts\` to view available accounts.`; }

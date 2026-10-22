@@ -40,8 +40,10 @@
         try {
             const targetInfo = window.__antigravityFindTarget ? window.__antigravityFindTarget() : null; if (!targetInfo?.target) return;
             const newCid = window.__antigravityDetectCascadeId ? window.__antigravityDetectCascadeId(targetInfo.target) : "default";
-            if (cascadeId && cascadeId.startsWith("chat_") && newCid && !newCid.startsWith("chat_") && state.bindings?.[cascadeId]) {
-                const em = state.bindings[cascadeId]; delete state.bindings[cascadeId]; state.bindings[newCid] = em;
+            const isDraftId = (id) => !id || id === "default" || id.startsWith("chat_") || id.startsWith("draft_");
+            if (cascadeId && isDraftId(cascadeId) && newCid && !isDraftId(newCid) && state.bindings?.[cascadeId]) {
+                const em = typeof state.bindings[cascadeId] === "object" ? state.bindings[cascadeId].email : state.bindings[cascadeId];
+                delete state.bindings[cascadeId]; state.bindings[newCid] = em;
                 void fetch(apiH() + "/api/multi-account/bind", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cascadeId: newCid, email: em }) });
             }
             cascadeId = newCid; const { target, insertAfter, floating } = targetInfo, active = getActive();
@@ -72,9 +74,12 @@
                 item.onclick = async (e) => {
                     if (e.target.closest(".agy-view-usage-link, .agy-usage-flyout")) return; e.stopPropagation();
                     if (em) {
+                        const isDraft = !cascadeId || cascadeId === "default" || cascadeId.startsWith("draft_") || cascadeId.startsWith("chat_");
                         try { if (window.antigravityMultiAccount) await Promise.race([window.antigravityMultiAccount.bindCascade?.(cascadeId, em), new Promise(r => setTimeout(r, 200))]); } catch (_) {}
-                        try { await fetch(apiH() + "/api/multi-account/bind", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cascadeId, email: em }) }); } catch (_) {}
-                        if (!state.bindings) state.bindings = {}; state.bindings[cascadeId] = em; render(); toast(`✓ Switched chat to ${em.split("@")[0]}`);
+                        try { await fetch(apiH() + "/api/multi-account/bind", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cascadeId, email: em, active: isDraft }) }); } catch (_) {}
+                        if (!state.bindings) state.bindings = {}; state.bindings[cascadeId] = em;
+                        if (isDraft) { state.active_default = em; state.bindings.__active_account = em; }
+                        render(); toast(`✓ Switched chat to ${em.split("@")[0]}`);
                     }
                     dd.classList.remove("open"); fly?.classList.remove("visible");
                 };
@@ -109,7 +114,14 @@
     document.addEventListener("click", (e) => {
         const dd = document.getElementById("agy-acc-dd"), pill = document.getElementById("antigravity-account-pill");
         if (dd && pill && !pill.contains(e.target)) { dd.classList.remove("open"); document.getElementById("agy-flyout")?.classList.remove("visible"); }
-        if (e.target.closest("[data-testid*=\"conversation\"], [class*=\"sidebar\"], [data-testid=\"new-conversation-button\"]")) { scheduleRender(); setTimeout(() => { scheduleRender(); void fetchState(true); }, 200); }
+        if (e.target.closest('[data-testid*="conversation"], [class*="sidebar"], [data-testid="new-conversation-button"], [aria-label*="New Chat" i], [title*="New Chat" i]')) {
+            if (e.target.closest('[data-testid="new-conversation-button"], [aria-label*="New Chat" i], [title*="New Chat" i]')) {
+                const cv = document.querySelector('[data-testid="conversation-view"]');
+                if (cv?.dataset?.agyDraftId) delete cv.dataset.agyDraftId;
+                if (cv?.dataset?.agySessionId) delete cv.dataset.agySessionId;
+            }
+            scheduleRender(); setTimeout(() => { scheduleRender(); void fetchState(true); }, 150);
+        }
     });
     const hookState = (fn) => function() { const r = fn.apply(this, arguments); scheduleRender(); void fetchState(); return r; };
     if (history.pushState) history.pushState = hookState(history.pushState); if (history.replaceState) history.replaceState = hookState(history.replaceState); ['popstate', 'hashchange', 'focus'].forEach(ev => window.addEventListener(ev, () => { scheduleRender(); void fetchState(true); }));

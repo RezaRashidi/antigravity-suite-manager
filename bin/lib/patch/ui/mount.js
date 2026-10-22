@@ -1,24 +1,46 @@
 // Antigravity Multi-Account UI: Target Detection and Cascade Identification
 (function initMountModule() {
     window.__antigravityDetectCascadeId = function(targetEl) {
-        const ref = targetEl || document.getElementById('antigravity-account-pill') || document.querySelector('[data-testid="model-selector-trigger"]');
-        const cv = ref?.closest('[data-testid="conversation-view"]') ||
-            Array.from(document.querySelectorAll('[data-testid="conversation-view"]')).find(el => el.offsetParent !== null || el.getBoundingClientRect().height > 0) ||
-            document.querySelector('[data-testid="conversation-view"]');
-        const cvId = cv?.getAttribute('data-cascade-id');
-        if (cvId && cvId !== 'conversation' && cvId !== 'default' && cvId.length >= 8) return cvId;
+        try {
+            const ref = targetEl || document.getElementById('antigravity-account-pill') || document.querySelector('[data-testid="model-selector-trigger"]');
+            const cv = ref?.closest('[data-testid="conversation-view"]') ||
+                Array.from(document.querySelectorAll('[data-testid="conversation-view"]')).find(el => el.offsetParent !== null || el.getBoundingClientRect().height > 0) ||
+                document.querySelector('[data-testid="conversation-view"]');
+            const cvId = cv?.getAttribute('data-cascade-id');
 
-        if (cv) {
-            if (!cv.dataset.agySessionId) cv.dataset.agySessionId = 'chat_' + Math.random().toString(36).slice(2, 10);
-            return cv.dataset.agySessionId;
-        }
+            const sel = document.querySelector(
+                '[data-testid*="conversation-row"][data-selected="true"], ' +
+                '[data-testid="conversation-row-sidebar"][data-selected="true"], ' +
+                '[data-testid="conversation-row-tab"][data-selected="true"], ' +
+                '[data-testid="conversation-row-sidebar"].bg-sidebar-secondary'
+            );
+            const selId = sel?.getAttribute('data-cascade-id');
 
-        const sel = document.querySelector('[data-testid="conversation-row-sidebar"][data-selected="true"], [data-testid="conversation-row-sidebar"].bg-sidebar-secondary');
-        const selId = sel?.getAttribute('data-cascade-id');
-        if (selId && selId !== 'conversation' && selId.length >= 8) return selId;
+            if (selId && selId !== 'conversation' && selId !== 'default' && selId.length >= 8) {
+                if (cv?.dataset?.agyDraftId) delete cv.dataset.agyDraftId;
+                if (cv?.dataset?.agySessionId) delete cv.dataset.agySessionId;
+                return selId;
+            }
 
-        const pm = window.location.pathname.match(/[a-f0-9-]{16,}/i) || window.location.hash.match(/[a-f0-9-]{16,}/i);
-        if (pm) return pm[0];
+            if (cvId && cvId !== 'conversation' && cvId !== 'default' && cvId.length >= 8) {
+                if (cv?.dataset?.agyDraftId) delete cv.dataset.agyDraftId;
+                if (cv?.dataset?.agySessionId) delete cv.dataset.agySessionId;
+                return cvId;
+            }
+
+            const pm = (window.location.pathname + window.location.hash).match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i) ||
+                       (window.location.pathname + window.location.hash).match(/[a-f0-9-]{16,}/i);
+            if (pm) {
+                if (cv?.dataset?.agyDraftId) delete cv.dataset.agyDraftId;
+                if (cv?.dataset?.agySessionId) delete cv.dataset.agySessionId;
+                return pm[1] || pm[0];
+            }
+
+            if (cv) {
+                if (!cv.dataset.agyDraftId) cv.dataset.agyDraftId = 'draft_' + Math.random().toString(36).slice(2, 10);
+                return cv.dataset.agyDraftId;
+            }
+        } catch (_) {}
         return 'default';
     };
 

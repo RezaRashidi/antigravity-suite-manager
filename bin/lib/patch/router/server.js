@@ -1,7 +1,7 @@
 // Multi-Account Router: Loopback HTTP Proxy Server
 const http = require('http');
 const https = require('https');
-const { getBindings, getActiveAccountEmail, logTraffic } = require('./bindings.js');
+const { getBindings, setBinding, getActiveAccountEmail, logTraffic } = require('./bindings.js');
 const { loadAllAccounts } = require('./accounts.js');
 const { refreshGoogleToken } = require('./oauth.js');
 const { handleApiRequest, tryInterceptCommand } = require('./api.js');
@@ -60,7 +60,14 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
             const isGen = req.url && (req.url.includes('streamGenerateContent') || req.url.includes('generateContent'));
             let token = null, boundEmail = 'Primary (Native)';
             if (isGen) {
-                boundEmail = (cascadeId && bindings[cascadeId]?.email) || getActiveAccountEmail(loadAllAccounts()) || 'Primary (Native)';
+                const accounts = loadAllAccounts();
+                const activeDefault = getActiveAccountEmail(accounts);
+                boundEmail = (cascadeId && bindings[cascadeId]?.email) || activeDefault || 'Primary (Native)';
+                if (cascadeId && !bindings[cascadeId] && boundEmail && boundEmail !== 'Primary (Native)') {
+                    setBinding(cascadeId, boundEmail);
+                    bindings[cascadeId] = { cascade_id: cascadeId, email: boundEmail, updated_at: new Date().toISOString() };
+                    logTraffic(`[AUTO_PIN] Chat: [${cascadeId}] permanently bound to: [${boundEmail}]`);
+                }
                 token = await resolveTokenForCascade(cascadeId);
                 const tokenFp = token ? `token: ...${token.slice(-6)}` : 'token: [Native LS Session]';
                 logTraffic(`ChatGen: [${cascadeId || 'general'}] -> Account: [${boundEmail}] | ${tokenFp} | Path: ${req.url}`);
