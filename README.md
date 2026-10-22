@@ -353,6 +353,18 @@ This tool:
 - Migrates associated background task logs (`.system_generated/tasks/`).
 - Atomically updates master step counts in `conversation_summaries.db`.
 
+### 3. Oversized Conversation Compactor
+
+When deep conversations grow beyond tens of thousands of steps, UI rendering and model serialization can suffer latency. The **Conversation Compactor** (`scripts/compact_conversation.py`) archives older historical turns into timestamped safety backups while promoting an authentic compaction checkpoint into the active conversation base:
+
+```bash
+# Dry-run inspection of compaction boundaries:
+python3 scripts/compact_conversation.py --cid <conversation-id> --base-step <start-step>
+
+# Live execution with automated pre-compact backup:
+python3 scripts/compact_conversation.py --cid <conversation-id> --base-step <start-step> --execute
+```
+
 
 ---
 
