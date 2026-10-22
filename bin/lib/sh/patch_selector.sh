@@ -194,11 +194,11 @@ check_and_prep_ide_ls() {
     local ls_orig="${bin_dir}/language_server_linux_x64.bin.orig"
 
     local is_elf=0
-    for cand in "$ls_bin" "$ls_orig" "$ls_path"; do
+    for cand in "$ls_bin" "$ls_orig" "$ls_path" "${APP_INSTALL_DIR}/resources/bin/language_server" "/opt/Antigravity-x64/resources/bin/language_server" "/opt/antigravity2/resources/bin/language_server"; do
         if [ -f "$cand" ]; then
-            if file -b "$cand" 2>/dev/null | grep -q "ELF"; then
+            if file -b "$cand" 2>/dev/null | grep -q "ELF" && ("$cand" --help >/dev/null 2>&1 || [ $? -ne 126 ]); then
                 is_elf=1
-                if [ "$cand" != "$ls_bin" ] && [ ! -f "$ls_bin" ]; then
+                if [ "$cand" != "$ls_bin" ]; then
                     cp -p "$cand" "$ls_bin"
                     chmod 755 "$ls_bin"
                 fi

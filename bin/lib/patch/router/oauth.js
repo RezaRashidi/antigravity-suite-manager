@@ -67,9 +67,14 @@ function getOAuthClientCredentials() {
     if (binCand && fs.existsSync(binCand)) {
         try {
             const raw = fs.readFileSync(binCand).toString('binary');
-            const mSec = raw.match(/GOCSPX-[a-zA-Z0-9_\-]{28}/);
-            const mCid = raw.match(/\d+-[a-z0-9]+\.apps\.googleusercontent\.com/);
-            if (mSec && mCid) return { clientId: mCid[0], clientSecret: mSec[0] };
+            const mSecs = raw.match(/GOCSPX-[a-zA-Z0-9_\-]{28}/g) || [];
+            const mCids = raw.match(/\d+-[a-z0-9]+\.apps\.googleusercontent\.com/g) || [];
+            for (let i = 0; i < Math.min(mCids.length, mSecs.length); i++) {
+                if (mCids[i].includes('1071006060591')) return { clientId: mCids[i], clientSecret: mSecs[i] };
+            }
+            for (let i = 0; i < Math.min(mCids.length, mSecs.length); i++) {
+                if (!mCids[i].includes('884354919052')) return { clientId: mCids[i], clientSecret: mSecs[i] };
+            }
         } catch (_) {}
     }
     return getDefaultCreds();

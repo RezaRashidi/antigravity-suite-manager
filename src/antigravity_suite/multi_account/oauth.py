@@ -148,11 +148,19 @@ def start_login_flow(open_browser: bool = True) -> Optional[AccountRecord]:
     port = srv.server_port
     redirect_uri = f"http://127.0.0.1:{port}/callback"
     cid, _ = get_oauth_credentials()
+    scopes = (
+        "openid profile email "
+        "https://www.googleapis.com/auth/cloud-platform "
+        "https://www.googleapis.com/auth/userinfo.email "
+        "https://www.googleapis.com/auth/userinfo.profile "
+        "https://www.googleapis.com/auth/cclog "
+        "https://www.googleapis.com/auth/experimentsandconfigs"
+    )
     params = {
         "client_id": cid,
         "redirect_uri": redirect_uri,
         "response_type": "code",
-        "scope": "openid profile email https://www.googleapis.com/auth/cloud-platform",
+        "scope": scopes,
         "access_type": "offline",
         "prompt": "select_account consent",
     }

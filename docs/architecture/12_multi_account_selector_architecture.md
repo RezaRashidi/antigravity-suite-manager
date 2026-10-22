@@ -63,6 +63,7 @@ The Multi-Account Selector subsystem enables seamless, per-conversation Google a
 
 ### 2.2 Account Vault & OAuth Management (`router/accounts.js`, `router/oauth.js`)
 - Discovers accounts from GNOME Keyring / Secret Service (`jetski-standalone-oauth-token`) and fallback token storage (`~/.config/antigravity/accounts.json` or `jetski-standalone-oauth-token`).
+- Prioritizes Google Antigravity Consumer OAuth Client ID (`1071006060591-...`) and official scopes (`cloud-platform`, `userinfo`, `cclog`, `experimentsandconfigs`) over enterprise GCP clients (`884354919052-...`) to guarantee valid quotas for all personal Gmail accounts.
 - Refreshes expired Google tokens automatically via Google OAuth endpoints with exponential backoff and persistent token rotation.
 
 ### 2.3 Live Quota & Telemetry Engine (`router/telemetry.js`)

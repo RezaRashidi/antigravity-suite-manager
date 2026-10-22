@@ -14,12 +14,15 @@ function isElfBinary(filePath) {
     try {
         if (!fs.existsSync(filePath)) return false;
         const stat = fs.statSync(filePath);
-        if (stat.size < 4) return false;
+        if (stat.size < 4096) return false;
         const fd = fs.openSync(filePath, 'r');
         const buf = Buffer.alloc(4);
         fs.readSync(fd, buf, 0, 4, 0);
         fs.closeSync(fd);
-        return buf[0] === 0x7f && buf[1] === 0x45 && buf[2] === 0x4c && buf[3] === 0x46;
+        if (buf[0] !== 0x7f || buf[1] !== 0x45 || buf[2] !== 0x4c || buf[3] !== 0x46) return false;
+        const { spawnSync } = require('child_process');
+        const res = spawnSync(filePath, ['--help'], { timeout: 1000, stdio: 'ignore' });
+        return res.status !== 126 && !res.error;
     } catch (_) {
         return false;
     }
@@ -104,6 +107,16 @@ function patchIdeLanguageServer(ideDir) {
     const lsOrig = path.join(binDir, 'language_server_linux_x64.bin.orig');
 
     if (!fs.existsSync(binDir)) return;
+
+    if (!isElfBinary(lsScript) && !isElfBinary(lsBin) && !isElfBinary(lsOrig)) {
+        const hubCands = ['/opt/Antigravity-x64/resources/bin/language_server', '/opt/antigravity2/resources/bin/language_server', '/opt/antigravity/resources/bin/language_server'];
+        const validHub = hubCands.find(p => isElfBinary(p));
+        if (validHub) {
+            copyFileSafe(validHub, lsBin);
+            copyFileSafe(validHub, lsOrig);
+            try { fs.chmodSync(lsBin, 0o755); fs.chmodSync(lsOrig, 0o755); } catch (_) {}
+        }
+    }
 
     if (isElfBinary(lsScript)) {
         if (!fs.existsSync(lsOrig)) {

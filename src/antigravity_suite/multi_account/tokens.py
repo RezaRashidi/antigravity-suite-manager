@@ -73,9 +73,12 @@ def get_oauth_credentials() -> Tuple[str, str]:
     if bin_cand and bin_cand.is_file():
         try:
             raw = bin_cand.read_bytes()
-            m_sec = re.search(rb"GOCSPX-[a-zA-Z0-9_\-]{28}", raw)
-            m_cid = re.search(rb"\d+-[a-z0-9]+\.apps\.googleusercontent\.com", raw)
-            if m_sec and m_cid: return m_cid.group(0).decode("utf-8"), m_sec.group(0).decode("utf-8")
+            m_sec = [s.decode("utf-8") for s in re.findall(rb"GOCSPX-[a-zA-Z0-9_\-]{28}", raw)]
+            m_cid = [c.decode("utf-8") for c in re.findall(rb"\d+-[a-z0-9]+\.apps\.googleusercontent\.com", raw)]
+            for c, s in zip(m_cid, m_sec):
+                if "1071006060591" in c: return c, s
+            for c, s in zip(m_cid, m_sec):
+                if "884354919052" not in c: return c, s
         except Exception: pass
     return _default_oauth_credentials()
 
