@@ -20,6 +20,12 @@ classifiers = [
 
 [project.scripts]
 antigravity-merge-history = "antigravity_suite.cli.merge:main"
+antigravity-cloud-sync = "antigravity_suite.cli.cloud_sync:main"
+antigravity-keyring = "antigravity_suite.cli.keyring:main"
+antigravity-migration = "antigravity_suite.cli.migration:main"
+antigravity-benchmark = "antigravity_suite.benchmark.cli:main"
+antigravity-multi-account = "antigravity_suite.multi_account.cli:main"
+antigravity-detect = "antigravity_suite.detect.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
