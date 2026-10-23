@@ -444,12 +444,18 @@ python3 scripts/compact_conversation.py --cid <conversation-id> --base-step <sta
 | `keyring` | `creds` | Configure & switch credential storage (GNOME Keyring vs Normal File Storage) |
 | `set-icons` | `icons` | Configure or re-apply icons (Black/White and Acc 2 Recolor) |
 | `f5` | | Apply manual F5 reload sync patch |
+| `unpatch-f5` | | Revert F5 reload sync patch |
 | `rtl` | | Apply / re-apply Persian & Arabic RTL patch |
+| `unpatch-rtl` | | Revert Persian & Arabic RTL patch |
+| `fork` | `patch-fork` | Apply conversation forking patch to App & IDE |
+| `unpatch-fork` | | Revert conversation forking patch |
 | `create-instance` | `add` | Create arbitrary App or IDE instances with shared/isolated history |
 | `list-instances` | `list` | Show all created App and IDE instances and their status |
 | `remove-instance` | `remove` | Delete an instance and cleanly archive its profile |
 | `benchmark` | `bench` | Benchmark AI response latency, IPv6/proxy ping, and context bloat |
-| `backups` | | Manage safety backups (list, create, restore) |
+| `backups` | | Manage safety backups (list, create [app\|ide\|history\|all], restore) |
+| `clean-data` | `delete-data` | Delete/clean app, IDE, history, or all data |
+| `uninstall [all\|app\|ide]` | | Cleanly uninstall Antigravity apps (with `--with-data` or `--keep-data`) |
 
 ---
 

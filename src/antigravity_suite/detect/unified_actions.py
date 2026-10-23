@@ -64,9 +64,26 @@ def handle_unified_patches_and_reinstall(choice: str, u_item: Dict[str, Any], en
     elif choice.upper() == "R":
         print(f"\n{CYAN}Applying RTL patch to {u_item['type']} at {eng_p}...{NC}")
         subprocess.run(["bash", manage_sh, "rtl", c_type, flag, eng_p, "--force"], check=False)
+    elif choice.upper() in ["UNPATCH-RTL", "UR"]:
+        print(f"\n{CYAN}Reverting RTL patch from {u_item['type']} at {eng_p}...{NC}")
+        subprocess.run(["bash", manage_sh, "unpatch-rtl", c_type, flag, eng_p], check=False)
     elif choice.upper() == "F" and "IDE" not in u_item.get("type", ""):
         print(f"\n{CYAN}Applying F5 reload & isolation patch to {eng_p}...{NC}")
         subprocess.run(["bash", manage_sh, "f5", "--app-dir", eng_p, "--force"], check=False)
+    elif choice.upper() in ["UNPATCH-F5", "UF"] and "IDE" not in u_item.get("type", ""):
+        print(f"\n{CYAN}Reverting F5 reload patch from {eng_p}...{NC}")
+        subprocess.run(["bash", manage_sh, "unpatch-f5", "--app-dir", eng_p], check=False)
+    elif choice.upper() == "J":
+        inst_name = u_item.get("name", u_item.get("type", "Instance"))
+        print(f"\n{CYAN}--- Conversation Forking Patch ({inst_name}) ---{NC}")
+        print("  [1] Apply / Update Forking Patch\n  [2] Revert / Unpatch Forking Patch\n  [0] Cancel")
+        j_c = input("Select action [1-2, Default: 1]: ").strip()
+        if j_c in ["1", ""]:
+            print(f"\n{CYAN}Applying Conversation Forking patch to {u_item['type']} at {eng_p}...{NC}")
+            subprocess.run(["bash", manage_sh, "fork", c_type, flag, eng_p, "--force"], check=False)
+        elif j_c == "2":
+            print(f"\n{CYAN}Reverting Conversation Forking patch from {u_item['type']} at {eng_p}...{NC}")
+            subprocess.run(["bash", manage_sh, "unpatch-fork", c_type, flag, eng_p], check=False)
     elif choice.upper() == "T":
         inst_name = u_item.get("name", u_item.get("type", "Instance"))
         print(f"\n{CYAN}--- Multi-Account Selector Patch ({inst_name}) ---{NC}")

@@ -37,6 +37,7 @@ function findPrimaryTokenFiles() {
 function readTokenFromKeyring() {
     try {
         const rh = process.env.REAL_HOME || os.homedir();
+        if (fs.existsSync(path.join(rh, '.gemini', 'cache', 'antigravity-keyring-unavailable'))) return null;
         const py = process.platform === 'win32' ? 'python' : (process.env.PYTHON || 'python3');
         const sDirs = [
             process.env.ANTIGRAVITY_SUITE_DIR,

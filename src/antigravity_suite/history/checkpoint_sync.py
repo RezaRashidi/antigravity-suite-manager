@@ -4,13 +4,13 @@ Checkpoint Step (step_type = 23) Synchronization and Synthesis Engine.
 
 from __future__ import annotations
 
-import json
 import os
 import sqlite3
 from pathlib import Path
 from typing import Optional, Union
 
 from antigravity_suite.history.extractor_checkpoint import parse_step23_checkpoint_title
+from antigravity_suite.history.title_fallback import is_workspace_fallback_title
 from antigravity_suite.history.title_sanitizer import is_clean_title
 from antigravity_suite.proto.wire_varint import encode_tag_bytes, encode_tag_uint
 
@@ -42,11 +42,12 @@ def ensure_db_checkpoint_title(
     prompt: str = "",
     transcript_path: Optional[Union[str, Path]] = None,
     allow_fallback: bool = False,
+    workspace_uri: Optional[str] = None,
 ) -> bool:
     """Ensures conversation SQLite database contains a step_type = 23 checkpoint reflecting authentic title."""
     if not title or not is_clean_title(title) or title in ["Conversation", "Untitled Conversation", "---"] or not os.path.isfile(str(db_path)):
         return False
-    if not allow_fallback and (title.endswith(" Chat") or title.startswith("Desktop:")):
+    if not allow_fallback and is_workspace_fallback_title(title, workspace_uri):
         return False
     try:
         with sqlite3.connect(str(db_path), timeout=15.0) as conn:
@@ -58,7 +59,7 @@ def ensure_db_checkpoint_title(
                 old_t = parse_step23_checkpoint_title(last_payload)
                 if old_t == title:
                     return False
-                if old_t and (title.endswith(" Chat") or not is_clean_title(title)):
+                if old_t and (is_workspace_fallback_title(title, workspace_uri) or not is_clean_title(title)):
                     return False
                 cur.execute("SELECT metadata FROM steps WHERE idx = ?;", (last_idx,))
                 meta_row = cur.fetchone()
@@ -79,4 +80,3 @@ def ensure_db_checkpoint_title(
     except Exception:
         return False
     return True
-

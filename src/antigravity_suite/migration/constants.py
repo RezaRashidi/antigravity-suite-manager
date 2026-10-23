@@ -27,6 +27,11 @@ AGENTS_DIR = os.path.join(REAL_HOME, ".agents")
 ANTIGRAVITY_CONF_DIR = os.path.join(REAL_HOME, ".config", "antigravity")
 BACKUPS_DIR = os.path.join(ANTIGRAVITY_CONF_DIR, "backups")
 LOCAL_BIN = os.path.join(REAL_HOME, ".local", "bin")
+APP_CONFIG_DIR = os.path.join(REAL_HOME, ".config", "Antigravity")
+APP_PROFILE2_DIR = os.path.join(REAL_HOME, ".antigravity-profile2")
+IDE_CONFIG_DIR = os.path.join(REAL_HOME, ".config", "Antigravity IDE")
+IDE_GEMIDE_DIR = os.path.join(REAL_HOME, ".gemide")
+IDE_GEMINI_DIR = os.path.join(REAL_HOME, ".gemini-ide")
 
 GREEN, BLUE, YELLOW, RED, CYAN, NC, BOLD = "\033[1;32m", "\033[1;38;5;75m", "\033[1;33m", "\033[1;31m", "\033[1;36m", "\033[0m", "\033[1m"
 

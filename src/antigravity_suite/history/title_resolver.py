@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Iterable, Optional, Set, Tuple
 
+from antigravity_suite.history.title_fallback import is_workspace_fallback_title
 from antigravity_suite.history.title_sanitizer import (
     is_clean_title,
     is_prompt_text,
@@ -17,20 +18,22 @@ from antigravity_suite.history.title_sanitizer import (
 )
 
 
-def pick_first_valid_title(candidates: Iterable[Optional[str]], prompt_cands: Set[str]) -> Optional[str]:
-    """Iterates through candidates and returns the first clean, non-prompt title."""
-    generic_names = {"Conversation", "Untitled Conversation", "IDE Conversation", "---"}
+def pick_first_valid_title(
+    candidates: Iterable[Optional[str]],
+    prompt_cands: Set[str],
+    fallback_workspace: Optional[str] = None,
+) -> Optional[str]:
+    """Iterates through candidates and returns the first clean, non-prompt, non-fallback title."""
     for cand in candidates:
         if not cand or not isinstance(cand, str):
             continue
         s = cand.strip()
-        is_fb = s.endswith(" Chat") or s.startswith("Desktop:") or s in generic_names
         if (
             s
             and is_clean_title(s)
             and not is_prompt_text(s, prompt_cands)
             and not is_raw_prompt_sentence(s, prompt_cands)
-            and not is_fb
+            and not is_workspace_fallback_title(s, fallback_workspace)
         ):
             return s
     return None
@@ -44,11 +47,11 @@ def resolve_best_title(
     fallback_workspace: Optional[str] = None,
 ) -> Tuple[str, str]:
     """Selects authentic title and reports the winning source."""
-    existing_clean = pick_first_valid_title(existing_candidates, prompt_cands)
+    existing_clean = pick_first_valid_title(existing_candidates, prompt_cands, fallback_workspace)
     if existing_clean:
         return existing_clean, "existing_clean"
 
-    llm_clean = pick_first_valid_title(llm_candidates, prompt_cands)
+    llm_clean = pick_first_valid_title(llm_candidates, prompt_cands, fallback_workspace)
     if llm_clean:
         return llm_clean, "llm_summary"
 
@@ -57,6 +60,7 @@ def resolve_best_title(
         and is_clean_title(clean_artifact_title)
         and not is_prompt_text(clean_artifact_title, prompt_cands)
         and not is_raw_prompt_sentence(clean_artifact_title, prompt_cands)
+        and not is_workspace_fallback_title(clean_artifact_title, fallback_workspace)
     ):
         return clean_artifact_title.strip(), "brain_artifact"
 

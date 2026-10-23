@@ -35,7 +35,12 @@ manage_backups() {
     case "$act" in
         list)    python3 "$m_script" list-backups ;;
         create)  python3 "$m_script" create-backup "$@" ;;
+        app)     python3 "$m_script" create-backup --category app "$@" ;;
+        ide)     python3 "$m_script" create-backup --category ide "$@" ;;
+        history) python3 "$m_script" create-backup --category history "$@" ;;
+        suite)   python3 "$m_script" create-backup --category suite "$@" ;;
+        all)     python3 "$m_script" create-backup --category all "$@" ;;
         restore) python3 "$m_script" restore-backup "$@" ;;
-        *)       echo "Usage: $(basename "$0") backups [list|create|restore <path>]" ;;
+        *)       python3 "$m_script" create-backup "$act" "$@" ;;
     esac
 }

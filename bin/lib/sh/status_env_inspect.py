@@ -23,7 +23,8 @@ def check_keyring_storage(real_home: str, local_bin: str, profile2_dir: str) -> 
             with open(app1_l, "r", errors="ignore") as f: app1_flag = "--password-store=basic" in f.read()
         except Exception: pass
     app1_norm = (app1_cache or app1_flag)
-    app2_exists = os.path.isdir(profile2_dir)
+    app2_lnch = os.path.join(local_bin, "antigravity-acc2")
+    app2_exists = os.path.isdir(profile2_dir) and (os.path.isfile(app2_lnch) or os.path.islink(os.path.join(profile2_dir, ".gemini", "antigravity")))
     app2_norm = os.path.isfile(os.path.join(profile2_dir, ".gemini", "cache", "antigravity-keyring-unavailable"))
 
     if not app2_exists:
@@ -34,11 +35,12 @@ def check_keyring_storage(real_home: str, local_bin: str, profile2_dir: str) -> 
 
 
 def check_account2(profile2_dir: str) -> str:
-    if not profile2_dir or not os.path.isdir(profile2_dir):
+    c = os.path.islink(os.path.join(profile2_dir, '.gemini', 'antigravity')) if profile2_dir else False
+    if not profile2_dir or not os.path.isdir(profile2_dir) or not c:
         return f"{Y}Not Configured (Standalone profile 1){NC}"
     k = os.path.isfile(os.path.join(profile2_dir, '.gemini', 'cache', 'antigravity-keyring-unavailable'))
-    c, f = os.path.islink(os.path.join(profile2_dir, '.gemini', 'antigravity')), os.path.exists(os.path.join(profile2_dir, '.gemini', 'config'))
-    return f"{G}Configured (Isolated Keyring + Shared History){NC}" if (k and c and f) else f"{Y}Incomplete Setup{NC}"
+    f = os.path.exists(os.path.join(profile2_dir, '.gemini', 'config'))
+    return f"{G}Configured (Isolated Keyring + Shared History){NC}" if (k and f) else f"{Y}Incomplete Setup{NC}"
 
 
 def check_history_sharing(profile2_dir: str) -> str:

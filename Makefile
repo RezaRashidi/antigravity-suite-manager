@@ -29,6 +29,7 @@ install: build
 	install -m 755 bin/antigravity-multi-account.py $(BINDIR)/antigravity-multi-account.py 2>/dev/null || true
 	install -m 755 bin/antigravity-f5-patch.js $(BINDIR)/antigravity-f5-patch.js 2>/dev/null || true
 	install -m 755 bin/antigravity-selector-patch.js $(BINDIR)/antigravity-selector-patch.js 2>/dev/null || true
+	install -m 755 bin/antigravity-fork-patch.js $(BINDIR)/antigravity-fork-patch.js 2>/dev/null || true
 	install -m 755 bin/scale_icon $(BINDIR)/scale_icon
 	mkdir -p $(BINDIR)/lib
 	cp -rf bin/lib/* $(BINDIR)/lib/ 2>/dev/null || true

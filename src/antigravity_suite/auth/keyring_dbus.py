@@ -48,7 +48,7 @@ def list_keyring_items() -> List[Dict[str, Any]]:
     return found
 
 
-def get_token_from_keyring() -> Optional[str]:
+def get_token_from_keyring(interactive: bool = False) -> Optional[str]:
     """Extracts the raw OAuth token stored in GNOME Keyring."""
     bus, svc = get_dbus_secrets_service()
     if not svc:
@@ -58,7 +58,7 @@ def get_token_from_keyring() -> Optional[str]:
         session = svc.OpenSession("plain", "")[1]
         search = svc.SearchItems({'service': 'gemini', 'username': 'antigravity'})
         items = list(search[0])
-        if not items and search[1]:
+        if not items and search[1] and interactive:
             unlock_res = svc.Unlock(search[1])
             items.extend(unlock_res[0])
             if not items and len(unlock_res) > 1 and str(unlock_res[1]) != "/":

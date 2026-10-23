@@ -67,6 +67,32 @@ try {
         webFrame.executeJavaScriptInIsolatedWorld(0, [{
             code: \`(function() {
                 try {
+                    const origSet = Map.prototype.set;
+                    const origGet = Map.prototype.get;
+                    Map.prototype.set = function(key, val) {
+                        if (key === 'battleModeFeature' && (!val || val === null)) {
+                            val = { enabled: true };
+                        }
+                        if (key === 'inputComponent' && val && typeof val === 'object') {
+                            val.showInternalModesDropdown = true;
+                            val.showAutonomousModeToggle = true;
+                        }
+                        return origSet.call(this, key, val);
+                    };
+                    Map.prototype.get = function(key) {
+                        const val = origGet.call(this, key);
+                        if (key === 'battleModeFeature' && (!val || val === null)) {
+                            return { enabled: true };
+                        }
+                        if (key === 'inputComponent' && val && typeof val === 'object') {
+                            val.showInternalModesDropdown = true;
+                            val.showAutonomousModeToggle = true;
+                            return val;
+                        }
+                        return val;
+                    };
+                } catch (_) {}
+                try {
                     let _cfg = window.__APP_CONFIG__;
                     if (_cfg && typeof _cfg === 'object') _cfg.devMode = true;
                     Object.defineProperty(window, '__APP_CONFIG__', {
@@ -78,6 +104,13 @@ try {
                             _cfg = val;
                         }
                     });
+                    const envKey = 'jetski.developer.featureEnvironmentOverride';
+                    let env = {};
+                    try { env = JSON.parse(window.localStorage.getItem(envKey) || '{}'); } catch (_) {}
+                    env.enabled = true;
+                    env.userCohort = 'google';
+                    window.localStorage.setItem(envKey, JSON.stringify(env));
+
                     const k = 'jetski.developer.customFlagOverrides';
                     let f = {};
                     try { f = JSON.parse(window.localStorage.getItem(k) || '{}'); } catch (_) {}
@@ -108,6 +141,13 @@ try {
     }
 } catch (_) {}
 try {
+    const envKey = 'jetski.developer.featureEnvironmentOverride';
+    let env = {};
+    try { env = JSON.parse(window.localStorage.getItem(envKey) || '{}'); } catch (_) {}
+    env.enabled = true;
+    env.userCohort = 'google';
+    window.localStorage.setItem(envKey, JSON.stringify(env));
+
     const k = 'jetski.developer.customFlagOverrides';
     let f = {};
     try { f = JSON.parse(window.localStorage.getItem(k) || '{}'); } catch (_) {}

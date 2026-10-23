@@ -6,6 +6,12 @@ from __future__ import annotations
 
 import argparse
 import sys
+from antigravity_suite.migration.cleanup import (
+    delete_all_data,
+    delete_app_data,
+    delete_history_data,
+    delete_ide_data,
+)
 from antigravity_suite.migration.export_all import export_all
 from antigravity_suite.migration.export_history import export_history
 from antigravity_suite.migration.export_suite import export_suite
@@ -30,11 +36,35 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("list-backups", help="List available local snapshots and backups")
 
     p_cr_b = sub.add_parser("create-backup", help="Create an instant safety snapshot")
-    p_cr_b.add_argument("--category", default="all", choices=["history", "suite", "all"])
+    p_cr_b.add_argument("--category", default="all", choices=["app", "ide", "history", "suite", "all"])
     p_cr_b.add_argument("--label", default="manual")
+
+    p_clean = sub.add_parser("clean-data", help="Clean or purge Antigravity application data")
+    p_clean.add_argument("target", choices=["app", "ide", "history", "all"])
+    p_clean.add_argument("--no-backup", action="store_true", help="Skip pre-cleanup safety backup")
+    p_clean.add_argument("-y", "--yes", action="store_true", help="Bypass interactive confirmation")
 
     sub.add_parser("restore-backup", help="Restore state from backup").add_argument("backup_path")
     return parser
+
+
+def handle_clean_data(parsed: argparse.Namespace) -> None:
+    target = parsed.target
+    backup = not parsed.no_backup
+    if not parsed.yes:
+        conf = input(f"Are you sure you want to clean/delete '{target}' data? [y/N]: ").strip().lower()
+        if conf not in ["y", "yes"]:
+            print("Operation aborted.")
+            return
+
+    if target == "app":
+        delete_app_data(backup=backup)
+    elif target == "ide":
+        delete_ide_data(backup=backup)
+    elif target == "history":
+        delete_history_data(backup=backup)
+    elif target == "all":
+        delete_all_data(backup=backup)
 
 
 def main(args: list[str] | None = None) -> int:
@@ -54,6 +84,7 @@ def main(args: list[str] | None = None) -> int:
         "import-all": lambda: import_all(parsed.archive),
         "list-backups": lambda: list_all_backups(),
         "create-backup": lambda: create_safety_backup(category=parsed.category, label=parsed.label),
+        "clean-data": lambda: handle_clean_data(parsed),
         "restore-backup": lambda: restore_backup(parsed.backup_path),
     }
     actions[parsed.command]()

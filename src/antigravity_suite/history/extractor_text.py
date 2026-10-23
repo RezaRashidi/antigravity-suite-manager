@@ -15,6 +15,7 @@ from antigravity_suite.history.extractor_brain import extract_brain_title, find_
 from antigravity_suite.history.extractor_checkpoint import parse_step23_checkpoint_title
 from antigravity_suite.history.extractor_cleaners import get_file_stat
 from antigravity_suite.history.synthesizer import parse_step14_user_prompt
+from antigravity_suite.history.title_fallback import is_workspace_fallback_title
 
 _EXTRACT_CACHE: Dict[Tuple[str, int, int, str, int, int], Tuple[str, str]] = {}
 
@@ -71,7 +72,7 @@ def extract_conv_text(db_path: Union[str, Path], transcript_path: Union[str, Pat
                 for cp_row in cur.execute("SELECT step_payload FROM steps WHERE step_type = 23 ORDER BY idx DESC LIMIT 5;").fetchall():
                     if cp_row and cp_row[0]:
                         cand = parse_step23_checkpoint_title(cp_row[0]) or ""
-                        if cand and not cand.endswith(" Chat") and cand not in ["Conversation", "Untitled Conversation"]:
+                        if cand and not is_workspace_fallback_title(cand):
                             checkpoint_title = cand
                             break
                 if not first_p or not latest_p:

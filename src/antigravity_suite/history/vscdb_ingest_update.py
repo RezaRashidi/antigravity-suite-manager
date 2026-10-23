@@ -11,6 +11,7 @@ from typing import Dict, Optional, Set
 from antigravity_suite.history.extractor import is_clean_title, is_prompt_text, sync_annotation_file
 from antigravity_suite.history.projects import get_project_id_for_workspace, normalize_workspace_uri
 from antigravity_suite.history.sqlite_store import get_actual_steps_count
+from antigravity_suite.history.title_fallback import is_workspace_fallback_title
 from antigravity_suite.history.vscdb_meta import get_db_trajectory_meta
 from antigravity_suite.proto.cascade import build_cascade_summary, get_last_user_step_index
 
@@ -28,7 +29,7 @@ def update_existing_from_ide(
     pinned_set: Optional[Set[str]] = None,
 ) -> bool:
     """Updates an existing conversation summary if IDE has an authentic title."""
-    is_fb = curr_t in ["Conversation", "Untitled Conversation"] or curr_t.endswith(" Chat")
+    is_fb = is_workspace_fallback_title(curr_t)
     if not (ide_title and (not curr_t or not is_clean_title(curr_t) or is_prompt_text(curr_t, conv_prompts) or is_fb)):
         return False
 
@@ -64,11 +65,11 @@ def update_existing_from_ide(
     )
     all_summaries[u_id] = new_bin
     cur.execute("UPDATE conversation_summaries SET title=?, raw_summary=? WHERE conversation_id=?", (ide_title, new_bin, u_id))
-    is_fb_ide = ide_title.endswith(" Chat") or ide_title.startswith("Desktop:") or ide_title in ["Conversation", "Untitled Conversation"]
+    is_fb_ide = is_workspace_fallback_title(ide_title, norm_ws)
     if ide_title and not is_fb_ide:
         sync_annotation_file(master_conv_dir.parent, u_id, ide_title, pinned=is_pin, archived=is_arc, force=True)
         from antigravity_suite.history.checkpoint_sync import ensure_db_checkpoint_title
-        ensure_db_checkpoint_title(db_p, u_id, ide_title)
+        ensure_db_checkpoint_title(db_p, u_id, ide_title, workspace_uri=norm_ws)
     elif is_pin or is_arc:
         sync_annotation_file(master_conv_dir.parent, u_id, "", pinned=is_pin, archived=is_arc, force=False)
     return True

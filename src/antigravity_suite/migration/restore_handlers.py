@@ -7,6 +7,7 @@ from __future__ import annotations
 import glob
 import os
 import shutil
+
 from antigravity_suite.migration.constants import (
     AGENTS_DIR,
     ANTIGRAVITY_CONF_DIR,
@@ -17,6 +18,14 @@ from antigravity_suite.migration.constants import (
     log_info,
     log_success,
 )
+from antigravity_suite.migration.restore_apps import restore_app_files, restore_ide_files
+
+__all__ = [
+    "restore_app_files",
+    "restore_history_files",
+    "restore_ide_files",
+    "restore_suite_files",
+]
 
 
 def restore_history_files(hist_dir: str) -> None:
@@ -54,12 +63,6 @@ def restore_history_files(hist_dir: str) -> None:
                 if os.path.isdir(item): shutil.copytree(item, d, dirs_exist_ok=True)
                 else: shutil.copy2(item, d)
 
-    for ext in ["-wal", "-shm"]:
-        wp, bwp = os.path.join(master_gemini, f"conversation_summaries.db{ext}"), os.path.join(hist_dir, f"conversation_summaries.db{ext}")
-        if os.path.exists(wp) and not os.path.exists(bwp):
-            try: os.remove(wp)
-            except Exception: pass
-
     for sum_f in glob.glob(os.path.join(hist_dir, "*summaries*")):
         shutil.copy2(sum_f, os.path.join(master_gemini, os.path.basename(sum_f)))
 
@@ -83,12 +86,9 @@ def restore_suite_files(suite_dir: str) -> None:
     if os.path.isdir(tokens_src):
         for sn, dp in [
             ("gemini-token", os.path.join(gemini_dir, "jetski-standalone-oauth-token")),
-            (".gemini-token", os.path.join(gemini_dir, "jetski-standalone-oauth-token")),
             ("acc2-token", os.path.join(REAL_HOME, ".antigravity-profile2", ".gemini", "jetski-standalone-oauth-token")),
             ("gemini-ide-token", os.path.join(REAL_HOME, ".gemini-ide", "jetski-standalone-oauth-token")),
-            (".gemini-ide-token", os.path.join(REAL_HOME, ".gemini-ide", "jetski-standalone-oauth-token")),
             ("gemide-token", os.path.join(REAL_HOME, ".gemide", "jetski-standalone-oauth-token")),
-            (".gemide-token", os.path.join(REAL_HOME, ".gemide", "jetski-standalone-oauth-token")),
         ]:
             if os.path.isfile(os.path.join(tokens_src, sn)):
                 os.makedirs(os.path.dirname(dp), exist_ok=True)

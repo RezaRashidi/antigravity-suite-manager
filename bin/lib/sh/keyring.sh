@@ -32,13 +32,23 @@ set_keyring_mode() {
 }
 
 configure_keyring_interactive() {
+    local has_acc2=false
+    [ -f "${LOCAL_BIN}/antigravity-acc2" ] && [ -d "${PROFILE2_DIR}" ] && has_acc2=true
+
     echo -e "${CYAN}=====================================================${NC}"
     echo -e "${CYAN}   Configure Keyring & Credential Storage Mode       ${NC}"
     echo -e "${CYAN}=====================================================${NC}"
-    echo "1) Switch Account 1 to Normal File Storage (Bypass GNOME Keyring)"
-    echo "2) Switch Account 1 to GNOME Keyring (Secret Service)"
-    echo "3) Switch Account 2 to Normal File Storage (Bypass GNOME Keyring)"
-    echo "4) Switch Account 2 to GNOME Keyring (Secret Service)"
+    if [ "$has_acc2" = true ]; then
+        echo "1) Switch Account 1 to Normal File Storage (Bypass GNOME Keyring)"
+        echo "2) Switch Account 1 to GNOME Keyring (Secret Service)"
+        echo "3) Switch Account 2 to Normal File Storage (Bypass GNOME Keyring)"
+        echo "4) Switch Account 2 to GNOME Keyring (Secret Service)"
+    else
+        echo "1) Switch Antigravity App to Normal File Storage (Bypass GNOME Keyring)"
+        echo "2) Switch Antigravity App to GNOME Keyring (Secret Service)"
+        echo "3) Switch Antigravity IDE to Normal File Storage (Bypass GNOME Keyring)"
+        echo "4) Switch Antigravity IDE to GNOME Keyring (Secret Service)"
+    fi
     echo "5) Switch ALL Instances to Normal File Storage (Bypass Everywhere)"
     echo "6) Switch ALL Instances to GNOME Keyring"
     echo "7) Purge Antigravity Credentials from GNOME Keyring"
@@ -50,8 +60,8 @@ configure_keyring_interactive() {
     case "$kchoice" in
         1) set_keyring_mode "app1" "normal" ;;
         2) set_keyring_mode "app1" "gnome" ;;
-        3) set_keyring_mode "app2" "normal" ;;
-        4) set_keyring_mode "app2" "gnome" ;;
+        3) [ "$has_acc2" = true ] && set_keyring_mode "app2" "normal" || set_keyring_mode "ide" "normal" ;;
+        4) [ "$has_acc2" = true ] && set_keyring_mode "app2" "gnome" || set_keyring_mode "ide" "gnome" ;;
         5) set_keyring_mode "all" "normal" ;;
         6) set_keyring_mode "all" "gnome" ;;
         7) keyring_purge ;;

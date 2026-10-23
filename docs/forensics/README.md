@@ -32,4 +32,7 @@ This document records the end-to-end diagnostic methodology, reverse-engineering
 - [24. Issue 22: Mid-Session Title Mutation & Test Suite Isolation Leak](24_mid_session_title_mutation_and_test_isolation_leak.md)
 - [25. Issue 23: Consumer vs. Enterprise OAuth Client ID Collision & "NO LICENSE" Denial](25_consumer_vs_enterprise_oauth_client_id_collision_and_license_denial.md)
 - [26. Issue 24: Cross-Conversation Session Splicing & Transcript Reconstitution](26_cross_conversation_session_leakage_and_transcript_splicer.md)
-- [27. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
+- [27. Issue 25: Workspace Fallback Title Collision & Multilingual Prompt Synthesis](27_workspace_fallback_title_collision_and_multilingual_prompt_synthesis.md)
+- [28. Issue 26: Native "Open in IDE" Titlebar Button Discovery, Reverse Engineering & Independent Patch](28_native_open_in_ide_button_restoration_and_patch.md)
+- [29. Issue 27: GNOME Keyring Unlock Prompt Regression, Phantom Account 2 Isolation & IDE URI Routing](29_keyring_unlock_prompt_regression_phantom_account2_and_ide_uri_routing.md)
+- [30. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)

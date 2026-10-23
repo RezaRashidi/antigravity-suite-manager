@@ -11,45 +11,35 @@ import re
 from typing import Optional, Set
 
 from antigravity_suite.history.extractor import is_clean_title, is_prompt_text
+from antigravity_suite.history.title_fallback import is_workspace_fallback_title
 
 __all__ = [
     "is_clean_title",
     "is_prompt_text",
     "is_raw_prompt_sentence",
+    "is_workspace_fallback_title",
     "sanitize_topic_title",
 ]
 
 
 def is_raw_prompt_sentence(text: Optional[str], known_prompts: Optional[Set[str]] = None) -> bool:
-    """
-    Returns True if the text matches a known user prompt or raw terminal command.
-    Uses purely generic structural checks (exact prompt set match, newlines, shell prefixes).
-    """
+    """Returns True if the text matches a known user prompt or raw terminal command."""
     if not text or not isinstance(text, str):
         return False
     s = text.strip()
     if not s:
         return False
-
     if known_prompts and s in known_prompts:
         return True
-
-    # Prompt text often has line breaks
     if "\n" in s or "\r" in s:
         return True
-
-    # Shell command invocations
     if s.startswith(("curl ", "docker ", "git ", "ssh ", "sudo ", "cd ", "npm ", "cat ", "ls ", "export ", "python ")):
         return True
-
     return False
 
 
 def sanitize_topic_title(title: Optional[str], fallback_workspace: Optional[str] = None) -> str:
-    """
-    Generic string cleanup: strips @[file] context mentions, normalizes whitespace.
-    Never uses hardcoded user strings.
-    """
+    """Generic string cleanup: strips @[file] context mentions, normalizes whitespace."""
     if not title:
         if fallback_workspace:
             clean_name = fallback_workspace.rstrip("/").split("/")[-1]

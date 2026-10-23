@@ -3,39 +3,27 @@
 
 run_wizard_flow() {
     if declare -f run_installer_workflow >/dev/null 2>&1; then
-        STEP_BY_STEP=true
-        START_STEP=1
-        run_installer_workflow
-    else
-        handle_wizard_command
-    fi
+        STEP_BY_STEP=true; START_STEP=1; run_installer_workflow
+    else handle_wizard_command; fi
 }
 
 run_installer_step() {
     local s="$1"
     if declare -f run_step >/dev/null 2>&1; then
-        STEP_BY_STEP=true
-        START_STEP="$(get_step_num "$s")"
-        run_installer_workflow
-    else
-        handle_wizard_command "--step" "$s"
-    fi
+        STEP_BY_STEP=true; START_STEP="$(get_step_num "$s")"; run_installer_workflow
+    else handle_wizard_command "--step" "$s"; fi
 }
 
 run_installer_only_step() {
     local s="$1"
     if declare -f run_step >/dev/null 2>&1; then
-        ONLY_STEP="$(get_step_num "$s")"
-        run_installer_workflow
-    else
-        handle_wizard_command "--only-step" "$s"
-    fi
+        ONLY_STEP="$(get_step_num "$s")"; run_installer_workflow
+    else handle_wizard_command "--only-step" "$s"; fi
 }
 
 dispatch_command() {
     if [ -z "$COMMAND" ] || [ "$COMMAND" = "center" ] || [ "$COMMAND" = "control-center" ]; then
-        interactive_menu
-        return 0
+        interactive_menu; return 0
     fi
     case "$COMMAND" in
         classic-menu) show_classic_menu ;;
@@ -68,9 +56,12 @@ dispatch_command() {
         list-instances) list_instances ;;
         set-history) set_history_mode "${CMD_ARGS[@]}" ;;
         remove-instance) remove_instance "${CMD_ARGS[@]}" ;;
+        clean-data|delete-data|purge-data) dispatch_clean_data "${CMD_ARGS[@]}" ;;
+        uninstall) dispatch_uninstall "${CMD_ARGS[@]}" ;;
         f5|patch-f5) dispatch_f5 ;;
         unpatch-f5) dispatch_unpatch_f5 ;;
         rtl|patch-rtl) FORCE_INSTALL=true dispatch_rtl ;;
+        unpatch-rtl) dispatch_unpatch_rtl "${CMD_ARGS[@]}" ;;
         update-rtl) update_rtl ;;
         checksums|fix-checksums|patch-checksums) fix_ide_checksums "${IDE_INSTALL_DIR:-/opt/antigravity}" ;;
         benchmark|bench|speed-test) dispatch_benchmark "${CMD_ARGS[@]}" ;;
@@ -79,12 +70,10 @@ dispatch_command() {
         unpatch-selector|unpatch-accounts) dispatch_unpatch_selector ;;
         fork|patch-fork) FORCE_INSTALL=true dispatch_fork "${CMD_ARGS[@]}" ;;
         unpatch-fork) dispatch_unpatch_fork "${CMD_ARGS[@]}" ;;
+        open-ide|patch-open-ide) dispatch_open_ide "${CMD_ARGS[@]}" ;;
+        unpatch-open-ide) dispatch_unpatch_open_ide "${CMD_ARGS[@]}" ;;
         unpatch|restore|revert-patch|unpatch-all) auto_detect_installations; unpatch_antigravity ;;
-        traffic|trace|monitor)
-            mkdir -p "${HOME}/.config/antigravity/accounts"
-            touch "${HOME}/.config/antigravity/accounts/traffic.log"
-            echo "Streaming real-time multi-account request traffic (Ctrl+C to exit)..."
-            tail -f "${HOME}/.config/antigravity/accounts/traffic.log" ;;
+        traffic|trace|monitor) dispatch_traffic ;;
         update) dispatch_update ;;
         update-repo|self-update|update-self) update_suite_repo ;;
         restart-services|restart-service|restart-daemon|restart-daemons) restart_suite_services ;;

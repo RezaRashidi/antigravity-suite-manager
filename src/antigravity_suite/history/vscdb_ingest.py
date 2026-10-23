@@ -14,6 +14,7 @@ from antigravity_suite.history.extractor import (
     is_clean_title,
     is_prompt_text,
 )
+from antigravity_suite.history.title_fallback import is_workspace_fallback_title
 from antigravity_suite.history.vscdb_ingest_new import insert_new_from_ide
 from antigravity_suite.history.vscdb_ingest_update import update_existing_from_ide
 from antigravity_suite.proto.cascade import parse_cascade_summary
@@ -55,12 +56,11 @@ def ingest_vscdb_summaries(
                     if u_id in all_summaries:
                         curr_parsed = parse_cascade_summary(all_summaries[u_id])
                         curr_t = (curr_parsed.get("title") or curr_parsed.get("summary") or "").strip()
-                        is_fb = curr_t in ["Conversation", "Untitled Conversation"] or curr_t.endswith(" Chat")
-                        if curr_t and is_clean_title(curr_t) and not is_fb and "@[" not in curr_t:
+                        if curr_t and is_clean_title(curr_t) and not is_workspace_fallback_title(curr_t) and "@[" not in curr_t:
                             continue
 
                     ide_sum, ide_annot = (parsed.get("summary") or "").strip(), (parsed.get("title") or "").strip()
-                    cands = [c for c in [ide_sum, ide_annot] if c and is_clean_title(c) and not (c.endswith(" Chat") or c.startswith("Desktop:") or c in ["Conversation", "Untitled Conversation"])]
+                    cands = [c for c in [ide_sum, ide_annot] if c and is_clean_title(c) and not is_workspace_fallback_title(c)]
                     if not cands and u_id in all_summaries:
                         continue
 
@@ -77,7 +77,7 @@ def ingest_vscdb_summaries(
                         if update_existing_from_ide(u_id, ide_title, curr_t, curr_parsed, conv_prompts, all_summaries, db_p, cur, master_conv_dir, pinned_set):
                             ide_ingested_total += 1
                     else:
-                        clean_cands = [c for c in [ide_sum, ide_annot] if c and is_clean_title(c) and not c.endswith(" Chat") and not c.startswith("Desktop:") and c not in ["Conversation", "Untitled Conversation"]]
+                        clean_cands = [c for c in [ide_sum, ide_annot] if c and is_clean_title(c) and not is_workspace_fallback_title(c)]
                         title_to_use = ide_title or (clean_cands[0] if clean_cands else "Conversation")
                         insert_new_from_ide(u_id, title_to_use, parsed, all_summaries, db_p, con, master_conv_dir, pinned_set)
                         ide_ingested_total += 1

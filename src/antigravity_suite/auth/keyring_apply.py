@@ -65,10 +65,13 @@ def apply_mode_for_app1(mode: str, migrate_token: bool = True) -> None:
 
 def apply_mode_for_app2(mode: str, migrate_token: bool = True) -> None:
     """Configures keyring mode for Account 2 desktop app."""
+    lnch = os.path.join(LOCAL_BIN, "antigravity-acc2")
+    if not os.path.isfile(lnch) and not os.path.islink(os.path.join(PROFILE2_DIR, ".gemini", "antigravity")):
+        return
     _apply_app_mode(
         os.path.join(PROFILE2_DIR, ".gemini", "cache", "antigravity-keyring-unavailable"),
         os.path.join(PROFILE2_DIR, ".gemini", "jetski-standalone-oauth-token"),
-        os.path.join(LOCAL_BIN, "antigravity-acc2"), mode, migrate_token, "Account 2",
+        lnch, mode, migrate_token, "Account 2",
     )
 
 

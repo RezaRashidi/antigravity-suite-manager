@@ -36,9 +36,10 @@ def main() -> None:
         except Exception: pass
     instances.append(("Antigravity (Acc 1)", "App", "Primary (Shared)", "antigravity-1", f"{G}Running{NC}" if p1_running else "Stopped", "~/.local/bin/antigravity-1"))
 
-    if os.path.isdir(p2_dir):
+    acc2_lnch = os.path.join(real_home, ".local", "bin", "antigravity-acc2")
+    p2_running = subprocess.run(["pgrep", "-f", "antigravity-profile2.*Antigravity"], capture_output=True).returncode == 0
+    if os.path.isdir(p2_dir) and (os.path.isfile(acc2_lnch) or p2_running):
         p2_shared = os.path.islink(os.path.join(p2_dir, ".gemini", "antigravity"))
-        p2_running = subprocess.run(["pgrep", "-f", "antigravity-profile2.*Antigravity"], capture_output=True).returncode == 0
         instances.append(("Antigravity (Acc 2)", "App", f"{G}Shared{NC}" if p2_shared else f"{Y}Isolated{NC}", "antigravity-2", f"{G}Running{NC}" if p2_running else "Stopped", "~/.local/bin/antigravity-acc2"))
 
     for p in sorted(glob.glob(os.path.join(real_home, ".antigravity-profile-app-*"))):

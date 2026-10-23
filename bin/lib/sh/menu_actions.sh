@@ -38,22 +38,47 @@ menu_action_import() {
 }
 
 menu_action_backups() {
-    echo -e "\nManage Backups:"
+    echo -e "\n${CYAN}--- Manage Antigravity Backups & Snapshots ---${NC}"
     echo "1) List Available Snapshots"
-    echo "2) Create Instant Snapshot"
-    echo "3) Restore From Snapshot"
-    read -rp "Choose [1-3, Default: 1]: " bcat
+    echo "2) Create Full Suite Backup (All Data & Configs)"
+    echo "3) Create Antigravity Desktop App Data Backup"
+    echo "4) Create Antigravity IDE Data Backup"
+    echo "5) Create Conversation History Backup"
+    echo "6) Restore From Snapshot"
+    echo "0) Return"
+    read -rp "Select option [0-6, Default: 1]: " bcat
     case "$bcat" in
         2)
             read -rp "Enter snapshot label [default: manual]: " blbl
-            manage_backups create --label "${blbl:-manual}"
+            manage_backups all --label "${blbl:-manual}"
             ;;
         3)
+            read -rp "Enter snapshot label [default: app_manual]: " blbl
+            manage_backups app --label "${blbl:-app_manual}"
+            ;;
+        4)
+            read -rp "Enter snapshot label [default: ide_manual]: " blbl
+            manage_backups ide --label "${blbl:-ide_manual}"
+            ;;
+        5)
+            read -rp "Enter snapshot label [default: history_manual]: " blbl
+            manage_backups history --label "${blbl:-history_manual}"
+            ;;
+        6)
             read -rp "Enter path to backup archive (.tar.gz): " barc
             manage_backups restore "$barc"
             ;;
-        *)
+        1)
             manage_backups list
             ;;
+        *) return 0 ;;
     esac
+}
+
+menu_action_clean_data() {
+    clean_data_interactive
+}
+
+menu_action_uninstall() {
+    uninstall_menu_interactive
 }

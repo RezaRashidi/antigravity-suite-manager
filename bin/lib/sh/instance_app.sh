@@ -23,11 +23,15 @@ setup_app_instance() {
 
     local prof udata wm desk title comm icon pass_store="" symlink="" r_cmd="" other=false
     if [ "$iid" = "1" ] || [ "$iid" = "primary" ]; then
-        [ -d "$PROFILE2_DIR" ] || [ -f "${LOCAL_BIN}/antigravity-acc2" ] && other=true
+        ([ -d "$PROFILE2_DIR" ] && [ -f "${LOCAL_BIN}/antigravity-acc2" ]) && other=true
         for p in "${REAL_HOME}"/.antigravity-profile-app-*; do [ -d "$p" ] && other=true; done
         wm="antigravity"; desk="antigravity.desktop"; title="Antigravity"; comm="Antigravity AI Platform"; icon="antigravity"
         [ "$other" = true ] && { wm="antigravity-1"; desk="antigravity-1.desktop"; title="Antigravity (Account 1)"; icon="antigravity-1"; }
-        [ "$KEYRING_MODE_APP1" = "normal" ] && pass_store="--password-store=basic "
+        if [ "$KEYRING_MODE_APP1" = "normal" ]; then
+            pass_store="--password-store=basic "
+            mkdir -p "${REAL_HOME}/.gemini/cache"
+            touch "${REAL_HOME}/.gemini/cache/antigravity-keyring-unavailable"
+        fi
         prof="${REAL_HOME}"; udata="${REAL_HOME}/.config/Antigravity"; symlink="${LOCAL_BIN}/antigravity"
     elif [ "$iid" = "2" ] || [ "$iid" = "acc2" ]; then
         prof="${PROFILE2_DIR}"; udata="${PROFILE2_DIR}/.config/Antigravity"

@@ -10,6 +10,7 @@ export ELECTRON_OZONE_PLATFORM_HINT="x11"
 ! pgrep -f "antigravity-apply-icon.py --daemon" >/dev/null 2>&1 && python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
 ! systemctl --user is-active antigravity-sync.service >/dev/null 2>&1 && ! pgrep -f "antigravity-merge-history.py" >/dev/null 2>&1 && python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
 disown -a 2>/dev/null || true
+[ -n "${ide_pass_store}" ] && { mkdir -p "${REAL_HOME}/.gemide/cache" "${REAL_HOME}/.gemini/antigravity-ide/cache"; touch "${REAL_HOME}/.gemide/cache/antigravity-keyring-unavailable" "${REAL_HOME}/.gemini/antigravity-ide/cache/antigravity-keyring-unavailable"; }
 
 SANDBOX_FLAG=""
 if [ -f "${IDE_INSTALL_DIR}/chrome-sandbox" ]; then
@@ -19,7 +20,19 @@ if [ -f "${IDE_INSTALL_DIR}/chrome-sandbox" ]; then
     fi
 fi
 
-exec "${IDE_INSTALL_DIR}/antigravity-ide" \${SANDBOX_FLAG}${ide_pass_store}--ozone-platform=x11 --class="antigravity-ide" --name="antigravity-ide" "\$@"
+IDE_ARGS=()
+for arg in "\$@"; do
+    if [[ "\$arg" == antigravity-ide://file/* ]]; then
+        tgt="\${arg#antigravity-ide://file}"
+        IDE_ARGS+=("\$(printf '%b' "\${tgt//%/\\\\x}")")
+    elif [[ "\$arg" == "antigravity-ide://?windowId=_blank" ]]; then
+        IDE_ARGS+=("--new-window")
+    else
+        IDE_ARGS+=("\$arg")
+    fi
+done
+
+exec "${IDE_INSTALL_DIR}/antigravity-ide" \${SANDBOX_FLAG}${ide_pass_store}--ozone-platform=x11 --class="antigravity-ide" --name="antigravity-ide" "\${IDE_ARGS[@]}"
 EOF
     chmod +x "${LOCAL_BIN}/antigravity-ide"
 

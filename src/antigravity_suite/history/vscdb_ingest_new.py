@@ -14,6 +14,7 @@ from antigravity_suite.history.extractor import sync_annotation_file
 from antigravity_suite.history.models import ConversationSummary
 from antigravity_suite.history.projects import get_project_id_for_workspace, normalize_workspace_uri
 from antigravity_suite.history.sqlite_store import get_actual_steps_count, upsert_summary
+from antigravity_suite.history.title_fallback import is_workspace_fallback_title
 from antigravity_suite.history.vscdb_meta import get_db_trajectory_meta
 from antigravity_suite.proto.cascade import build_cascade_summary, get_last_user_step_index
 
@@ -66,10 +67,10 @@ def insert_new_from_ide(
         workspace_uris=ws_str, project_id=effective_pid or "", source="", app_data_dir="antigravity",
     )
     upsert_summary(con, model)
-    is_fb_t = title_to_use.endswith(" Chat") or title_to_use.startswith("Desktop:") or title_to_use in ["Conversation", "Untitled Conversation"]
+    is_fb_t = is_workspace_fallback_title(title_to_use, norm_ws)
     if title_to_use and not is_fb_t:
         sync_annotation_file(master_conv_dir.parent, u_id, title_to_use, pinned=is_pin, archived=is_arc, force=True)
         from antigravity_suite.history.checkpoint_sync import ensure_db_checkpoint_title
-        ensure_db_checkpoint_title(db_p, u_id, title_to_use)
+        ensure_db_checkpoint_title(db_p, u_id, title_to_use, workspace_uri=norm_ws)
     elif is_pin or is_arc:
         sync_annotation_file(master_conv_dir.parent, u_id, "", pinned=is_pin, archived=is_arc, force=False)

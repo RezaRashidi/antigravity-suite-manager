@@ -24,66 +24,28 @@ dispatch_update() {
     esac
 }
 
-
-dispatch_rtl() {
-    auto_detect_installations
+dispatch_clean_data() {
+    if [ -z "$SUB_COMMAND" ] && [ ${#CMD_ARGS[@]} -eq 0 ]; then
+        clean_data_interactive
+        return 0
+    fi
     case "${SUB_COMMAND:-all}" in
-        app)
-            patch_rtl_app
-            patch_f5_reload
-            ;;
-        ide)
-            patch_rtl_ide
-            ;;
-        all|*)
-            patch_rtl_all
-            ;;
+        app) clean_app_data "${CMD_ARGS[@]}" ;;
+        ide) clean_ide_data "${CMD_ARGS[@]}" ;;
+        history) clean_history_data "${CMD_ARGS[@]}" ;;
+        all|*) clean_all_data "${CMD_ARGS[@]}" ;;
     esac
 }
 
-dispatch_selector() {
-    auto_detect_installations
+dispatch_uninstall() {
+    if [ -z "$SUB_COMMAND" ] && [ ${#CMD_ARGS[@]} -eq 0 ]; then
+        uninstall_menu_interactive
+        return 0
+    fi
     case "${SUB_COMMAND:-all}" in
-        app) patch_selector_app "$@" ;;
-        ide) patch_selector_ide "$@" ;;
-        all|*) patch_selector "$@" ;;
-    esac
-}
-
-dispatch_unpatch_selector() {
-    auto_detect_installations
-    case "${SUB_COMMAND:-all}" in
-        app) unpatch_selector_app "$@" ;;
-        ide) unpatch_selector_ide "$@" ;;
-        all|*) unpatch_selector "$@" ;;
-    esac
-}
-
-dispatch_f5() {
-    auto_detect_installations
-    FORCE_INSTALL=true patch_f5_reload "$@"
-}
-
-dispatch_unpatch_f5() {
-    auto_detect_installations
-    unpatch_f5 "$@"
-}
-
-dispatch_fork() {
-    auto_detect_installations
-    case "${SUB_COMMAND:-all}" in
-        app) patch_fork_app "$@" ;;
-        ide) patch_fork_ide "$@" ;;
-        all|*) patch_fork_all "$@" ;;
-    esac
-}
-
-dispatch_unpatch_fork() {
-    auto_detect_installations
-    case "${SUB_COMMAND:-all}" in
-        app) unpatch_fork_app "$@" ;;
-        ide) unpatch_fork_ide "$@" ;;
-        all|*) unpatch_fork_all "$@" ;;
+        app) uninstall_app "${CMD_ARGS[@]}" ;;
+        ide) uninstall_ide "${CMD_ARGS[@]}" ;;
+        all|*) uninstall_all "${CMD_ARGS[@]}" ;;
     esac
 }
 
@@ -104,4 +66,11 @@ dispatch_keyring() {
                 ;;
         esac
     fi
+}
+
+dispatch_traffic() {
+    mkdir -p "${HOME}/.config/antigravity/accounts"
+    touch "${HOME}/.config/antigravity/accounts/traffic.log"
+    echo "Streaming real-time multi-account request traffic (Ctrl+C to exit)..."
+    tail -f "${HOME}/.config/antigravity/accounts/traffic.log"
 }

@@ -11,6 +11,7 @@ from typing import Optional, Union
 
 from antigravity_suite.history.extractor_cleaners import is_clean_title
 from antigravity_suite.history.extractor_pbtxt import decode_pbtxt_string
+from antigravity_suite.history.title_fallback import is_workspace_fallback_title
 
 
 def get_annotation_info(gemini_dir: Union[str, Path], conv_id: str) -> dict:
@@ -25,8 +26,7 @@ def get_annotation_info(gemini_dir: Union[str, Path], conv_id: str) -> dict:
             m = re.search(r'title\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', content)
             if m:
                 clean_title = decode_pbtxt_string(m.group(1))
-                is_fb = clean_title in ["Conversation", "Untitled Conversation"] or clean_title.endswith(" Chat") or clean_title.startswith("Desktop:")
-                if clean_title and not is_fb and "@[" not in clean_title:
+                if clean_title and not is_workspace_fallback_title(clean_title) and "@[" not in clean_title:
                     info["title"] = clean_title
             if re.search(r'pinned\s*:\s*true', content, re.IGNORECASE):
                 info["pinned"] = True

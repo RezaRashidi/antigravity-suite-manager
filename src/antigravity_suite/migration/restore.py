@@ -11,7 +11,12 @@ import tarfile
 import tempfile
 from antigravity_suite.migration.constants import log_err, log_info, log_success
 from antigravity_suite.migration.import_history import trigger_history_merge
-from antigravity_suite.migration.restore_handlers import restore_history_files, restore_suite_files
+from antigravity_suite.migration.restore_handlers import (
+    restore_app_files,
+    restore_history_files,
+    restore_ide_files,
+    restore_suite_files,
+)
 from antigravity_suite.migration.safety import create_safety_backup
 from antigravity_suite.migration.tar_utils import safe_extract_tar
 
@@ -47,6 +52,14 @@ def restore_backup(backup_path: str) -> bool:
 
         if os.path.isdir(suite_dir):
             restore_suite_files(suite_dir)
+
+        app_dir = os.path.join(tmpdir, "app")
+        if os.path.isdir(app_dir):
+            restore_app_files(app_dir)
+
+        ide_dir = os.path.join(tmpdir, "ide")
+        if os.path.isdir(ide_dir):
+            restore_ide_files(ide_dir)
 
     log_success(f"Restore from {fn} completed successfully!")
     return True

@@ -24,12 +24,16 @@ def inspect_status() -> None:
 
     app1_cache = os.path.isfile(os.path.join(REAL_HOME, ".gemini", "cache", "antigravity-keyring-unavailable"))
     app1_token = os.path.isfile(os.path.join(REAL_HOME, ".gemini", "jetski-standalone-oauth-token"))
-    app1_flag = _check_flag(os.path.join(LOCAL_BIN, "antigravity-1"))
+    app1_flag = _check_flag(os.path.join(LOCAL_BIN, "antigravity-1")) or _check_flag(os.path.join(LOCAL_BIN, "antigravity"))
     app1_state = f"{GREEN}Normal (Plain File / No Keyring){NC}" if (app1_cache or app1_flag) else f"{YELLOW}GNOME Keyring (Secret Service){NC}"
+
+    acc2_lnch = os.path.join(LOCAL_BIN, "antigravity-acc2")
+    acc2_dt = os.path.join(REAL_HOME, ".local", "share", "applications", "antigravity-2.desktop")
+    acc2_exists = (os.path.isfile(acc2_lnch) or os.path.isfile(acc2_dt)) and os.path.isdir(PROFILE2_DIR)
 
     app2_cache = os.path.isfile(os.path.join(PROFILE2_DIR, ".gemini", "cache", "antigravity-keyring-unavailable"))
     app2_token = os.path.isfile(os.path.join(PROFILE2_DIR, ".gemini", "jetski-standalone-oauth-token"))
-    app2_flag = _check_flag(os.path.join(LOCAL_BIN, "antigravity-acc2"))
+    app2_flag = _check_flag(acc2_lnch)
     app2_state = f"{GREEN}Normal (Plain File / No Keyring){NC}" if (app2_cache or app2_flag) else f"{YELLOW}GNOME Keyring (Secret Service){NC}"
 
     ide_flag = _check_flag(os.path.join(LOCAL_BIN, "antigravity-ide"))
@@ -39,10 +43,12 @@ def inspect_status() -> None:
     ])
     ide_state = f"{GREEN}Normal (Plain File / No Keyring){NC}" if (ide_cache or ide_flag) else f"{YELLOW}GNOME Keyring (Secret Service){NC}"
 
+    app1_label = "Antigravity (Acc 1)" if acc2_exists else "Antigravity App"
     print(f"{BOLD}{BLUE}{'Instance':<22} {'Active Storage Mode':<44} {'Local Token File':<19} Flag (--password-store=basic){NC}")
     print("-" * 88)
-    print(f"Antigravity (Acc 1)    {app1_state:<44} {'Yes (standalone)' if app1_token else 'Keyring only':<19} {'Active' if app1_flag else 'None'}")
-    print(f"Antigravity (Acc 2)    {app2_state:<44} {'Yes (standalone)' if app2_token else 'Keyring only':<19} {'Active' if app2_flag else 'None'}")
+    print(f"{app1_label:<22} {app1_state:<44} {'Yes (standalone)' if app1_token else 'Keyring only':<19} {'Active' if app1_flag else 'None'}")
+    if acc2_exists:
+        print(f"Antigravity (Acc 2)    {app2_state:<44} {'Yes (standalone)' if app2_token else 'Keyring only':<19} {'Active' if app2_flag else 'None'}")
     print(f"Antigravity IDE        {ide_state:<44} {'N/A (VS Code store)':<19} {'Active' if ide_flag else 'None'}")
     print("-" * 88)
 
