@@ -2,7 +2,11 @@
 # Interactive prompts for icon themes and emblem colors
 
 prompt_acc1_icon() {
-    echo -e "\n${BOLD}Configure Antigravity (Account 1):${NC}"
+    local title="Antigravity App"
+    if [ -d "$PROFILE2_DIR" ] && [ -f "${LOCAL_BIN}/antigravity-acc2" ]; then
+        title="Antigravity (Account 1)"
+    fi
+    echo -e "\n${BOLD}Configure ${title}:${NC}"
     read -rp "  Background Color [1: Black (default), 2: White]: " bg1
     case "$bg1" in
         2|white) ACC1_ICON_THEME="white" ;;

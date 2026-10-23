@@ -7,6 +7,7 @@ import shutil
 import tempfile
 import unittest
 from antigravity_suite.detect.clones_scan_app import scan_app_clones
+from antigravity_suite.detect.clones_scan_ide import scan_ide_clones
 
 
 class TestKeyringAndCloneDetection(unittest.TestCase):
@@ -56,6 +57,17 @@ class TestKeyringAndCloneDetection(unittest.TestCase):
         # Verify it automatically restored the cache marker file on disk
         cache_marker = os.path.join(self.test_dir, ".gemini", "cache", "antigravity-keyring-unavailable")
         self.assertTrue(os.path.isfile(cache_marker))
+
+    def test_ide_clones_dynamic_naming(self):
+        ide_lnch = os.path.join(self.local_bin, "antigravity-ide")
+        with open(ide_lnch, "w") as f: f.write("#!/bin/bash\n")
+        clones = scan_ide_clones(real_home=self.test_dir)
+        self.assertEqual(clones[0]["name"], "Antigravity IDE")
+
+        p_ide2 = os.path.join(self.test_dir, ".antigravity-ide-profile-work")
+        os.makedirs(p_ide2, exist_ok=True)
+        clones2 = scan_ide_clones(real_home=self.test_dir)
+        self.assertEqual(clones2[0]["name"], "Antigravity IDE (Primary)")
 
 
 if __name__ == "__main__":

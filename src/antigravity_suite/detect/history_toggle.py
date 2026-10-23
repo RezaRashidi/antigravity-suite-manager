@@ -16,7 +16,7 @@ from antigravity_suite.detect.history_ide_toggle import toggle_ide_history
 
 def safe_toggle_history_mode(is_ide: bool, is_acc1: bool, is_shared: bool, p_dir: str, local_bin: str, REAL_HOME: str, name: str = "") -> None:
     if is_acc1:
-        print(f"{YELLOW}[NOTICE] Account 1 is the Master Shared Pool and cannot be isolated.{NC}")
+        print(f"{YELLOW}[NOTICE] Primary Antigravity App is the Master Shared Pool and cannot be isolated.{NC}")
         return
 
     shared_pool = os.path.join(REAL_HOME, ".gemini", "antigravity")

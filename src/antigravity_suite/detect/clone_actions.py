@@ -42,7 +42,7 @@ def handle_clone_binary_change(launcher_f: str) -> None:
 
 def handle_clone_profile_relocate(clone: Dict[str, Any], launcher_f: str, p_dir: str, is_acc1: bool, is_acc2: bool) -> None:
     if is_acc1:
-        print(f"{YELLOW}[NOTICE] Account 1 profile (~/.gemini) cannot be relocated.{NC}")
+        print(f"{YELLOW}[NOTICE] Primary Antigravity profile (~/.gemini) cannot be relocated.{NC}")
         return
     if is_acc2:
         print(f"{YELLOW}[NOTICE] Standard Account 2 profile (~/.antigravity-profile2) cannot be relocated.{NC}")

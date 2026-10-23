@@ -48,9 +48,10 @@ def scan_ide_clones(curr_ide: str = "", real_home: str | None = None) -> List[Di
             os.makedirs(os.path.dirname(ide_cache), exist_ok=True); open(ide_cache, "a").close()
         except Exception: pass
 
+    custom_ides = [p for p in sorted(glob.glob(os.path.join(home, ".antigravity-ide-profile-*"))) if ".bak" not in p and ".removed" not in p and os.path.isdir(p)]
     if os.path.isfile(ide_launcher) or os.path.isfile(ide_desktop) or (curr_ide and os.path.isdir(curr_ide)):
         clones.append({
-            "id": "ide1", "name": "Antigravity IDE (Primary)", "type": "IDE", "role": "Primary IDE",
+            "id": "ide1", "name": "Antigravity IDE" if not custom_ides else "Antigravity IDE (Primary)", "type": "IDE", "role": "Primary IDE",
             "profile_dir": ide_profile, "launcher": ide_launcher if os.path.isfile(ide_launcher) else (curr_ide if os.path.isdir(curr_ide) else "Default binary"),
             "desktop": ide_desktop, "wm_class": "antigravity-ide",
             "history_mode": "Shared 3-Way Sync" if ide_shared else "Isolated Private",
@@ -58,8 +59,7 @@ def scan_ide_clones(curr_ide: str = "", real_home: str | None = None) -> List[Di
             "status": "Running" if ide_running else "Stopped",
         })
 
-    for p in sorted(glob.glob(os.path.join(home, ".antigravity-ide-profile-*"))):
-        if ".bak" in p or ".removed" in p: continue
+    for p in custom_ides:
         cname = os.path.basename(p).replace(".antigravity-ide-profile-", "")
         c_running = subprocess.run(["pgrep", "-f", f"{os.path.basename(p)}"], capture_output=True).returncode == 0
         c_shared = os.path.islink(os.path.join(p, ".gemini", "antigravity-ide", "conversations")) or os.path.islink(os.path.join(p, ".gemini", "antigravity-ide"))

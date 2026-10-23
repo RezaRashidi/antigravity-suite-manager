@@ -5,8 +5,10 @@ configure_icons_interactive() {
     local target="${1:-all}"
     case "$target" in
         app1|acc1|1)
+            local title="Antigravity App"
+            [ -d "$PROFILE2_DIR" ] && [ -f "${LOCAL_BIN}/antigravity-acc2" ] && title="Antigravity (Account 1)"
             echo -e "${CYAN}=====================================================${NC}"
-            echo -e "${CYAN}   Configure Antigravity (Account 1) Icon            ${NC}"
+            echo -e "${CYAN}   Configure ${title} Icon            ${NC}"
             echo -e "${CYAN}=====================================================${NC}"
             echo -e "Current: BG: ${BOLD}${ACC1_ICON_THEME}${NC} | Emblem: ${BOLD}${ACC1_EMBLEM_COLOR}${NC}"
             echo -e "${CYAN}-----------------------------------------------------${NC}"
@@ -32,16 +34,20 @@ configure_icons_interactive() {
             echo -e "${CYAN}=====================================================${NC}"
             echo -e "${CYAN}        Configure Antigravity Suite Icons            ${NC}"
             echo -e "${CYAN}=====================================================${NC}"
+            local has_acc2=false
+            [ -d "$PROFILE2_DIR" ] && [ -f "${LOCAL_BIN}/antigravity-acc2" ] && has_acc2=true
             echo -e "Current Configuration:"
-            echo -e "  • Antigravity 1:    BG: ${BOLD}${ACC1_ICON_THEME}${NC} | Emblem: ${BOLD}${ACC1_EMBLEM_COLOR}${NC}"
-            echo -e "  • Antigravity IDE:  BG: ${BOLD}${IDE_ICON_THEME}${NC} | Emblem: ${BOLD}${IDE_EMBLEM_COLOR}${NC}"
-            if [ -d "$PROFILE2_DIR" ] || [ -f "${LOCAL_BIN}/antigravity-acc2" ]; then
+            if [ "$has_acc2" = true ]; then
+                echo -e "  • Antigravity 1:    BG: ${BOLD}${ACC1_ICON_THEME}${NC} | Emblem: ${BOLD}${ACC1_EMBLEM_COLOR}${NC}"
                 echo -e "  • Antigravity 2:    BG: ${BOLD}${ACC2_ICON_THEME}${NC} | Emblem: ${BOLD}${ACC2_EMBLEM_COLOR}${NC}"
+            else
+                echo -e "  • Antigravity App:  BG: ${BOLD}${ACC1_ICON_THEME}${NC} | Emblem: ${BOLD}${ACC1_EMBLEM_COLOR}${NC}"
             fi
+            echo -e "  • Antigravity IDE:  BG: ${BOLD}${IDE_ICON_THEME}${NC} | Emblem: ${BOLD}${IDE_EMBLEM_COLOR}${NC}"
             echo -e "${CYAN}-----------------------------------------------------${NC}"
             prompt_acc1_icon
             prompt_ide_icon
-            if [ -d "$PROFILE2_DIR" ] || [ -f "${LOCAL_BIN}/antigravity-acc2" ]; then
+            if [ "$has_acc2" = true ]; then
                 prompt_acc2_icon
             fi
             ;;

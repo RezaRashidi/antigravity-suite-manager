@@ -5,11 +5,12 @@ CLI handler for Antigravity keyring configuration and secret management.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from antigravity_suite.auth.keyring_apply import apply_mode_for_app1, apply_mode_for_app2, apply_mode_for_ide
 from antigravity_suite.auth.keyring_clones import apply_mode_for_clones
 from antigravity_suite.auth.keyring_conf import load_config, save_config
-from antigravity_suite.auth.keyring_constants import GREEN, NC, YELLOW
+from antigravity_suite.auth.keyring_constants import GREEN, NC, PROFILE2_DIR, REAL_HOME, YELLOW
 from antigravity_suite.auth.keyring_purge import purge_antigravity_from_keyring
 from antigravity_suite.auth.keyring_status import inspect_status
 
@@ -31,11 +32,14 @@ def handle_set(target: str, mode: str, purge: bool) -> None:
     """Executes mode switching for specified targets."""
     cfg = load_config()
     norm = "normal" if mode in ["normal", "basic", "plain"] else "gnome"
+    acc2_lnch = os.path.join(REAL_HOME, ".local", "bin", "antigravity-acc2")
+    acc2_exists = os.path.isfile(acc2_lnch) and os.path.isdir(PROFILE2_DIR)
+    app1_lbl = "Account 1" if acc2_exists else "Antigravity App"
     if target in ["app1", "all"]:
         cfg["app1"] = norm
         apply_mode_for_app1(norm)
-        print(f"{GREEN}[OK]{NC} Switched Account 1 to {norm.upper()} mode.")
-    if target in ["app2", "all"]:
+        print(f"{GREEN}[OK]{NC} Switched {app1_lbl} to {norm.upper()} mode.")
+    if target == "app2" or (target == "all" and acc2_exists):
         cfg["app2"] = norm
         apply_mode_for_app2(norm)
         print(f"{GREEN}[OK]{NC} Switched Account 2 to {norm.upper()} mode.")

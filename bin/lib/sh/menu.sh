@@ -20,16 +20,24 @@ interactive_menu() {
 }
 
 show_classic_menu() {
+    local has_acc2=false
+    [ -d "$PROFILE2_DIR" ] && [ -f "${LOCAL_BIN}/antigravity-acc2" ] && has_acc2=true
+    local app_opt="3) Install / Update Antigravity App"
+    local acc2_opt="7) Create Secondary Account (Isolated Profile & Shared History)"
+    if [ "$has_acc2" = true ]; then
+        app_opt="3) Install / Update Antigravity App (Both Accounts)"
+        acc2_opt="7) Configure / Repair Account 2 (Isolated Profile & Shared History)"
+    fi
     echo -e "${CYAN}=====================================================${NC}"
     echo -e "${CYAN}   Antigravity & Antigravity IDE Suite Manager       ${NC}"
     echo -e "${CYAN}=====================================================${NC}"
     echo "1) Install Antigravity Suite (App + IDE + RTL + F5)"
     echo "2) Smart Update All (Auto re-applies active patches) [Uses cache]"
-    echo "3) Install / Update Antigravity App (Both Accounts)"
+    echo "$app_opt"
     echo "4) Install / Update Antigravity IDE"
     echo "5) Detect & Scan Installed Antigravity Instances"
     echo "6) Check Versions, Cache & Patch Statuses (Status Table)"
-    echo "7) Configure / Repair Account 2 (Isolated Profile & Shared History)"
+    echo "$acc2_opt"
     echo "8) Apply / Update RTL Patcher (mmnaderi/antigravity-rtl)"
     echo "9) Revert / Unpatch RTL Patcher"
     echo "10) Re-apply F5 Manual Sync Backend Reload Patch"

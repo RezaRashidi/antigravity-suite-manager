@@ -42,6 +42,7 @@ def main() -> None:
     local_bin = sys.argv[15] if len(sys.argv) > 15 else os.path.join(real_home, ".local", "bin")
 
     app_ver, ide_ver = get_app_version(app_dir), get_ide_version(ide_dir)
+    has_acc2 = os.path.isfile(os.path.join(local_bin, "antigravity-acc2")) and os.path.isdir(prof2_dir)
     app_st = f"{G}Up-to-date{NC}" if (app_ver and app_ver == targ_app_ver) else (f"{Y}Update Available{NC}" if app_ver else f"{R}Not Installed{NC}")
     ide_st = f"{G}Up-to-date{NC}" if (ide_ver and ide_ver == targ_ide_ver) else (f"{Y}Update Available{NC}" if ide_ver else f"{R}Not Installed{NC}")
     app_rtl, app_f5, ide_rtl = check_app_rtl(app_dir), check_app_f5(app_dir), check_ide_rtl(ide_dir)
@@ -51,8 +52,9 @@ def main() -> None:
     print(f"{C}========================================================================================{NC}")
     print(f"{BOLD}{B}Target                 Installed    Latest Available  Status          RTL Patch   F5 Patch{NC}")
     print(f"----------------------------------------------------------------------------------------")
-    print(f"Antigravity (Acc 1&2)  {app_ver or 'N/A':<12} {targ_app_ver:<17} {app_st:<24} {app_rtl:<20} {app_f5}")
-    print(f"Antigravity IDE        {ide_ver or 'N/A':<12} {targ_ide_ver:<17} {ide_st:<24} {ide_rtl:<20} N/A")
+    app_tgt = "Antigravity (Acc 1&2)" if has_acc2 else "Antigravity App"
+    print(f"{app_tgt:<23}{app_ver or 'N/A':<12} {targ_app_ver:<17} {app_st:<24} {app_rtl:<20} {app_f5}")
+    print(f"{'Antigravity IDE':<23}{ide_ver or 'N/A':<12} {targ_ide_ver:<17} {ide_st:<24} {ide_rtl:<20} N/A")
     print(f"----------------------------------------------------------------------------------------")
     print(f"{BOLD}Detected System Installations:{NC}")
     installs = scan_all_installations()
@@ -68,13 +70,17 @@ def main() -> None:
     print(f"  • Antigravity IDE:        {check_cached(cache_dir, 'Antigravity-IDE', targ_ide_ver)}")
     print(f"----------------------------------------------------------------------------------------")
     print(f"{BOLD}Icon & Appearance Themes:{NC}")
-    print(f"  • Antigravity (Acc 1):    {acc1_theme.capitalize()} Icon Theme")
-    rc_badge = f"{G}Violet/Magenta Glow (Recolored){NC}" if acc2_recolor else f"{Y}Original Colors (No Recolor){NC}"
-    print(f"  • Antigravity (Acc 2):    {acc2_theme.capitalize()} Icon Theme | {rc_badge}")
+    if has_acc2:
+        print(f"  • Antigravity (Acc 1):    {acc1_theme.capitalize()} Icon Theme")
+        rc_badge = f"{G}Violet/Magenta Glow (Recolored){NC}" if acc2_recolor else f"{Y}Original Colors (No Recolor){NC}"
+        print(f"  • Antigravity (Acc 2):    {acc2_theme.capitalize()} Icon Theme | {rc_badge}")
+    else:
+        print(f"  • Antigravity App:        {acc1_theme.capitalize()} Icon Theme")
     print(f"  • Antigravity IDE:        {ide_theme.capitalize()} Icon Theme")
     print(f"----------------------------------------------------------------------------------------")
     print(f"{BOLD}Environment & Permissions:{NC}")
-    print(f"  • Account 2 Status:       {check_account2(prof2_dir)}")
+    if has_acc2:
+        print(f"  • Account 2 Status:       {check_account2(prof2_dir)}")
     print(f"  • Keyring Storage Mode:   {check_keyring_storage(real_home, local_bin, prof2_dir)}")
     print(f"  • History Sharing:        {check_history_sharing(prof2_dir)}")
     print(f"  • Customizations Sharing: {check_customization_sharing(prof2_dir)}")

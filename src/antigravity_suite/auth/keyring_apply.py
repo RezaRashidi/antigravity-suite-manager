@@ -55,11 +55,16 @@ def _apply_app_mode(cache_file: str, token_file: str, launcher: str, mode: str, 
 
 
 def apply_mode_for_app1(mode: str, migrate_token: bool = True) -> None:
-    """Configures keyring mode for Account 1 desktop app."""
+    """Configures keyring mode for Primary App."""
+    has_acc2 = os.path.isfile(os.path.join(LOCAL_BIN, "antigravity-acc2")) and os.path.isdir(PROFILE2_DIR)
+    name = "Account 1" if has_acc2 else "Antigravity App"
+    lnch = os.path.join(LOCAL_BIN, "antigravity" if not has_acc2 else "antigravity-1")
+    if not os.path.isfile(lnch) and os.path.isfile(os.path.join(LOCAL_BIN, "antigravity-1")):
+        lnch = os.path.join(LOCAL_BIN, "antigravity-1")
     _apply_app_mode(
         os.path.join(REAL_HOME, ".gemini", "cache", "antigravity-keyring-unavailable"),
         os.path.join(REAL_HOME, ".gemini", "jetski-standalone-oauth-token"),
-        os.path.join(LOCAL_BIN, "antigravity-1"), mode, migrate_token, "Account 1",
+        lnch, mode, migrate_token, name,
     )
 
 
@@ -85,8 +90,7 @@ def apply_mode_for_ide(mode: str) -> None:
     for cf in ide_cache_files:
         if mode == "normal":
             try:
-                os.makedirs(os.path.dirname(cf), exist_ok=True)
-                with open(cf, "a"): os.utime(cf, None)
+                os.makedirs(os.path.dirname(cf), exist_ok=True); open(cf, "a").close()
             except Exception: pass
         elif os.path.isfile(cf):
             try: os.remove(cf)

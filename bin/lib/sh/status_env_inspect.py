@@ -8,10 +8,8 @@ import glob
 import os
 from typing import List, Tuple
 
-try:
-    from bin.lib.sh.status_inspect import G, NC, R, Y, get_app_version, get_ide_version
-except ImportError:
-    from status_inspect import G, NC, R, Y, get_app_version, get_ide_version
+try: from bin.lib.sh.status_inspect import G, NC, R, Y, get_app_version, get_ide_version
+except ImportError: from status_inspect import G, NC, R, Y, get_app_version, get_ide_version
 
 
 def check_keyring_storage(real_home: str, local_bin: str, profile2_dir: str) -> str:
@@ -19,8 +17,7 @@ def check_keyring_storage(real_home: str, local_bin: str, profile2_dir: str) -> 
     app1_l = os.path.join(local_bin, "antigravity-1")
     app1_flag = False
     if os.path.isfile(app1_l):
-        try:
-            with open(app1_l, "r", errors="ignore") as f: app1_flag = "--password-store=basic" in f.read()
+        try: app1_flag = "--password-store=basic" in open(app1_l, "r", errors="ignore").read()
         except Exception: pass
     app1_norm = (app1_cache or app1_flag)
     app2_lnch = os.path.join(local_bin, "antigravity-acc2")
@@ -45,16 +42,19 @@ def check_account2(profile2_dir: str) -> str:
 
 def check_history_sharing(profile2_dir: str) -> str:
     rg = os.path.join(os.path.dirname(profile2_dir), '.gemini')
-    ide_s, p2_s = os.path.islink(os.path.join(rg, 'antigravity-ide', 'conversations')), os.path.islink(os.path.join(profile2_dir, '.gemini', 'antigravity'))
+    ide_s = os.path.islink(os.path.join(rg, 'antigravity-ide', 'conversations'))
+    p2_s = os.path.islink(os.path.join(profile2_dir, '.gemini', 'antigravity')) if os.path.isdir(profile2_dir) else False
     if ide_s and p2_s: return f"{G}3-Way Unified (App 1, App 2, IDE){NC}"
+    if ide_s: return f"{G}Unified (App & IDE){NC}"
     return f"{Y}2-Way (App 1 & App 2 only){NC}" if p2_s else f"{R}Not Shared{NC}"
 
 
 def check_customization_sharing(profile2_dir: str) -> str:
     gemide = os.path.join(os.path.dirname(profile2_dir), '.gemide')
     g_rule, g_cfg = os.path.islink(os.path.join(gemide, 'GEMINI.md')), os.path.islink(os.path.join(gemide, 'config'))
-    p2_rule = os.path.islink(os.path.join(profile2_dir, '.gemini', 'GEMINI.md'))
-    if g_rule and g_cfg and p2_rule: return f"{G}Unified (Rules, Skills, MCP across all instances){NC}"
+    p2_rule = os.path.islink(os.path.join(profile2_dir, '.gemini', 'GEMINI.md')) if os.path.isdir(profile2_dir) else False
+    if g_rule and g_cfg and p2_rule: return f"{G}Unified (Rules, Skills across all instances){NC}"
+    if g_rule and g_cfg: return f"{G}Unified (Rules, Skills shared with IDE){NC}"
     return f"{Y}Partially Shared{NC}" if (g_rule or p2_rule) else f"{Y}Standalone{NC}"
 
 

@@ -35,7 +35,7 @@ def scan_app_clones(curr_app: str = "", real_home: str | None = None) -> List[Di
 
     acc2_profile, acc2_lnch, acc2_dt = os.path.join(home, ".antigravity-profile2"), os.path.join(local_bin, "antigravity-acc2"), os.path.join(local_apps, "antigravity-2.desktop")
     acc2_run = subprocess.run(["pgrep", "-f", "antigravity-profile2.*Antigravity"], capture_output=True).returncode == 0
-    acc2_exists = (os.path.isfile(acc2_lnch) or os.path.isfile(acc2_dt) or acc2_run) and os.path.isdir(acc2_profile)
+    acc2_exists = os.path.isdir(acc2_profile) and (os.path.isfile(acc2_lnch) or (os.path.isfile(acc2_dt) and acc2_run))
 
     custom_apps = [p for p in sorted(glob.glob(os.path.join(home, ".antigravity-profile-app-*"))) if ".bak" not in p and ".removed" not in p and os.path.isdir(p)]
     has_other = acc2_exists or bool(custom_apps)

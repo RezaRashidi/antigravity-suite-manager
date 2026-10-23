@@ -20,11 +20,11 @@ Commands:
   status        Check installed vs target versions, patch statuses, and cache
   detect        Scan and identify all installed Antigravity instances on system (aliases: scan, find)
   install       Install Antigravity suite [all|app|ide] (default: all)
-  all           Install / update both Antigravity Apps (Account 1 & 2), IDE, F5 patch, and RTL
-  app           Install / update Antigravity App (Both Accounts, RTL, and F5)
+  all           Install / update Antigravity Suite (App, IDE, F5 patch, and RTL)
+  app           Install / update Antigravity App (RTL and F5 patches)
   ide           Install / update Antigravity IDE and RTL patch
-  app1          Configure Account 1 launcher and desktop shortcut
-  app2          Configure Account 2 isolated profile, shared history, and shortcuts
+  app1          Configure Primary App launcher and desktop shortcut
+  app2          Configure Account 2 isolated profile, shared history, and shortcuts (optional)
   ide-shortcuts Configure Antigravity IDE launcher and desktop shortcut
   set-icons     Configure or re-apply icons (Black/White and Acc 2 Recolor)
   merge-history Sync & backfill conversation history across all profiles/IDEs (alias: merge)

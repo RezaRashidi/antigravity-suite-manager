@@ -57,7 +57,8 @@ def regen_clone_icons(clone: Dict[str, Any], launcher_f: str, is_ide1: bool, is_
             if os.path.isfile(ce):
                 update_launcher_binary(launcher_f, ce)
                 break
-    has_other = os.path.isdir(os.path.join(real_home, ".antigravity-profile2")) or bool(glob.glob(os.path.join(real_home, ".antigravity-profile-app-*")))
+    has_acc2 = os.path.isdir(os.path.join(real_home, ".antigravity-profile2")) and os.path.isfile(os.path.join(real_home, ".local", "bin", "antigravity-acc2"))
+    has_other = has_acc2 or bool(glob.glob(os.path.join(real_home, ".antigravity-profile-app-*")))
     dup_dt = os.path.join(local_apps, "antigravity.desktop" if has_other else "antigravity-1.desktop")
     try: os.remove(dup_dt)
     except Exception: pass

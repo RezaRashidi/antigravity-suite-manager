@@ -34,24 +34,32 @@ def main() -> None:
                             p1_running = True; break
                 except Exception: pass
         except Exception: pass
-    instances.append(("Antigravity (Acc 1)", "App", "Primary (Shared)", "antigravity-1", f"{G}Running{NC}" if p1_running else "Stopped", "~/.local/bin/antigravity-1"))
-
     acc2_lnch = os.path.join(real_home, ".local", "bin", "antigravity-acc2")
     p2_running = subprocess.run(["pgrep", "-f", "antigravity-profile2.*Antigravity"], capture_output=True).returncode == 0
-    if os.path.isdir(p2_dir) and (os.path.isfile(acc2_lnch) or p2_running):
+    has_acc2 = os.path.isdir(p2_dir) and (os.path.isfile(acc2_lnch) or p2_running)
+    custom_apps = [p for p in sorted(glob.glob(os.path.join(real_home, ".antigravity-profile-app-*"))) if ".bak" not in p and ".removed" not in p]
+    has_other_apps = has_acc2 or bool(custom_apps)
+
+    app_name = "Antigravity (Acc 1)" if has_other_apps else "Antigravity"
+    app_wm = "antigravity-1" if has_other_apps else "antigravity"
+    app_lnch = "~/.local/bin/antigravity-1" if (has_other_apps or not os.path.isfile(os.path.join(real_home, ".local/bin/antigravity"))) else "~/.local/bin/antigravity"
+    instances.append((app_name, "App", "Primary (Shared)", app_wm, f"{G}Running{NC}" if p1_running else "Stopped", app_lnch))
+
+    if has_acc2:
         p2_shared = os.path.islink(os.path.join(p2_dir, ".gemini", "antigravity"))
         instances.append(("Antigravity (Acc 2)", "App", f"{G}Shared{NC}" if p2_shared else f"{Y}Isolated{NC}", "antigravity-2", f"{G}Running{NC}" if p2_running else "Stopped", "~/.local/bin/antigravity-acc2"))
 
-    for p in sorted(glob.glob(os.path.join(real_home, ".antigravity-profile-app-*"))):
-        if ".bak" in p or ".removed" in p: continue
+    for p in custom_apps:
         name = os.path.basename(p).replace(".antigravity-profile-app-", "")
         is_shared = os.path.islink(os.path.join(p, ".gemini", "antigravity"))
         is_run = subprocess.run(["pgrep", "-f", f"{os.path.basename(p)}.*Antigravity"], capture_output=True).returncode == 0
         instances.append((f"App ({name})", "App", f"{G}Shared{NC}" if is_shared else f"{Y}Isolated{NC}", f"antigravity-app-{name}", f"{G}Running{NC}" if is_run else "Stopped", f"~/.local/bin/antigravity-app-{name}"))
 
+    custom_ides = [p for p in sorted(glob.glob(os.path.join(real_home, ".antigravity-ide-profile-*"))) if ".bak" not in p and ".removed" not in p]
     ide_shared = os.path.islink(os.path.join(real_home, ".gemini", "antigravity-ide", "conversations"))
     ide_run = subprocess.run(["pgrep", "-f", "antigravity-ide"], capture_output=True).returncode == 0
-    instances.append(("Antigravity IDE (1)", "IDE", f"{G}Shared{NC}" if ide_shared else f"{Y}Isolated{NC}", "antigravity-ide", f"{G}Running{NC}" if ide_run else "Stopped", "~/.local/bin/antigravity-ide"))
+    ide_name = "Antigravity IDE (1)" if custom_ides else "Antigravity IDE"
+    instances.append((ide_name, "IDE", f"{G}Shared{NC}" if ide_shared else f"{Y}Isolated{NC}", "antigravity-ide", f"{G}Running{NC}" if ide_run else "Stopped", "~/.local/bin/antigravity-ide"))
 
     for p in sorted(glob.glob(os.path.join(real_home, ".antigravity-ide-profile-*"))):
         if ".bak" in p or ".removed" in p: continue

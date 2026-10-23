@@ -9,7 +9,7 @@ step_8_setup_launchers_and_sync() {
     fi
 
     "${TARGET_BIN}/manage-antigravity.sh" app1 >/dev/null 2>&1 || true
-    if [ -d "${REAL_HOME}/.antigravity-profile2" ] || [ -f "${TARGET_BIN}/antigravity-acc2" ]; then
+    if [ -d "${REAL_HOME}/.antigravity-profile2" ] && [ -f "${TARGET_BIN}/antigravity-acc2" ]; then
         "${TARGET_BIN}/manage-antigravity.sh" app2 >/dev/null 2>&1 || true
         rm -f "${REAL_HOME}/.local/share/applications/antigravity.desktop" 2>/dev/null || true
     fi
