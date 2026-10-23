@@ -36,4 +36,5 @@ This document records the end-to-end diagnostic methodology, reverse-engineering
 - [28. Issue 26: Native "Open in IDE" Titlebar Button Discovery, Reverse Engineering & Independent Patch](28_native_open_in_ide_button_restoration_and_patch.md)
 - [29. Issue 27: GNOME Keyring Unlock Prompt Regression, Phantom Account 2 Isolation & IDE URI Routing](29_keyring_unlock_prompt_regression_phantom_account2_and_ide_uri_routing.md)
 - [30. Issue 28: Full Codebase Dynamic Instance and Account Orchestration](30_full_codebase_dynamic_instance_and_account_orchestration.md)
-- [31. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
+- [31. Issue 29: Rclone Encrypted Cloud Sync and Automatic Workspace Provisioning](31_rclone_encrypted_cloud_sync_and_workspace_provisioning.md)
+- [32. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)

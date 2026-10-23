@@ -27,6 +27,7 @@ Commands:
   app2          Configure Account 2 isolated profile, shared history, and shortcuts (optional)
   ide-shortcuts Configure Antigravity IDE launcher and desktop shortcut
   set-icons     Configure or re-apply icons (Black/White and Acc 2 Recolor)
+  cloud         Encrypted cloud sync for cross-system chat continuation (push/pull/status)
   merge-history Sync & backfill conversation history across all profiles/IDEs (alias: merge)
   keyring       Configure & switch credential storage (GNOME Keyring vs Normal File Storage)
   paths         Configure & switch Antigravity installation paths (interactive or CLI)

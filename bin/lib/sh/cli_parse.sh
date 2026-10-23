@@ -10,6 +10,7 @@ parse_cli_args() {
         if [ "$flag_shift" -gt 0 ]; then shift "$flag_shift"; continue; fi
 
         case "$1" in
+            cloud-sync|cloud) COMMAND="cloud-sync"; shift; CMD_ARGS=("$@"); break ;;
             merge-history|merge) COMMAND="merge-history"; shift ;;
             export-history|export-chats) COMMAND="export-history"; shift; CMD_ARGS=("$@"); break ;;
             import-history|import-chats) COMMAND="import-history"; shift; CMD_ARGS=("$@"); break ;;

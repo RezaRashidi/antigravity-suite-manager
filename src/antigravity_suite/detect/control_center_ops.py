@@ -19,7 +19,11 @@ def handle_control_center_traffic(manage_sh: str) -> None:
 
 
 def handle_control_center_merge_history(manage_sh: str) -> None:
-    subprocess.run(["bash", manage_sh, "merge-history"], check=False)
+    print(f"\n{CYAN}--- History Synchronization & Merge ---{NC}")
+    print("  [1] Local Merge & Re-index IDE History\n  [2] Encrypted Cloud Sync (Rclone Push / Pull)\n  [0] Cancel / Back")
+    c = input("Select action [1-2, Default: 1]: ").strip()
+    if c in ["1", ""]: subprocess.run(["bash", manage_sh, "merge-history"], check=False)
+    elif c == "2": subprocess.run(["bash", manage_sh, "cloud"], check=False)
     input("\nPress Enter to return to Control Center...")
 
 

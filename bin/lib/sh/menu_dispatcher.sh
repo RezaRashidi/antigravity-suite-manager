@@ -41,6 +41,7 @@ execute_menu_choice() {
         35) unpatch_fork_all ;;
         36) FORCE_INSTALL=true patch_open_ide_app ;;
         37) unpatch_open_ide_app ;;
+        38) dispatch_cloud_sync ;;
         0) exit 0 ;;
         *) log_err "Invalid selection."; exit 1 ;;
     esac
