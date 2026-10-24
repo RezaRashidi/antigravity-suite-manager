@@ -39,5 +39,6 @@ This document records the end-to-end diagnostic methodology, reverse-engineering
 - [31. Issue 29: Rclone Encrypted Cloud Sync and Automatic Workspace Provisioning](31_rclone_encrypted_cloud_sync_and_workspace_provisioning.md)
 - [32. Issue 30: Full Codebase Modularization Audit, Circular Dependency Elimination & Packaging Verification](32_full_codebase_modularization_audit_and_circular_dependency_elimination.md)
 - [33. Issue 31: Conversation Forking Bloat Removal & Operational No-Restart Protocol](33_conversation_forking_bloat_removal_and_no_unprompted_restart_rule.md)
-- [34. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
+- [34. Issue 32: Repository Update Shallow Clone Blockade (.git/shallow), Hidden Path Discovery Deficit & Patch Sync Gap](34_repo_update_shallow_clone_and_path_discovery_failure.md)
+- [35. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
 
