@@ -27,6 +27,13 @@ async function resolveTokenForCascade(cascadeId) {
     return await resolveTokenForAccount(email);
 }
 
+function setLastCascadeId(cascadeId, email) {
+    if (cascadeId) {
+        _lastCascadeId = cascadeId;
+        _lastCascadeTs = Date.now();
+    }
+}
+
 function startMultiAccountRouter(port = DEFAULT_PORT) {
     if (_server) return _server;
     _server = http.createServer((req, res) => {
@@ -52,31 +59,39 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
             const bindings = getBindings();
             if (!cascadeId) { for (const bid of Object.keys(bindings)) if (!bid.startsWith('__') && bid !== 'default' && bid.length >= 8 && bodyStr.includes(bid)) { cascadeId = bid; break; } }
             if (!cascadeId) { const m = bodyStr.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i); if (m) cascadeId = m[1]; }
-            if (!cascadeId && _lastCascadeId && (Date.now() - _lastCascadeTs < 30000)) cascadeId = _lastCascadeId;
+            if (!cascadeId && _lastCascadeId && (Date.now() - _lastCascadeTs < 3600000)) cascadeId = _lastCascadeId;
             if (cascadeId) { _lastCascadeId = cascadeId; _lastCascadeTs = Date.now(); }
 
             if (tryInterceptCommand(req, res, bodyStr, cascadeId)) return;
 
             const isGen = req.url && (req.url.includes('streamGenerateContent') || req.url.includes('generateContent'));
+            const isAccountRpc = req.url && (
+                isGen ||
+                req.url.includes('retrieveUserQuota') ||
+                req.url.includes('fetchAvailableModels') ||
+                req.url.includes('loadCodeAssist') ||
+                req.url.includes('fetchUserInfo') ||
+                req.url.includes('listModelConfigs')
+            );
             let token = null, boundEmail = 'Primary (Native)';
-            if (isGen) {
+            if (isAccountRpc) {
                 const accounts = loadAllAccounts();
                 const activeDefault = getActiveAccountEmail(accounts);
                 boundEmail = (cascadeId && bindings[cascadeId]?.email) || activeDefault || 'Primary (Native)';
-                if (cascadeId && !bindings[cascadeId] && boundEmail && boundEmail !== 'Primary (Native)') {
+                if (isGen && cascadeId && !bindings[cascadeId] && boundEmail && boundEmail !== 'Primary (Native)') {
                     setBinding(cascadeId, boundEmail);
                     bindings[cascadeId] = { cascade_id: cascadeId, email: boundEmail, updated_at: new Date().toISOString() };
                     logTraffic(`[AUTO_PIN] Chat: [${cascadeId}] permanently bound to: [${boundEmail}]`);
                 }
-                token = await resolveTokenForCascade(cascadeId);
+                token = await resolveTokenForAccount(boundEmail);
                 const tokenFp = token ? `token: ...${token.slice(-6)}` : 'token: [Native LS Session]';
-                logTraffic(`ChatGen: [${cascadeId || 'general'}] -> Account: [${boundEmail}] | ${tokenFp} | Path: ${req.url}`);
+                logTraffic(`${isGen ? 'ChatGen' : 'AccountRpc'}: [${cascadeId || 'general'}] -> Account: [${boundEmail}] | ${tokenFp} | Path: ${req.url}`);
             } else {
                 logTraffic(`ControlPlane: [${cascadeId || 'system'}] -> Native LS Session | Path: ${req.url}`);
             }
 
             const headers = { ...req.headers, host: UPSTREAM_HOST };
-            if (isGen && token) headers.authorization = `Bearer ${token}`;
+            if (isAccountRpc && token) headers.authorization = `Bearer ${token}`;
             if (body.length > 0) headers['content-length'] = Buffer.byteLength(body);
             delete headers['transfer-encoding']; delete headers['connection'];
 
@@ -87,7 +102,7 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
             if (agent) upOpts.agent = agent;
 
             const upReq = https.request(upOpts, (upRes) => {
-                logTraffic(`${isGen ? 'ChatGen' : 'ControlPlane'}: [${cascadeId || 'general'}] <- Upstream Response: ${upRes.statusCode}`);
+                logTraffic(`${isAccountRpc ? (isGen ? 'ChatGen' : 'AccountRpc') : 'ControlPlane'}: [${cascadeId || 'general'}] <- Upstream Response: ${upRes.statusCode}`);
                 res.writeHead(upRes.statusCode, upRes.headers);
                 upRes.pipe(res);
             });
@@ -110,4 +125,4 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
     return _server;
 }
 
-module.exports = { resolveTokenForAccount, resolveTokenForCascade, startMultiAccountRouter };
+module.exports = { resolveTokenForAccount, resolveTokenForCascade, setLastCascadeId, startMultiAccountRouter };

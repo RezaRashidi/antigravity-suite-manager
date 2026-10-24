@@ -41,12 +41,19 @@
             const targetInfo = window.__antigravityFindTarget ? window.__antigravityFindTarget() : null; if (!targetInfo?.target) return;
             const newCid = window.__antigravityDetectCascadeId ? window.__antigravityDetectCascadeId(targetInfo.target) : "default";
             const isDraftId = (id) => !id || id === "default" || id.startsWith("chat_") || id.startsWith("draft_");
-            if (cascadeId && isDraftId(cascadeId) && newCid && !isDraftId(newCid) && state.bindings?.[cascadeId]) {
-                const em = typeof state.bindings[cascadeId] === "object" ? state.bindings[cascadeId].email : state.bindings[cascadeId];
-                delete state.bindings[cascadeId]; state.bindings[newCid] = em;
-                void fetch(apiH() + "/api/multi-account/bind", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cascadeId: newCid, email: em }) });
+            if (cascadeId !== newCid) {
+                const prevCid = cascadeId;
+                cascadeId = newCid;
+                if (prevCid && isDraftId(prevCid) && newCid && !isDraftId(newCid) && state.bindings?.[prevCid]) {
+                    const em = typeof state.bindings[prevCid] === "object" ? state.bindings[prevCid].email : state.bindings[prevCid];
+                    delete state.bindings[prevCid]; state.bindings[newCid] = em;
+                    void fetch(apiH() + "/api/multi-account/bind", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cascadeId: newCid, email: em }) });
+                } else {
+                    const em = getActive()?.email;
+                    if (em && em !== "Account") void fetch(apiH() + "/api/multi-account/set-active", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cascadeId: newCid, email: em }) });
+                }
             }
-            cascadeId = newCid; const { target, insertAfter, floating } = targetInfo, active = getActive();
+            const { target, insertAfter, floating } = targetInfo, active = getActive();
             let pill = document.getElementById("antigravity-account-pill");
             if (!pill || pill.parentElement !== target) {
                 if (pill) pill.remove(); pill = document.createElement("div"); pill.id = "antigravity-account-pill";
@@ -74,11 +81,10 @@
                 item.onclick = async (e) => {
                     if (e.target.closest(".agy-view-usage-link, .agy-usage-flyout")) return; e.stopPropagation();
                     if (em) {
-                        const isDraft = !cascadeId || cascadeId === "default" || cascadeId.startsWith("draft_") || cascadeId.startsWith("chat_");
                         try { if (window.antigravityMultiAccount) await Promise.race([window.antigravityMultiAccount.bindCascade?.(cascadeId, em), new Promise(r => setTimeout(r, 200))]); } catch (_) {}
-                        try { await fetch(apiH() + "/api/multi-account/bind", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cascadeId, email: em, active: isDraft }) }); } catch (_) {}
+                        try { await fetch(apiH() + "/api/multi-account/bind", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cascadeId, email: em, active: true }) }); } catch (_) {}
                         if (!state.bindings) state.bindings = {}; state.bindings[cascadeId] = em;
-                        if (isDraft) { state.active_default = em; state.bindings.__active_account = em; }
+                        state.active_default = em; state.bindings.__active_account = em;
                         render(); toast(`✓ Switched chat to ${em.split("@")[0]}`);
                     }
                     dd.classList.remove("open"); fly?.classList.remove("visible");

@@ -2,7 +2,7 @@
 const { getBindings, setBinding, setActiveAccount, getActiveAccountEmail } = require('./router/bindings.js');
 const { loadAllAccounts } = require('./router/accounts.js');
 const { fetchLanguageServerTelemetry, fetchDirectAccountQuotas, _quotaCache } = require('./router/telemetry.js');
-const { startMultiAccountRouter } = require('./router/server.js');
+const { startMultiAccountRouter, setLastCascadeId } = require('./router/server.js');
 
 let _refreshing = false;
 
@@ -138,5 +138,6 @@ module.exports = {
     getBindings,
     setBinding,
     setActiveAccount,
+    setLastCascadeId,
     getActiveAccountEmail: () => getActiveAccountEmail(loadAllAccounts()),
 };

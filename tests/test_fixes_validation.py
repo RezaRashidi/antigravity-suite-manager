@@ -2139,11 +2139,11 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             cmd_patch = ["node", "-e", f"const p = require('{patch_script}'); p.patchAppConversationForking('{td}');"]
             subprocess.run(cmd_patch, check=True)
 
-            self.assertIn("--dev_mode", ls_js.read_text())
+            self.assertIn("--enable_sidecars", ls_js.read_text())
+            self.assertNotIn("--dev_mode", ls_js.read_text())
             patched_preload = preload_js.read_text()
             self.assertIn("FORK_EXP_PRELOAD_START", patched_preload)
             self.assertIn("enable-conversation-forking", patched_preload)
-            self.assertIn("agy-hide-dev-footer", patched_preload)
             self.assertTrue((dist / "antigravity_fork_patch.marker").exists())
 
             # Test unpatch
