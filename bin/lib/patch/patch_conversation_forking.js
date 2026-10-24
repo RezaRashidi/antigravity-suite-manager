@@ -62,107 +62,24 @@ function unpatchIdeConversationForking(ideDir) {
 
 const PRELOAD_FORK_SNIPPET = `/* FORK_EXP_PRELOAD_START */
 try {
-    const { webFrame } = require('electron');
-    if (webFrame && typeof webFrame.executeJavaScriptInIsolatedWorld === 'function') {
-        webFrame.executeJavaScriptInIsolatedWorld(0, [{
-            code: \`(function() {
-                try {
-                    const origSet = Map.prototype.set;
-                    const origGet = Map.prototype.get;
-                    Map.prototype.set = function(key, val) {
-                        if (key === 'battleModeFeature' && (!val || val === null)) {
-                            val = { enabled: true };
-                        }
-                        if (key === 'inputComponent' && val && typeof val === 'object') {
-                            val.showInternalModesDropdown = true;
-                            val.showAutonomousModeToggle = true;
-                        }
-                        return origSet.call(this, key, val);
-                    };
-                    Map.prototype.get = function(key) {
-                        const val = origGet.call(this, key);
-                        if (key === 'battleModeFeature' && (!val || val === null)) {
-                            return { enabled: true };
-                        }
-                        if (key === 'inputComponent' && val && typeof val === 'object') {
-                            val.showInternalModesDropdown = true;
-                            val.showAutonomousModeToggle = true;
-                            return val;
-                        }
-                        return val;
-                    };
-                } catch (_) {}
-                try {
-                    let _cfg = window.__APP_CONFIG__;
-                    if (_cfg && typeof _cfg === 'object') _cfg.devMode = true;
-                    Object.defineProperty(window, '__APP_CONFIG__', {
-                        configurable: true,
-                        enumerable: true,
-                        get() { return _cfg; },
-                        set(val) {
-                            if (val && typeof val === 'object') val.devMode = true;
-                            _cfg = val;
-                        }
-                    });
-                    const envKey = 'jetski.developer.featureEnvironmentOverride';
-                    let env = {};
-                    try { env = JSON.parse(window.localStorage.getItem(envKey) || '{}'); } catch (_) {}
-                    env.enabled = true;
-                    env.userCohort = 'google';
-                    window.localStorage.setItem(envKey, JSON.stringify(env));
-
-                    const k = 'jetski.developer.customFlagOverrides';
-                    let f = {};
-                    try { f = JSON.parse(window.localStorage.getItem(k) || '{}'); } catch (_) {}
-                    f['enable-conversation-forking'] = true;
-                    f['enable-fork-in-new-worktree'] = true;
-                    f['enable-fork-at-historical-step'] = true;
-                    f['enable-aux-pane-redesign'] = true;
-                    f['enable-thought-editing'] = true;
-                    f['enable-thought-steering-from-selection'] = true;
-                    f['enable-battle-mode'] = true;
-                    f['enable-battle-contrib-variants'] = true;
-                    f['enable-battle-mode-custom-agents'] = true;
-                    f['jetski-autonomous-mode'] = true;
-                    f['labs-autonomous-mode'] = true;
-                    window.localStorage.setItem(k, JSON.stringify(f));
-                } catch (_) {}
-                try {
-                    const styleId = 'agy-hide-dev-footer';
-                    if (!document.getElementById(styleId)) {
-                        const style = document.createElement('style');
-                        style.id = styleId;
-                        style.textContent = 'div.shrink-0:has(button[title=\\\\"Reset State\\\\"]), div[data-screenshot-volatile]:has(button[title=\\\\"Reset State\\\\"]), div.shrink-0:has(button[title*=\\\\"Reset\\\\"]) { display: none !important; height: 0 !important; min-height: 0 !important; max-height: 0 !important; padding: 0 !important; margin: 0 !important; border: none !important; pointer-events: none !important; visibility: hidden !important; overflow: hidden !important; }';
-                        (document.head || document.documentElement).appendChild(style);
-                    }
-                } catch (_) {}
-            })();\`
-        }]);
-    }
-} catch (_) {}
-try {
-    const envKey = 'jetski.developer.featureEnvironmentOverride';
-    let env = {};
-    try { env = JSON.parse(window.localStorage.getItem(envKey) || '{}'); } catch (_) {}
-    env.enabled = true;
-    env.userCohort = 'google';
-    window.localStorage.setItem(envKey, JSON.stringify(env));
-
     const k = 'jetski.developer.customFlagOverrides';
     let f = {};
     try { f = JSON.parse(window.localStorage.getItem(k) || '{}'); } catch (_) {}
     f['enable-conversation-forking'] = true;
     f['enable-fork-in-new-worktree'] = true;
     f['enable-fork-at-historical-step'] = true;
-    f['enable-aux-pane-redesign'] = true;
-    f['enable-thought-editing'] = true;
-    f['enable-thought-steering-from-selection'] = true;
-    f['enable-battle-mode'] = true;
-    f['enable-battle-contrib-variants'] = true;
-    f['enable-battle-mode-custom-agents'] = true;
-    f['jetski-autonomous-mode'] = true;
-    f['labs-autonomous-mode'] = true;
+    delete f['enable-battle-mode'];
+    delete f['enable-battle-contrib-variants'];
+    delete f['enable-battle-mode-custom-agents'];
+    delete f['jetski-autonomous-mode'];
+    delete f['labs-autonomous-mode'];
+    delete f['enable-aux-pane-redesign'];
+    delete f['enable-thought-editing'];
+    delete f['enable-thought-steering-from-selection'];
     window.localStorage.setItem(k, JSON.stringify(f));
+
+    const envKey = 'jetski.developer.featureEnvironmentOverride';
+    window.localStorage.removeItem(envKey);
 } catch (_) {}
 /* FORK_EXP_PRELOAD_END */
 `;
@@ -181,13 +98,10 @@ function patchAppConversationForking(targetDir) {
     const lsPath = path.join(distDir, 'languageServer.js');
     if (fs.existsSync(lsPath)) {
         let code = fs.readFileSync(lsPath, 'utf8');
-        if (!code.includes("'--dev_mode'")) {
-            code = code.replace(
-                "'--enable_sidecars',",
-                "'--enable_sidecars',\n            '--dev_mode',"
-            );
+        if (code.includes("'--dev_mode'")) {
+            code = code.replace("\n            '--dev_mode',", "");
             fs.writeFileSync(lsPath, code, 'utf8');
-            console.log('[Fork] Enabled --dev_mode flag in languageServer.js');
+            console.log('[Fork] Cleaned --dev_mode flag from languageServer.js');
         }
     }
 

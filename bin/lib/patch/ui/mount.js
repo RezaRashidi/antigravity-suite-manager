@@ -2,40 +2,8 @@
 (function initMountModule() {
     try {
         if (typeof window !== 'undefined') {
-            try {
-                const origSet = Map.prototype.set;
-                const origGet = Map.prototype.get;
-                Map.prototype.set = function(key, val) {
-                    if (key === 'battleModeFeature' && (!val || val === null)) {
-                        val = { enabled: true };
-                    }
-                    if (key === 'inputComponent' && val && typeof val === 'object') {
-                        val.showInternalModesDropdown = true;
-                        val.showAutonomousModeToggle = true;
-                    }
-                    return origSet.call(this, key, val);
-                };
-                Map.prototype.get = function(key) {
-                    const val = origGet.call(this, key);
-                    if (key === 'battleModeFeature' && (!val || val === null)) {
-                        return { enabled: true };
-                    }
-                    if (key === 'inputComponent' && val && typeof val === 'object') {
-                        val.showInternalModesDropdown = true;
-                        val.showAutonomousModeToggle = true;
-                        return val;
-                    }
-                    return val;
-                };
-            } catch (_) {}
-
-            if (window.__APP_CONFIG__) window.__APP_CONFIG__.devMode = true;
             const envKey = 'jetski.developer.featureEnvironmentOverride';
-            let env = {};
-            try { env = JSON.parse(window.localStorage.getItem(envKey) || '{}'); } catch (_) {}
-            env.enabled = true;
-            env.userCohort = 'google';
-            window.localStorage.setItem(envKey, JSON.stringify(env));
+            try { window.localStorage.removeItem(envKey); } catch (_) {}
 
             const k = 'jetski.developer.customFlagOverrides';
             let f = {};
@@ -43,15 +11,15 @@
             f['enable-conversation-forking'] = true;
             f['enable-fork-in-new-worktree'] = true;
             f['enable-fork-at-historical-step'] = true;
-            f['enable-aux-pane-redesign'] = true;
-            f['enable-thought-editing'] = true;
-            f['enable-thought-steering-from-selection'] = true;
-            f['enable-battle-mode'] = true;
-            f['enable-battle-contrib-variants'] = true;
-            f['enable-battle-mode-custom-agents'] = true;
-            f['jetski-autonomous-mode'] = true;
-            f['labs-autonomous-mode'] = true;
-            window.localStorage.setItem(k, JSON.stringify(f));
+            delete f['enable-aux-pane-redesign'];
+            delete f['enable-thought-editing'];
+            delete f['enable-thought-steering-from-selection'];
+            delete f['enable-battle-mode'];
+            delete f['enable-battle-contrib-variants'];
+            delete f['enable-battle-mode-custom-agents'];
+            delete f['jetski-autonomous-mode'];
+            delete f['labs-autonomous-mode'];
+            try { window.localStorage.setItem(k, JSON.stringify(f)); } catch (_) {}
         }
     } catch (_) {}
     window.__antigravityDetectCascadeId = function(targetEl) {
