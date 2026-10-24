@@ -8,6 +8,7 @@ find_suite_repo_root() {
         "${SCRIPT_DIR}/.." \
         "$PWD" \
         "${PWD}/.." \
+        "${REAL_HOME}/.antigravity-suite-manager" \
         "${REAL_HOME}/antigravity-suite-manager" \
         "${REAL_HOME}/PhpstormProjects/antigravity-suite-manager" \
         "${REAL_HOME}/projects/antigravity-suite-manager" \
@@ -37,6 +38,10 @@ update_suite_repo() {
     log_info "Updating repository at ${repo_dir} via git pull..."
     local branch
     branch=$(git -C "$repo_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+    if [ "$(git -C "$repo_dir" rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
+        log_info "Unshallowing repository to ensure complete history fetch..."
+        git -C "$repo_dir" fetch --unshallow origin 2>/dev/null || true
+    fi
     if ! git -C "$repo_dir" pull origin "$branch"; then
         log_err "Git pull failed for branch '$branch'."
         return 1
