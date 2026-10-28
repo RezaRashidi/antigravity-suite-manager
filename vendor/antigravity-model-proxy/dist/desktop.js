@@ -16,8 +16,18 @@ function install(getLanguageServerPort) {
     void electron_1.app.whenReady().then(() => {
         electron_1.session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
             const proxyPort = (0, proxy_1.getProxyPort)();
+            if (!proxyPort)
+                return callback({});
+            if (details.url.includes('SetCloudCodeURL')) {
+                return callback({ cancel: true });
+            }
+            if (details.url.includes('LanguageServerService/GetAvailableModels')) {
+                return callback({
+                    redirectURL: `http://127.0.0.1:${proxyPort}/GetAvailableModels?ls=${encodeURIComponent(details.url)}`,
+                });
+            }
             const lsPort = getLanguageServerPort();
-            if (!proxyPort || !lsPort)
+            if (!lsPort)
                 return callback({});
             const url = new URL(details.url);
             if (!['http:', 'https:'].includes(url.protocol) ||
@@ -25,16 +35,7 @@ function install(getLanguageServerPort) {
                 Number(url.port) !== lsPort) {
                 return callback({});
             }
-            if (/(?:\/|\.)LanguageServerService\/SetCloudCodeURL$/.test(url.pathname)) {
-                callback({ cancel: true });
-            }
-            else if (/(?:\/|\.)LanguageServerService\/GetAvailableModels$/.test(url.pathname)) {
-                callback({
-                    redirectURL: `http://127.0.0.1:${proxyPort}/GetAvailableModels?ls=${encodeURIComponent(details.url)}`,
-                });
-            }
-            else
-                callback({});
+            callback({});
         });
     });
     electron_1.app.on('browser-window-created', (_event, win) => {

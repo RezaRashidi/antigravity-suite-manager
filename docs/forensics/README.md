@@ -44,5 +44,6 @@ This document records the end-to-end diagnostic methodology, reverse-engineering
 - [36. Issue 34: Custom Models Multi-Provider Discovery, Selective Activation & Local Proxy Bridge](36_custom_models_multi_provider_discovery_and_proxy_bridge.md)
 - [37. Issue 35: In-App Custom Models Settings UI Injection & Multi-Patch Coexistence](37_in_app_custom_models_settings_ui_injection_and_patch_coexistence.md)
 - [38. Issue 36: Custom Models Invalid URL Defect, Theme Adaptation, and Gateway Account Architecture](38_custom_models_invalid_url_theme_and_gateway_architecture.md)
-- [39. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
+- [39. Issue 37: Model Selector Sync, Instant Deletion, and Auto-Import Free Models](39_model_selector_sync_instant_delete_and_auto_import_free_models.md)
+- [40. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
 

@@ -9,6 +9,7 @@ const storageAPI = {
     testModelConnection: (model) => electron_1.ipcRenderer.invoke('storage:test-model-connection', model),
     getPresets: () => electron_1.ipcRenderer.invoke('storage:get-provider-presets'),
     discoverModels: (params) => electron_1.ipcRenderer.invoke('storage:discover-models', params),
+    syncModels: () => electron_1.ipcRenderer.invoke('storage:sync-models'),
 };
 window.addEventListener('DOMContentLoaded', () => {
     let modelList = [];
@@ -521,6 +522,11 @@ window.addEventListener('DOMContentLoaded', () => {
         customModelsCache.ts = 0;
         await renderCustomModelsList();
         findRefreshButton()?.click();
+        window.dispatchEvent(new CustomEvent('agy-models-changed'));
+        const mainStatus = document.getElementById('agy-main-status');
+        if (mainStatus) {
+            setStatus(mainStatus, 'Changes saved. Click "Sync to Chat" or press F5 to update Chat model selector.');
+        }
     }
     function uniqueName(base) {
         let name = base, index = 2;
@@ -662,7 +668,8 @@ window.addEventListener('DOMContentLoaded', () => {
                 const actions = element('div', 'agy-actions');
                 actions.append(button('Configure gateway', () => openConfigureGateway(first), groupStatus));
                 actions.append(button('+ Add model', () => openModelModal(first, 'add-to-gateway'), groupStatus));
-                actions.append(button('Discover models', () => openModelModal(first, 'discover'), groupStatus));
+                actions.append(button('Discover models', () => openDiscoverGatewayModels(first), groupStatus));
+                actions.append(button('وارد کردن خودکار مدل‌های free', () => autoImportFreeModels(first, groupStatus), groupStatus));
                 const allEnabled = models.every((model) => model.enabled !== false);
                 actions.append(button(allEnabled ? 'Disable all' : 'Enable all', async () => {
                     for (const model of models)
@@ -687,8 +694,6 @@ window.addEventListener('DOMContentLoaded', () => {
                         const result = requireSuccess(await storageAPI.testModelConnection(model));
                         setStatus(rowStatus, result.message || 'Connection successful.');
                     }, rowStatus), button('Edit', () => openModelModal(model, 'edit'), rowStatus), button('Duplicate', () => openModelModal(model, 'duplicate'), rowStatus), button('Delete', async () => {
-                        if (!window.confirm(`Delete “${model.displayName || model.name}”?`))
-                            return;
                         requireSuccess(await storageAPI.deleteCustomModel(model.name));
                         await modelsChanged();
                     }, rowStatus));
@@ -700,6 +705,226 @@ window.addEventListener('DOMContentLoaded', () => {
         }
         catch (error) {
             setStatus(target, error instanceof Error ? error.message : 'Could not load custom models.', true);
+        }
+    }
+    async function autoImportFreeModels(gateway, status) {
+        setStatus(status, 'Fetching models from gateway…');
+        try {
+            const result = requireSuccess(await storageAPI.discoverModels(gateway));
+            const choices = result.models || [];
+            const freeChoices = choices.filter((m) =>
+                /free/i.test(m.id || '') || /free/i.test(m.displayName || '') || /free/i.test(m.name || '')
+            );
+            if (!freeChoices.length) {
+                setStatus(status, 'No models containing "free" were found in this gateway.');
+                return;
+            }
+            let count = 0;
+            for (const choice of freeChoices) {
+                const prior = modelList.find((m) => m.provider === gateway.provider && (m.externalModelName === choice.id || m.name === `models/${gateway.provider}/${choice.id}`));
+                if (prior) {
+                    if (prior.enabled === false) {
+                        requireSuccess(await storageAPI.saveCustomModel({ ...prior, enabled: true }));
+                        count++;
+                    }
+                } else {
+                    const config = {
+                        name: uniqueName(`models/${gateway.provider}/${choice.id}`),
+                        displayName: choice.displayName || choice.id,
+                        provider: gateway.provider,
+                        apiUrl: gateway.apiUrl,
+                        apiKey: gateway.apiKey,
+                        apiFormat: gateway.apiFormat || 'openai',
+                        externalModelName: choice.id,
+                        enabled: true,
+                        contextWindow: choice.contextWindow,
+                        maxOutputTokens: choice.maxOutputTokens,
+                        supportsVision: choice.supportsVision,
+                        supportsThinking: choice.supportsThinking,
+                    };
+                    requireSuccess(await storageAPI.saveCustomModel(config));
+                    count++;
+                }
+            }
+            await modelsChanged();
+            setStatus(status, `Imported/enabled ${count} free models successfully!`);
+        } catch (err) {
+            setStatus(status, String(err?.message || err), true);
+        }
+    }
+    async function openDiscoverGatewayModels(gateway) {
+        const { body, status, close } = openModal(`Discover Models · ${gateway.provider}`);
+        setStatus(status, 'Fetching models from gateway…');
+        const container = element('div');
+        body.append(container);
+
+        try {
+            const result = requireSuccess(await storageAPI.discoverModels(gateway));
+            const choices = result.models || [];
+            if (!choices.length) {
+                setStatus(status, 'Gateway returned no models. You can enter a model ID manually below.');
+            } else {
+                setStatus(status, `Found ${choices.length} models. Select models to add:`);
+            }
+
+            const selected = new Set();
+            const discoveryFilter = element('div', 'agy-filter');
+            const searchInput = field(discoveryFilter, 'Search models', 'agy-disc-search', '', 'search');
+            searchInput.placeholder = 'Filter models by name or ID';
+
+            const toolbar = element('div', 'agy-actions');
+            const countLabel = element('span', 'agy-muted', `${choices.length} models found`);
+            const selectAllBtn = button('Select All', () => {
+                const q = searchInput.value.trim().toLowerCase();
+                choices.forEach((m) => {
+                    if (!q || (m.id && m.id.toLowerCase().includes(q)) || (m.displayName && m.displayName.toLowerCase().includes(q))) {
+                        selected.add(m.id);
+                    }
+                });
+                renderChoices();
+            });
+            const deselectAllBtn = button('Deselect All', () => {
+                selected.clear();
+                renderChoices();
+            });
+            toolbar.append(countLabel, selectAllBtn, deselectAllBtn);
+
+            const listWrapper = element('div', 'agy-discovery-list');
+            listWrapper.style.maxHeight = '280px';
+            listWrapper.style.overflowY = 'auto';
+            listWrapper.style.margin = '10px 0';
+
+            function renderChoices() {
+                listWrapper.replaceChildren();
+                const q = searchInput.value.trim().toLowerCase();
+                const filtered = choices.filter((m) =>
+                    !q || (m.id && m.id.toLowerCase().includes(q)) || (m.displayName && m.displayName.toLowerCase().includes(q))
+                );
+                countLabel.textContent = `${filtered.length} of ${choices.length} models · ${selected.size} selected`;
+                for (const choice of filtered) {
+                    const isAlreadyAdded = modelList.some((m) => m.provider === gateway.provider && m.externalModelName === choice.id);
+                    const label = element('label', 'agy-checkbox-item');
+                    label.style.display = 'flex';
+                    label.style.alignItems = 'center';
+                    label.style.gap = '8px';
+                    label.style.padding = '4px 0';
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.checked = selected.has(choice.id);
+                    cb.addEventListener('change', () => {
+                        if (cb.checked)
+                            selected.add(choice.id);
+                        else
+                            selected.delete(choice.id);
+                        countLabel.textContent = `${filtered.length} of ${choices.length} models · ${selected.size} selected`;
+                    });
+                    const nameSpan = element('span', '', choice.displayName && choice.displayName !== choice.id ? `${choice.displayName} (${choice.id})` : choice.id);
+                    if (isAlreadyAdded) {
+                        const badge = element('span', 'agy-badge', ' (added)');
+                        badge.style.opacity = '0.6';
+                        badge.style.fontSize = '11px';
+                        nameSpan.append(badge);
+                    }
+                    label.append(cb, nameSpan);
+                    listWrapper.append(label);
+                }
+            }
+
+            searchInput.addEventListener('input', renderChoices);
+            renderChoices();
+
+            const bottomActions = element('div', 'agy-actions');
+            bottomActions.append(button('Add Selected Models', async () => {
+                if (!selected.size)
+                    throw new Error('Please select at least one model.');
+                let saved = 0;
+                for (const choice of choices.filter((m) => selected.has(m.id))) {
+                    const prior = modelList.find((m) => m.provider === gateway.provider && m.externalModelName === choice.id);
+                    const config = {
+                        name: prior?.name || uniqueName(`models/${gateway.provider}/${choice.id}`),
+                        displayName: choice.displayName || choice.id,
+                        provider: gateway.provider,
+                        apiUrl: gateway.apiUrl,
+                        apiKey: gateway.apiKey,
+                        apiFormat: gateway.apiFormat || 'openai',
+                        externalModelName: choice.id,
+                        enabled: true,
+                        contextWindow: choice.contextWindow,
+                        maxOutputTokens: choice.maxOutputTokens,
+                        supportsVision: choice.supportsVision,
+                        supportsThinking: choice.supportsThinking,
+                    };
+                    requireSuccess(await storageAPI.saveCustomModel(config));
+                    saved++;
+                }
+                await modelsChanged();
+                setStatus(status, `Successfully added ${saved} models.`);
+                setTimeout(close, 700);
+            }, status, true));
+
+            // Manual entry toggle
+            const manualToggle = element('details');
+            manualToggle.style.marginTop = '14px';
+            const manualSummary = element('summary', 'agy-muted', 'Enter model ID manually');
+            manualSummary.style.cursor = 'pointer';
+            manualSummary.style.fontSize = '12px';
+            const manualBox = element('div');
+            manualBox.style.padding = '8px 0';
+            const manualId = field(manualBox, 'Model ID', 'agy-manual-model-id', '');
+            manualId.placeholder = 'e.g. gpt-4o, claude-3-5-sonnet';
+            const manualName = field(manualBox, 'Display Name (optional)', 'agy-manual-model-name', '');
+            const manualBtn = button('+ Add Manual Model', async () => {
+                const idVal = manualId.value.trim();
+                if (!idVal)
+                    throw new Error('Model ID is required.');
+                const config = {
+                    name: uniqueName(`models/${gateway.provider}/${idVal}`),
+                    displayName: manualName.value.trim() || idVal,
+                    provider: gateway.provider,
+                    apiUrl: gateway.apiUrl,
+                    apiKey: gateway.apiKey,
+                    apiFormat: gateway.apiFormat || 'openai',
+                    externalModelName: idVal,
+                    enabled: true,
+                };
+                requireSuccess(await storageAPI.saveCustomModel(config));
+                await modelsChanged();
+                setStatus(status, `Model ${idVal} added successfully!`);
+                setTimeout(close, 700);
+            }, status);
+            manualBox.append(manualBtn);
+            manualToggle.append(manualSummary, manualBox);
+
+            container.append(discoveryFilter, toolbar, listWrapper, bottomActions, manualToggle);
+        }
+        catch (err) {
+            setStatus(status, String(err?.message || err), true);
+            const manualBox = element('div');
+            manualBox.style.marginTop = '12px';
+            const manualId = field(manualBox, 'Model ID', 'agy-manual-model-id-err', '');
+            manualId.placeholder = 'e.g. gpt-4o, claude-3-5-sonnet';
+            const manualName = field(manualBox, 'Display Name (optional)', 'agy-manual-model-name-err', '');
+            const manualBtn = button('Save Manual Model', async () => {
+                const idVal = manualId.value.trim();
+                if (!idVal)
+                    throw new Error('Model ID is required.');
+                const config = {
+                    name: uniqueName(`models/${gateway.provider}/${idVal}`),
+                    displayName: manualName.value.trim() || idVal,
+                    provider: gateway.provider,
+                    apiUrl: gateway.apiUrl,
+                    apiKey: gateway.apiKey,
+                    apiFormat: gateway.apiFormat || 'openai',
+                    externalModelName: idVal,
+                    enabled: true,
+                };
+                requireSuccess(await storageAPI.saveCustomModel(config));
+                await modelsChanged();
+                setStatus(status, `Model ${idVal} added successfully!`);
+                setTimeout(close, 700);
+            }, status, true);
+            manualBox.append(manualBtn);
+            container.append(manualBox);
         }
     }
     async function openModelModal(existing, mode = 'edit') {
@@ -1190,7 +1415,17 @@ window.addEventListener('DOMContentLoaded', () => {
             }
         })();
         const actions = element('div', 'agy-actions');
-        actions.append(button('+ Add gateway', openAddGatewayModal), button('Discover local', discoverLocal), button('Import', () => openImportExport('import')), button('Export', () => openImportExport('export')), button('Remote gateway', openGateway));
+        actions.append(
+            button('🔄 Sync to Chat', async () => {
+                setStatus(status, 'Syncing models with Chat & reloading IDE…');
+                await storageAPI.syncModels();
+            }, undefined, true),
+            button('+ Add gateway', openAddGatewayModal),
+            button('Discover local', discoverLocal),
+            button('Import', () => openImportExport('import')),
+            button('Export', () => openImportExport('export')),
+            button('Remote gateway', openGateway)
+        );
         const search = field(section, 'Search models', 'agy-model-search', searchTerm, 'search');
         search.placeholder = 'Search by name, model ID or provider';
         search.addEventListener('input', () => {

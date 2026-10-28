@@ -112,5 +112,22 @@ function registerCustomModelHandlers() {
     handle('storage:google-test-account', manager.googleTestAccount);
     handle('storage:google-pool-status', manager.googlePoolStatus);
     handle('storage:get-proxy-status', async () => ({ proxy: await (0, proxyAgent_1.detectLocalProxy)() }));
+    handle('storage:sync-models', async () => {
+        try {
+            const ls = require('./languageServer');
+            if (ls && typeof ls.restartLanguageServer === 'function') {
+                await ls.restartLanguageServer();
+            }
+        } catch (e) {
+            console.error('[Model Patch] restartLanguageServer error:', e);
+        }
+        const windows = electron_1.BrowserWindow.getAllWindows();
+        for (const win of windows) {
+            if (!win.isDestroyed() && win.webContents) {
+                win.webContents.reload();
+            }
+        }
+        return { success: true };
+    });
 }
 //# sourceMappingURL=customIpc.js.map

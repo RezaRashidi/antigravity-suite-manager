@@ -42,6 +42,9 @@ class TestPatchModels(unittest.TestCase):
         self.assertIn("--agy-bg", content)
         self.assertIn("openConfigureGateway", content)
         self.assertIn("openAddGatewayModal", content)
+        self.assertIn("openDiscoverGatewayModels", content)
+        self.assertIn("autoImportFreeModels", content)
+        self.assertNotIn("window.confirm", content)
 
     def test_deploy_check_runs_cleanly(self):
         orig_asar = Path("/opt/Antigravity-x64/resources/app.asar.orig")
