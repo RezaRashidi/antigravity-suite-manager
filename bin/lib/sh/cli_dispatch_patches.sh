@@ -74,3 +74,13 @@ dispatch_unpatch_open_ide() {
     auto_detect_installations
     unpatch_open_ide_app "$@"
 }
+
+dispatch_patch_models() {
+    auto_detect_installations
+    patch_models_app "$@"
+}
+
+dispatch_unpatch_models() {
+    auto_detect_installations
+    unpatch_models_app "$@"
+}

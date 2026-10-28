@@ -48,8 +48,6 @@ export declare function collectToolSchemas(body: unknown): ToolSchemas;
  * historical tool signatures; arbitrary values must never become file paths.
  */
 export declare function normalizeToolArgs(name: string, args: Record<string, unknown> | null | undefined, schemas?: ToolSchemas): Record<string, unknown>;
-/** Return a provider-compatible copy without changing the caller's tool schema. */
-export declare function normalizeToolSchema(schema: object): Record<string, unknown>;
 /**
  * Recursively converts Gemini parameter types (UPPERCASE) to lowercase format.
  * Gemini uses uppercase (STRING, NUMBER); OpenAI/Anthropic need lowercase.

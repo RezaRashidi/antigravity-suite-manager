@@ -39,9 +39,44 @@ const electron_1 = require("electron");
 const path = __importStar(require("node:path"));
 const cryptoStore = __importStar(require("./cryptoStore"));
 const modelManagement_1 = require("./modelManagement");
-const modelActions_1 = require("./modelActions");
+const proxyAgent_1 = require("./proxy/proxyAgent");
+async function openExternalOrAuthWindow(url) {
+    if (!url.includes('accounts.google.com')) {
+        await electron_1.shell.openExternal(url);
+        return;
+    }
+    try {
+        const proxy = await (0, proxyAgent_1.detectLocalProxy)();
+        const authWin = new electron_1.BrowserWindow({
+            width: 520,
+            height: 680,
+            title: 'Google Sign In',
+            autoHideMenuBar: true,
+            webPreferences: {
+                nodeIntegration: false,
+                contextIsolation: true,
+            },
+        });
+        if (proxy) {
+            await authWin.webContents.session.setProxy({ proxyRules: proxy });
+        }
+        authWin.webContents.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36');
+        authWin.webContents.on('will-redirect', (_event, redirectUrl) => {
+            if (redirectUrl.includes('/oauth2callback')) {
+                setTimeout(() => {
+                    if (!authWin.isDestroyed())
+                        authWin.close();
+                }, 1200);
+            }
+        });
+        await authWin.loadURL(url);
+    }
+    catch {
+        await electron_1.shell.openExternal(url);
+    }
+}
 function registerCustomModelHandlers() {
-    const manager = (0, modelManagement_1.createModelManager)(path.join(electron_1.app.getPath('home'), '.gemini', 'antigravity'), cryptoStore, (url) => electron_1.shell.openExternal(url));
+    const manager = (0, modelManagement_1.createModelManager)(path.join(electron_1.app.getPath('home'), '.gemini', 'antigravity'), cryptoStore, openExternalOrAuthWindow);
     const handle = (channel, action) => {
         electron_1.ipcMain.handle(channel, async (_event, ...args) => {
             try {
@@ -55,7 +90,27 @@ function registerCustomModelHandlers() {
             }
         });
     };
-    for (const [channel, action] of Object.entries((0, modelActions_1.createModelActions)(manager)))
-        handle(channel, action);
+    handle('storage:get-custom-models', () => manager.store.list());
+    handle('storage:save-custom-model', manager.saveModel);
+    handle('storage:delete-custom-model', (name) => {
+        manager.store.delete(name);
+        return { success: true };
+    });
+    handle('storage:test-model-connection', (model) => manager.testModel(model));
+    handle('storage:get-provider-presets', manager.presets);
+    handle('storage:discover-models', manager.discoverModels);
+    handle('storage:discover-local', manager.discoverLocal);
+    handle('storage:export-custom-models', () => manager.store.export());
+    handle('storage:import-custom-models', (payload) => ({ success: true, count: manager.store.import(payload) }));
+    handle('storage:get-gateway', manager.getGateway);
+    handle('storage:save-gateway', manager.saveGateway);
+    handle('storage:test-gateway', manager.testGateway);
+    handle('storage:import-gateway-models', manager.importGatewayModels);
+    handle('storage:open-gateway-dashboard', manager.openDashboard);
+    handle('storage:google-login', manager.googleLogin);
+    handle('storage:google-login-cancel', manager.googleLoginCancel);
+    handle('storage:google-test-account', manager.googleTestAccount);
+    handle('storage:google-pool-status', manager.googlePoolStatus);
+    handle('storage:get-proxy-status', async () => ({ proxy: await (0, proxyAgent_1.detectLocalProxy)() }));
 }
 //# sourceMappingURL=customIpc.js.map

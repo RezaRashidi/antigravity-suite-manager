@@ -44,6 +44,9 @@ Commands:
   unpatch-fork  Revert conversation forking patch
   open-ide      Enable native 'Open in IDE' titlebar button in App (alias: patch-open-ide)
   unpatch-open-ide Revert native 'Open in IDE' button patch
+  models        Custom models & multi-provider discovery/selection (alias: custom-models)
+  patch-models  Inject custom models settings UI into Antigravity App (in-app patch)
+  unpatch-models Revert in-app custom models settings UI patch
   unpatch       Restore clean unmodified original app.asar (revert all patches)
   rtl           Apply / re-apply antigravity-rtl to App and IDE
   unpatch-rtl   Revert RTL typography patch from App and IDE

@@ -21,5 +21,5 @@ export declare function getProxyMetrics(): {
 export declare function stopCustomRequests(): void;
 export declare function buildFallbackChain(primary: CustomModel, allModels: CustomModel[]): CustomModel[];
 /** The sole retry/fallback owner; nothing is retried after any model output was received. */
-export declare function runCustomModelRequest(res: http.ServerResponse, primary: CustomModel, originalBody: GeminiBody, isStream: boolean, allModels: CustomModel[], cloudEnvelope?: boolean, kind?: 'request' | 'generation-test'): Promise<void>;
+export declare function runCustomModelRequest(res: http.ServerResponse, primary: CustomModel, originalBody: GeminiBody, isStream: boolean, allModels: CustomModel[], cloudEnvelope?: boolean): Promise<void>;
 //# sourceMappingURL=customRequest.d.ts.map

@@ -44,9 +44,6 @@ const path = __importStar(require("node:path"));
 const modelStore_1 = require("./modelStore");
 const providers_1 = require("./providers");
 const googleOAuth_1 = require("./googleOAuth");
-const googleOnboarding_1 = require("./googleOnboarding");
-const generationProbe_1 = require("./generationProbe");
-const schemaValidator_1 = require("./schemaValidator");
 const googleAccounts_1 = require("./googleAccounts");
 function checkedUrl(value) {
     const url = new URL(value);
@@ -109,11 +106,7 @@ function requestJson(urlValue, headers = {}, allowUnauthorized = false) {
         req.end();
     });
 }
-function statusError(status, workersAi = false) {
-    if (workersAi && (status === 401 || status === 403))
-        return `Cloudflare authentication failed — check the Account ID and API token's Workers AI Read or Write permission (HTTP ${status}). Use the Workers AI API token template for generation.`;
-    if (workersAi && (status === 404 || status === 405))
-        return `Cloudflare model catalog is unavailable (HTTP ${status}). Check the account API URL. You can enter a model ID manually; generation was not tested.`;
+function statusError(status) {
     const messages = {
         401: 'Authentication rejected — check the API key',
         403: 'Access denied — check provider permissions',
@@ -126,21 +119,6 @@ function statusError(status, workersAi = false) {
 function modelListUrl(apiUrl, format, provider) {
     const url = checkedUrl(apiUrl);
     url.search = '';
-    const workersPath = (0, providers_1.workersAiAccountPath)(apiUrl, provider);
-    if (workersPath) {
-        url.pathname = `${workersPath}/models/search`;
-        url.searchParams.set('format', 'openrouter');
-        url.searchParams.set('task', 'Text Generation');
-        url.searchParams.set('per_page', '100');
-        url.searchParams.set('page', '1');
-        return url.toString();
-    }
-    if ((0, providers_1.isOpencodeEndpoint)(apiUrl, provider)) {
-        const legacy = /^\/zen(?:\/|$)/.test(url.pathname);
-        const go = /^\/(?:zen|inference)\/go(?:\/|$)/.test(url.pathname) || provider === 'opencode-go';
-        url.pathname = `/${legacy ? 'zen' : 'inference'}${go ? '/go' : ''}/v1/models`;
-        return url.toString();
-    }
     let pathname = url.pathname.replace(/\/+$/, '');
     pathname = pathname
         .replace(/\/(chat\/completions|completions|responses|messages)$/, '')
@@ -172,23 +150,13 @@ function parseModels(data, provider) {
     if (!data || typeof data !== 'object')
         throw new Error('Provider did not return a JSON model list');
     const root = data;
-    if (provider === 'workers-ai' && root.success === false)
-        throw new Error('Cloudflare model catalog request failed — check the Account ID and Workers AI token permissions');
-    const nativeWorkers = provider === 'workers-ai' && Array.isArray(root.result);
-    const items = nativeWorkers
-        ? root.result
-        : Array.isArray(data)
-            ? data
-            : Array.isArray(root.data)
-                ? root.data
-                : root.models || root.output?.models;
+    const items = Array.isArray(data) ? data : Array.isArray(root.data) ? root.data : root.models || root.output?.models;
     if (!Array.isArray(items))
         throw new Error('Provider response has no model list');
     const positiveLimit = (...values) => values.find((value) => typeof value === 'number' && Number.isSafeInteger(value) && value > 0 && value <= 1000000000);
     const seen = new Set();
     return items
         .filter((item) => item && typeof item === 'object')
-        .filter((item) => !nativeWorkers || !item.task?.name || item.task.name === 'Text Generation')
         .filter((item) => provider !== 'together' || item.type === 'chat')
         .filter((item) => provider !== 'fireworks' ||
         (item.supportsServerless !== false &&
@@ -206,16 +174,18 @@ function parseModels(data, provider) {
         const maxOutputTokens = positiveLimit(item.maxOutputTokens, item.max_output_tokens, item.max_completion_tokens, item.outputTokenLimit, item.top_provider?.max_completion_tokens);
         const supportsVision = typeof item.supportsVision === 'boolean'
             ? item.supportsVision
-            : [item.input_modalities, item.architecture?.input_modalities, item.inference_metadata?.request_modality]
-                .find(Array.isArray)
-                ?.some((value) => typeof value === 'string' && value.toLowerCase() === 'image');
+            : Array.isArray(item.architecture?.input_modalities)
+                ? item.architecture.input_modalities.includes('image')
+                : Array.isArray(item.inference_metadata?.request_modality)
+                    ? item.inference_metadata.request_modality.includes('Image')
+                    : undefined;
         const supportsThinking = typeof item.supportsThinking === 'boolean'
             ? item.supportsThinking
             : Array.isArray(item.supported_parameters)
                 ? item.supported_parameters.some((value) => value === 'reasoning' || value === 'reasoning_effort')
                 : undefined;
         return {
-            id: String(nativeWorkers ? item.name || '' : item.id || item.model || item.name || '').replace(/^models\//, ''),
+            id: String(item.id || item.model || item.name || '').replace(/^models\//, ''),
             displayName: String(item.displayName || item.display_name || item.title || item.name || item.id || item.model || ''),
             ...(contextWindow ? { contextWindow } : {}),
             ...(maxOutputTokens ? { maxOutputTokens } : {}),
@@ -230,15 +200,7 @@ function parseModels(data, provider) {
         return true;
     });
 }
-function createModelManager(directory, codec, openExternal, overrides = {}) {
-    const dependencies = {
-        loginGoogleAccount: googleOAuth_1.loginGoogleAccount,
-        refreshGoogleAccount: googleAccounts_1.refreshGoogleAccount,
-        fetchGoogleQuota: googleAccounts_1.fetchGoogleQuota,
-        prepareGoogleAccount: googleOnboarding_1.prepareGoogleAccount,
-        now: Date.now,
-        ...overrides,
-    };
+function createModelManager(directory, codec, openExternal, dependencies = { loginGoogleAccount: googleOAuth_1.loginGoogleAccount, refreshGoogleAccount: googleAccounts_1.refreshGoogleAccount, fetchGoogleQuota: googleAccounts_1.fetchGoogleQuota, now: Date.now }) {
     const pending = new Map();
     let loginController;
     function pendingAccount(id) {
@@ -251,60 +213,42 @@ function createModelManager(directory, codec, openExternal, overrides = {}) {
         const account = pendingAccount(id);
         return account ? { ...account } : undefined;
     });
-    function persistGoogleAccount(modelName, account, previous, includePreparation = false, requireUnchangedCredentials = includePreparation) {
+    function persistGoogleAccount(modelName, account, previous) {
         const raw = store.read().find((item) => item.name === modelName);
         if (!raw || !Array.isArray(raw.googleAccounts))
-            return false;
+            return;
         const stored = raw.googleAccounts.find((item) => item.id === account.id);
         if (!stored)
-            return false;
+            return;
         if (previous) {
             const secret = (value) => raw.encryptedGoogleAccounts ? (0, modelStore_1.decodeSecret)(value, codec) : value || '';
             if (stored.clientId !== previous.clientId ||
                 (secret(stored.refreshToken) || secret(stored.accessToken)) !==
                     (previous.refreshToken || previous.accessToken || ''))
-                return false;
-            if (includePreparation &&
-                ['project', 'cloudCodeEndpoint', 'authMode'].some((field) => stored[field] !== previous[field]))
-                return false;
-            if (requireUnchangedCredentials &&
-                ['accessToken', 'refreshToken', 'clientSecret'].some((field) => secret(stored[field]) !== (previous[field] || '')))
-                return false;
+                return;
         }
         const model = (0, modelStore_1.redactModel)(raw);
         if (!Array.isArray(model.googleAccounts))
-            return false;
+            return;
         const index = model.googleAccounts.findIndex((item) => item.id === account.id);
         if (index < 0)
-            return false; // Account or model removed while a request was in flight.
+            return; // Account or model removed while a request was in flight.
         model.googleAccounts[index] = {
             ...model.googleAccounts[index],
             accessToken: account.accessToken,
             refreshToken: account.refreshToken,
             expiresAt: account.expiresAt,
-            ...(includePreparation
-                ? { project: account.project, cloudCodeEndpoint: account.cloudCodeEndpoint, authMode: account.authMode }
-                : {}),
         };
         store.save(model);
-        return true;
     }
-    (0, googleAccounts_1.configureGoogleAccountPersistence)((modelName, account, previous) => {
-        persistGoogleAccount(modelName, account, previous);
-    });
+    (0, googleAccounts_1.configureGoogleAccountPersistence)(persistGoogleAccount);
     function saveModel(model) {
-        const previous = store.read().find((saved) => saved.name === (model.originalName || model.name));
         store.save(model);
-        const current = store.read().find((saved) => saved.name === model.name);
-        for (const account of Array.isArray(current?.googleAccounts) ? current.googleAccounts : []) {
-            const old = (Array.isArray(previous?.googleAccounts) ? previous.googleAccounts : []).find((value) => value.id === account.id);
-            if (!old)
-                continue;
-            const secretChanged = ['accessToken', 'refreshToken', 'clientSecret'].some((field) => (current?.encryptedGoogleAccounts ? (0, modelStore_1.decodeSecret)(account[field], codec) : account[field] || '') !==
-                (previous?.encryptedGoogleAccounts ? (0, modelStore_1.decodeSecret)(old[field], codec) : old[field] || ''));
-            if (secretChanged || ['clientId', 'project', 'authMode', 'cloudCodeEndpoint'].some((field) => old[field] !== account[field]))
+        if (Array.isArray(model.googleAccounts))
+            for (const account of model.googleAccounts) {
+                pending.delete(account.id);
                 (0, googleAccounts_1.resetGoogleAccountState)(account.id);
-        }
+            }
         return { success: true };
     }
     function resolveGoogleAccount(input) {
@@ -319,46 +263,14 @@ function createModelManager(directory, codec, openExternal, overrides = {}) {
             throw new Error('Select a Google account first');
         for (const field of ['accessToken', 'refreshToken', 'clientSecret']) {
             const supplied = input.account?.[field];
-            if (supplied && !(0, modelStore_1.isMaskedSecret)(supplied) && supplied !== saved?.[field]) {
-                if (/^(enc:|fallback:|local-gcm:|DECRYPTION_FAILED)/.test(supplied))
-                    throw new Error('Enter fresh Google credentials instead of a machine-encrypted value');
+            if (supplied && !(0, modelStore_1.isMaskedSecret)(supplied))
                 account[field] = supplied;
-            }
             else if (saved?.[field])
                 account[field] = savedModel?.encryptedGoogleAccounts ? (0, modelStore_1.decodeSecret)(saved[field], codec) : saved[field];
             else
                 account[field] = temporary?.[field];
         }
         return account;
-    }
-    function maskedGoogleAccount(account) {
-        const masked = (0, modelStore_1.redactModel)({
-            name: '',
-            provider: '',
-            apiUrl: '',
-            externalModelName: '',
-            googleAccounts: [account],
-        });
-        return masked.googleAccounts[0];
-    }
-    function rememberGoogleAccount(account) {
-        pendingAccount(account.id);
-        if (!pending.has(account.id) && pending.size >= 20)
-            pending.delete(pending.keys().next().value);
-        pending.set(account.id, { account, expiresAt: dependencies.now() + 10 * 60 * 1000 });
-    }
-    function googleModels() {
-        return store.list().filter((model) => model.provider === 'google-cloudcode');
-    }
-    function updateGoogleModels(models, ids) {
-        if (!models.length)
-            throw new Error('No saved Google model contains this account. Reload the account list.');
-        // ModelStore validates every entry before one atomic write; masked unrelated
-        // credentials are preserved and partial updates cannot split a shared pool.
-        store.import(models);
-        for (const id of new Set(ids))
-            (0, googleAccounts_1.resetGoogleAccountState)(id);
-        return { success: true, count: models.length };
     }
     const gatewayFile = path.join(directory, 'gateway_connection.json');
     function gatewayRaw() {
@@ -436,26 +348,9 @@ function createModelManager(directory, codec, openExternal, overrides = {}) {
             return { success: true, models: await (0, googleAccounts_1.fetchGoogleModels)(account, input.apiUrl), status: 200 };
         }
         const model = resolveProbe(input);
-        const workersAi = !!(0, providers_1.workersAiAccountPath)(model.apiUrl, model.provider);
         const format = (0, providers_1.resolveApiFormat)(model.provider, model.apiFormat);
-        if (workersAi && format !== 'openai')
-            throw new Error('Cloudflare Workers AI requires the OpenAI compatible API format');
-        const authenticationHeaders = Object.fromEntries(Object.entries(model.customHeaders || {}).map(([key, value]) => [
-            key.toLowerCase(),
-            typeof value === 'string' ? value.trim() : '',
-        ]));
-        if (workersAi &&
-            (!model.apiKey || model.apiKey === 'none') &&
-            !authenticationHeaders.authorization &&
-            !(authenticationHeaders['x-auth-key'] && authenticationHeaders['x-auth-email']))
-            throw new Error('Enter a Cloudflare Workers AI API token or authentication headers');
         const headers = {};
-        if ((0, providers_1.isOpencodeEndpoint)(model.apiUrl, model.provider)) {
-            if (model.apiKey && model.apiKey !== 'none')
-                headers.Authorization = `Bearer ${model.apiKey}`;
-            headers['User-Agent'] = providers_1.OPENCODE_USER_AGENT;
-        }
-        else if (model.provider === 'fireworks') {
+        if (model.provider === 'fireworks') {
             if (model.apiKey)
                 headers.Authorization = `Bearer ${model.apiKey}`;
         }
@@ -468,7 +363,7 @@ function createModelManager(directory, codec, openExternal, overrides = {}) {
             if (model.apiKey)
                 headers['x-goog-api-key'] = model.apiKey;
         }
-        else if (model.apiKey && (!workersAi || model.apiKey !== 'none'))
+        else if (model.apiKey)
             headers.Authorization = `Bearer ${model.apiKey}`;
         for (const [key, value] of Object.entries(model.customHeaders || {})) {
             if (/^(host|content-length|connection|transfer-encoding)$/i.test(key))
@@ -480,7 +375,6 @@ function createModelManager(directory, codec, openExternal, overrides = {}) {
         const listUrl = new URL(modelListUrl(model.apiUrl, format, model.provider));
         const models = new Map();
         const cursors = new Set();
-        const workersPages = new Set();
         const deadline = Date.now() + 30000;
         let received = 0;
         for (let page = 1; page <= 50; page++) {
@@ -488,41 +382,13 @@ function createModelManager(directory, codec, openExternal, overrides = {}) {
                 throw new Error('Model discovery exceeded its 30-second time budget');
             const response = await requestJson(listUrl.toString(), headers, model.allowUnauthorized);
             if (response.status < 200 || response.status >= 300)
-                throw Object.assign(new Error(statusError(response.status, workersAi)), { status: response.status });
-            for (const found of parseModels(response.data, workersAi ? 'workers-ai' : model.provider))
+                throw Object.assign(new Error(statusError(response.status)), { status: response.status });
+            for (const found of parseModels(response.data, model.provider))
                 models.set(found.id, found);
             if (models.size > 10000)
                 throw new Error('Model catalog exceeds 10000 entries');
             const data = response.data;
-            if (workersAi) {
-                const catalog = response.data;
-                const items = catalog.result || catalog.data;
-                const info = catalog.result_info;
-                if (info &&
-                    Object.values(info).some((value) => typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0))
-                    throw new Error('Cloudflare returned invalid model pagination');
-                if (info?.page !== undefined && info.page !== page)
-                    throw new Error('Cloudflare returned an unexpected model page');
-                const signature = JSON.stringify(items);
-                if (items.length && workersPages.has(signature))
-                    throw new Error('Cloudflare repeated a model catalog page');
-                workersPages.add(signature);
-                received += items.length;
-                if (received > 10000)
-                    throw new Error('Model catalog exceeds 10000 entries');
-                const hasMore = info?.total_count !== undefined
-                    ? received < info.total_count
-                    : info?.total_pages !== undefined
-                        ? page < info.total_pages
-                        : items.length >= (info?.per_page || 100);
-                if (hasMore) {
-                    if (!items.length)
-                        throw new Error('Cloudflare returned an incomplete model catalog');
-                    listUrl.searchParams.set('page', String(page + 1));
-                    continue;
-                }
-            }
-            else if (model.provider === 'dashscope' && Array.isArray(data.output?.models)) {
+            if (model.provider === 'dashscope' && Array.isArray(data.output?.models)) {
                 received += data.output.models.length;
                 const total = data.output.total;
                 if (typeof total === 'number' && Number.isSafeInteger(total) && total >= 0 && received < total) {
@@ -560,64 +426,30 @@ function createModelManager(directory, codec, openExternal, overrides = {}) {
         saveModel,
         presets: () => providers_1.PROVIDERS,
         discoverModels,
-        createEffortVariants(name) {
-            const source = store.list().find((model) => model.name === name);
-            if (!source)
-                throw new Error('Original model no longer exists');
-            if (source.supportsThinking === false)
-                throw new Error('This model is configured without reasoning support');
-            const names = new Set(store.list().map((model) => model.name));
-            const format = (0, providers_1.resolveApiFormat)(source.provider, source.apiFormat);
-            const copies = ['low', 'medium', 'high'].map((effort, index) => {
-                let target = `${name}-${effort}`;
-                let suffix = 2;
-                while (names.has(target))
-                    target = `${name}-${effort}-${suffix++}`;
-                names.add(target);
-                const copy = {
-                    ...source,
-                    name: target,
-                    copyFrom: name,
-                    displayName: `${source.displayName || source.externalModelName || source.name} (${effort})`,
-                    reasoningEffort: effort,
-                };
-                if (format !== 'openai') {
-                    const budget = [1024, 4096, 8192][index];
-                    copy.thinkingBudget = budget;
-                    copy.maxOutputTokens = Math.max(Number(source.maxOutputTokens) || 16384, budget + 1024);
-                    if (source.contextWindow && Number(source.contextWindow) <= Number(copy.maxOutputTokens))
-                        throw new Error('The configured context window is too small for these thinking budgets. Adjust the model limits first.');
-                }
-                const validation = (0, schemaValidator_1.validateCustomModel)(copy);
-                if (!validation.valid)
-                    throw new Error(validation.error);
-                return copy;
-            });
-            for (const copy of copies)
-                store.save(copy);
-            return { success: true, count: copies.length };
-        },
         async googleLogin(options) {
             if (loginController)
                 throw new Error('A Google login is already in progress');
             const controller = new AbortController();
             loginController = controller;
             try {
-                let account = await dependencies.loginGoogleAccount({
-                    authMode: options.authMode,
+                const account = await dependencies.loginGoogleAccount({
                     clientId: options.clientId,
                     clientSecret: options.clientSecret,
                     label: options.label,
                     signal: controller.signal,
                 }, openExternal);
-                if (controller.signal.aborted)
-                    throw new Error('Google login cancelled');
-                if (options.authMode === 'antigravity')
-                    account = await dependencies.prepareGoogleAccount({ ...account, authMode: 'antigravity' }, { signal: controller.signal, allowOnboard: true });
-                if (controller.signal.aborted)
-                    throw new Error('Google login cancelled');
-                rememberGoogleAccount(account);
-                return { success: true, account: maskedGoogleAccount(account) };
+                pendingAccount(account.id);
+                if (pending.size >= 20)
+                    pending.delete(pending.keys().next().value);
+                pending.set(account.id, { account, expiresAt: dependencies.now() + 10 * 60 * 1000 });
+                const masked = (0, modelStore_1.redactModel)({
+                    name: '',
+                    provider: '',
+                    apiUrl: '',
+                    externalModelName: '',
+                    googleAccounts: [account],
+                });
+                return { success: true, account: masked.googleAccounts[0] };
             }
             finally {
                 if (loginController === controller)
@@ -631,140 +463,14 @@ function createModelManager(directory, codec, openExternal, overrides = {}) {
         googlePoolStatus() {
             return { success: true, accounts: (0, googleAccounts_1.getGooglePoolStatus)() };
         },
-        googleLinkAccount(input) {
-            const account = pendingAccount(input.accountId);
-            if (!account)
-                throw new Error('This login has expired. Sign in again.');
-            const changed = [];
-            const resetIds = [account.id];
-            for (const model of googleModels().filter((model) => model.name === input.modelName)) {
-                const accounts = Array.isArray(model.googleAccounts) ? model.googleAccounts : [];
-                const index = accounts.findIndex((existing) => input.replaceAccountId
-                    ? existing.id === input.replaceAccountId
-                    : existing.id === account.id || (!!account.email && existing.email?.toLowerCase() === account.email.toLowerCase()));
-                if (input.replaceAccountId && index < 0)
-                    continue;
-                if (index >= 0) {
-                    const previous = accounts[index];
-                    if (previous.email && account.email && previous.email.toLowerCase() !== account.email.toLowerCase())
-                        throw new Error('The signed-in email does not match this account. Add it as a separate account instead.');
-                    // The renderer receives masked secrets. Resolve the fresh credentials
-                    // using the pending login ID before preserving the saved account ID.
-                    accounts[index] = { ...account, refreshToken: account.refreshToken || '', clientSecret: account.clientSecret || '', id: previous.id, label: previous.label || account.label, enabled: previous.enabled };
-                    resetIds.push(previous.id);
-                }
-                else
-                    accounts.push({ ...account, enabled: true });
-                changed.push({ ...model, googleAccounts: accounts });
-            }
-            return updateGoogleModels(changed, resetIds);
-        },
-        googleSelectAccount(input) {
-            const changed = googleModels().filter((model) => model.name === input.modelName && Array.isArray(model.googleAccounts) &&
-                (input.accountId === undefined ||
-                    model.googleAccounts.some((account) => account.id === input.accountId && account.enabled !== false)));
-            for (const model of changed) {
-                const pool = { ...(model.googlePool || {}) };
-                if (input.accountId === undefined)
-                    delete pool.preferredAccountId;
-                else
-                    pool.preferredAccountId = input.accountId;
-                model.googlePool = pool;
-            }
-            return updateGoogleModels(changed, []);
-        },
-        googleRemoveAccount(input) {
-            const changed = [];
-            for (const model of googleModels()) {
-                if (model.name !== input.modelName)
-                    continue;
-                if (!Array.isArray(model.googleAccounts) || !model.googleAccounts.some((account) => account.id === input.accountId))
-                    continue;
-                const accounts = model.googleAccounts.filter((account) => account.id !== input.accountId);
-                const pool = { ...(model.googlePool || {}) };
-                if (pool.preferredAccountId === input.accountId)
-                    delete pool.preferredAccountId;
-                changed.push({ ...model, googleAccounts: accounts, googlePool: pool,
-                    ...(!accounts.some((account) => account.enabled !== false) ? { enabled: false } : {}) });
-            }
-            const result = updateGoogleModels(changed, []);
-            if (!googleModels().some((model) => Array.isArray(model.googleAccounts) && model.googleAccounts.some((account) => account.id === input.accountId))) {
-                (0, googleAccounts_1.resetGoogleAccountState)(input.accountId);
-                pending.delete(input.accountId);
-            }
-            return result;
-        },
-        async googlePrepareAccount(input) {
-            if (loginController)
-                throw new Error('A Google login or account preparation is already in progress');
-            const controller = new AbortController();
-            loginController = controller;
-            try {
-                let previous = resolveGoogleAccount(input);
-                const saved = input.modelName ? store.read().find((model) => model.name === input.modelName) : undefined;
-                const savedAccount = saved?.googleAccounts?.find((account) => account.id === previous.id);
-                if (savedAccount) {
-                    const metadataChanged = ['clientId', 'project', 'authMode', 'cloudCodeEndpoint'].some((field) => savedAccount[field] !== previous[field]);
-                    const credentialsChanged = ['accessToken', 'refreshToken', 'clientSecret'].some((field) => {
-                        const raw = savedAccount[field];
-                        const value = raw && saved?.encryptedGoogleAccounts ? (0, modelStore_1.decodeSecret)(raw, codec) : raw;
-                        return (value || '') !== (previous[field] || '');
-                    });
-                    if (metadataChanged || credentialsChanged)
-                        throw new Error('Save your edited account credentials and settings before preparing this account.');
-                }
-                const refreshed = await dependencies.refreshGoogleAccount(previous);
-                if (input.modelName && savedAccount) {
-                    const tokensChanged = ['accessToken', 'refreshToken', 'expiresAt'].some((field) => refreshed[field] !== previous[field]);
-                    // A successful refresh may rotate the only usable refresh token. Retain it even if
-                    // preparation subsequently fails or is cancelled, without overwriting account edits.
-                    if (tokensChanged && !persistGoogleAccount(input.modelName, refreshed, previous, false, true))
-                        throw new Error('This account changed while preparation was running. Reload it and prepare again.');
-                    previous = {
-                        ...previous,
-                        accessToken: refreshed.accessToken,
-                        refreshToken: refreshed.refreshToken,
-                        expiresAt: refreshed.expiresAt,
-                    };
-                    const current = resolveGoogleAccount({ modelName: input.modelName, accountId: previous.id });
-                    if (['clientId', 'project', 'authMode', 'cloudCodeEndpoint'].some((field) => current[field] !== previous[field]) ||
-                        ['accessToken', 'refreshToken', 'clientSecret'].some((field) => (current[field] || '') !== (previous[field] || '')))
-                        throw new Error('This account changed while preparation was running. Reload it and prepare again.');
-                }
-                if (controller.signal.aborted)
-                    throw new Error('Google account preparation cancelled');
-                const account = await dependencies.prepareGoogleAccount(refreshed, {
-                    signal: controller.signal,
-                    allowOnboard: input.allowOnboard === true,
-                });
-                if (controller.signal.aborted)
-                    throw new Error('Google account preparation cancelled');
-                if (input.modelName && savedAccount && !persistGoogleAccount(input.modelName, account, previous, true))
-                    throw new Error('This account changed while preparation was running. Reload it and prepare again.');
-                rememberGoogleAccount(account);
-                (0, googleAccounts_1.resetGoogleAccountState)(account.id);
-                return {
-                    success: true,
-                    account: maskedGoogleAccount(account),
-                    message: 'Account project prepared. Save the model, then test model discovery and generation.',
-                };
-            }
-            finally {
-                if (loginController === controller)
-                    loginController = undefined;
-            }
-        },
         async googleTestAccount(input) {
-            const endpoint = input.modelName
-                ? store.read().find((model) => model.name === input.modelName)?.apiUrl
-                : undefined;
             const previous = resolveGoogleAccount(input);
             const account = await dependencies.refreshGoogleAccount(previous);
             if (input.modelName)
                 persistGoogleAccount(input.modelName, account, previous);
             else if (pending.has(account.id))
                 pending.set(account.id, { account, expiresAt: dependencies.now() + 10 * 60 * 1000 });
-            const quota = await dependencies.fetchGoogleQuota(account, endpoint);
+            const quota = await dependencies.fetchGoogleQuota(account);
             return { success: true, quota };
         },
         async testModel(input) {
@@ -782,22 +488,6 @@ function createModelManager(directory, codec, openExternal, overrides = {}) {
                 status: result.status,
                 message: `Model listing verified (${result.models.length} models). Generation was not tested.`,
             };
-        },
-        async testGeneration(input) {
-            const probe = resolveProbe(input);
-            if (!probe.externalModelName?.trim())
-                throw new Error('Enter the provider model ID before testing generation');
-            if (probe.provider === 'google-cloudcode') {
-                const selected = probe.googleAccounts?.find((account) => account.enabled !== false);
-                if (!selected)
-                    throw new Error('Add or enable a Google account before testing generation');
-                probe.googleAccounts = [resolveGoogleAccount({ modelName: probe.name, account: selected })];
-            }
-            const model = { ...probe, name: probe.name || 'models/generation-test', enabled: true };
-            const validation = (0, schemaValidator_1.validateCustomModel)(model);
-            if (!validation.valid)
-                throw new Error(validation.error);
-            return (0, generationProbe_1.runGenerationProbe)(model);
         },
         async discoverLocal() {
             const targets = [

@@ -74,6 +74,8 @@ dispatch_command() {
         unpatch-fork) dispatch_unpatch_fork "${CMD_ARGS[@]}" ;;
         open-ide|patch-open-ide) dispatch_open_ide "${CMD_ARGS[@]}" ;;
         unpatch-open-ide) dispatch_unpatch_open_ide "${CMD_ARGS[@]}" ;;
+        patch-models|models-patch) dispatch_patch_models "${CMD_ARGS[@]}" ;;
+        unpatch-models) dispatch_unpatch_models "${CMD_ARGS[@]}" ;;
         unpatch|restore|revert-patch|unpatch-all) auto_detect_installations; unpatch_antigravity ;;
         traffic|trace|monitor) dispatch_traffic ;;
         update) dispatch_update ;;

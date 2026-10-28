@@ -36,21 +36,4 @@ export declare const stateTimestamps: StateTimestamps;
 export declare function touchStateTimestamp(map: Map<string, number>, key: string): void;
 export declare function startCleanupInterval(): void;
 export declare function stopCleanupInterval(): void;
-/** Native quota observations are volatile and isolated to the authenticated request scope. */
-export interface OfficialQuotaScope {
-    accountId: string;
-    clientId?: string;
-    project?: string;
-    endpoint: string;
-}
-interface OfficialQuotaObservation {
-    scope: OfficialQuotaScope;
-    checkedAt: number;
-    data: Record<string, unknown>;
-}
-export declare function officialQuotaScopeKey(scope: OfficialQuotaScope): string;
-export declare function recordOfficialQuota(data: Record<string, unknown>, scope: OfficialQuotaScope, checkedAt?: number): void;
-export declare function getOfficialQuota(scope: OfficialQuotaScope): OfficialQuotaObservation | undefined;
-export declare function clearOfficialQuota(accountId?: string): void;
-export {};
 //# sourceMappingURL=shared.d.ts.map

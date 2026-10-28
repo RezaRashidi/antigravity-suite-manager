@@ -88,7 +88,6 @@ exports.LS_BINARY = electron_1.app.isPackaged
 let _lsProcess = null;
 let _lsPort = 0;
 let _intentionalTermination = false;
-let _terminationGeneration = 0;
 let _restartCount = 0;
 let _lastRestartTime = 0;
 // ---------------------------------------------------------------------------
@@ -127,10 +126,9 @@ function getLsProcess() {
 function getLsPort() {
     return _lsPort;
 }
-/** Clears the language server process and trusted port (call after killing it). */
+/** Clears the language server process reference (call after killing it). */
 function clearLsProcess() {
     _lsProcess = null;
-    _lsPort = 0;
 }
 // ---------------------------------------------------------------------------
 // Crash log extraction
@@ -191,20 +189,10 @@ function setupNodeModules(env, modules) {
  */
 function startLanguageServer(port, csrf, headless) {
     return new Promise(async (resolve, reject) => {
-        const terminationGeneration = _terminationGeneration;
-        _lsPort = 0;
         const logStream = fs.createWriteStream((0, paths_1.getLsLogPath)(), { flags: 'w' });
         let proxyPort;
         try {
-            if (_intentionalTermination)
-                throw new Error('Language server startup cancelled during shutdown');
-            (0, proxy_1.setLanguageServerPortResolver)(getLsPort);
             proxyPort = await (0, proxy_1.startProxy)();
-            // Shutdown may finish while proxy startup is pending. A later explicit
-            // restart must not revive this older, cancelled startup attempt either.
-            if (_intentionalTermination || terminationGeneration !== _terminationGeneration) {
-                throw new Error('Language server startup cancelled during shutdown');
-            }
         }
         catch (err) {
             console.error('[LanguageServer] Failed to start local proxy:', err);
@@ -258,22 +246,21 @@ function startLanguageServer(port, csrf, headless) {
                 relativePath: ['build', 'src', 'bin', 'chrome-devtools-mcp.js'],
             },
         ]);
-        const child = (0, child_process_1.spawn)(exports.LS_BINARY, args, {
+        _lsProcess = (0, child_process_1.spawn)(exports.LS_BINARY, args, {
             stdio: ['pipe', 'pipe', 'pipe'],
             env: env,
         });
-        _lsProcess = child;
         if (!headless) {
             // Close stdin immediately — the LS may block waiting for metadata on stdin.
-            child.stdin?.end();
+            _lsProcess.stdin?.end();
         }
         const combined = new stream_1.PassThrough();
-        child.stdout?.pipe(combined, { end: false });
-        child.stderr?.pipe(combined, { end: false });
+        _lsProcess.stdout?.pipe(combined, { end: false });
+        _lsProcess.stderr?.pipe(combined, { end: false });
         // Buffer stderr for crash log extraction (ring buffer)
         const stderrChunks = [];
         let stderrLength = 0;
-        child.stderr?.on('data', (data) => {
+        _lsProcess.stderr?.on('data', (data) => {
             const str = data.toString();
             stderrChunks.push(str);
             stderrLength += str.length;
@@ -306,11 +293,10 @@ function startLanguageServer(port, csrf, headless) {
                     resolved = true;
                     clearTimeout(timer);
                     const actualPort = parseInt(m[1], 10);
-                    if (_lsProcess === child)
-                        _lsPort = actualPort;
+                    _lsPort = actualPort;
                     resolve({
                         port: actualPort,
-                        process: child,
+                        process: _lsProcess,
                         exitPromise,
                     });
                 }
@@ -327,9 +313,7 @@ function startLanguageServer(port, csrf, headless) {
         // Exit promise — resolves whenever the process exits (whether during
         // startup or after). Includes crash stack trace extraction.
         const exitPromise = new Promise((exitResolve) => {
-            child.on('exit', (code, signal) => {
-                if (_lsProcess === child)
-                    clearLsProcess();
+            _lsProcess.on('exit', (code, signal) => {
                 if (!logStreamEnded) {
                     logStreamEnded = true;
                     logStream.end();
@@ -349,8 +333,6 @@ function startLanguageServer(port, csrf, headless) {
 }
 /** Sets whether the termination was intentional (suppresses crash reports). */
 function setIntentionalTermination(value) {
-    if (value)
-        _terminationGeneration++;
     _intentionalTermination = value;
 }
 /**
@@ -369,12 +351,8 @@ async function startAndMonitorLanguageServer(port, csrf, options = {}) {
 }
 function monitorLsCrashInternal(handle, port, csrf, options) {
     void handle.exitPromise.then(async (exitInfo) => {
-        // A late exit from an older child must not clear or restart its replacement.
-        if (_lsProcess && _lsProcess !== handle.process)
-            return;
-        if (_lsProcess === handle.process)
-            clearLsProcess();
-        if (_intentionalTermination || _lsProcess) {
+        clearLsProcess();
+        if (_intentionalTermination) {
             return;
         }
         const { code, signal, crashStackTrace } = exitInfo;
@@ -398,7 +376,7 @@ function monitorLsCrashInternal(handle, port, csrf, options) {
         _restartCount++;
         console.log(`Attempting restart ${_restartCount}/${MAX_RESTARTS} in ${RESTART_COOLDOWN_MS / 1000}s...`);
         await sleep(RESTART_COOLDOWN_MS);
-        if (_intentionalTermination || _lsProcess) {
+        if (_intentionalTermination) {
             return;
         }
         try {
@@ -420,11 +398,7 @@ function sleep(ms) {
 }
 async function killLanguageServer() {
     setIntentionalTermination(true);
-    // The LS can own unfinished proxy responses. Terminate it while the proxy
-    // drains, rather than waiting for those responses before signaling the LS.
-    await Promise.all([(0, proxy_1.stopProxy)(), terminateLanguageServer()]);
-}
-async function terminateLanguageServer() {
+    await (0, proxy_1.stopProxy)();
     const proc = getLsProcess();
     if (proc) {
         const pid = proc.pid;
@@ -435,13 +409,10 @@ async function terminateLanguageServer() {
             });
         });
         proc.kill('SIGTERM');
-        let timeout;
         const result = await Promise.race([
             exitPromise.then(() => 'exited'),
-            new Promise((resolve) => {
-                timeout = setTimeout(() => resolve('timeout'), 5000);
-            }),
-        ]).finally(() => clearTimeout(timeout));
+            new Promise((resolve) => setTimeout(() => resolve('timeout'), 5000)),
+        ]);
         if (result === 'timeout' && pid !== undefined) {
             console.warn(`Language server (PID ${pid}) did not exit gracefully within 5s. Sending SIGKILL.`);
             try {
@@ -451,8 +422,7 @@ async function terminateLanguageServer() {
                 // Process already dead or exited
             }
         }
-        if (_lsProcess === proc)
-            clearLsProcess();
+        clearLsProcess();
     }
 }
 /**

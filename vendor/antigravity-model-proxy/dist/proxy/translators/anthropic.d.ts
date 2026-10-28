@@ -1,4 +1,3 @@
-import { ImageSource } from './images';
 import { ToolSchemas } from './utils';
 interface GeminiTool {
     functionDeclarations?: GeminiFunctionDeclaration[];
@@ -27,14 +26,6 @@ interface GeminiPart {
     thought?: boolean;
     functionCall?: GeminiFunctionCall;
     functionResponse?: GeminiFunctionResponse;
-    fileData?: {
-        mimeType?: string;
-        fileUri: string;
-    };
-    inlineData?: {
-        mimeType: string;
-        data: string;
-    };
 }
 interface GeminiFunctionCall {
     name: string;
@@ -58,7 +49,7 @@ interface GeminiRequestBody {
     };
 }
 interface AnthropicContentBlock {
-    type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'image';
+    type: 'text' | 'tool_use' | 'tool_result' | 'thinking';
     text?: string;
     thinking?: string;
     id?: string;
@@ -66,7 +57,6 @@ interface AnthropicContentBlock {
     input?: Record<string, unknown>;
     tool_use_id?: string;
     content?: string | AnthropicContentBlock[];
-    source?: ImageSource;
 }
 type AnthropicMessageRole = 'user' | 'assistant';
 interface AnthropicMessage {

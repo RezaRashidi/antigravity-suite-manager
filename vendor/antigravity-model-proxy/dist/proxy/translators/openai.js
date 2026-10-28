@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -11,72 +44,11 @@ exports.mapGeminiToolsToOpenAI = mapGeminiToolsToOpenAI;
  * OpenAI/Ollama provider translator.
  * Handles Gemini ↔ OpenAI/Ollama request/response mapping and streaming chunks.
  */
-const fs_1 = require("fs");
+const path = __importStar(require("path"));
 const electron_log_1 = __importDefault(require("electron-log"));
-const images_1 = require("./images");
 const utils_1 = require("./utils");
 const shared_1 = require("../shared");
 // ─── REQUEST: Gemini → OpenAI ──────────────────────────────────────────────
-function mapUserContentParts(parts) {
-    const content = [];
-    for (const part of parts) {
-        const image = (0, images_1.getImageSource)(part);
-        if (image) {
-            content.push({
-                type: 'image_url',
-                image_url: { url: image.type === 'url' ? image.url : `data:${image.media_type};base64,${image.data}` },
-            });
-        }
-        else if (part.text) {
-            content.push({ type: 'text', text: part.text });
-        }
-        else if (part.fileData) {
-            const file = part.fileData;
-            let text = `[File reference: ${file.fileUri} (${file.mimeType})]`;
-            let url;
-            try {
-                url = new URL(file.fileUri);
-            }
-            catch {
-                // Preserve the existing reference fallback for non-image files.
-            }
-            if (url?.protocol === 'file:') {
-                const localPath = (0, images_1.localFilePath)(url);
-                try {
-                    text = `[File content from ${file.fileUri}]:\n${(0, fs_1.readFileSync)(localPath, 'utf-8')}`;
-                }
-                catch {
-                    // Preserve the reference fallback for unreadable local text files.
-                }
-            }
-            content.push({ type: 'text', text });
-        }
-        else if (part.inlineData) {
-            content.push({
-                type: 'text',
-                text: `[Inline data: ${part.inlineData.mimeType}, length: ${(part.inlineData.data || '').length} chars]`,
-            });
-        }
-    }
-    return content;
-}
-function compactContent(parts) {
-    return parts.some((part) => part.type === 'image_url')
-        ? parts
-        : parts.map((part) => (part.type === 'text' ? part.text : '')).join('\n');
-}
-function mapAssistantMessage(parts) {
-    let content = '';
-    let reasoning = '';
-    for (const part of parts) {
-        if (part.thought)
-            reasoning += part.text || '';
-        else
-            content += part.text || '';
-    }
-    // Replay reasoning from this history item for both ordinary and tool-call turns.
-    return { role: 'assistant', content, ...(reasoning ? { reasoning_content: reasoning } : {}) };
-}
 function mapGeminiToolsToOpenAI(geminiTools) {
     if (!geminiTools || !Array.isArray(geminiTools))
         return [];
@@ -85,7 +57,15 @@ function mapGeminiToolsToOpenAI(geminiTools) {
         if (toolGroup.functionDeclarations && Array.isArray(toolGroup.functionDeclarations)) {
             for (const func of toolGroup.functionDeclarations) {
                 const declaration = func.parametersJsonSchema ?? func.parameters;
-                const params = (0, utils_1.normalizeToolSchema)(declaration ?? { type: 'object', properties: {} });
+                const params = declaration
+                    ? JSON.parse(JSON.stringify(declaration))
+                    : { type: 'object', properties: {} };
+                if (params.type && typeof params.type === 'string') {
+                    params.type = params.type.toLowerCase();
+                }
+                if (params.properties) {
+                    (0, utils_1.fixParamTypes)(params.properties);
+                }
                 openaiTools.push({
                     type: 'function',
                     function: {
@@ -102,15 +82,14 @@ function mapGeminiToolsToOpenAI(geminiTools) {
 function mapGeminiToOpenAI(geminiBody, modelName, stateKey = modelName) {
     const messages = [];
     const historyCallIds = new Map();
-    const pendingToolResponseContent = [];
-    const flushToolResponseContent = () => {
-        if (!pendingToolResponseContent.length)
+    const pendingToolResponseTexts = [];
+    const flushToolResponseTexts = () => {
+        if (!pendingToolResponseTexts.length)
             return;
-        messages.push({ role: 'user', content: compactContent([...pendingToolResponseContent]) });
-        pendingToolResponseContent.length = 0;
+        messages.push({ role: 'user', content: pendingToolResponseTexts.join('\n') });
+        pendingToolResponseTexts.length = 0;
     };
     if (geminiBody.systemInstruction && geminiBody.systemInstruction.parts) {
-        (0, images_1.assertUserImageParts)(geminiBody.systemInstruction.parts, 'system');
         const systemText = geminiBody.systemInstruction.parts.map((p) => p.text || '').join('');
         if (systemText) {
             messages.push({ role: 'system', content: systemText });
@@ -119,11 +98,10 @@ function mapGeminiToOpenAI(geminiBody, modelName, stateKey = modelName) {
     if (geminiBody.contents) {
         for (const item of geminiBody.contents) {
             if (item.parts) {
-                (0, images_1.assertUserImageParts)(item.parts, item.role || 'user');
                 const hasFunctionCall = item.parts.some((p) => p.functionCall);
                 const hasFunctionResponse = item.parts.some((p) => p.functionResponse);
                 if (!hasFunctionResponse)
-                    flushToolResponseContent();
+                    flushToolResponseTexts();
                 if (hasFunctionCall && item.role === 'model') {
                     const toolCalls = [];
                     for (const p of item.parts) {
@@ -149,15 +127,16 @@ function mapGeminiToOpenAI(geminiBody, modelName, stateKey = modelName) {
                             });
                         }
                     }
-                    const message = mapAssistantMessage(item.parts);
-                    message.content = message.content || null;
-                    message.tool_calls = toolCalls;
-                    messages.push(message);
+                    const text = item.parts
+                        .filter((p) => p.text && !p.thought)
+                        .map((p) => p.text)
+                        .join('');
+                    messages.push({ role: 'assistant', content: text || null, tool_calls: toolCalls });
                 }
                 else if (hasFunctionResponse) {
                     for (const p of item.parts) {
-                        if (!p.thought)
-                            pendingToolResponseContent.push(...mapUserContentParts([p]));
+                        if (p.text && !p.thought)
+                            pendingToolResponseTexts.push(p.text);
                         if (p.functionResponse) {
                             const funcName = p.functionResponse.name || '';
                             const modelTCIds = shared_1.modelToolCallIds.get(stateKey) || {};
@@ -183,18 +162,61 @@ function mapGeminiToOpenAI(geminiBody, modelName, stateKey = modelName) {
                 }
                 else {
                     const role = item.role === 'model' ? 'assistant' : item.role || 'user';
+                    let content = '';
+                    let reasoning_content = '';
                     if (role === 'assistant') {
-                        messages.push(mapAssistantMessage(item.parts));
+                        const regularParts = (item.parts || []).filter((p) => !p.thought);
+                        const thoughtParts = (item.parts || []).filter((p) => p.thought);
+                        content = regularParts.map((p) => p.text || '').join('');
+                        reasoning_content = thoughtParts.map((p) => p.text || '').join('');
                     }
                     else {
-                        messages.push({ role, content: compactContent(mapUserContentParts(item.parts)) });
+                        const parts = item.parts || [];
+                        const partsContent = [];
+                        for (const p of parts) {
+                            if (p.text) {
+                                partsContent.push(p.text);
+                            }
+                            else if (p.fileData) {
+                                const fd = p.fileData;
+                                // Try to read local files directly
+                                try {
+                                    const url = new URL(fd.fileUri);
+                                    if (url.protocol === 'file:') {
+                                        const fs = require('fs');
+                                        const fileContent = fs.readFileSync(url.pathname.replace(/^\//, '').replace(/\//g, path.sep), 'utf-8');
+                                        partsContent.push(`[File content from ${fd.fileUri}]:\n${fileContent}`);
+                                    }
+                                    else {
+                                        partsContent.push(`[File reference: ${fd.fileUri} (${fd.mimeType})]`);
+                                    }
+                                }
+                                catch {
+                                    partsContent.push(`[File reference: ${fd.fileUri} (${fd.mimeType})]`);
+                                }
+                            }
+                            else if (p.inlineData) {
+                                const id = p.inlineData;
+                                if (id.mimeType && id.mimeType.startsWith('image/')) {
+                                    partsContent.push(`[Image: data:${id.mimeType};base64,${id.data}]`);
+                                }
+                                else {
+                                    partsContent.push(`[Inline data: ${id.mimeType}, length: ${(id.data || '').length} chars]`);
+                                }
+                            }
+                        }
+                        content = partsContent.join('\n');
                     }
+                    const msg = { role, content };
+                    if (reasoning_content)
+                        msg.reasoning_content = reasoning_content;
+                    messages.push(msg);
                 }
             }
         }
     }
     // Keep feedback after all consecutive tool results, including split parallel responses.
-    flushToolResponseContent();
+    flushToolResponseTexts();
     // Inject reasoning_content into assistant messages missing it
     let lastAssistantIdx = -1;
     for (let i = 0; i < messages.length; i++) {
@@ -278,7 +300,6 @@ function parseDSMLToolCalls(text) {
 }
 function mapOpenAIToGemini(openAiRes, modelName, toolSchemas) {
     const choice = openAiRes.choices?.[0];
-    const reasoning = choice?.message?.reasoning_content || choice?.message?.reasoning || '';
     if (choice?.message?.tool_calls && choice.message.tool_calls.length > 0) {
         const parts = choice.message.tool_calls.map((tc) => {
             let args;
@@ -312,10 +333,8 @@ function mapOpenAIToGemini(openAiRes, modelName, toolSchemas) {
         });
         if (choice.message.content)
             parts.unshift({ text: choice.message.content });
-        if (reasoning)
-            parts.unshift({ text: reasoning, thought: true });
         return {
-            candidates: [{ content: { parts, role: 'model' }, finishReason: 'STOP', index: 0 }],
+            candidates: [{ content: { parts, role: 'model' }, finishReason: 'TOOL_CALL', index: 0 }],
             usageMetadata: {
                 promptTokenCount: openAiRes.usage?.prompt_tokens || 0,
                 candidatesTokenCount: openAiRes.usage?.completion_tokens || 0,
@@ -333,10 +352,8 @@ function mapOpenAIToGemini(openAiRes, modelName, toolSchemas) {
         });
         if (dsml.cleanText)
             parts.unshift({ text: dsml.cleanText });
-        if (reasoning)
-            parts.unshift({ text: reasoning, thought: true });
         return {
-            candidates: [{ content: { parts, role: 'model' }, finishReason: 'STOP', index: 0 }],
+            candidates: [{ content: { parts, role: 'model' }, finishReason: 'TOOL_CALL', index: 0 }],
             usageMetadata: {
                 promptTokenCount: openAiRes.usage?.prompt_tokens || 0,
                 candidatesTokenCount: openAiRes.usage?.completion_tokens || 0,
@@ -344,6 +361,7 @@ function mapOpenAIToGemini(openAiRes, modelName, toolSchemas) {
             },
         };
     }
+    const reasoning = choice?.message?.reasoning_content || choice?.message?.reasoning || '';
     const parts = [];
     if (reasoning)
         parts.push({ text: reasoning, thought: true });
@@ -360,29 +378,6 @@ function mapOpenAIToGemini(openAiRes, modelName, toolSchemas) {
     };
 }
 // ─── STREAM CHUNK: OpenAI → Gemini ────────────────────────────────────────
-// Track emitted prose without changing shared stream state. Context cleanup also
-// releases the cursor; a possible DSML prefix is held until its meaning is known.
-const streamedTextPositions = new WeakMap();
-function takeStreamText(context, terminal = false) {
-    const start = streamedTextPositions.get(context) || 0;
-    let end = context.accumulatedText.length;
-    if (!terminal) {
-        const marker = '<DSML|';
-        const index = context.accumulatedText.indexOf(marker, start);
-        if (index >= 0)
-            end = index;
-        else {
-            for (let length = marker.length - 1; length > 0; length--) {
-                if (context.accumulatedText.endsWith(marker.slice(0, length))) {
-                    end -= length;
-                    break;
-                }
-            }
-        }
-    }
-    streamedTextPositions.set(context, end);
-    return context.accumulatedText.slice(start, end);
-}
 function mapOpenAIChunkToGemini(chunk, modelName, streamKey, toolSchemas) {
     const choice = chunk.choices?.[0];
     if (!choice)
@@ -407,45 +402,25 @@ function mapOpenAIChunkToGemini(chunk, modelName, streamKey, toolSchemas) {
                 context.toolCalls[idx].arguments += tc.function.arguments;
         }
     }
-    const finishReason = choice.finish_reason;
-    const completed = finishReason === 'stop' || finishReason === 'length' || finishReason === 'tool_calls';
-    if (delta?.content)
-        context.accumulatedText += delta.content;
+    let text = delta?.content || '';
     const reasoning = delta?.reasoning_content || delta?.reasoning || '';
     if (reasoning) {
         context.accumulatedReasoning += reasoning;
-        if (!completed)
-            return {
-                content: { parts: [{ text: reasoning, thought: true }], role: 'model' },
-                finishReason: 'OTHER',
-                index: 0,
-            };
+        return { content: { parts: [{ text: reasoning, thought: true }], role: 'model' }, finishReason: 'OTHER', index: 0 };
     }
-    const completionParts = reasoning ? [{ text: reasoning, thought: true }] : [];
-    // A complete invoke can precede a fragmented parallel invoke. Keep both until
-    // the provider finishes, including providers that finish DSML with tool_calls.
-    if (completed && Object.keys(context.toolCalls).length === 0) {
-        const remaining = context.accumulatedText.slice(streamedTextPositions.get(context) || 0);
-        const dsml = parseDSMLToolCalls(remaining);
-        if (dsml && dsml.functionCalls.length > 0) {
-            if (dsml.cleanText)
-                completionParts.push({ text: dsml.cleanText });
-            for (const fc of dsml.functionCalls) {
-                const args = (0, utils_1.normalizeToolArgs)(fc.name, fc.args, toolSchemas);
-                const translated = (0, utils_1.translateToolCallToNative)(fc.name, args, toolSchemas);
-                completionParts.push({
-                    functionCall: { name: translated.name, args: translated.args },
-                });
-            }
-            shared_1.activeStreamContexts.delete(streamId);
-            return { content: { parts: completionParts, role: 'model' }, finishReason: 'STOP', index: 0 };
-        }
+    if (text)
+        context.accumulatedText += text;
+    const dsml = parseDSMLToolCalls(context.accumulatedText);
+    if (dsml && dsml.functionCalls.length > 0) {
+        const parts = dsml.functionCalls.map((fc) => {
+            const na = (0, utils_1.normalizeToolArgs)(fc.name, fc.args, toolSchemas);
+            const tr = (0, utils_1.translateToolCallToNative)(fc.name, na, toolSchemas);
+            return { functionCall: { name: tr.name, args: tr.args } };
+        });
+        context.accumulatedText = '';
+        return { content: { parts, role: 'model' }, finishReason: 'TOOL_CALL', index: 0 };
     }
-    if (completed) {
-        const text = takeStreamText(context, true);
-        if (text)
-            completionParts.push({ text });
-    }
+    const finishReason = choice.finish_reason;
     if (finishReason === 'stop' || finishReason === 'length') {
         // Check for pending native tool_calls before closing stream
         const pendingToolCalls = Object.values(context.toolCalls).filter((tc) => tc.name && tc.arguments);
@@ -476,10 +451,25 @@ function mapOpenAIChunkToGemini(chunk, modelName, streamKey, toolSchemas) {
                 return { functionCall: { name: translated.name, args: translated.args, id: tc.id } };
             });
             shared_1.activeStreamContexts.delete(streamId);
-            return { content: { parts: [...completionParts, ...parts], role: 'model' }, finishReason: 'STOP', index: 0 };
+            return { content: { parts, role: 'model' }, finishReason: 'TOOL_CALL', index: 0 };
+        }
+        // Check for accumulated DSML tool calls
+        if (context.accumulatedText) {
+            const dsml2 = parseDSMLToolCalls(context.accumulatedText);
+            if (dsml2 && dsml2.functionCalls.length > 0) {
+                const parts = dsml2.functionCalls.map((fc) => {
+                    const na = (0, utils_1.normalizeToolArgs)(fc.name, fc.args, toolSchemas);
+                    const tr = (0, utils_1.translateToolCallToNative)(fc.name, na, toolSchemas);
+                    return { functionCall: { name: tr.name, args: tr.args } };
+                });
+                if (dsml2.cleanText)
+                    parts.unshift({ text: dsml2.cleanText });
+                shared_1.activeStreamContexts.delete(streamId);
+                return { content: { parts, role: 'model' }, finishReason: 'TOOL_CALL', index: 0 };
+            }
         }
         shared_1.activeStreamContexts.delete(streamId);
-        return { content: { parts: completionParts, role: 'model' }, finishReason: 'STOP', index: 0 };
+        return { content: { parts: text ? [{ text }] : [], role: 'model' }, finishReason: 'STOP', index: 0 };
     }
     // Only emit tool calls when finishReason signals completion (args are fully accumulated)
     if (finishReason === 'tool_calls') {
@@ -511,9 +501,8 @@ function mapOpenAIChunkToGemini(chunk, modelName, streamKey, toolSchemas) {
             return { functionCall: { name: translated.name, args: translated.args, id: tc.id } };
         });
         shared_1.activeStreamContexts.delete(streamId);
-        return { content: { parts: [...completionParts, ...parts], role: 'model' }, finishReason: 'STOP', index: 0 };
+        return { content: { parts, role: 'model' }, finishReason: 'TOOL_CALL', index: 0 };
     }
-    const text = takeStreamText(context);
     if (text) {
         return { content: { parts: [{ text }], role: 'model' }, finishReason: 'OTHER', index: 0 };
     }

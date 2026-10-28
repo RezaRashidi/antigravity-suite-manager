@@ -43,19 +43,11 @@ const crypto_1 = require("crypto");
 const string_decoder_1 = require("string_decoder");
 const providers_1 = require("../providers");
 const googleAccounts_1 = require("../googleAccounts");
-const googlePoolPolicy_1 = require("../googlePoolPolicy");
-const googleAccessErrors_1 = require("../googleAccessErrors");
-const diagnostics_1 = require("../diagnostics");
 const registry = __importStar(require("./registry"));
 const circuitBreaker_1 = require("./circuitBreaker");
 const requestOptions_1 = require("./requestOptions");
 const shared_1 = require("./shared");
 const utils_1 = require("./translators/utils");
-const artifactMetadata_1 = require("./artifactMetadata");
-const subagentRouting_1 = require("./subagentRouting");
-const subagentModels_1 = require("./subagentModels");
-const googlePoolFailover_1 = require("./googlePoolFailover");
-const reasoningReplay_1 = require("./reasoningReplay");
 const circuits = new circuitBreaker_1.CircuitBreaker();
 const controllers = new Set();
 const counts = {
@@ -76,21 +68,17 @@ function getProxyMetrics() {
 function stopCustomRequests() {
     for (const controller of controllers)
         controller.abort();
-    reasoningReplay_1.reasoningReplayCache.clear();
 }
 class UpstreamError extends Error {
-    constructor(message, status = 502, retryable = true, retryAfter = 0, mayFallback = true, googleRateLimit) {
+    constructor(message, status = 502, retryable = true, retryAfter = 0, mayFallback = true) {
         super(message);
         this.status = status;
         this.retryable = retryable;
         this.retryAfter = retryAfter;
         this.mayFallback = mayFallback;
-        this.googleRateLimit = googleRateLimit;
     }
 }
 function asUpstreamError(error) {
-    if (error instanceof subagentRouting_1.SubagentRoutingError)
-        return new UpstreamError(error.message, error.status, false, 0, false);
     if (error instanceof googleAccounts_1.GoogleAccountError)
         return new UpstreamError(error.message, error.status, false);
     return error instanceof UpstreamError ? error : new UpstreamError('Upstream connection failed.');
@@ -116,66 +104,6 @@ function validateToolArguments(value) {
     }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
         throw new UpstreamError('Upstream returned invalid tool arguments.', 502, false, 0, false);
-}
-/** Read only a bounded error body for classification; never expose or persist its contents. */
-async function boundedErrorBody(upstream) {
-    const chunks = [];
-    let size = 0;
-    const limit = 16 * 1024;
-    const timer = setTimeout(() => upstream.destroy(), 1000);
-    timer.unref();
-    try {
-        for await (const chunk of upstream) {
-            const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-            const bounded = bytes.subarray(0, limit - size);
-            chunks.push(bounded);
-            size += bounded.length;
-            if (size >= limit)
-                break;
-        }
-    }
-    catch {
-        // Diagnostics must not replace the original HTTP status on a broken response.
-    }
-    finally {
-        clearTimeout(timer);
-        upstream.destroy();
-    }
-    return Buffer.concat(chunks).toString('utf8').trim();
-}
-/** Classify schema errors without returning provider text, credentials or echoed prompts. */
-function toolSchemaErrorHint(body) {
-    let message = body;
-    if (message.startsWith('{') || message.startsWith('[')) {
-        try {
-            const data = JSON.parse(message);
-            message = [
-                data?.message,
-                data?.error?.message,
-                ...(Array.isArray(data?.errors) ? data.errors.map((item) => item?.message) : []),
-            ]
-                .filter((value) => typeof value === 'string')
-                .join('\n');
-        }
-        catch {
-            return '';
-        }
-    }
-    if (!/\b(?:schema|parameters)\b/i.test(message) || !/\b(?:invalid|rejected|not of type|must be)\b/i.test(message))
-        return '';
-    const bounds = [
-        'minLength',
-        'maxLength',
-        'minItems',
-        'maxItems',
-        'minProperties',
-        'maxProperties',
-        'minContains',
-        'maxContains',
-    ].filter((keyword) => new RegExp(`\\b${keyword}\\b`).test(message));
-    return bounds.length
-        ? ` Tool schema rejected; check non-negative integer constraints (${bounds.join(', ')}).`
-        : ' Tool schema rejected; check the declared parameter types and constraints.';
 }
 function delay(ms, signal) {
     return new Promise((resolve, reject) => {
@@ -223,27 +151,8 @@ function buildFallbackChain(primary, allModels) {
     return chain;
 }
 /** The sole retry/fallback owner; nothing is retried after any model output was received. */
-async function runCustomModelRequest(res, primary, originalBody, isStream, allModels, cloudEnvelope = true, kind = 'request') {
-    const resolveSubagent = (selector) => (0, subagentModels_1.resolveConfiguredSubagentModel)(allModels, selector)?.name;
-    let prepared;
-    try {
-        prepared = subagentRouting_1.subagentRouting.prepareRequest(originalBody, resolveSubagent);
-        originalBody = prepared.body;
-        if (prepared.modelName)
-            primary = (0, subagentModels_1.resolveConfiguredSubagentModel)(allModels, prepared.modelName);
-    }
-    catch (error) {
-        res.writeHead(error instanceof subagentRouting_1.SubagentRoutingError ? error.status : 400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-            error: { message: error instanceof subagentRouting_1.SubagentRoutingError ? error.message : 'Invalid subagent routing request.' },
-        }));
-        return;
-    }
-    // Resolve once before trimming/translating; retries and fallback providers
-    // must preserve the primary model's choice for this compaction operation.
-    const compactionEffort = (0, requestOptions_1.isAntigravityCompactionRequest)(originalBody) ? primary.compactionReasoningEffort : undefined;
+async function runCustomModelRequest(res, primary, originalBody, isStream, allModels, cloudEnvelope = true) {
     const toolSchemas = (0, utils_1.collectToolSchemas)(originalBody);
-    const artifactContext = (0, artifactMetadata_1.collectArtifactContext)(originalBody, toolSchemas);
     const controller = new AbortController();
     const { signal } = controller;
     const requestId = (0, crypto_1.randomUUID)();
@@ -259,25 +168,16 @@ async function runCustomModelRequest(res, primary, originalBody, isStream, allMo
     let upstreamOutput = false;
     const deadline = Date.now() + (primary.retryBudgetMs ?? Math.max(primary.timeout ?? 120000, 120000));
     let failure = new UpstreamError('No configured model is currently available.', 503);
-    let effectiveModel = primary;
-    const diagnostic = (0, diagnostics_1.beginDiagnosticRequest)({
-        model: primary.name,
-        provider: primary.provider,
-        stream: isStream,
-        kind,
-    });
     const writeCandidate = (candidate) => {
         if (signal.aborted || res.destroyed)
             throw new Error('Cancelled');
-        prepared.context.modelName = effectiveModel.name;
-        const routed = subagentRouting_1.subagentRouting.rewriteCandidate(candidate, prepared.context, resolveSubagent);
         if (!res.headersSent)
             res.writeHead(200, {
                 'Content-Type': 'text/event-stream',
                 'Cache-Control': 'no-cache',
                 'X-Accel-Buffering': 'no',
             });
-        res.write(`data: ${JSON.stringify(envelope({ candidates: [routed] }, cloudEnvelope))}\n\n`);
+        res.write(`data: ${JSON.stringify(envelope({ candidates: [candidate] }, cloudEnvelope))}\n\n`);
     };
     try {
         const chain = buildFallbackChain(primary, allModels);
@@ -298,38 +198,17 @@ async function runCustomModelRequest(res, primary, originalBody, isStream, allMo
             if (modelIndex > 0)
                 counts.fallbacks += 1;
             let modelFailed = false;
-            const retries = kind === 'generation-test' ? 0 : Math.min(5, Math.max(0, model.maxRetries ?? 3));
+            const retries = Math.min(5, Math.max(0, model.maxRetries ?? 3));
             const cloudCode = model.provider === 'google-cloudcode';
-            const opencode = !cloudCode && (0, providers_1.isOpencodeEndpoint)(model.apiUrl, model.provider);
-            const accountCount = cloudCode && kind !== 'generation-test'
+            const accountCount = cloudCode
                 ? (model.googleAccounts || []).filter((account) => account.enabled !== false).length
                 : 0;
             const attemptsAllowed = retries + Math.max(0, accountCount - 1);
             for (let attempt = 0; attempt <= attemptsAllowed; attempt++) {
                 const stateKey = (0, crypto_1.randomUUID)();
-                let replayReasoning = '';
-                const replayCalls = [];
-                let replayOverflow = false;
-                const observeCandidate = (candidate) => {
-                    const parts = candidate?.content?.parts;
-                    for (const part of parts || []) {
-                        if (replayOverflow)
-                            break;
-                        if (part.thought === true && typeof part.text === 'string')
-                            replayReasoning += part.text;
-                        if (part.functionCall)
-                            replayCalls.push(part);
-                        if (replayReasoning.length > 256 * 1024 || replayCalls.length > 128) {
-                            replayOverflow = true;
-                            replayReasoning = '';
-                            replayCalls.length = 0;
-                        }
-                    }
-                };
                 let request;
                 let accountLease;
                 let totalTimer;
-                let headerLatencyMs;
                 const abort = () => request?.destroy(new Error('Cancelled'));
                 try {
                     if (signal.aborted)
@@ -337,13 +216,11 @@ async function runCustomModelRequest(res, primary, originalBody, isStream, allMo
                     const remaining = deadline - Date.now();
                     if (remaining <= 0)
                         throw new UpstreamError('Request retry budget exhausted.', 504, false);
-                    effectiveModel = model;
-                    diagnostic.resetUsage();
                     const format = (0, providers_1.resolveApiFormat)(model.provider, model.apiFormat);
                     const externalName = model.externalModelName || model.name.replace(/^models\//, '');
                     if (cloudCode) {
                         const identity = originalBody.sessionId || originalBody.conversationId;
-                        accountLease = await (0, googleAccounts_1.acquireGoogleAccount)(model.name, model.googleAccounts || [], model.googlePool, typeof identity === 'string' ? identity : undefined, externalName.replace(/^models\//, ''), model.apiUrl);
+                        accountLease = await (0, googleAccounts_1.acquireGoogleAccount)(model.name, model.googleAccounts || [], model.googlePool, typeof identity === 'string' ? identity : undefined);
                         if (signal.aborted)
                             break;
                     }
@@ -354,37 +231,27 @@ async function runCustomModelRequest(res, primary, originalBody, isStream, allMo
                         const outputBudget = model.maxOutputTokens ??
                             Number(originalBody.generationConfig?.maxOutputTokens ||
                                 (model.contextWindow ? Math.min(4000, Math.max(1, Math.floor(model.contextWindow / 4))) : 0));
-                        // The IDE can omit thought parts when replaying completed tool calls.
-                        // Recover only this conversation/provider's matching turn before budgeting.
-                        const history = format === 'openai' ? reasoningReplay_1.reasoningReplayCache.restore(originalBody, model) : originalBody;
-                        const body = (0, requestOptions_1.trimContext)(history, model.contextWindow, outputBudget);
+                        const body = (0, requestOptions_1.trimContext)(originalBody, model.contextWindow, outputBudget);
                         const effectiveModel = outputBudget ? { ...model, maxOutputTokens: outputBudget } : model;
-                        payload = (0, requestOptions_1.applyRequestOptions)(registry.translateRequest(model.provider, body, externalName, format, stateKey), effectiveModel, format, isStream, compactionEffort);
+                        payload = (0, requestOptions_1.applyRequestOptions)(registry.translateRequest(model.provider, body, externalName, format, stateKey), effectiveModel, format, isStream);
                         const target = cloudCode || model.rawUrl
                             ? model.apiUrl
                             : registry.getProviderUrl(model.apiUrl, externalName, isStream, registry.getTranslator(model.provider, format));
                         url = new URL(target);
                         if (!['http:', 'https:'].includes(url.protocol))
                             throw new Error('Unsupported endpoint protocol');
-                        headers = registry.getProviderHeaders(model.provider, cloudCode ? '' : model.apiKey, format, model.apiUrl);
+                        headers = registry.getProviderHeaders(model.provider, cloudCode ? '' : model.apiKey, format);
                         if (accountLease) {
-                            url = new URL((0, googleAccounts_1.googleAccountEndpoint)(accountLease.account, model.apiUrl));
-                            if (accountLease.account.authMode === 'antigravity' && !accountLease.account.project)
-                                throw new Error('Prepare this Antigravity account in the model manager before generating a response');
                             url.pathname = `/v1internal:${isStream ? 'streamGenerateContent' : 'generateContent'}`;
                             url.search = isStream ? '?alt=sse' : '';
                             headers.Authorization = `Bearer ${accountLease.account.accessToken}`;
-                            headers['User-Agent'] = googleAccounts_1.GOOGLE_CLOUD_CODE_USER_AGENT;
+                            headers['User-Agent'] = 'antigravity';
                             const project = accountLease.account.project || model.googleProject;
                             payload = { model: externalName, ...(project ? { project } : {}), request: payload };
                         }
-                        if (opencode) {
+                        if (['opencode', 'zen', 'opencode-go'].includes(model.provider)) {
                             const identity = originalBody.sessionId || originalBody.conversationId;
-                            // Preserve conversation affinity without putting arbitrary Unicode or control characters in a header.
-                            headers['x-opencode-session'] =
-                                typeof identity === 'string' && identity.trim()
-                                    ? (0, crypto_1.createHash)('sha256').update(identity).digest('hex')
-                                    : requestId;
+                            headers['x-opencode-session'] = typeof identity === 'string' ? identity : requestId;
                         }
                         if (model.gateway) {
                             const identity = originalBody.conversationId || originalBody.sessionId;
@@ -407,7 +274,6 @@ async function runCustomModelRequest(res, primary, originalBody, isStream, allMo
                         throw new UpstreamError(`Invalid model configuration: ${error.message}`, 400, false, 0, false);
                     }
                     counts.upstreamAttempts += 1;
-                    const upstreamStartedAt = Date.now();
                     const upstream = await new Promise((resolve, reject) => {
                         request = (url.protocol === 'https:' ? https : http).request(url, { method: 'POST', headers, rejectUnauthorized: !model.allowUnauthorized }, resolve);
                         request.once('error', reject);
@@ -416,28 +282,11 @@ async function runCustomModelRequest(res, primary, originalBody, isStream, allMo
                         signal.addEventListener('abort', abort, { once: true });
                         request.end(JSON.stringify(payload));
                     });
-                    headerLatencyMs = Date.now() - upstreamStartedAt;
                     const status = upstream.statusCode || 502;
                     if (status < 200 || status >= 300) {
-                        const errorBody = status === 400 ||
-                            status === 422 ||
-                            (cloudCode && [403, 429].includes(status)) ||
-                            (opencode && [401, 403].includes(status))
-                            ? await boundedErrorBody(upstream)
-                            : '';
-                        const decision = cloudCode && (0, googlePoolFailover_1.isGoogleQuotaFailure)(status, errorBody)
-                            ? (0, googlePoolPolicy_1.classifyGoogleRateLimit)(errorBody, upstream.headers['retry-after'])
-                            : undefined;
-                        const retryAfter = decision?.retryAfterMs ?? (0, requestOptions_1.parseRetryAfter)(upstream.headers['retry-after']);
-                        const hint = status === 400 || status === 422 ? toolSchemaErrorHint(errorBody) : '';
+                        const retryAfter = (0, requestOptions_1.parseRetryAfter)(upstream.headers['retry-after']);
                         upstream.destroy();
-                        throw new UpstreamError(`${cloudCode
-                            ? decision && status === 403
-                                ? 'Google Cloud Code reported a rate or quota limit (HTTP 403). Respect the provider retry/reset delay; signing in again does not increase quota.'
-                                : (0, googleAccessErrors_1.describeGoogleAccessError)(status).message
-                            : opencode && [401, 403].includes(status)
-                                ? (0, providers_1.describeOpencodeAccessError)(status, errorBody)
-                                : `Upstream returned HTTP ${status}.`}${hint}`, status, !!decision || status === 408 || status === 429 || status >= 500, retryAfter, status !== 400 && status !== 422, decision);
+                        throw new UpstreamError(`Upstream returned HTTP ${status}.`, status, status === 408 || status === 429 || status >= 500, retryAfter, status !== 400 && status !== 422);
                     }
                     if (isStream && String(upstream.headers['content-type']).includes('text/event-stream')) {
                         const decoder = new string_decoder_1.StringDecoder('utf8');
@@ -451,28 +300,21 @@ async function runCustomModelRequest(res, primary, originalBody, isStream, allMo
                             dataLines = [];
                             if (!data)
                                 return;
-                            let chunk;
                             if (data.trim() === '[DONE]') {
                                 terminal = true;
-                                // Some compatible endpoints omit finish_reason. Flush remaining
-                                // text/tools through validation, but never replay a finalized context.
-                                if (format !== 'openai' || !shared_1.activeStreamContexts.has(stateKey))
-                                    return;
-                                chunk = { choices: [{ delta: {}, finish_reason: 'stop' }] };
+                                return;
                             }
-                            else {
-                                try {
-                                    chunk = JSON.parse(data);
-                                }
-                                catch {
-                                    throw new UpstreamError('Upstream sent malformed SSE JSON.');
-                                }
+                            let chunk;
+                            try {
+                                chunk = JSON.parse(data);
+                            }
+                            catch {
+                                throw new UpstreamError('Upstream sent malformed SSE JSON.');
                             }
                             if (chunk.error || chunk.type === 'error')
                                 throw new UpstreamError('Upstream reported a stream error.');
                             if (cloudCode && chunk.response)
                                 chunk = chunk.response;
-                            diagnostic.observe(chunk, format);
                             const delta = chunk.choices?.[0]?.delta;
                             if (delta?.content ||
                                 delta?.reasoning_content ||
@@ -490,23 +332,11 @@ async function runCustomModelRequest(res, primary, originalBody, isStream, allMo
                                 terminal = true;
                             if ((chunk.type === 'message_delta' && chunk.delta?.stop_reason === 'tool_use') ||
                                 chunk.choices?.[0]?.finish_reason) {
-                                const pending = shared_1.activeStreamContexts.get(stateKey)?.toolCalls || {};
-                                // Validate a copy including this event before the translator appends
-                                // its fragments and consumes the state. Never append to live state twice.
-                                const completed = new Map(Object.entries(pending).map(([index, tool]) => [index, tool.arguments]));
-                                if (format === 'openai' && Array.isArray(delta?.tool_calls)) {
-                                    for (const tool of delta.tool_calls) {
-                                        const index = String(tool.index ?? 0);
-                                        completed.set(index, (completed.get(index) || '') + (tool.function?.arguments || ''));
-                                    }
-                                }
-                                for (const args of completed.values())
-                                    validateToolArguments(args);
+                                for (const tool of Object.values(shared_1.activeStreamContexts.get(stateKey)?.toolCalls || {}))
+                                    validateToolArguments(tool.arguments);
                             }
-                            const mapped = registry.translateStreamChunk(model.provider, chunk, stateKey, format, stateKey, toolSchemas, artifactContext);
+                            const mapped = registry.translateStreamChunk(model.provider, chunk, stateKey, format, stateKey, toolSchemas);
                             if (mapped) {
-                                if (format === 'openai')
-                                    observeCandidate(mapped);
                                 if (mapped.content?.parts?.length)
                                     emitted = true;
                                 if (mapped.finishReason && mapped.finishReason !== 'OTHER')
@@ -568,7 +398,6 @@ async function runCustomModelRequest(res, primary, originalBody, isStream, allMo
                             throw new UpstreamError('Upstream returned an error response.');
                         if (cloudCode && parsed.response)
                             parsed = parsed.response;
-                        diagnostic.observe(parsed, format);
                         if ((format === 'openai' && !parsed.choices?.[0]?.message) ||
                             (format === 'anthropic' && !Array.isArray(parsed.content)))
                             throw new UpstreamError('Upstream returned an invalid completion.');
@@ -578,59 +407,27 @@ async function runCustomModelRequest(res, primary, originalBody, isStream, allMo
                                 validateToolArguments(tool.function?.arguments);
                         }
                         // Some compatible endpoints return a complete JSON response even when stream=true.
-                        const mapped = registry.translateResponse(model.provider, parsed, stateKey, format, toolSchemas, artifactContext);
+                        const mapped = registry.translateResponse(model.provider, parsed, stateKey, format, toolSchemas);
                         if (!mapped?.candidates?.length)
                             throw new UpstreamError('Upstream returned no candidates.');
-                        if (format === 'openai')
-                            for (const candidate of mapped.candidates)
-                                observeCandidate(candidate);
-                        if (kind === 'generation-test' &&
-                            !mapped.candidates.some((candidate) => {
-                                const content = candidate
-                                    ?.content;
-                                return (Array.isArray(content?.parts) &&
-                                    content.parts.some((part) => part?.thought !== true && typeof part?.text === 'string' && part.text.trim()));
-                            })) {
-                            // The short test can exhaust its output budget despite a healthy account.
-                            // Record the accepted upstream response before the logical test failure.
-                            accountLease?.release({ status, latencyMs: headerLatencyMs });
-                            throw new UpstreamError('The provider did not return generated text. Check the model and test output budget.', 502, false, 0, false);
-                        }
                         if (isStream) {
                             for (const candidate of mapped.candidates)
                                 writeCandidate(candidate);
                         }
                         else {
-                            prepared.context.modelName = effectiveModel.name;
-                            const routed = subagentRouting_1.subagentRouting.rewriteResponse(mapped, prepared.context, resolveSubagent);
                             res.writeHead(200, { 'Content-Type': 'application/json' });
-                            res.end(JSON.stringify(envelope(routed, cloudEnvelope)));
+                            res.end(JSON.stringify(envelope(mapped, cloudEnvelope)));
                         }
                     }
-                    // Do not retain partial, failed, cancelled, or retried output. This cache
-                    // outlives the per-attempt translator state, but never the proxy service.
-                    if (format === 'openai' && !replayOverflow && !signal.aborted)
-                        reasoningReplay_1.reasoningReplayCache.record(originalBody, model, [
-                            { text: replayReasoning, thought: true },
-                            ...replayCalls,
-                        ]);
                     circuits.succeed(circuitKey);
                     completed = true;
-                    accountLease?.release({ status, latencyMs: headerLatencyMs });
                     counts.succeeded += 1;
                     res.end();
                     return;
                 }
                 catch (error) {
                     failure = asUpstreamError(error);
-                    accountLease?.release({
-                        status: failure.status,
-                        retryAfterMs: failure.googleRateLimit
-                            ? failure.googleRateLimit.retryAfterMs
-                            : failure.retryAfter || undefined,
-                        cooldownReason: failure.googleRateLimit?.reason,
-                        cancelled: signal.aborted,
-                    });
+                    accountLease?.release({ status: failure.status, retryAfterMs: failure.retryAfter });
                     if (signal.aborted) {
                         circuits.cancel(circuitKey);
                         break modelLoop;
@@ -696,12 +493,6 @@ async function runCustomModelRequest(res, primary, originalBody, isStream, allMo
         res.removeListener('close', onClose);
         controllers.delete(controller);
         counts.active -= 1;
-        diagnostic.finish({
-            outcome: signal.aborted ? 'cancelled' : completed ? 'succeeded' : 'failed',
-            status: signal.aborted ? undefined : completed ? 200 : failure.status,
-            model: effectiveModel.name,
-            provider: effectiveModel.provider,
-        });
         if (!completed) {
             if (signal.aborted)
                 counts.cancelled += 1;

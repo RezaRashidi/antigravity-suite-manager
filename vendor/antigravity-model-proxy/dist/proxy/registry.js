@@ -45,7 +45,6 @@ const openai = __importStar(require("./translators/openai"));
 const anthropic = __importStar(require("./translators/anthropic"));
 const google = __importStar(require("./translators/google"));
 const providers_1 = require("../providers");
-const artifactMetadata_1 = require("./artifactMetadata");
 function getTranslator(provider, apiFormat) {
     const format = (0, providers_1.resolveApiFormat)(provider, apiFormat);
     return format === 'google' ? google : format === 'anthropic' ? anthropic : openai;
@@ -58,37 +57,31 @@ function translateRequest(provider, body, modelName, apiFormat, stateKey) {
         return anthropic.mapGeminiToAnthropic(body, modelName, stateKey);
     return openai.mapGeminiToOpenAI(body, modelName, stateKey);
 }
-function translateResponse(provider, response, stateKey, apiFormat, toolSchemas, artifactContext) {
+function translateResponse(provider, response, stateKey, apiFormat, toolSchemas) {
     const format = (0, providers_1.resolveApiFormat)(provider, apiFormat);
-    const mapped = format === 'google'
-        ? google.mapGoogleToGemini(response, stateKey)
-        : format === 'anthropic'
-            ? anthropic.mapAnthropicToGemini(response, stateKey, toolSchemas)
-            : openai.mapOpenAIToGemini(response, stateKey, toolSchemas);
-    return (0, artifactMetadata_1.normalizeArtifactResponse)(mapped, artifactContext);
+    if (format === 'google')
+        return google.mapGoogleToGemini(response, stateKey);
+    if (format === 'anthropic')
+        return anthropic.mapAnthropicToGemini(response, stateKey, toolSchemas);
+    return openai.mapOpenAIToGemini(response, stateKey, toolSchemas);
 }
-function translateStreamChunk(provider, chunk, stateKey, apiFormat, streamKey, toolSchemas, artifactContext) {
+function translateStreamChunk(provider, chunk, stateKey, apiFormat, streamKey, toolSchemas) {
     const format = (0, providers_1.resolveApiFormat)(provider, apiFormat);
-    const mapped = format === 'google'
-        ? google.mapGoogleChunkToGemini(chunk, stateKey)
-        : format === 'anthropic'
-            ? anthropic.mapAnthropicChunkToGemini(chunk, stateKey, streamKey, toolSchemas)
-            : openai.mapOpenAIChunkToGemini(chunk, stateKey, streamKey, toolSchemas);
-    // Normalize before customRequest records reasoning against the emitted arguments.
-    return (0, artifactMetadata_1.normalizeArtifactCandidate)(mapped, artifactContext);
+    if (format === 'google')
+        return google.mapGoogleChunkToGemini(chunk, stateKey);
+    if (format === 'anthropic')
+        return anthropic.mapAnthropicChunkToGemini(chunk, stateKey, streamKey, toolSchemas);
+    return openai.mapOpenAIChunkToGemini(chunk, stateKey, streamKey, toolSchemas);
 }
-function getProviderHeaders(provider, apiKey = '', apiFormat, apiUrl = '') {
+function getProviderHeaders(provider, apiKey = '', apiFormat) {
     const headers = { 'Content-Type': 'application/json' };
     const format = (0, providers_1.resolveApiFormat)(provider, apiFormat);
-    const opencode = (0, providers_1.isOpencodeEndpoint)(apiUrl, provider);
     if (format === 'anthropic')
         headers['anthropic-version'] = '2023-06-01';
     if (apiKey && apiKey !== 'none') {
         if (/^(enc:|fallback:|local-gcm:|DECRYPTION_FAILED)/.test(apiKey))
             throw new Error('API key could not be decrypted; save the key again.');
-        if (opencode)
-            headers.Authorization = `Bearer ${apiKey}`;
-        else if (format === 'google')
+        if (format === 'google')
             headers['x-goog-api-key'] = apiKey;
         else if (format === 'anthropic')
             headers['x-api-key'] = apiKey;
@@ -99,8 +92,8 @@ function getProviderHeaders(provider, apiKey = '', apiFormat, apiUrl = '') {
         headers['HTTP-Referer'] = 'https://antigravity.google';
         headers['X-Title'] = 'Antigravity';
     }
-    if (opencode)
-        headers['User-Agent'] = providers_1.OPENCODE_USER_AGENT;
+    if (['opencode', 'zen', 'opencode-go'].includes(provider))
+        headers['User-Agent'] = 'opencode';
     return headers;
 }
 function supportsStreaming(_provider) {

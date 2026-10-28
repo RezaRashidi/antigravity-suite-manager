@@ -42,7 +42,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.collectToolSchemas = collectToolSchemas;
 exports.normalizeToolArgs = normalizeToolArgs;
-exports.normalizeToolSchema = normalizeToolSchema;
 exports.fixParamTypes = fixParamTypes;
 exports.translateToolCallToNative = translateToolCallToNative;
 exports.formatTranslatedResponse = formatTranslatedResponse;
@@ -329,84 +328,6 @@ function normalizeToolArgs(name, args, schemas) {
     return normalized;
 }
 // ─── Utility Functions ────────────────────────────────────────────────────
-const SCHEMA_INTEGER_BOUNDS = [
-    'minLength',
-    'maxLength',
-    'minItems',
-    'maxItems',
-    'minProperties',
-    'maxProperties',
-    'minContains',
-    'maxContains',
-];
-const SCHEMA_MAP_KEYWORDS = [
-    'properties',
-    'patternProperties',
-    '$defs',
-    'definitions',
-    'dependentSchemas',
-    'dependencies',
-];
-const SCHEMA_ARRAY_KEYWORDS = ['allOf', 'anyOf', 'oneOf', 'prefixItems'];
-const SCHEMA_SINGLE_KEYWORDS = [
-    'additionalProperties',
-    'additionalItems',
-    'unevaluatedProperties',
-    'unevaluatedItems',
-    'propertyNames',
-    'contains',
-    'not',
-    'if',
-    'then',
-    'else',
-    'contentSchema',
-];
-function normalizeSchemaNode(value) {
-    if (!value || typeof value !== 'object' || Array.isArray(value))
-        return;
-    const schema = value;
-    if (typeof schema.type === 'string')
-        schema.type = schema.type.toLowerCase();
-    else if (Array.isArray(schema.type)) {
-        schema.type = schema.type.map((type) => (typeof type === 'string' ? type.toLowerCase() : type));
-    }
-    // Gemini's protobuf JSON can serialize these int64 bounds as decimal strings.
-    // Do not silently round, truncate, or reinterpret malformed schema values.
-    for (const keyword of SCHEMA_INTEGER_BOUNDS) {
-        const bound = schema[keyword];
-        if (typeof bound === 'string' && /^(?:0|[1-9]\d*)$/.test(bound)) {
-            const number = Number(bound);
-            if (Number.isSafeInteger(number))
-                schema[keyword] = number;
-        }
-    }
-    // Only schema-bearing keywords are traversed. Defaults, examples, enum/const
-    // values, and extension metadata may contain identical keys as literal data.
-    for (const keyword of SCHEMA_MAP_KEYWORDS) {
-        const map = schema[keyword];
-        if (map && typeof map === 'object' && !Array.isArray(map)) {
-            for (const child of Object.values(map))
-                normalizeSchemaNode(child);
-        }
-    }
-    for (const keyword of SCHEMA_ARRAY_KEYWORDS) {
-        const children = schema[keyword];
-        if (Array.isArray(children))
-            children.forEach(normalizeSchemaNode);
-    }
-    if (Array.isArray(schema.items))
-        schema.items.forEach(normalizeSchemaNode);
-    else
-        normalizeSchemaNode(schema.items);
-    for (const keyword of SCHEMA_SINGLE_KEYWORDS)
-        normalizeSchemaNode(schema[keyword]);
-}
-/** Return a provider-compatible copy without changing the caller's tool schema. */
-function normalizeToolSchema(schema) {
-    const normalized = JSON.parse(JSON.stringify(schema));
-    normalizeSchemaNode(normalized);
-    return normalized;
-}
 /**
  * Recursively converts Gemini parameter types (UPPERCASE) to lowercase format.
  * Gemini uses uppercase (STRING, NUMBER); OpenAI/Anthropic need lowercase.

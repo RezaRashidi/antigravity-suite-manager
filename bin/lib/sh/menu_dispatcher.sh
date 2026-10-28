@@ -43,6 +43,8 @@ execute_menu_choice() {
         37) unpatch_open_ide_app ;;
         38) dispatch_cloud_sync ;;
         39) dispatch_custom_models menu ;;
+        40) FORCE_INSTALL=true patch_models_app ;;
+        41) unpatch_models_app ;;
         0) exit 0 ;;
         *) log_err "Invalid selection."; exit 1 ;;
     esac

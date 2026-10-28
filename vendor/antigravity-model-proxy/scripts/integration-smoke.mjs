@@ -1,0 +1,115 @@
+#!/usr/bin/env node
+/** Exercise desktop import -> local proxy -> optional gateway -> mock provider. No live account. */
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import http from 'node:http';
+import Module, { createRequire } from 'node:module';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { DatabaseSync } from 'node:sqlite';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'antigravity-gateway-smoke-'));
+const gatewayData = path.join(temporary, 'gateway');
+const home = path.join(temporary, 'home');
+const token = 'integration-fixture-token-not-a-real-secret';
+let child;
+let proxy;
+let output = '';
+let calls = 0;
+const originalLoad = Module._load;
+const provider = http.createServer(async (req, res) => {
+  assert.equal(req.headers.authorization, 'Bearer fixture-provider-key');
+  if (req.url === '/v1/models') { res.end(JSON.stringify({ data: [{ id: 'mock-model' }] })); return; }
+  assert.equal(req.method, 'POST');
+  assert.equal(req.url, '/v1/chat/completions');
+  const buffers = []; for await (const chunk of req) buffers.push(chunk);
+  const body = JSON.parse(Buffer.concat(buffers).toString('utf8'));
+  assert.equal(body.model, 'mock-model');
+  calls++;
+  res.writeHead(200, { 'content-type': 'text/event-stream' });
+  res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: 'Gateway integration works.' }, finish_reason: null }] })}\n\n`);
+  res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\n`);
+  res.end('data: [DONE]\n\n');
+});
+
+try {
+  await new Promise(resolve => provider.listen(0, '127.0.0.1', resolve));
+  fs.mkdirSync(gatewayData, { recursive: true });
+  const settings = {
+    PROVIDER_PRIORITY: 'openai', OPENAI_API_KEY: 'fixture-provider-key', OPENAI_BASE_URL: `http://127.0.0.1:${provider.address().port}/v1`,
+    PROXY_PORT: '0', API_PORT: '0', AG_GATEWAY_HOST: '127.0.0.1', AG_GATEWAY_REMOTE: 'false', AG_GATEWAY_TOKEN: token,
+    DASHBOARD_USER: 'fixture', DASHBOARD_PASSWORD: 'fixture-dashboard-password', CONTEXT_STRIP_MODE: 'passthrough',
+    COMPACTION_ENABLED: 'false', PROXY_RETRIES: '0', LOG_LEVEL: 'error', RATE_LIMIT_GLOBAL: '0', RATE_LIMIT_PROVIDER: '0',
+  };
+  fs.writeFileSync(path.join(gatewayData, '.env'), Object.entries(settings).map(([key, value]) => `${key}=${value}`).join('\n'));
+  fs.writeFileSync(path.join(gatewayData, 'models.json'), JSON.stringify({ demo: 'mock-model', _provider_models: { demo: { openai: 'mock-model' } }, _global_provider_priority: ['openai'], _compaction_enabled: false }));
+  child = spawn(process.execPath, [path.join(root, 'gateway/dist/cli.js'), 'start', '--foreground'], {
+    cwd: root, env: { ...process.env, ...settings, AG_GATEWAY_DATA_DIR: gatewayData }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  child.stdout.on('data', chunk => { output += chunk; });
+  child.stderr.on('data', chunk => { output += chunk; });
+  const runtimeFile = path.join(gatewayData, 'runtime.json');
+  for (let i = 0; !fs.existsSync(runtimeFile) && i < 100; i++) {
+    if (child.exitCode !== null) throw new Error(`Gateway stopped during startup: ${output}`);
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  assert.ok(fs.existsSync(runtimeFile), `Gateway failed to start: ${output}`);
+  const runtime = JSON.parse(fs.readFileSync(runtimeFile, 'utf8'));
+  const gatewayUrl = `http://127.0.0.1:${runtime.generationPort}`;
+  assert.equal((await fetch(`${gatewayUrl}/models`)).status, 401);
+
+  const logger = { info() {}, warn() {}, error() {}, debug() {} };
+  const electron = { app: { getPath: () => home, getAppPath: () => temporary }, safeStorage: {
+    isEncryptionAvailable: () => true, encryptString: value => Buffer.from(value), decryptString: value => value.toString(),
+  } };
+  Module._load = function(id, ...args) {
+    if (id === 'electron') return electron;
+    if (id === 'electron-log') return logger;
+    return originalLoad.call(this, id, ...args);
+  };
+  const require = createRequire(import.meta.url);
+  const { createModelManager } = require(path.join(root, 'dist/modelManagement.js'));
+  const codec = require(path.join(root, 'dist/cryptoStore.js'));
+  const manager = createModelManager(path.join(home, '.gemini', 'antigravity'), codec, async () => {});
+  assert.equal((await manager.importGatewayModels({ url: gatewayUrl, token, dashboardUrl: `http://127.0.0.1:${runtime.dashboardPort}` })).count, 1);
+  assert.equal(manager.store.list()[0].apiKey, '********');
+  assert.equal((await manager.testModel(manager.store.list()[0])).success, true);
+  proxy = require(path.join(root, 'dist/proxy.js'));
+  const port = await proxy.startProxy();
+  const body = { conversationId: 'smoke-conversation', contents: [{ role: 'user', parts: [{ text: 'Hello' }] }] };
+  const generate = await fetch(`http://127.0.0.1:${port}/v1beta/models/gateway-demo:generateContent`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(10000),
+  });
+  assert.equal(generate.status, 200, await generate.clone().text());
+  assert.match((await generate.json()).candidates[0].content.parts[0].text, /Gateway integration works/);
+  const stream = await fetch(`http://127.0.0.1:${port}/v1internal:streamGenerateContent`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: 'models/gateway-demo', conversationId: 'smoke-conversation', request: body }), signal: AbortSignal.timeout(10000),
+  });
+  assert.equal(stream.status, 200);
+  const frames = (await stream.text()).split('\n').filter(line => line.startsWith('data: ')).map(line => JSON.parse(line.slice(6)));
+  assert.ok(frames.some(frame => frame.response?.candidates?.[0]?.content?.parts?.some(part => /Gateway integration works/.test(part.text))));
+  assert.equal(calls, 2);
+  const history = new DatabaseSync(path.join(gatewayData, 'data', 'gateway.db'), { readOnly: true });
+  try {
+    assert.equal(history.prepare('SELECT COUNT(*) AS count FROM sessions').get().count, 1, 'Two turns in one desktop conversation must remain one gateway session');
+    assert.equal(history.prepare('SELECT COUNT(DISTINCT session_id) AS count FROM requests').get().count, 1);
+  } finally { history.close(); }
+  const health = await fetch(`http://127.0.0.1:${port}/health`);
+  assert.equal(health.status, 200);
+  console.log('PASS: authenticated import, masked credentials, model discovery, native JSON and Cloud Code SSE across desktop proxy -> gateway -> provider.');
+} finally {
+  await proxy?.stopProxy();
+  Module._load = originalLoad;
+  if (child && child.exitCode === null) {
+    child.kill('SIGTERM');
+    await Promise.race([new Promise(resolve => child.once('exit', resolve)), new Promise(resolve => setTimeout(resolve, 3000))]);
+    if (child.exitCode === null) child.kill('SIGKILL');
+  }
+  provider.closeAllConnections();
+  await new Promise(resolve => provider.close(resolve));
+  assert.equal(path.dirname(temporary), path.resolve(os.tmpdir()));
+  fs.rmSync(temporary, { recursive: true, force: true });
+}

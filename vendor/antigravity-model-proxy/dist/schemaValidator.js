@@ -21,7 +21,6 @@ exports.validateGenerateContentRequest = validateGenerateContentRequest;
 exports.validateOpenAiChunk = validateOpenAiChunk;
 exports.validateAnthropicEvent = validateAnthropicEvent;
 const providers_1 = require("./providers");
-const modelUtils_1 = require("./proxy/modelUtils");
 /**
  * Validates a Gemini candidate object structure.
  */
@@ -115,9 +114,6 @@ function validateCustomModel(model) {
         if (url.username || url.password) {
             return { valid: false, error: 'Use the API key or custom headers field instead of embedding credentials in the API URL' };
         }
-        if ((0, providers_1.workersAiAccountPath)(apiUrl, provider) && m.apiFormat !== undefined && m.apiFormat !== 'openai') {
-            return { valid: false, error: 'Cloudflare Workers AI requires the OpenAI compatible API format' };
-        }
     }
     catch (e) {
         return { valid: false, error: `Invalid API URL: ${e.message}` };
@@ -144,10 +140,8 @@ function validateCustomModel(model) {
         if (m[field] !== undefined && typeof m[field] !== 'boolean')
             return { valid: false, error: `${field} must be a boolean` };
     }
-    for (const field of ['reasoningEffort', 'compactionReasoningEffort']) {
-        if (m[field] !== undefined && !['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(m[field])) {
-            return { valid: false, error: `Invalid ${field}` };
-        }
+    if (m.reasoningEffort !== undefined && !['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(m.reasoningEffort)) {
+        return { valid: false, error: 'Invalid reasoningEffort' };
     }
     for (const field of ['contextWindow', 'maxOutputTokens', 'thinkingBudget', 'timeout', 'idleTimeout', 'retryBudgetMs', 'maxRetries']) {
         const value = m[field];
@@ -159,22 +153,6 @@ function validateCustomModel(model) {
     }
     if (m.contextWindow !== undefined && m.maxOutputTokens !== undefined && Number(m.maxOutputTokens) >= Number(m.contextWindow)) {
         return { valid: false, error: 'maxOutputTokens must be smaller than contextWindow' };
-    }
-    if (m.compactionThresholdPercent !== undefined) {
-        if (!Number.isSafeInteger(m.compactionThresholdPercent) || Number(m.compactionThresholdPercent) < 10 || Number(m.compactionThresholdPercent) > 90) {
-            return { valid: false, error: 'compactionThresholdPercent must be an integer from 10 to 90' };
-        }
-        if (m.contextWindow === undefined) {
-            return { valid: false, error: 'Set the actual contextWindow before configuring compactionThresholdPercent' };
-        }
-        const cap = (0, modelUtils_1.detectModelCapabilities)(m);
-        if (cap.maxTokens - cap.maxOutputTokens - modelUtils_1.COMPACTION_TOKEN_RESERVE < modelUtils_1.NATIVE_DEFAULT_CHECKPOINT_THRESHOLD) {
-            return { valid: false, error: 'IDE 2.5.5 requires at least 50000 input tokens after reserving the real model output limit and 1024 extra tokens before it can apply a custom compaction threshold; use the actual provider limits or leave the threshold unset' };
-        }
-        const threshold = Math.min(Math.floor(cap.maxTokens * Number(m.compactionThresholdPercent) / 100), cap.maxTokens - cap.maxOutputTokens - modelUtils_1.COMPACTION_TOKEN_RESERVE);
-        if (threshold < 1024) {
-            return { valid: false, error: 'Compaction needs at least 1024 input tokens after reserving the model output limit and 1024 extra tokens; increase contextWindow or lower maxOutputTokens to the actual provider limit' };
-        }
     }
     if (m.fallbackModels !== undefined && (!Array.isArray(m.fallbackModels) || m.fallbackModels.length > 20 || m.fallbackModels.some((value) => typeof value !== 'string' || !value.trim()))) {
         return { valid: false, error: 'fallbackModels must contain up to 20 saved model names' };
@@ -219,14 +197,10 @@ function validateCustomModel(model) {
             if (!entry || typeof entry !== 'object' || typeof entry.id !== 'string' || !entry.id.trim() || ids.has(entry.id))
                 return { valid: false, error: 'Each Google account needs a unique id' };
             ids.add(entry.id);
-            for (const field of ['label', 'email', 'refreshToken', 'accessToken', 'clientId', 'clientSecret', 'project']) {
+            for (const field of ['label', 'refreshToken', 'accessToken', 'clientId', 'clientSecret', 'project']) {
                 if (entry[field] !== undefined && typeof entry[field] !== 'string')
                     return { valid: false, error: `Google account ${field} must be a string` };
             }
-            if (entry.authMode !== undefined && !['custom', 'antigravity'].includes(entry.authMode))
-                return { valid: false, error: 'Google account authMode must be custom or antigravity' };
-            if (entry.cloudCodeEndpoint !== undefined && !['https://cloudcode-pa.googleapis.com', 'https://daily-cloudcode-pa.googleapis.com'].includes(entry.cloudCodeEndpoint))
-                return { valid: false, error: 'Google account cloudCodeEndpoint must be an official Cloud Code origin' };
             if (entry.expiresAt !== undefined && (!Number.isSafeInteger(entry.expiresAt) || entry.expiresAt < 0))
                 return { valid: false, error: 'Google account expiresAt must be a timestamp in milliseconds' };
             if (entry.enabled !== undefined && typeof entry.enabled !== 'boolean')
@@ -237,11 +211,7 @@ function validateCustomModel(model) {
         if (!m.googlePool || typeof m.googlePool !== 'object' || Array.isArray(m.googlePool))
             return { valid: false, error: 'googlePool must be an object' };
         const options = m.googlePool;
-        if (options.nativeFailoverEnabled !== undefined && typeof options.nativeFailoverEnabled !== 'boolean')
-            return { valid: false, error: 'googlePool.nativeFailoverEnabled must be a boolean' };
-        if (options.preferredAccountId !== undefined && (typeof options.preferredAccountId !== 'string' || !options.preferredAccountId.trim() || !Array.isArray(m.googleAccounts) || !m.googleAccounts.some((account) => account.id === options.preferredAccountId)))
-            return { valid: false, error: 'googlePool.preferredAccountId must identify an account in this model' };
-        if (options.strategy !== undefined && !['round-robin', 'least-loaded', 'quota', 'adaptive'].includes(options.strategy))
+        if (options.strategy !== undefined && !['round-robin', 'least-loaded', 'quota'].includes(options.strategy))
             return { valid: false, error: 'Invalid Google pool strategy' };
         for (const field of ['maxConcurrency', 'cooldownMs']) {
             const maximum = field === 'maxConcurrency' ? 100 : 3600000;

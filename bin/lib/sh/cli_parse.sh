@@ -42,6 +42,8 @@ parse_cli_args() {
             unpatch-fork) COMMAND="unpatch-fork"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
             open-ide|patch-open-ide) COMMAND="open-ide"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
             unpatch-open-ide) COMMAND="unpatch-open-ide"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
+            patch-models|models-patch) COMMAND="patch-models"; shift; CMD_ARGS=("$@"); break ;;
+            unpatch-models) COMMAND="unpatch-models"; shift; CMD_ARGS=("$@"); break ;;
             clean-data|delete-data|purge-data) COMMAND="clean-data"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi; CMD_ARGS=("$@"); break ;;
             uninstall) COMMAND="uninstall"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi; CMD_ARGS=("$@"); break ;;
             set-icons|icons) COMMAND="set-icons"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;

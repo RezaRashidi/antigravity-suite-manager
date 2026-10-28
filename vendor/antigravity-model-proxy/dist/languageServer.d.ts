@@ -22,7 +22,7 @@ export declare function getLsCL(): Promise<string>;
 export declare function getLsProcess(): ChildProcess | null;
 /** Returns the active language server port, or 0 if not running. */
 export declare function getLsPort(): number;
-/** Clears the language server process and trusted port (call after killing it). */
+/** Clears the language server process reference (call after killing it). */
 export declare function clearLsProcess(): void;
 /**
  * Best-effort extraction of the crash stack trace from buffered stderr.

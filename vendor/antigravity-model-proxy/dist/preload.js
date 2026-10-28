@@ -117,5 +117,4 @@ electron_1.contextBridge.exposeInMainWorld('electronNative', electronNativeAPI);
 electron_1.contextBridge.exposeInMainWorld('ide', ideAPI);
 // Used by the standalone legacy desktop build; installed apps retain their own preload.
 require("./customPreload");
-require("./contextUsagePreload");
 //# sourceMappingURL=preload.js.map

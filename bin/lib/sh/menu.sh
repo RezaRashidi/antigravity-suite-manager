@@ -70,8 +70,10 @@ show_classic_menu() {
     echo "37) Revert / Unpatch Native 'Open in IDE' Button Patch"
     echo "38) Cloud Sync (Rclone Encrypted Cross-System Push/Pull)"
     echo "39) Custom Models (Multi-Provider, Discovery & Selection)"
+    echo "40) Inject In-App Custom Models Settings UI (Antigravity App Patch)"
+    echo "41) Revert / Unpatch In-App Custom Models Settings UI"
     echo "0) Exit"
     echo -e "${CYAN}-----------------------------------------------------${NC}"
-    read -rp "Select an option [0-39]: " choice
+    read -rp "Select an option [0-41]: " choice
     execute_menu_choice "$choice"
 }

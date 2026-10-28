@@ -34,126 +34,15 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GOOGLE_TOKEN_URL = exports.GOOGLE_AUTHORIZATION_URL = void 0;
-exports.parseGoogleIdToken = parseGoogleIdToken;
-exports.fetchGoogleUserInfo = fetchGoogleUserInfo;
 exports.loginGoogleAccount = loginGoogleAccount;
-/** Explicit Google desktop OAuth login with PKCE and a fresh loopback callback per attempt. */
+/** Explicit Google desktop OAuth login. No bundled client credentials or automatic login. */
 const http = __importStar(require("node:http"));
 const https = __importStar(require("node:https"));
 const node_crypto_1 = require("node:crypto");
-const googleAccessErrors_1 = require("./googleAccessErrors");
-const googleNativeClient_1 = require("./googleNativeClient");
+const proxyAgent_1 = require("./proxy/proxyAgent");
 exports.GOOGLE_AUTHORIZATION_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 exports.GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const SCOPES = 'https://www.googleapis.com/auth/cloud-platform';
-function parseGoogleIdToken(idToken) {
-    if (!idToken || typeof idToken !== 'string' || idToken.length > 16384)
-        return undefined;
-    const parts = idToken.split('.');
-    if (parts.length < 2)
-        return undefined;
-    try {
-        const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-        const email = identityText(payload?.email);
-        const name = identityText(payload?.name);
-        if (email || name)
-            return { email, name };
-    }
-    catch { }
-    return undefined;
-}
-function identityText(value) {
-    return typeof value === 'string' && value.trim() && value.length <= 320 && !/[\r\n\0]/.test(value)
-        ? value.trim()
-        : undefined;
-}
-function fetchGoogleUserInfo(accessToken, signal) {
-    return new Promise((resolve) => {
-        if (!accessToken || signal?.aborted) {
-            resolve({});
-            return;
-        }
-        let settled = false;
-        let req;
-        let deadline;
-        const finish = (val = {}) => {
-            if (settled)
-                return;
-            settled = true;
-            clearTimeout(deadline);
-            if (signal)
-                signal.removeEventListener('abort', onAbort);
-            resolve(val);
-        };
-        const onAbort = () => {
-            try {
-                req?.destroy?.();
-            }
-            catch { }
-            finish({});
-        };
-        if (signal)
-            signal.addEventListener('abort', onAbort, { once: true });
-        try {
-            req = https.request('https://www.googleapis.com/oauth2/v2/userinfo', {
-                method: 'GET',
-                headers: {
-                    Authorization: `Bearer ${accessToken}`,
-                    Accept: 'application/json',
-                    'User-Agent': 'antigravity-add-model',
-                },
-            }, (res) => {
-                const chunks = [];
-                let size = 0;
-                res.on('data', (c) => {
-                    size += c.length;
-                    if (size > 64 * 1024) {
-                        try {
-                            res.destroy();
-                            req?.destroy();
-                        }
-                        catch { }
-                        finish({});
-                    }
-                    else
-                        chunks.push(c);
-                });
-                res.on('error', () => finish({}));
-                res.on('aborted', () => finish({}));
-                res.on('end', () => {
-                    try {
-                        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-                            const data = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-                            const email = identityText(data?.email);
-                            const name = identityText(data?.name);
-                            finish({ email, name });
-                            return;
-                        }
-                    }
-                    catch { }
-                    finish({});
-                });
-            });
-            if (!req) {
-                finish({});
-                return;
-            }
-            req.on('error', () => finish({}));
-            req.on('close', () => finish({}));
-            deadline = setTimeout(() => {
-                try {
-                    req?.destroy();
-                }
-                catch { }
-                finish({});
-            }, 5000);
-            req.end();
-        }
-        catch {
-            finish({});
-        }
-    });
-}
 function cancellation(message = 'Google login cancelled') {
     return Object.assign(new Error(message), { name: 'AbortError' });
 }
@@ -177,6 +66,7 @@ function exchangeToken(parameters, signal) {
         };
         const req = https.request(exports.GOOGLE_TOKEN_URL, {
             method: 'POST',
+            agent: (0, proxyAgent_1.getProxyAgent)(),
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'Content-Length': Buffer.byteLength(body),
@@ -199,7 +89,7 @@ function exchangeToken(parameters, signal) {
             res.on('error', () => finish(new Error('Google token exchange failed')));
             res.on('end', () => {
                 if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
-                    finish(new Error((0, googleAccessErrors_1.describeGoogleAccessError)(res.statusCode || 502, 'oauth').message));
+                    finish(new Error(`Google token exchange failed (HTTP ${res.statusCode || 0}). Check your OAuth client configuration.`));
                     return;
                 }
                 try {
@@ -231,16 +121,8 @@ function exchangeToken(parameters, signal) {
 }
 /** Returns credentials to the main process only. IPC callers must store them before returning a redacted account. */
 async function loginGoogleAccount(options, openExternal, dependencies = {}) {
-    if (options.signal?.aborted)
-        throw cancellation();
-    if (options.authMode !== undefined && options.authMode !== 'custom' && options.authMode !== 'antigravity')
-        throw new Error('Choose Antigravity sign-in or Custom Desktop OAuth.');
-    const native = options.authMode === 'antigravity' ? (dependencies.resolveNativeClient || googleNativeClient_1.resolveGoogleNativeClient)() : undefined;
-    const clientId = (native?.clientId ?? options.clientId)?.trim();
-    const clientSecret = (native?.clientSecret ?? options.clientSecret)?.trim();
-    // Match the recognized vendor client's registered callback while listening only on IPv4 loopback.
-    const callbackHost = native ? 'localhost' : '127.0.0.1';
-    const callbackPath = native ? '/oauth-callback' : '/oauth2callback';
+    const clientId = options.clientId?.trim();
+    const clientSecret = options.clientSecret?.trim();
     if (!clientId || !/^[A-Za-z0-9_.-]+\.apps\.googleusercontent\.com$/.test(clientId) || clientId.length > 512) {
         throw new Error('Enter your Google Desktop OAuth client ID (.apps.googleusercontent.com).');
     }
@@ -307,7 +189,7 @@ async function loginGoogleAccount(options, openExternal, dependencies = {}) {
             const expected = new URL(redirectUri);
             if (req.headers.host !== expected.host ||
                 callback.origin !== expected.origin ||
-                callback.pathname !== callbackPath) {
+                callback.pathname !== '/oauth2callback') {
                 reply(404, 'Not found.');
                 return;
             }
@@ -344,7 +226,7 @@ async function loginGoogleAccount(options, openExternal, dependencies = {}) {
             if (clientSecret)
                 parameters.set('client_secret', clientSecret);
             void (dependencies.exchangeToken || exchangeToken)(parameters, tokenController.signal)
-                .then(async (tokens) => {
+                .then((tokens) => {
                 if (finished) {
                     reply(410, 'This login attempt has ended.');
                     return;
@@ -353,32 +235,10 @@ async function loginGoogleAccount(options, openExternal, dependencies = {}) {
                     throw new Error('Google did not return an access token');
                 const seconds = Number(tokens.expires_in);
                 const expiresIn = Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 86400) : 3600;
-                let identity = parseGoogleIdToken(tokens.id_token);
-                const userInfo = dependencies.fetchUserInfo || (!dependencies.exchangeToken ? fetchGoogleUserInfo : undefined);
-                if (!identity?.email && tokens.access_token && userInfo) {
-                    try {
-                        const info = await userInfo(tokens.access_token, tokenController.signal);
-                        if (info.email || info.name) {
-                            identity = { ...identity, ...info };
-                        }
-                    }
-                    catch { }
-                }
-                if (finished || tokenController.signal.aborted) {
-                    reply(410, 'This login attempt has ended.');
-                    return;
-                }
-                const email = identity?.email;
-                const actualName = identity?.name;
-                const userLabel = options.label?.trim();
-                const isGeneric = !userLabel || userLabel.toLowerCase() === 'google account';
-                const label = !isGeneric ? userLabel : email || actualName || 'Google account';
                 reply(200, 'Google login completed. Return to Antigravity and save the model to retain this account. You can close this page.');
                 finish(undefined, {
-                    authMode: options.authMode || 'custom',
                     id: (0, node_crypto_1.randomUUID)(),
-                    label,
-                    ...(email ? { email } : {}),
+                    label: options.label?.trim() || 'Google account',
                     accessToken: tokens.access_token,
                     ...(tokens.refresh_token ? { refreshToken: tokens.refresh_token } : {}),
                     expiresAt: (dependencies.now || Date.now)() + expiresIn * 1000,
@@ -409,15 +269,15 @@ async function loginGoogleAccount(options, openExternal, dependencies = {}) {
                 finish(new Error('Google login callback did not start'));
                 return;
             }
-            redirectUri = `http://${callbackHost}:${address.port}${callbackPath}`;
+            redirectUri = `http://127.0.0.1:${address.port}/oauth2callback`;
             const authorization = new URL(exports.GOOGLE_AUTHORIZATION_URL);
             authorization.search = new URLSearchParams({
                 client_id: clientId,
                 redirect_uri: redirectUri,
                 response_type: 'code',
-                scope: native ? native.scopes.join(' ') : SCOPES,
+                scope: SCOPES,
                 access_type: 'offline',
-                prompt: 'select_account consent',
+                prompt: 'consent',
                 state,
                 code_challenge: challenge,
                 code_challenge_method: 'S256',

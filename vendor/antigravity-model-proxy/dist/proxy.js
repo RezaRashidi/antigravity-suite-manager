@@ -41,8 +41,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.setLanguageServerPortResolver = setLanguageServerPortResolver;
-exports.loadCustomModels = loadCustomModels;
 exports.startProxy = startProxy;
 exports.stopProxy = stopProxy;
 exports.getProxyPort = getProxyPort;
@@ -50,188 +48,47 @@ const http = __importStar(require("http"));
 const https = __importStar(require("https"));
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const electron_1 = require("electron");
 const electron_log_1 = __importDefault(require("electron-log"));
 // ─── Imports ──────────────────────────────────────────────────────────────
 let server = null;
 let proxyPort = 0;
 let startingProxy = null;
 let stoppingProxy = null;
-let serviceDataDirectory;
-const DEFAULT_SHUTDOWN_GRACE_MS = 1500;
-let shutdownGraceMs = DEFAULT_SHUTDOWN_GRACE_MS;
-let cloudCodeRouting;
-const upstreamRequests = new Set();
-function trackUpstream(request) {
-    upstreamRequests.add(request);
-    request.once('close', () => upstreamRequests.delete(request));
-    if (stoppingProxy)
-        request.destroy();
-}
-function stopUpstreams() {
-    for (const request of upstreamRequests)
-        request.destroy();
-}
-function rejectDuringShutdown(res) {
-    if (!stoppingProxy)
-        return false;
-    if (!res.destroyed && !res.writableEnded) {
-        res.writeHead(503, { Connection: 'close', 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Proxy is shutting down' }));
-    }
-    return true;
-}
 // Shared cross-turn state
 const shared_1 = require("./proxy/shared");
 // Model configuration & capability detection
 const modelUtils_1 = require("./proxy/modelUtils");
-const cloudCodeRouting_1 = require("./proxy/cloudCodeRouting");
-const modelCatalog_1 = require("./proxy/modelCatalog");
-const modelIdentity_1 = require("./modelIdentity");
 // Custom request transport and model storage
 const customRequest_1 = require("./proxy/customRequest");
 const modelStore_1 = require("./modelStore");
 const listen_1 = require("./proxy/listen");
-const subagentRouting_1 = require("./proxy/subagentRouting");
-const subagentModels_1 = require("./proxy/subagentModels");
-const loopbackSecurity_1 = require("./proxy/loopbackSecurity");
-const nativeSubagentResponse_1 = require("./proxy/nativeSubagentResponse");
-const googlePoolFailover_1 = require("./proxy/googlePoolFailover");
-let languageServerPortResolver;
-let languageServerRoutingEnabled = false;
-/** Registered by the desktop with its own live language-server port getter. */
-function setLanguageServerPortResolver(resolve) {
-    languageServerPortResolver = resolve;
-}
-function currentLanguageServerPort() {
-    if (!languageServerRoutingEnabled)
-        return undefined;
-    try {
-        return languageServerPortResolver?.();
-    }
-    catch {
-        return undefined;
-    }
-}
+const proxyAgent_1 = require("./proxy/proxyAgent");
 // Dynamic imports (stays require for Electron-specific modules)
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const cryptoStore = require('./cryptoStore');
 // ─── Model Helpers ────────────────────────────────────────────────────────
+function generateModelPlaceholderId(model) {
+    const input = (model.displayName || model.name || 'custom-model').toLowerCase();
+    let hash = 5381;
+    for (let i = 0; i < input.length; i++) {
+        hash = (hash << 5) + hash + input.charCodeAt(i);
+        hash = hash & hash; // Force 32-bit integer
+    }
+    const placeholderNum = 400 + (Math.abs(hash) % 200);
+    return `MODEL_PLACEHOLDER_M${placeholderNum}`;
+}
 function getCustomModelsPath() {
-    const geminiDir = serviceDataDirectory || path.join(require('electron').app.getPath('home'), '.gemini', 'antigravity');
+    const geminiDir = path.join(electron_1.app.getPath('home'), '.gemini', 'antigravity');
     return path.join(geminiDir, 'custom_models.json');
 }
-function modelIdentities(models, upstream) {
-    try {
-        // Include disabled entries so toggling an effort variant cannot reassign another model's identity.
-        const saved = (0, modelStore_1.readModelConfig)(getCustomModelsPath()).filter((model) => typeof model.name === 'string' && model.name);
-        const configured = [...new Map([...saved, ...models].map((model) => [model.name, model])).values()];
-        return new Map((0, modelIdentity_1.allocateModelIdentities)(path.dirname(getCustomModelsPath()), configured, upstream).map((identity) => [
-            identity.name,
-            identity,
-        ]));
-    }
-    catch (error) {
-        electron_log_1.default.error('[Proxy] Native model identities unavailable; custom models remain accessible by their direct aliases:', error);
-        return new Map(models.map((model) => [model.name, { name: model.name, catalogId: (0, modelCatalog_1.catalogModelSlug)(model, models) }]));
-    }
-}
-function matchCustomModel(models, ...selectors) {
-    const identities = modelIdentities(models);
-    // Named aliases remain available even when the finite native enum pool is exhausted.
-    for (const selector of selectors) {
-        if (typeof selector !== 'string')
-            continue;
-        const exact = models.find((model) => model.name === selector);
-        if (exact)
-            return exact;
-        const named = models.find((model) => identities.get(model.name)?.catalogId === selector.replace(/^models\//, '') ||
-            (0, modelCatalog_1.localModelSlug)(model) === selector.replace(/^models\//, ''));
-        if (named)
-            return named;
-    }
-    return models.find((model) => {
-        const identity = identities.get(model.name);
-        return (identity?.placeholderId &&
-            selectors.some((selector) => selector === identity.placeholderId ||
-                selector === `models/${identity.placeholderId}` ||
-                selector === identity.placeholderValue));
-    });
-}
-function customCloudCodeCatalog(upstream = {}) {
-    const models = loadCustomModels();
-    const identities = modelIdentities(models, upstream);
-    const labels = (0, modelCatalog_1.catalogDisplayNames)(models, upstream);
-    return (0, modelCatalog_1.mergeCloudCodeCatalog)(upstream, models
-        .filter((model) => identities.get(model.name)?.placeholderId)
-        .map((model) => {
-        const identity = identities.get(model.name);
-        const slug = identity.catalogId;
-        const cap = (0, modelUtils_1.detectModelCapabilities)(model);
-        const nativeCap = (0, modelUtils_1.nativeCatalogCapabilities)(model);
-        const modelExperiments = (0, modelUtils_1.nativeModelExperiments)(model);
-        const capabilities = getAdvertisedModelCapabilities(model);
-        return {
-            slug,
-            mapEntry: {
-                displayName: labels.get(model.name),
-                ...capabilities,
-                recommended: true,
-                maxTokens: nativeCap.maxTokens,
-                maxOutputTokens: cap.maxOutputTokens,
-                tokenizerType: 'LLAMA_WITH_SPECIAL',
-                model: identity.placeholderId,
-                apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
-                modelProvider: 'MODEL_PROVIDER_GOOGLE',
-                // IDE 2.5.5 otherwise summarizes custom chats with its built-in M50.
-                // Use its per-model checkpoint configuration so the selected custom
-                // model receives the native summary request and its effort override.
-                ...(modelExperiments ? { modelExperiments } : {}),
-            },
-            listEntry: {
-                name: 'models/' + slug,
-                version: '1.0',
-                displayName: labels.get(model.name),
-                description: model.description,
-                ...capabilities,
-                inputTokenLimit: cap.maxTokens,
-                outputTokenLimit: cap.maxOutputTokens,
-                supportedGenerationMethods: ['generateContent', 'countTokens'],
-            },
-        };
-    }));
-}
-function getAdvertisedModelCapabilities(model) {
-    const cap = (0, modelUtils_1.detectModelCapabilities)(model);
-    const nativeGoogle = !model.gateway &&
-        (model.apiFormat === 'google' || (!model.apiFormat && ['google', 'google-cloudcode'].includes(model.provider)));
-    return {
-        supportsImages: cap.supportsImages,
-        supportsThinking: cap.isThinking,
-        supportsVideo: false,
-        supportedMimeTypes: {
-            ...(cap.supportsImages
-                ? {
-                    'image/png': true,
-                    'image/jpeg': true,
-                    'image/webp': true,
-                    'image/gif': true,
-                    ...(nativeGoogle ? { 'image/heic': true, 'image/heif': true } : {}),
-                }
-                : {}),
-            'text/plain': true,
-            'text/markdown': true,
-            'text/html': true,
-            'text/css': true,
-            'text/xml': true,
-            'text/csv': true,
-            'application/json': true,
-            'application/pdf': true,
-            'application/x-javascript': true,
-            'application/x-typescript': true,
-            'application/x-python-code': true,
-            'application/x-ipynb+json': true,
-        },
-    };
+function toSlug(model) {
+    return ('custom-' +
+        (model.externalModelName || model.name)
+            .replace(/^models\//, '')
+            .replace(/[^a-zA-Z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .toLowerCase());
 }
 // ─── Model Loading ────────────────────────────────────────────────────────
 function loadCustomModels() {
@@ -288,18 +145,14 @@ function loadCustomModels() {
         const unprotected = (value) => typeof value === 'string' && value && value !== 'none' && !/^(enc:|fallback:|local-gcm:)/.test(value);
         const needsMigration = models.some((m) => (!m.encrypted && unprotected(m.apiKey)) ||
             (!m.encryptedHeaders && Object.values(m.customHeaders || {}).some(unprotected)) ||
-            (!m.encryptedGoogleAccounts &&
-                (m.googleAccounts || []).some((account) => [account.accessToken, account.refreshToken, account.clientSecret].some(unprotected))));
+            (!m.encryptedGoogleAccounts && (m.googleAccounts || []).some((account) => [account.accessToken, account.refreshToken, account.clientSecret].some(unprotected))));
         if (needsMigration) {
             electron_log_1.default.info('[Proxy] Plaintext custom_models.json detected. Migrating to encrypted format...');
             cryptoStore.backupFile(filePath);
             const encryptedModels = cryptoStore.encryptModels(models);
             for (const model of encryptedModels) {
                 if (model.customHeaders && !model.encryptedHeaders) {
-                    model.customHeaders = Object.fromEntries(Object.entries(model.customHeaders).map(([name, value]) => [
-                        name,
-                        unprotected(value) ? cryptoStore.encryptString(value) : value,
-                    ]));
+                    model.customHeaders = Object.fromEntries(Object.entries(model.customHeaders).map(([name, value]) => [name, unprotected(value) ? cryptoStore.encryptString(value) : value]));
                     model.encryptedHeaders = true;
                 }
                 if (model.googleAccounts && !model.encryptedGoogleAccounts) {
@@ -382,151 +235,38 @@ function loadCustomModels() {
     }
 }
 // ─── Google Proxy ─────────────────────────────────────────────────────────
-function forwardingHeaders(source) {
-    const headers = { ...source };
-    const nominated = String(headers.connection || '')
-        .split(',')
-        .map((name) => name.trim().toLowerCase());
-    for (const name of [
-        ...nominated,
-        'connection',
-        'keep-alive',
-        'transfer-encoding',
-        'te',
-        'trailer',
-        'upgrade',
-        'proxy-authenticate',
-        'proxy-authorization',
-    ]) {
-        delete headers[name];
-    }
-    return headers;
-}
-function hasSubagentTool(body) {
-    return (body.tools?.some((group) => {
-        const declarations = group?.functionDeclarations;
-        return Array.isArray(declarations) && declarations.some((tool) => tool?.name === 'invoke_subagent');
-    }) ||
-        body.contents?.some((content) => content.parts?.some((part) => part.functionCall?.name === 'invoke_subagent')) ||
-        false);
-}
-function proxyToGoogle(req, res, reqBody, nativeSubagent) {
-    const generation = req.url.includes('generateContent') || req.url.includes('streamGenerateContent');
-    const cloudCode = req.url.includes('v1internal') || req.url.includes('daily-cloudcode');
-    if (!cloudCodeRouting || !cloudCode || !generation) {
-        forwardToGoogle(req, res, reqBody, nativeSubagent);
-        return;
-    }
-    const controller = new AbortController();
-    const cancel = () => controller.abort();
-    res.once('close', cancel);
-    void cloudCodeRouting
-        .resolveForGeneration(req.headers, reqBody, controller.signal)
-        .then((origin) => {
-        if (!res.destroyed && !res.writableEnded)
-            forwardToGoogle(req, res, reqBody, nativeSubagent, origin);
-    })
-        .catch(() => {
-        if (res.destroyed || res.writableEnded)
-            return;
-        electron_log_1.default.warn('[Proxy] Could not determine the native Cloud Code account route.');
-        res.writeHead(502, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-            error: { message: 'Could not determine the native Cloud Code account route. Please retry.' },
-        }));
-    })
-        .finally(() => res.off('close', cancel));
-}
-function forwardToGoogle(req, res, reqBody, nativeSubagent, cloudCodeOrigin) {
+function proxyToGoogle(req, res, reqBody) {
     const isCloudCodeUrl = req.url.includes('v1internal') || req.url.includes('daily-cloudcode');
     const targetUrl = isCloudCodeUrl
-        ? cloudCodeOrigin || cloudCodeRouting?.resolve(req.headers) || 'https://daily-cloudcode-pa.googleapis.com'
+        ? 'https://daily-cloudcode-pa.googleapis.com'
         : 'https://generativelanguage.googleapis.com';
     const parsedUrl = new URL(req.url, targetUrl);
-    const headers = forwardingHeaders(req.headers);
-    headers['host'] = parsedUrl.host;
-    // Incoming request bodies have already been buffered and decoded by Node.
-    // Never replay their chunked wire framing together with a content length.
-    headers['content-length'] = String(reqBody.length);
+    const headers = {
+        ...req.headers,
+    };
+    headers['host'] = isCloudCodeUrl ? 'daily-cloudcode-pa.googleapis.com' : 'generativelanguage.googleapis.com';
+    delete headers['connection'];
+    delete headers['keep-alive'];
     const isGeneration = req.url.includes('generateContent') || req.url.includes('streamGenerateContent');
     const shouldBufferAndModify = isCloudCodeUrl && !isGeneration;
-    const failoverEnabled = isCloudCodeUrl && isGeneration && !!(0, googlePoolFailover_1.resolveGoogleFailoverPool)(loadCustomModels(), reqBody);
     if (shouldBufferAndModify) {
         delete headers['accept-encoding'];
     }
-    if (nativeSubagent)
-        headers['accept-encoding'] = 'identity';
-    if (failoverEnabled)
-        headers['accept-encoding'] = 'identity';
     const options = {
         method: req.method,
         headers: headers,
-    };
-    let nativeResponse;
-    const failForwarding = (status, message) => {
-        if (stoppingProxy || res.destroyed || res.writableEnded || res.socket?.destroyed)
-            return;
-        if (res.headersSent) {
-            res.destroy();
-            return;
-        }
-        res.writeHead(status, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: { message } }));
+        agent: (0, proxyAgent_1.getProxyAgent)(),
     };
     const proxyReq = https.request(parsedUrl, options, (proxyRes) => {
-        if (failoverEnabled &&
-            (proxyRes.statusCode === 429 || proxyRes.statusCode === 403 || proxyRes.statusCode === 400)) {
-            const chunks = [];
-            let bytes = 0;
-            let interrupted = false;
-            const failErrorBody = () => {
-                if (interrupted)
-                    return;
-                interrupted = true;
-                failForwarding(502, 'Google quota response was interrupted.');
-                proxyRes.destroy();
-            };
-            proxyRes.once('error', failErrorBody);
-            proxyRes.once('aborted', failErrorBody);
-            proxyRes.on('data', (chunk) => {
-                bytes += chunk.length;
-                if (bytes > 64 * 1024)
-                    failErrorBody();
-                else
-                    chunks.push(chunk);
-            });
-            proxyRes.once('end', () => {
-                if (interrupted)
-                    return;
-                const original = Buffer.concat(chunks);
-                void (0, googlePoolFailover_1.attemptGooglePoolFailover)(req, res, reqBody, proxyRes, original.toString('utf8'), {
-                    loadCustomModels,
-                    forwardingHeaders,
-                    trackUpstream,
-                    isStopping: () => !!stoppingProxy,
-                    log: electron_log_1.default,
-                }, nativeSubagent, cloudCodeOrigin || targetUrl)
-                    .then((handled) => {
-                    if (handled || stoppingProxy || res.destroyed || res.writableEnded)
-                        return;
-                    const responseHeaders = forwardingHeaders(proxyRes.headers);
-                    responseHeaders['content-length'] = String(original.length);
-                    res.writeHead(proxyRes.statusCode || 429, responseHeaders);
-                    res.end(original);
-                })
-                    .catch(() => failForwarding(502, 'Google account failover failed.'));
-            });
-            return;
-        }
-        if (nativeSubagent && isGeneration) {
-            nativeResponse = proxyRes;
-            const streamHint = req.url.includes('streamGenerateContent') || req.url.includes('alt=sse');
-            void (0, nativeSubagentResponse_1.forwardNativeGeneration)(proxyRes, res, nativeSubagent, streamHint).catch((error) => {
-                electron_log_1.default.error('[Proxy] Native generation forwarding failed:', error);
-                failForwarding(502, 'Native generation forwarding failed.');
-            });
-            return;
-        }
+        // P0-5: Timeout for Google proxy requests (60s)
+        proxyReq.setTimeout(60000, () => {
+            electron_log_1.default.error('[Proxy] Google proxy request timed out after 60s');
+            proxyReq.destroy();
+            if (!res.headersSent) {
+                res.writeHead(504, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: { message: 'Google API request timed out' } }));
+            }
+        });
         if (shouldBufferAndModify) {
             const responseChunks = [];
             proxyRes.on('data', (chunk) => responseChunks.push(chunk));
@@ -549,46 +289,11 @@ function forwardToGoogle(req, res, reqBody, nativeSubagent, cloudCodeOrigin) {
                 }
                 electron_log_1.default.info(`[Proxy] Response for ${req.url} (status: ${proxyRes.statusCode}, encoding: ${encoding}, length: ${text.length})`);
                 // P0-3: Response body content is NOT logged to disk. Only metadata.
-                if (cloudCodeRouting && parsedUrl.pathname === '/v1internal:loadCodeAssist') {
-                    try {
-                        cloudCodeRouting.observe(req.headers, proxyRes.statusCode || 500, JSON.parse(text));
-                    }
-                    catch {
-                        /* Invalid responses must not change the account's upstream routing. */
-                    }
-                }
-                if (parsedUrl.pathname === '/v1internal:retrieveUserQuotaSummary' && proxyRes.statusCode === 200) {
-                    try {
-                        const authorization = req.headers.authorization;
-                        const token = typeof authorization === 'string' ? authorization.replace(/^Bearer\s+/i, '').trim() : '';
-                        const request = JSON.parse(reqBody.toString('utf8'));
-                        const project = typeof request.project === 'string' ? request.project : undefined;
-                        if (token) {
-                            for (const model of loadCustomModels()) {
-                                if (model.provider !== 'google-cloudcode')
-                                    continue;
-                                for (const account of model.googleAccounts || []) {
-                                    if (account.accessToken?.trim() !== token)
-                                        continue;
-                                    (0, shared_1.recordOfficialQuota)(JSON.parse(text), {
-                                        accountId: account.id,
-                                        clientId: account.clientId,
-                                        project,
-                                        endpoint: parsedUrl.origin,
-                                    });
-                                }
-                            }
-                        }
-                    }
-                    catch {
-                        /* Unattributed or malformed quota responses must not change saved account measurements. */
-                    }
-                }
                 const proxyHost = req.headers.host || 'localhost';
                 text = text.replace(/https:(\/\/)daily-cloudcode-pa\.googleapis\.com/g, `http:$1${proxyHost}`);
                 text = text.replace(/https:(\/\/)cloudcode-pa\.googleapis\.com/g, `http:$1${proxyHost}`);
                 text = text.replace(/https:(\/\/)generativelanguage\.googleapis\.com/g, `http:$1${proxyHost}`);
-                const modifiedHeaders = forwardingHeaders(proxyRes.headers);
+                const modifiedHeaders = { ...proxyRes.headers };
                 delete modifiedHeaders['content-encoding'];
                 const modifiedBuffer = Buffer.from(text, 'utf-8');
                 modifiedHeaders['content-length'] = String(modifiedBuffer.length);
@@ -597,38 +302,22 @@ function forwardToGoogle(req, res, reqBody, nativeSubagent, cloudCodeOrigin) {
             });
         }
         else {
-            res.writeHead(proxyRes.statusCode || 200, forwardingHeaders(proxyRes.headers));
+            res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
             proxyRes.pipe(res);
         }
     });
     proxyReq.on('error', (err) => {
         electron_log_1.default.error('[Proxy] Google Forwarding Error:', err);
-        if (nativeResponse) {
-            nativeResponse.destroy(err);
-            return;
-        }
-        failForwarding(502, 'Proxy forwarding failed: ' + err.message);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: 'Proxy forwarding failed: ' + err.message } }));
     });
-    proxyReq.setTimeout(60000, () => {
-        electron_log_1.default.error('[Proxy] Google proxy request timed out after 60s');
-        if (nativeResponse)
-            nativeResponse.destroy(new Error('Google API request timed out'));
-        else
-            failForwarding(504, 'Google API request timed out');
-        proxyReq.destroy();
-    });
-    res.once('close', () => {
-        if (!res.writableFinished)
-            proxyReq.destroy();
-    });
-    trackUpstream(proxyReq);
     if (reqBody) {
         proxyReq.write(reqBody);
     }
     proxyReq.end();
 }
 // ─── File Data Resolver ────────────────────────────────────────────────────
-async function resolveFileData(body, reqHeaders, downstream) {
+async function resolveFileData(body, reqHeaders) {
     const contents = body.contents;
     if (!contents)
         return;
@@ -637,17 +326,9 @@ async function resolveFileData(body, reqHeaders, downstream) {
         if (!item.parts)
             continue;
         for (let i = 0; i < item.parts.length; i++) {
-            if (stoppingProxy || downstream.destroyed || downstream.writableEnded)
-                return;
             const p = item.parts[i];
             const fd = p.fileData;
             if (!fd?.fileUri)
-                continue;
-            // Keep image bytes/URLs intact for the wire-format translator. In particular,
-            // never decode a binary image as UTF-8 or send incoming Google credentials
-            // to an arbitrary image URL. Remote images must be accessible to the provider.
-            if ((typeof fd.mimeType === 'string' && /^image\//i.test(fd.mimeType.trim())) ||
-                /^data:image\//i.test(fd.fileUri))
                 continue;
             try {
                 const uri = fd.fileUri;
@@ -657,7 +338,7 @@ async function resolveFileData(body, reqHeaders, downstream) {
                     if (fs.existsSync(fp))
                         fileContent = fs.readFileSync(fp, 'utf-8');
                 }
-                else if (authHeader && (0, loopbackSecurity_1.authenticatedGoogleFileUrl)(uri)) {
+                else if (authHeader && uri.startsWith('https://')) {
                     fileContent = await downloadFileContent(uri, authHeader);
                 }
                 if (fileContent) {
@@ -672,38 +353,23 @@ async function resolveFileData(body, reqHeaders, downstream) {
 }
 function downloadFileContent(url, authHeader) {
     return new Promise((resolve, reject) => {
-        const u = (0, loopbackSecurity_1.authenticatedGoogleFileUrl)(url);
-        if (!u) {
-            reject(new Error('Authenticated file downloads require a Google API HTTPS URL'));
-            return;
-        }
-        const request = https.request({
-            hostname: u.hostname,
-            path: u.pathname + u.search,
-            method: 'GET',
-            headers: { Authorization: authHeader },
-            timeout: 30000,
+        const u = new URL(url);
+        (u.protocol === 'https:' ? https : http).request({
+            hostname: u.hostname, path: u.pathname + u.search,
+            method: 'GET', headers: { 'Authorization': authHeader }, timeout: 30000,
         }, (res) => {
-            res.on('error', reject);
             if (res.statusCode !== 200) {
-                res.resume();
                 reject(new Error('HTTP ' + res.statusCode));
                 return;
             }
             let d = '';
-            res.on('data', (c) => (d += c.toString()));
+            res.on('data', (c) => d += c.toString());
             res.on('end', () => resolve(d));
-        });
-        request.on('error', reject);
-        request.on('timeout', () => request.destroy(new Error('File download timed out')));
-        trackUpstream(request);
-        request.end();
+        }).on('error', reject).end();
     });
 }
 // ─── Custom Model Request Handler ─────────────────────────────────────────
 function handleCustomModelRequest(res, model, body, isStream, cloudEnvelope = true) {
-    if (res.destroyed || res.writableEnded || rejectDuringShutdown(res))
-        return;
     void (0, customRequest_1.runCustomModelRequest)(res, model, body, isStream, loadCustomModels(), cloudEnvelope);
 }
 function readVarint(buf, offset) {
@@ -753,14 +419,7 @@ function parseProto(buf, offset, end) {
             const len = lenVarint.value;
             const children = parseProto(buf, pos, pos + len);
             const hasChildren = children.length > 0;
-            fields.push({
-                tag,
-                wireType,
-                fieldNum,
-                value: hasChildren ? children : buf.subarray(pos, pos + len),
-                start,
-                end: pos + len,
-            });
+            fields.push({ tag, wireType, fieldNum, value: hasChildren ? children : buf.subarray(pos, pos + len), start, end: pos + len });
             pos += len;
         }
         else if (wireType === 1) {
@@ -853,10 +512,15 @@ function encodeModelEntryForGetModels(name, displayName, mapping) {
 }
 // ─── GetAvailableModels Proxy Handler ───────────────────────────────────────
 function handleGetAvailableModelsProxy(res, reqBody, lsUrl) {
-    const lsParsed = (0, loopbackSecurity_1.languageServerModelsUrl)(lsUrl, currentLanguageServerPort());
-    if (!lsParsed) {
+    let lsParsed;
+    try {
+        lsParsed = new URL(lsUrl);
+        if (!['http:', 'https:'].includes(lsParsed.protocol))
+            throw new Error('Invalid protocol');
+    }
+    catch {
         res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: { message: 'URL must target the active local language server model-list endpoint' } }));
+        res.end(JSON.stringify({ error: { message: 'Invalid language server URL' } }));
         return;
     }
     const client = lsParsed.protocol === 'https:' ? https : http;
@@ -867,11 +531,9 @@ function handleGetAvailableModelsProxy(res, reqBody, lsUrl) {
         path: lsParsed.pathname + lsParsed.search,
         headers: {
             'Content-Type': 'application/grpc-web+proto',
-            Accept: 'application/grpc-web+proto',
+            'Accept': 'application/grpc-web+proto',
             'Content-Length': String(reqBody.length),
         },
-        // The app's own loopback language server uses a self-signed certificate.
-        // This exception is reachable only after matching its trusted port and RPC path.
         rejectUnauthorized: false,
     };
     const lsReq = client.request(options, (lsRes) => {
@@ -880,7 +542,6 @@ function handleGetAvailableModelsProxy(res, reqBody, lsUrl) {
         lsRes.on('end', () => {
             const responseBuf = Buffer.concat(chunks);
             const customModels = loadCustomModels();
-            const identities = modelIdentities(customModels);
             let modifiedBuf = responseBuf;
             if (customModels.length > 0 && responseBuf.length > 6) {
                 try {
@@ -896,9 +557,7 @@ function handleGetAvailableModelsProxy(res, reqBody, lsUrl) {
                                 const fieldMapping = extractFieldMapping(sampleEntry.value);
                                 const newParts = [msgBody];
                                 for (const m of customModels) {
-                                    const placeholderId = identities.get(m.name)?.placeholderId;
-                                    if (!placeholderId)
-                                        continue;
+                                    const placeholderId = generateModelPlaceholderId(m);
                                     const entry = encodeModelEntryForGetModels('models/' + placeholderId, m.displayName, fieldMapping);
                                     const tagBuf = encodeVarint(modelTag);
                                     const lenBuf = encodeVarint(entry.length);
@@ -925,8 +584,6 @@ function handleGetAvailableModelsProxy(res, reqBody, lsUrl) {
             res.end(modifiedBuf);
         });
         lsRes.on('error', (err) => {
-            if (stoppingProxy || res.destroyed || res.socket?.destroyed)
-                return;
             electron_log_1.default.error('[Proxy] LS error for GetAvailableModels:', err.message);
             if (!res.headersSent) {
                 res.writeHead(502);
@@ -943,15 +600,12 @@ function handleGetAvailableModelsProxy(res, reqBody, lsUrl) {
         }
     });
     lsReq.on('error', (err) => {
-        if (stoppingProxy || res.destroyed || res.socket?.destroyed)
-            return;
         electron_log_1.default.error('[Proxy] GetAvailableModels forward error:', err.message);
         if (!res.headersSent) {
             res.writeHead(502);
             res.end();
         }
     });
-    trackUpstream(lsReq);
     lsReq.write(reqBody);
     lsReq.end();
 }
@@ -1022,7 +676,7 @@ function handleRequest(req, res) {
         bodyChunks.push(chunk);
     });
     req.on('end', () => {
-        if (bodyRejected || rejectDuringShutdown(res))
+        if (bodyRejected)
             return;
         const fullBody = Buffer.concat(bodyChunks);
         const bodyStr = fullBody.toString('utf-8');
@@ -1042,59 +696,225 @@ function handleRequest(req, res) {
         // 1. Intercept /v1internal:fetchAvailableModels
         if (req.url.includes('/v1internal:fetchAvailableModels')) {
             electron_log_1.default.info('[Proxy] Intercepting fetchAvailableModels request');
-            const targetUrl = cloudCodeRouting?.resolve(req.headers) || 'https://daily-cloudcode-pa.googleapis.com';
+            const targetUrl = 'https://daily-cloudcode-pa.googleapis.com';
             const parsedUrl = new URL(req.url, targetUrl);
-            const fwdHeaders = forwardingHeaders(req.headers);
-            fwdHeaders['host'] = parsedUrl.host;
-            fwdHeaders['content-length'] = String(fullBody.length);
+            const fwdHeaders = {
+                ...req.headers,
+            };
+            fwdHeaders['host'] = 'daily-cloudcode-pa.googleapis.com';
+            delete fwdHeaders['connection'];
+            delete fwdHeaders['keep-alive'];
             delete fwdHeaders['accept-encoding'];
             const fwdOptions = {
                 method: req.method,
                 headers: fwdHeaders,
             };
-            let responded = false;
-            const reply = (catalog = {}) => {
-                if (responded || res.headersSent || res.writableEnded || res.destroyed || res.socket?.destroyed)
-                    return;
-                responded = true;
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify(customCloudCodeCatalog(catalog)));
-            };
             const googleReq = https.request(parsedUrl, fwdOptions, (googleRes) => {
-                const chunks = [];
-                let length = 0;
-                googleRes.on('data', (chunk) => {
-                    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-                    length += bytes.length;
-                    if (length > 8 * 1024 * 1024) {
-                        reply();
-                        googleReq.destroy();
-                        return;
+                // P0-5: Timeout for fetchAvailableModels forward request (5s in restricted regions)
+                googleReq.setTimeout(5000, () => {
+                    electron_log_1.default.error('[Proxy] fetchAvailableModels forward request timed out');
+                    googleReq.destroy();
+                    if (!res.headersSent) {
+                        const customModels = loadCustomModels();
+                        const mappedCustom = {};
+                        customModels.forEach((m) => {
+                            const slug = toSlug(m);
+                            mappedCustom[slug] = {
+                                displayName: m.displayName,
+                                maxTokens: (0, modelUtils_1.detectModelCapabilities)(m).maxTokens,
+                                maxOutputTokens: (0, modelUtils_1.detectModelCapabilities)(m).maxOutputTokens,
+                                model: generateModelPlaceholderId(m),
+                                apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+                                modelProvider: 'MODEL_PROVIDER_GOOGLE',
+                            };
+                        });
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ models: mappedCustom }));
                     }
-                    chunks.push(bytes);
                 });
-                googleRes.on('error', () => reply());
-                googleRes.on('aborted', () => reply());
+                let googleBody = '';
+                googleRes.on('data', (chunk) => (googleBody += chunk));
                 googleRes.on('end', () => {
-                    if (!googleRes.statusCode || googleRes.statusCode < 200 || googleRes.statusCode >= 300) {
-                        reply();
-                        return;
-                    }
                     try {
-                        reply(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+                        electron_log_1.default.info(`[Proxy] fetchAvailableModels response status: ${googleRes.statusCode}, body length: ${googleBody.length}`);
+                        const googleJson = JSON.parse(googleBody);
+                        const customModels = loadCustomModels();
+                        electron_log_1.default.info(`[Proxy] Loaded custom models count: ${customModels.length}`);
+                        const mergeModels = (target) => {
+                            if (Array.isArray(target)) {
+                                const mapped = customModels.map((m) => {
+                                    const cap = (0, modelUtils_1.detectModelCapabilities)(m, true);
+                                    return {
+                                        name: 'models/' + generateModelPlaceholderId(m),
+                                        version: '1.0',
+                                        displayName: m.displayName,
+                                        description: m.description,
+                                        inputTokenLimit: cap.maxTokens,
+                                        outputTokenLimit: cap.maxOutputTokens,
+                                        supportedGenerationMethods: ['generateContent', 'countTokens'],
+                                        temperature: cap.isThinking ? undefined : 0.7,
+                                        topP: cap.isThinking ? undefined : 0.9,
+                                        topK: cap.isThinking ? undefined : 40,
+                                    };
+                                });
+                                return [...mapped, ...target];
+                            }
+                            else if (target && typeof target === 'object') {
+                                const result = { ...target };
+                                customModels.forEach((m) => {
+                                    const slug = toSlug(m);
+                                    const cap = (0, modelUtils_1.detectModelCapabilities)(m, true);
+                                    const entry = {
+                                        displayName: m.displayName,
+                                        supportsImages: cap.supportsImages,
+                                        supportsThinking: cap.isThinking,
+                                        recommended: true,
+                                        maxTokens: cap.maxTokens,
+                                        maxOutputTokens: cap.maxOutputTokens,
+                                        tokenizerType: 'LLAMA_WITH_SPECIAL',
+                                        model: generateModelPlaceholderId(m),
+                                        apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+                                        modelProvider: 'MODEL_PROVIDER_GOOGLE',
+                                    };
+                                    if (cap.supportsImages) {
+                                        entry.supportsVideo = false;
+                                        entry.supportedMimeTypes = {
+                                            'image/png': true,
+                                            'image/jpeg': true,
+                                            'image/webp': true,
+                                            'image/gif': true,
+                                            'image/heic': true,
+                                            'image/heif': true,
+                                            'text/plain': true,
+                                            'text/markdown': true,
+                                            'text/html': true,
+                                            'text/css': true,
+                                            'text/xml': true,
+                                            'text/csv': true,
+                                            'application/json': true,
+                                            'application/pdf': true,
+                                            'application/x-javascript': true,
+                                            'application/x-typescript': true,
+                                            'application/x-python-code': true,
+                                            'application/x-ipynb+json': true,
+                                        };
+                                    }
+                                    else {
+                                        entry.supportsVideo = false;
+                                        entry.supportedMimeTypes = {
+                                            'text/plain': true,
+                                            'text/markdown': true,
+                                            'text/html': true,
+                                            'text/css': true,
+                                            'text/xml': true,
+                                            'text/csv': true,
+                                            'application/json': true,
+                                            'application/pdf': true,
+                                            'application/x-javascript': true,
+                                            'application/x-typescript': true,
+                                            'application/x-python-code': true,
+                                            'application/x-ipynb+json': true,
+                                        };
+                                    }
+                                    result[slug] = entry;
+                                    m._slug = slug;
+                                    electron_log_1.default.info(`[Proxy] Custom model "${m.displayName}" => slug: ${slug} => model: ${generateModelPlaceholderId(m)} => thinking: ${cap.isThinking} => images: ${cap.supportsImages}`);
+                                });
+                                return result;
+                            }
+                            return target;
+                        };
+                        let merged = false;
+                        if (googleJson.models) {
+                            googleJson.models = mergeModels(googleJson.models);
+                            merged = true;
+                        }
+                        if (googleJson.availableModels) {
+                            googleJson.availableModels = mergeModels(googleJson.availableModels);
+                            merged = true;
+                        }
+                        if (googleJson.available_models) {
+                            googleJson.available_models = mergeModels(googleJson.available_models);
+                            merged = true;
+                        }
+                        if (!merged) {
+                            const modelsMap = {};
+                            customModels.forEach((m) => {
+                                const slug = toSlug(m);
+                                modelsMap[slug] = {
+                                    displayName: m.displayName,
+                                    recommended: true,
+                                    maxTokens: (0, modelUtils_1.detectModelCapabilities)(m).maxTokens,
+                                    maxOutputTokens: (0, modelUtils_1.detectModelCapabilities)(m).maxOutputTokens,
+                                    tokenizerType: 'LLAMA_WITH_SPECIAL',
+                                    model: generateModelPlaceholderId(m),
+                                    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+                                    modelProvider: 'MODEL_PROVIDER_GOOGLE',
+                                };
+                                m._slug = slug;
+                            });
+                            googleJson.models = modelsMap;
+                        }
+                        // Inject custom model slugs into agentModelSorts
+                        const customSlugs = customModels.map((m) => m._slug).filter(Boolean);
+                        if (customSlugs.length > 0) {
+                            if (googleJson.agentModelSorts && Array.isArray(googleJson.agentModelSorts)) {
+                                googleJson.agentModelSorts.forEach((sort) => {
+                                    if (sort.groups && Array.isArray(sort.groups)) {
+                                        sort.groups.forEach((group) => {
+                                            if (group.modelIds && Array.isArray(group.modelIds)) {
+                                                customSlugs.forEach((slug) => {
+                                                    if (!group.modelIds.includes(slug)) {
+                                                        group.modelIds.push(slug);
+                                                    }
+                                                });
+                                            }
+                                        });
+                                    }
+                                });
+                            }
+                        }
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify(googleJson));
                     }
-                    catch {
-                        reply();
+                    catch (err) {
+                        electron_log_1.default.error('[Proxy] Parsing fetchAvailableModels failed, returning custom models:', err);
+                        const customModels = loadCustomModels();
+                        const mappedCustom = {};
+                        customModels.forEach((m) => {
+                            const slug = toSlug(m);
+                            mappedCustom[slug] = {
+                                displayName: m.displayName,
+                                maxTokens: (0, modelUtils_1.detectModelCapabilities)(m).maxTokens,
+                                maxOutputTokens: (0, modelUtils_1.detectModelCapabilities)(m).maxOutputTokens,
+                                model: generateModelPlaceholderId(m),
+                                apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+                                modelProvider: 'MODEL_PROVIDER_GOOGLE',
+                            };
+                        });
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ models: mappedCustom }));
                     }
                 });
             });
-            // Install before headers arrive: an upstream that never sends headers still gets a bounded fallback.
-            googleReq.setTimeout(30000, () => {
-                reply();
-                googleReq.destroy();
+            googleReq.on('error', (err) => {
+                electron_log_1.default.error('[Proxy] Forwarding fetchAvailableModels failed:', err);
+                const customModels = loadCustomModels();
+                const mappedCustom = {};
+                customModels.forEach((m) => {
+                    const slug = toSlug(m);
+                    mappedCustom[slug] = {
+                        displayName: m.displayName,
+                        maxTokens: (0, modelUtils_1.detectModelCapabilities)(m).maxTokens,
+                        maxOutputTokens: (0, modelUtils_1.detectModelCapabilities)(m).maxOutputTokens,
+                        model: generateModelPlaceholderId(m),
+                        apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+                        modelProvider: 'MODEL_PROVIDER_GOOGLE',
+                    };
+                });
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ models: mappedCustom }));
             });
-            googleReq.on('error', () => reply());
-            trackUpstream(googleReq);
             if (fullBody && fullBody.length > 0) {
                 googleReq.write(fullBody);
             }
@@ -1114,8 +934,8 @@ function handleRequest(req, res) {
             delete mdlHeaders['accept-encoding'];
             const mdlOptions = { method: 'GET', headers: mdlHeaders };
             const googleReq = https.request(parsedUrl, mdlOptions, (googleRes) => {
-                // P0-5: Timeout for models list forward request (30s)
-                googleReq.setTimeout(30000, () => {
+                // P0-5: Timeout for models list forward request (5s)
+                googleReq.setTimeout(5000, () => {
                     electron_log_1.default.error('[Proxy] Models list forward request timed out');
                     googleReq.destroy();
                     if (!res.headersSent) {
@@ -1126,7 +946,6 @@ function handleRequest(req, res) {
                                 name: m.name,
                                 displayName: m.displayName,
                                 description: m.description,
-                                ...getAdvertisedModelCapabilities(m),
                                 supportedGenerationMethods: ['generateContent'],
                             })),
                         }));
@@ -1139,11 +958,10 @@ function handleRequest(req, res) {
                         const googleJson = JSON.parse(googleBody);
                         const customModels = loadCustomModels();
                         const mappedCustom = customModels.map((m) => ({
-                            name: m.name,
+                            name: 'models/' + generateModelPlaceholderId(m),
                             version: '1.0',
                             displayName: m.displayName,
                             description: m.description,
-                            ...getAdvertisedModelCapabilities(m),
                             inputTokenLimit: (0, modelUtils_1.detectModelCapabilities)(m).maxTokens,
                             outputTokenLimit: (0, modelUtils_1.detectModelCapabilities)(m).maxOutputTokens,
                             supportedGenerationMethods: ['generateContent', 'countTokens'],
@@ -1164,11 +982,10 @@ function handleRequest(req, res) {
                         electron_log_1.default.error('[Proxy] Google list models failed, returning custom models list only:', err);
                         const customModels = loadCustomModels();
                         const mappedCustom = customModels.map((m) => ({
-                            name: m.name,
+                            name: 'models/' + generateModelPlaceholderId(m),
                             version: '1.0',
                             displayName: m.displayName,
                             description: m.description,
-                            ...getAdvertisedModelCapabilities(m),
                             inputTokenLimit: (0, modelUtils_1.detectModelCapabilities)(m).maxTokens,
                             outputTokenLimit: (0, modelUtils_1.detectModelCapabilities)(m).maxOutputTokens,
                             supportedGenerationMethods: ['generateContent', 'countTokens'],
@@ -1179,8 +996,6 @@ function handleRequest(req, res) {
                 });
             });
             googleReq.on('error', (err) => {
-                if (stoppingProxy || res.destroyed || res.writableEnded || res.socket?.destroyed)
-                    return;
                 electron_log_1.default.error('[Proxy] Google models list request error:', err);
                 const customModels = loadCustomModels();
                 res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1189,12 +1004,10 @@ function handleRequest(req, res) {
                         name: m.name,
                         displayName: m.displayName,
                         description: m.description,
-                        ...getAdvertisedModelCapabilities(m),
                         supportedGenerationMethods: ['generateContent'],
                     })),
                 }));
             });
-            trackUpstream(googleReq);
             googleReq.end();
             return;
         }
@@ -1204,57 +1017,32 @@ function handleRequest(req, res) {
             try {
                 const reqJson = JSON.parse(bodyStr);
                 const modelName = reqJson.model;
-                const modelId = reqJson.modelId ?? reqJson.model_id;
+                const modelId = (reqJson.modelId || reqJson.model_id);
                 electron_log_1.default.info(`[Proxy] Cloud Code generation request model: ${modelName}, modelId: ${modelId}, url: ${req.url}, bodyKeys: ${Object.keys(reqJson).join(',')}`);
-                {
+                if (modelName) {
                     const customModels = loadCustomModels();
-                    const actualGeminiBody = { ...(reqJson.request || reqJson) };
-                    if (typeof reqJson.sessionId === 'string')
-                        actualGeminiBody.sessionId = reqJson.sessionId;
-                    if (typeof reqJson.conversationId === 'string')
-                        actualGeminiBody.conversationId = reqJson.conversationId;
-                    if (!actualGeminiBody.labels && reqJson.labels && typeof reqJson.labels === 'object')
-                        actualGeminiBody.labels = reqJson.labels;
-                    const prepared = subagentRouting_1.subagentRouting.prepareRequest(actualGeminiBody, (selector) => (0, subagentModels_1.resolveConfiguredSubagentModel)(customModels, selector)?.name);
-                    const matchedCustomModel = prepared.modelName
-                        ? (0, subagentModels_1.resolveConfiguredSubagentModel)(customModels, prepared.modelName)
-                        : matchCustomModel(customModels, modelName, modelId);
+                    const matchedCustomModel = customModels.find((m) => {
+                        const enumName = generateModelPlaceholderId(m);
+                        return m.name === modelName || toSlug(m) === modelName || enumName === modelName || enumName === modelId;
+                    });
                     if (matchedCustomModel) {
                         electron_log_1.default.info(`[Proxy] Intercepting Cloud Code generation for custom model: ${modelName} => ${matchedCustomModel.displayName}`);
                         const isStream = req.url.includes('streamGenerateContent') || req.url.includes('alt=sse');
+                        const actualGeminiBody = { ...(reqJson.request || reqJson) };
+                        if (typeof reqJson.sessionId === 'string')
+                            actualGeminiBody.sessionId = reqJson.sessionId;
+                        if (typeof reqJson.conversationId === 'string')
+                            actualGeminiBody.conversationId = reqJson.conversationId;
                         // Resolve fileData URIs then route to translator
-                        resolveFileData(prepared.body, req.headers, res).then(() => {
-                            handleCustomModelRequest(res, matchedCustomModel, prepared.body, isStream);
+                        resolveFileData(actualGeminiBody, req.headers).then(() => {
+                            handleCustomModelRequest(res, matchedCustomModel, actualGeminiBody, isStream);
                         });
                         return;
                     }
-                    // Restore history and expose custom subagent selectors to native parents,
-                    // preserving the original placement of Cloud Code envelope metadata.
-                    const nativeBody = {
-                        ...(reqJson.request || reqJson),
-                        contents: prepared.body.contents,
-                        tools: prepared.body.tools,
-                    };
-                    const forwarded = reqJson.request ? { ...reqJson, request: nativeBody } : { ...reqJson, ...nativeBody };
-                    proxyToGoogle(req, res, Buffer.from(JSON.stringify(forwarded)), hasSubagentTool(actualGeminiBody)
-                        ? {
-                            context: prepared.context,
-                            resolve: (selector) => (0, subagentModels_1.resolveConfiguredSubagentModel)(customModels, selector)?.name,
-                        }
-                        : undefined);
-                    return;
                 }
             }
             catch (err) {
-                if (err instanceof subagentRouting_1.SubagentRoutingError) {
-                    res.writeHead(err.status, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ error: { message: err.message } }));
-                    return;
-                }
                 electron_log_1.default.error('[Proxy] Failed to parse Cloud Code stream body:', err);
-                res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: { message: 'Invalid Cloud Code generation request body' } }));
-                return;
             }
         }
         // 4. Intercept standard generateContent / streamGenerateContent request
@@ -1273,33 +1061,27 @@ function handleRequest(req, res) {
                 return;
             }
             const customModels = loadCustomModels();
-            try {
-                const geminiBody = JSON.parse(bodyStr);
-                const prepared = subagentRouting_1.subagentRouting.prepareRequest(geminiBody, (selector) => (0, subagentModels_1.resolveConfiguredSubagentModel)(customModels, selector)?.name);
-                const matchedCustomModel = prepared.modelName
-                    ? (0, subagentModels_1.resolveConfiguredSubagentModel)(customModels, prepared.modelName)
-                    : matchCustomModel(customModels, matchedModelName);
-                if (matchedCustomModel) {
-                    resolveFileData(prepared.body, req.headers, res).then(() => {
-                        handleCustomModelRequest(res, matchedCustomModel, prepared.body, isStandardStream, false);
+            const matchedCustomModel = customModels.find((m) => {
+                const enumName = generateModelPlaceholderId(m);
+                return (m.name === matchedModelName ||
+                    toSlug(m) === matchedModelName ||
+                    enumName === matchedModelName ||
+                    'models/' + enumName === matchedModelName);
+            });
+            if (matchedCustomModel) {
+                try {
+                    const geminiBody = JSON.parse(bodyStr);
+                    resolveFileData(geminiBody, req.headers).then(() => {
+                        handleCustomModelRequest(res, matchedCustomModel, geminiBody, isStandardStream, false);
                     });
                     return;
                 }
-                proxyToGoogle(req, res, Buffer.from(JSON.stringify({ ...geminiBody, contents: prepared.body.contents, tools: prepared.body.tools })), hasSubagentTool(geminiBody)
-                    ? {
-                        context: prepared.context,
-                        resolve: (selector) => (0, subagentModels_1.resolveConfiguredSubagentModel)(customModels, selector)?.name,
-                    }
-                    : undefined);
-                return;
-            }
-            catch (e) {
-                electron_log_1.default.error('[Proxy] JSON parse error in request body:', e);
-                res.writeHead(e instanceof subagentRouting_1.SubagentRoutingError ? e.status : 400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({
-                    error: { message: e instanceof subagentRouting_1.SubagentRoutingError ? e.message : 'Invalid JSON request body' },
-                }));
-                return;
+                catch (e) {
+                    electron_log_1.default.error('[Proxy] JSON parse error in request body:', e);
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: { message: 'Invalid JSON request body' } }));
+                    return;
+                }
             }
         }
         // 5. Fallback: transparent proxy to Google
@@ -1307,35 +1089,15 @@ function handleRequest(req, res) {
     });
 }
 // ─── Server Start/Stop ────────────────────────────────────────────────────
-async function startProxy(options = {}) {
+async function startProxy() {
     if (stoppingProxy)
         await stoppingProxy;
     if (server?.listening && proxyPort)
         return proxyPort;
     if (startingProxy)
         return startingProxy;
-    if (options.port !== undefined && (!Number.isInteger(options.port) || options.port < 1 || options.port > 65535)) {
-        throw new Error('Proxy port must be an integer between 1 and 65535');
-    }
-    if (options.shutdownGraceMs !== undefined &&
-        (!Number.isInteger(options.shutdownGraceMs) || options.shutdownGraceMs < 0 || options.shutdownGraceMs > 60000)) {
-        throw new Error('Proxy shutdown grace must be an integer between 0 and 60000 milliseconds');
-    }
-    serviceDataDirectory = options.dataDirectory ? path.resolve(options.dataDirectory) : undefined;
-    languageServerRoutingEnabled = options.allowLanguageServerRouting !== false;
-    shutdownGraceMs = options.shutdownGraceMs ?? DEFAULT_SHUTDOWN_GRACE_MS;
-    cloudCodeRouting = options.ideCloudCodeRouting ? new cloudCodeRouting_1.CloudCodeRouting() : undefined;
-    const requiredPort = options.port ?? (0, listen_1.getRequiredProxyPort)(require('electron').app.getAppPath());
-    const newServer = http.createServer((req, res) => {
-        if (!(0, loopbackSecurity_1.guardLoopbackRequest)(req, res, currentLanguageServerPort()))
-            return;
-        // Already-connected clients can pipeline another request while the listener drains.
-        // Do not start new upstream work after cancellation has begun.
-        if (rejectDuringShutdown(res))
-            return;
-        if (!options.handleManagement?.(req, res))
-            handleRequest(req, res);
-    });
+    const requiredPort = (0, listen_1.getRequiredProxyPort)(electron_1.app.getAppPath());
+    const newServer = http.createServer(handleRequest);
     server = newServer;
     (0, shared_1.startCleanupInterval)();
     startingProxy = (0, listen_1.listenProxy)(newServer, requiredPort ?? 50999, requiredPort === undefined)
@@ -1371,29 +1133,11 @@ function stopProxy() {
         }
         (0, shared_1.stopCleanupInterval)();
         (0, customRequest_1.stopCustomRequests)();
-        cloudCodeRouting?.clear();
         if (server) {
             const closingServer = server;
-            await new Promise((resolve) => {
-                // Native upstream streams and incomplete HTTP bodies are not necessarily
-                // canceled by stopCustomRequests. Never let them hold application quit open.
-                const timer = setTimeout(() => {
-                    closingServer.closeAllConnections();
-                    stopUpstreams();
-                }, shutdownGraceMs);
-                timer.unref();
-                closingServer.close(() => {
-                    clearTimeout(timer);
-                    resolve();
-                });
-            });
+            await new Promise((resolve) => closingServer.close(() => resolve()));
             electron_log_1.default.info('[Proxy] Server stopped');
         }
-        // A disconnected downstream or buffered catalogue response may leave an
-        // upstream alive even after the inbound listener has finished closing.
-        stopUpstreams();
-        // Final native responses may create routing markers while shutdown drains.
-        subagentRouting_1.subagentRouting.clear();
         server = null;
         proxyPort = 0;
     })().finally(() => {
