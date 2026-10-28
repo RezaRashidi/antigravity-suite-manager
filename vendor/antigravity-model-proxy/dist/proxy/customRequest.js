@@ -234,9 +234,10 @@ async function runCustomModelRequest(res, primary, originalBody, isStream, allMo
                         const body = (0, requestOptions_1.trimContext)(originalBody, model.contextWindow, outputBudget);
                         const effectiveModel = outputBudget ? { ...model, maxOutputTokens: outputBudget } : model;
                         payload = (0, requestOptions_1.applyRequestOptions)(registry.translateRequest(model.provider, body, externalName, format, stateKey), effectiveModel, format, isStream);
+                        const rawTarget = model.apiUrl || (model.provider === 'odirect' ? 'https://ai.odirect.app/v1/chat/completions' : '');
                         const target = cloudCode || model.rawUrl
-                            ? model.apiUrl
-                            : registry.getProviderUrl(model.apiUrl, externalName, isStream, registry.getTranslator(model.provider, format));
+                            ? rawTarget
+                            : registry.getProviderUrl(rawTarget, externalName, isStream, registry.getTranslator(model.provider, format));
                         url = new URL(target);
                         if (!['http:', 'https:'].includes(url.protocol))
                             throw new Error('Unsupported endpoint protocol');

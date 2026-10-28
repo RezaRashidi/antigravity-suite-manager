@@ -43,5 +43,6 @@ This document records the end-to-end diagnostic methodology, reverse-engineering
 - [35. Issue 33: Core Quota Router Scoping Regression & Multi-Account Model Selector Sync Failure](35_core_quota_router_failure_analysis_and_fix.md)
 - [36. Issue 34: Custom Models Multi-Provider Discovery, Selective Activation & Local Proxy Bridge](36_custom_models_multi_provider_discovery_and_proxy_bridge.md)
 - [37. Issue 35: In-App Custom Models Settings UI Injection & Multi-Patch Coexistence](37_in_app_custom_models_settings_ui_injection_and_patch_coexistence.md)
-- [38. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
+- [38. Issue 36: Custom Models Invalid URL Defect, Theme Adaptation, and Gateway Account Architecture](38_custom_models_invalid_url_theme_and_gateway_architecture.md)
+- [39. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
 

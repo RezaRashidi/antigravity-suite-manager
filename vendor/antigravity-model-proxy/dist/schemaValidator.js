@@ -101,7 +101,7 @@ function validateCustomModel(model) {
     const provider = m.provider;
     // Validate provider is one of the supported types
     const validProviders = providers_1.PROVIDERS.map((provider) => provider.id);
-    if (!validProviders.includes(provider)) {
+    if (!validProviders.includes(provider) && !/^[a-z0-9_-]+$/i.test(provider)) {
         return { valid: false, error: `Unsupported provider: ${provider}. Must be one of: ${validProviders.join(', ')}` };
     }
     const apiUrl = m.apiUrl;

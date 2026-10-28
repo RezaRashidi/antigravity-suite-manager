@@ -38,6 +38,10 @@ class TestPatchModels(unittest.TestCase):
         self.assertIn("agy-custom-models-section", content)
         self.assertIn("injectCustomModelsSection", content)
         self.assertIn("openModelModal", content)
+        self.assertIn("body.vscode-light #agy-custom-models-section", content)
+        self.assertIn("--agy-bg", content)
+        self.assertIn("openConfigureGateway", content)
+        self.assertIn("openAddGatewayModal", content)
 
     def test_deploy_check_runs_cleanly(self):
         orig_asar = Path("/opt/Antigravity-x64/resources/app.asar.orig")

@@ -96,8 +96,54 @@ function normalizeModelConfig(payload) {
     }
     if (entries.length > 5000)
         throw new Error('Too many models (maximum 5000)');
+    const providerDefaults = new Map();
+    providerDefaults.set('odirect', {
+        apiUrl: 'https://ai.odirect.app/v1/chat/completions',
+        apiFormat: 'openai',
+    });
+    if (typeof value === 'object' && value !== null) {
+        const gwSource = value.gateways || (typeof value.providers === 'object' && !Array.isArray(value.providers) ? value.providers : null);
+        if (gwSource && typeof gwSource === 'object') {
+            for (const [id, gw] of Object.entries(gwSource)) {
+                if (gw && typeof gw === 'object') {
+                    providerDefaults.set(id, {
+                        apiUrl: gw.apiUrl || (gw.url ? (gw.url.endsWith('/chat/completions') ? gw.url : `${gw.url.replace(/\/+$/, '')}/chat/completions`) : ''),
+                        apiKey: gw.apiKey || gw.token || '',
+                        apiFormat: gw.apiFormat || gw.format || 'openai',
+                    });
+                }
+            }
+        }
+    }
+    for (const item of entries) {
+        if (item && typeof item === 'object') {
+            const p = item.provider;
+            if (p && item.apiUrl && (!providerDefaults.has(p) || !providerDefaults.get(p).apiKey)) {
+                providerDefaults.set(p, {
+                    apiUrl: item.apiUrl,
+                    apiKey: item.apiKey,
+                    apiFormat: item.apiFormat || 'openai',
+                });
+            }
+        }
+    }
     return entries.map((entry) => {
         const model = { ...object(entry) };
+        if (model.model_id && !model.externalModelName)
+            model.externalModelName = model.model_id;
+        if (!model.name && model.id)
+            model.name = model.id;
+        if (!model.name?.startsWith('models/') && model.id?.startsWith('models/'))
+            model.name = model.id;
+        if (model.provider && providerDefaults.has(model.provider)) {
+            const def = providerDefaults.get(model.provider);
+            if (!model.apiUrl && def.apiUrl)
+                model.apiUrl = def.apiUrl;
+            if ((!model.apiKey || model.apiKey === 'none') && def.apiKey)
+                model.apiKey = def.apiKey;
+            if (!model.apiFormat && def.apiFormat)
+                model.apiFormat = def.apiFormat;
+        }
         if (model.extraHeaders && !model.customHeaders)
             model.customHeaders = model.extraHeaders;
         if (model.useRawBaseUrl !== undefined && model.rawUrl === undefined)
@@ -184,6 +230,18 @@ class ModelStore {
             model.name = `models/${model.name || ''}`;
         if (model.name === 'models/')
             throw new Error('Model name is required');
+        if (!model.apiUrl && model.provider) {
+            const list = this.read();
+            const sibling = list.find((item) => item.provider === model.provider && item.apiUrl);
+            if (sibling) {
+                model.apiUrl = sibling.apiUrl;
+                if (!model.apiKey || model.apiKey === 'none') model.apiKey = sibling.apiKey;
+                if (!model.apiFormat) model.apiFormat = sibling.apiFormat;
+            } else if (model.provider === 'odirect') {
+                model.apiUrl = 'https://ai.odirect.app/v1/chat/completions';
+                model.apiFormat = 'openai';
+            }
+        }
         const valid = (0, schemaValidator_1.validateCustomModel)(model);
         if (!valid.valid)
             throw new Error(valid.error);

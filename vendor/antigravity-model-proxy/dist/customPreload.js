@@ -123,16 +123,19 @@ window.addEventListener('DOMContentLoaded', () => {
         return value;
     }
     function validUrl(value) {
+        let val = value.trim();
+        if (val && !/^https?:\/\//i.test(val))
+            val = 'https://' + val;
         let url;
         try {
-            url = new URL(value.trim());
+            url = new URL(val);
         }
         catch {
             throw new Error('Enter a complete http:// or https:// API URL.');
         }
         if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
             throw new Error('Use an HTTP or HTTPS URL. Enter credentials in the API key field.');
-        return value.trim();
+        return val;
     }
     function installStyles() {
         if (document.getElementById('agy-manager-style'))
@@ -140,34 +143,104 @@ window.addEventListener('DOMContentLoaded', () => {
         const style = element('style');
         style.id = 'agy-manager-style';
         style.textContent = `
-      #agy-custom-models-section,#agy-modal-overlay{font:13px/1.5 'Vazirmatn',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#e4e4e7;box-sizing:border-box}
+      #agy-custom-models-section,#agy-modal-overlay{
+        --agy-bg:var(--vscode-sideBar-background,#18181b);
+        --agy-card-bg:var(--vscode-editor-background,#202024);
+        --agy-row-bg:var(--vscode-list-hoverBackground,rgba(255,255,255,0.05));
+        --agy-fg:var(--vscode-foreground,#e4e4e7);
+        --agy-heading:var(--vscode-foreground,#fafafa);
+        --agy-muted:var(--vscode-descriptionForeground,#a1a1aa);
+        --agy-border:var(--vscode-panel-border,var(--vscode-widget-border,#303036));
+        --agy-input-bg:var(--vscode-input-background,#25252a);
+        --agy-input-fg:var(--vscode-input-foreground,#fafafa);
+        --agy-input-border:var(--vscode-input-border,#414149);
+        --agy-btn-bg:var(--vscode-button-secondaryBackground,#27272c);
+        --agy-btn-fg:var(--vscode-button-secondaryForeground,#e4e4e7);
+        --agy-btn-border:var(--vscode-panel-border,#414149);
+        --agy-btn-hover:var(--vscode-button-secondaryHoverBackground,#38383f);
+        --agy-primary-bg:var(--vscode-button-background,#3b82f6);
+        --agy-primary-fg:var(--vscode-button-foreground,#ffffff);
+        --agy-overlay-bg:rgba(0,0,0,0.65);
+        --agy-shadow:var(--vscode-widget-shadow,0 24px 80px rgba(0,0,0,0.5));
+        font:13px/1.5 'Vazirmatn',-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+        color:var(--agy-fg);
+        box-sizing:border-box;
+      }
+      body.vscode-light #agy-custom-models-section,body.vscode-light #agy-modal-overlay,
+      [data-theme="light"] #agy-custom-models-section,[data-theme="light"] #agy-modal-overlay,
+      .theme-light #agy-custom-models-section,.theme-light #agy-modal-overlay{
+        --agy-bg:var(--vscode-editor-background,#f9fafb);
+        --agy-card-bg:var(--vscode-sideBar-background,#ffffff);
+        --agy-row-bg:var(--vscode-list-hoverBackground,#f3f4f6);
+        --agy-fg:var(--vscode-foreground,#1f2937);
+        --agy-heading:var(--vscode-foreground,#111827);
+        --agy-muted:var(--vscode-descriptionForeground,#6b7280);
+        --agy-border:var(--vscode-panel-border,var(--vscode-widget-border,#e5e7eb));
+        --agy-input-bg:var(--vscode-input-background,#ffffff);
+        --agy-input-fg:var(--vscode-input-foreground,#111827);
+        --agy-input-border:var(--vscode-input-border,#d1d5db);
+        --agy-btn-bg:var(--vscode-button-secondaryBackground,#f3f4f6);
+        --agy-btn-fg:var(--vscode-button-secondaryForeground,#1f2937);
+        --agy-btn-border:var(--vscode-panel-border,#d1d5db);
+        --agy-btn-hover:var(--vscode-button-secondaryHoverBackground,#e5e7eb);
+        --agy-primary-bg:var(--vscode-button-background,#2563eb);
+        --agy-primary-fg:var(--vscode-button-foreground,#ffffff);
+        --agy-overlay-bg:rgba(0,0,0,0.35);
+        --agy-shadow:var(--vscode-widget-shadow,0 20px 60px rgba(0,0,0,0.15));
+      }
+      @media(prefers-color-scheme:light){
+        body:not(.vscode-dark):not(.vscode-high-contrast) #agy-custom-models-section,
+        body:not(.vscode-dark):not(.vscode-high-contrast) #agy-modal-overlay{
+          --agy-bg:var(--vscode-editor-background,#f9fafb);
+          --agy-card-bg:var(--vscode-sideBar-background,#ffffff);
+          --agy-row-bg:var(--vscode-list-hoverBackground,#f3f4f6);
+          --agy-fg:var(--vscode-foreground,#1f2937);
+          --agy-heading:var(--vscode-foreground,#111827);
+          --agy-muted:var(--vscode-descriptionForeground,#6b7280);
+          --agy-border:var(--vscode-panel-border,var(--vscode-widget-border,#e5e7eb));
+          --agy-input-bg:var(--vscode-input-background,#ffffff);
+          --agy-input-fg:var(--vscode-input-foreground,#111827);
+          --agy-input-border:var(--vscode-input-border,#d1d5db);
+          --agy-btn-bg:var(--vscode-button-secondaryBackground,#f3f4f6);
+          --agy-btn-fg:var(--vscode-button-secondaryForeground,#1f2937);
+          --agy-btn-border:var(--vscode-panel-border,#d1d5db);
+          --agy-btn-hover:var(--vscode-button-secondaryHoverBackground,#e5e7eb);
+          --agy-primary-bg:var(--vscode-button-background,#2563eb);
+          --agy-primary-fg:var(--vscode-button-foreground,#ffffff);
+          --agy-overlay-bg:rgba(0,0,0,0.35);
+          --agy-shadow:var(--vscode-widget-shadow,0 20px 60px rgba(0,0,0,0.15));
+        }
+      }
       #agy-custom-models-section *,#agy-modal-overlay *{box-sizing:border-box}
       #agy-custom-models-section [hidden],#agy-modal-overlay [hidden]{display:none!important}
-      #agy-custom-models-section{margin:24px 0;padding:20px;border:1px solid #303036;border-radius:12px;background:#18181b;min-width:0}
-      #agy-custom-models-section h2,#agy-modal-overlay h2{font-size:18px;margin:0;color:#fafafa;font-weight:600;unicode-bidi:plaintext;text-align:start}
-      #agy-custom-models-section h3{font-size:13px;margin:0;color:#f4f4f5;unicode-bidi:plaintext;text-align:start}
+      #agy-custom-models-section{margin:24px 0;padding:20px;border:1px solid var(--agy-border);border-radius:12px;background:var(--agy-bg);min-width:0}
+      #agy-custom-models-section h2,#agy-modal-overlay h2{font-size:18px;margin:0;color:var(--agy-heading);font-weight:600;unicode-bidi:plaintext;text-align:start}
+      #agy-custom-models-section h3{font-size:13px;margin:0;color:var(--agy-heading);unicode-bidi:plaintext;text-align:start}
       .agy-toolbar,.agy-actions,.agy-group-heading,.agy-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
       .agy-toolbar{justify-content:space-between;margin-bottom:12px}.agy-actions{margin:10px 0}
-      .agy-muted{color:#a1a1aa;font-size:12px;overflow-wrap:anywhere;unicode-bidi:plaintext;text-align:start}.agy-group{margin-top:16px;border-top:1px solid #303036;padding-top:14px}
-      .agy-group-heading{justify-content:space-between}.agy-row{justify-content:space-between;border:1px solid #303036;border-radius:8px;padding:12px;margin-top:8px;background:#202024}
+      .agy-muted{color:var(--agy-muted);font-size:12px;overflow-wrap:anywhere;unicode-bidi:plaintext;text-align:start}.agy-group{margin-top:16px;border-top:1px solid var(--agy-border);padding-top:14px}
+      .agy-group-heading{justify-content:space-between}.agy-row{justify-content:space-between;border:1px solid var(--agy-border);border-radius:8px;padding:12px;margin-top:8px;background:var(--agy-row-bg)}
       .agy-row-info{flex:1;min-width:150px;overflow-wrap:anywhere;unicode-bidi:plaintext;text-align:start}.agy-row[data-enabled="false"] .agy-row-info{opacity:.55}
-      #agy-custom-models-section .agy-btn,#agy-modal-overlay .agy-btn{appearance:none;font:inherit;color:#e4e4e7;background:#27272c;border:1px solid #414149;border-radius:6px;padding:6px 10px;cursor:pointer;white-space:nowrap}
-      #agy-custom-models-section .agy-primary,#agy-modal-overlay .agy-primary{background:#e4e4e7;color:#18181b;border-color:#e4e4e7;font-weight:600}
-      #agy-custom-models-section .agy-btn:hover,#agy-modal-overlay .agy-btn:hover{filter:brightness(1.12)}
+      #agy-custom-models-section .agy-btn,#agy-modal-overlay .agy-btn{appearance:none;font:inherit;color:var(--agy-btn-fg);background:var(--agy-btn-bg);border:1px solid var(--agy-btn-border);border-radius:6px;padding:6px 10px;cursor:pointer;white-space:nowrap;transition:background-color .15s,border-color .15s}
+      #agy-custom-models-section .agy-primary,#agy-modal-overlay .agy-primary{background:var(--agy-primary-bg)!important;color:var(--agy-primary-fg)!important;border-color:var(--agy-primary-bg)!important;font-weight:600}
+      #agy-custom-models-section .agy-btn:hover,#agy-modal-overlay .agy-btn:hover{filter:brightness(1.1);background:var(--agy-btn-hover)}
       #agy-custom-models-section .agy-btn:disabled,#agy-modal-overlay .agy-btn:disabled{opacity:.5;cursor:wait}
-      #agy-custom-models-section :focus-visible,#agy-modal-overlay :focus-visible{outline:2px solid #a78bfa;outline-offset:3px}
-      .agy-status{color:#86efac;font-size:12px;margin-top:8px;white-space:pre-wrap;overflow-wrap:anywhere;unicode-bidi:plaintext;text-align:start}.agy-status:empty{display:none}.agy-error{color:#fca5a5}
-      .agy-field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px;min-width:0;color:#a1a1aa;unicode-bidi:plaintext;text-align:start}
-      #agy-custom-models-section input,#agy-modal-overlay input,#agy-modal-overlay select,#agy-modal-overlay textarea{font:inherit;width:100%;background:#25252a;border:1px solid #414149;border-radius:6px;color:#fafafa;padding:8px 10px;min-width:0;unicode-bidi:plaintext;text-align:start}
-      #agy-modal-overlay textarea{font-family:ui-monospace,Menlo,Monaco,monospace;resize:vertical;direction:ltr}#agy-modal-overlay input[type=checkbox]{width:auto;accent-color:#a78bfa}
-      #agy-modal-overlay{position:fixed;inset:0;z-index:999999;background:#000a;display:flex;align-items:center;justify-content:center;padding:20px}
-      #agy-modal-card{width:680px;max-width:100%;max-height:90vh;overflow:auto;background:#18181b;border:1px solid #414149;border-radius:12px;padding:24px;box-shadow:0 24px 80px #0008}
+      #agy-custom-models-section :focus-visible,#agy-modal-overlay :focus-visible{outline:2px solid var(--agy-primary-bg);outline-offset:3px}
+      .agy-status{color:#16a34a;font-size:12px;margin-top:8px;white-space:pre-wrap;overflow-wrap:anywhere;unicode-bidi:plaintext;text-align:start}
+      body.vscode-dark .agy-status{color:#86efac}.agy-status:empty{display:none}.agy-error{color:#dc2626!important}
+      body.vscode-dark .agy-error{color:#fca5a5!important}
+      .agy-field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px;min-width:0;color:var(--agy-muted);unicode-bidi:plaintext;text-align:start}
+      #agy-custom-models-section input,#agy-modal-overlay input,#agy-modal-overlay select,#agy-modal-overlay textarea{font:inherit;width:100%;background:var(--agy-input-bg);border:1px solid var(--agy-input-border);border-radius:6px;color:var(--agy-input-fg);padding:8px 10px;min-width:0;unicode-bidi:plaintext;text-align:start}
+      #agy-modal-overlay textarea{font-family:ui-monospace,Menlo,Monaco,monospace;resize:vertical;direction:ltr}#agy-modal-overlay input[type=checkbox]{width:auto;accent-color:var(--agy-primary-bg)}
+      #agy-modal-overlay{position:fixed;inset:0;z-index:999999;background:var(--agy-overlay-bg);display:flex;align-items:center;justify-content:center;padding:20px}
+      #agy-modal-card{width:680px;max-width:100%;max-height:90vh;overflow:auto;background:var(--agy-card-bg);border:1px solid var(--agy-border);border-radius:12px;padding:24px;box-shadow:var(--agy-shadow)}
       .agy-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}.agy-discovery{max-height:240px;overflow:auto;margin:12px 0}
       .agy-choice{display:flex;gap:10px;align-items:center;padding:7px 0;overflow-wrap:anywhere;unicode-bidi:plaintext;text-align:start}.agy-choice span{min-width:0}
-      #agy-modal-overlay details{border:1px solid #303036;border-radius:8px;margin:12px 0;padding:12px}#agy-modal-overlay summary{cursor:pointer;margin-bottom:10px;font-weight:500;unicode-bidi:plaintext;text-align:start}
-      .agy-proxy-pill{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:12px;font-size:11px;font-weight:500;border:1px solid #303036;background:#202024;user-select:none}
-      .agy-proxy-pill.active{border-color:#22c55e55;color:#86efac;background:#052e1666}
-      .agy-proxy-pill.direct{border-color:#71717a55;color:#a1a1aa;background:#27272a55}
+      #agy-modal-overlay details{border:1px solid var(--agy-border);border-radius:8px;margin:12px 0;padding:12px}#agy-modal-overlay summary{cursor:pointer;margin-bottom:10px;font-weight:500;unicode-bidi:plaintext;text-align:start}
+      .agy-proxy-pill{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:12px;font-size:11px;font-weight:500;border:1px solid var(--agy-border);background:var(--agy-row-bg);user-select:none}
+      .agy-proxy-pill.active{border-color:#22c55e55;color:#16a34a;background:rgba(34,197,94,0.1)}
+      body.vscode-dark .agy-proxy-pill.active{color:#86efac;background:#052e1666}
+      .agy-proxy-pill.direct{border-color:var(--agy-border);color:var(--agy-muted);background:var(--agy-row-bg)}
       .agy-dot{width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block}
       @media(max-width:600px){.agy-grid{grid-template-columns:1fr}#agy-modal-card{padding:16px}.agy-row .agy-actions{width:100%}}
     `;
@@ -455,6 +528,104 @@ window.addEventListener('DOMContentLoaded', () => {
             name = `${base}-${index++}`;
         return name;
     }
+    function openConfigureGateway(existing) {
+        const gwName = existing?.provider || 'Gateway';
+        const { body, status, close } = openModal(`Configure Gateway: ${gwName}`);
+        body.append(element('p', 'agy-muted', `Set the base URL and API token for ${gwName}. All models under this gateway will automatically share this endpoint and credential without re-entering them.`));
+        const urlField = field(body, 'Gateway Base URL', 'agy-gw-url', existing?.apiUrl || 'https://ai.odirect.app/v1', 'url');
+        const keyField = field(body, 'API Key / Token', 'agy-gw-key', existing?.apiKey === 'none' ? '' : existing?.apiKey || '', 'password');
+        keyField.placeholder = 'Enter provider token (e.g. sk-...)';
+        const formatField = selectField(body, 'API Format', 'agy-gw-format', [
+            ['openai', 'OpenAI compatible'],
+            ['anthropic', 'Anthropic Messages'],
+            ['google', 'Google Gemini'],
+        ], existing?.apiFormat || 'openai');
+
+        const actions = element('div', 'agy-actions');
+        actions.append(button('Test Gateway Connection', async () => {
+            setStatus(status, 'Testing gateway…');
+            const targetUrl = validUrl(urlField.value);
+            const targetKey = keyField.value.trim() || existing?.apiKey || 'none';
+            const result = requireSuccess(await storageAPI.testModelConnection({
+                provider: existing.provider,
+                apiUrl: targetUrl,
+                apiKey: targetKey,
+                apiFormat: formatField.value,
+            }));
+            setStatus(status, result.message || 'Gateway connection successful!');
+        }, status), button('Save Gateway Settings', async () => {
+            setStatus(status, 'Updating models in gateway…');
+            const targetUrl = validUrl(urlField.value);
+            const targetKey = keyField.value.trim();
+            const models = await storageAPI.getCustomModels();
+            let count = 0;
+            for (const m of models) {
+                if (m.provider === existing.provider) {
+                    m.apiUrl = targetUrl;
+                    if (targetKey && !targetKey.includes('***')) {
+                        m.apiKey = targetKey;
+                    }
+                    m.apiFormat = formatField.value;
+                    requireSuccess(await storageAPI.saveCustomModel(m));
+                    count++;
+                }
+            }
+            await modelsChanged();
+            setStatus(status, `Gateway settings updated for ${count} models.`);
+            setTimeout(close, 800);
+        }, status, true));
+        body.append(actions);
+    }
+    function openAddGatewayModal() {
+        const { body, status, close } = openModal('Add Gateway / Provider');
+        body.append(element('p', 'agy-muted', 'Connect an AI gateway or provider (e.g. ODirect, LiteLLM, vLLM, OpenAI). You can fetch models or add models under it without re-entering the URL.'));
+        const nameField = field(body, 'Gateway Identifier', 'agy-newgw-id', 'odirect');
+        nameField.placeholder = 'e.g. odirect, openai, custom';
+        const urlField = field(body, 'Gateway Base URL', 'agy-newgw-url', 'https://ai.odirect.app/v1', 'url');
+        const keyField = field(body, 'API Key / Token', 'agy-newgw-key', '', 'password');
+        keyField.placeholder = 'Enter token (e.g. sk-...)';
+        const formatField = selectField(body, 'API Format', 'agy-newgw-format', [
+            ['openai', 'OpenAI compatible'],
+            ['anthropic', 'Anthropic Messages'],
+            ['google', 'Google Gemini'],
+        ], 'openai');
+
+        const actions = element('div', 'agy-actions');
+        actions.append(button('Fetch and Select Models', async () => {
+            const gwId = nameField.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'custom';
+            const gwUrl = validUrl(urlField.value);
+            const gwKey = keyField.value.trim() || 'none';
+            setStatus(status, 'Connecting to gateway and fetching models…');
+            const probe = {
+                provider: gwId,
+                apiUrl: gwUrl,
+                apiKey: gwKey,
+                apiFormat: formatField.value,
+            };
+            const res = requireSuccess(await storageAPI.discoverModels(probe));
+            if (!res.models?.length)
+                throw new Error('Gateway returned no models. Check the URL and token.');
+            close();
+            openModelModal(probe, 'discover');
+        }, status, true), button('Save Gateway', async () => {
+            const gwId = nameField.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'custom';
+            const gwUrl = validUrl(urlField.value);
+            const gwKey = keyField.value.trim() || 'none';
+            requireSuccess(await storageAPI.saveCustomModel({
+                name: `models/${gwId}-default`,
+                displayName: `${nameField.value.trim() || gwId} Model`,
+                provider: gwId,
+                apiUrl: gwUrl,
+                apiKey: gwKey,
+                apiFormat: formatField.value,
+                externalModelName: 'default',
+                enabled: true,
+            }));
+            await modelsChanged();
+            close();
+        }, status));
+        body.append(actions);
+    }
     async function renderCustomModelsList() {
         const target = document.getElementById('agy-custom-models-content');
         if (!target)
@@ -473,7 +644,7 @@ window.addEventListener('DOMContentLoaded', () => {
                         .toLowerCase()
                         .includes(searchTerm))
                     continue;
-                const key = `${model.provider}\n${model.apiUrl}`;
+                const key = model.provider || 'custom';
                 groups.set(key, [...(groups.get(key) || []), model]);
             }
             if (!groups.size)
@@ -485,12 +656,15 @@ window.addEventListener('DOMContentLoaded', () => {
                 const group = element('section', 'agy-group');
                 const header = element('div', 'agy-group-heading');
                 const heading = element('div');
-                heading.append(element('h3', '', `${first.provider} · ${models.filter((model) => model.enabled !== false).length}/${models.length} enabled`), element('div', 'agy-muted', first.apiUrl));
+                const enabledCount = models.filter((model) => model.enabled !== false).length;
+                heading.append(element('h3', '', `${first.provider} · ${enabledCount}/${models.length} models enabled`), element('div', 'agy-muted', first.apiUrl));
                 const groupStatus = statusNode();
                 const actions = element('div', 'agy-actions');
+                actions.append(button('Configure gateway', () => openConfigureGateway(first), groupStatus));
+                actions.append(button('+ Add model', () => openModelModal(first, 'add-to-gateway'), groupStatus));
                 actions.append(button('Discover models', () => openModelModal(first, 'discover'), groupStatus));
                 const allEnabled = models.every((model) => model.enabled !== false);
-                actions.append(button(allEnabled ? 'Disable group' : 'Enable group', async () => {
+                actions.append(button(allEnabled ? 'Disable all' : 'Enable all', async () => {
                     for (const model of models)
                         requireSuccess(await storageAPI.saveCustomModel({ ...model, enabled: !allEnabled }));
                     await modelsChanged();
@@ -533,9 +707,11 @@ window.addEventListener('DOMContentLoaded', () => {
             ? 'Duplicate model'
             : mode === 'discover'
                 ? 'Discover provider models'
-                : existing
-                    ? 'Edit model'
-                    : 'Add custom model');
+                : mode === 'add-to-gateway'
+                    ? `Add model to ${existing?.provider || 'gateway'}`
+                    : existing
+                        ? 'Edit model'
+                        : 'Add custom model');
         try {
             const presets = await storageAPI.getPresets();
             if (!body.isConnected)
@@ -562,14 +738,14 @@ window.addEventListener('DOMContentLoaded', () => {
                 ['google', 'Google Gemini'],
             ], existing?.apiFormat || preset().apiFormat);
             const grid = element('div', 'agy-grid');
-            const modelId = field(grid, 'Provider model ID', 'agy-model-id', mode === 'discover' ? '' : existing?.externalModelName || '');
+            const modelId = field(grid, 'Provider model ID', 'agy-model-id', mode === 'discover' || mode === 'add-to-gateway' ? '' : existing?.externalModelName || '');
             const displayName = field(grid, 'Display name', 'agy-display-name', mode === 'duplicate'
                 ? `${existing?.displayName || existing?.externalModelName || ''} copy`
-                : mode === 'discover'
+                : mode === 'discover' || mode === 'add-to-gateway'
                     ? ''
                     : existing?.displayName || '');
             body.append(grid);
-            const name = field(body, 'Configuration name (unique)', 'agy-model-name', mode === 'duplicate' ? uniqueName(`${existing?.name}-copy`) : mode === 'discover' ? '' : existing?.name || '');
+            const name = field(body, 'Configuration name (unique)', 'agy-model-name', mode === 'duplicate' ? uniqueName(`${existing?.name}-copy`) : mode === 'discover' || mode === 'add-to-gateway' ? '' : existing?.name || '');
             name.placeholder = 'Generated from provider and model ID when left blank';
             const description = field(body, 'Description', 'agy-description', String(existing?.description || ''));
             const googleConfig = element('div');
@@ -1014,7 +1190,7 @@ window.addEventListener('DOMContentLoaded', () => {
             }
         })();
         const actions = element('div', 'agy-actions');
-        actions.append(button('Discover local', discoverLocal), button('Import', () => openImportExport('import')), button('Export', () => openImportExport('export')), button('Remote gateway', openGateway));
+        actions.append(button('+ Add gateway', openAddGatewayModal), button('Discover local', discoverLocal), button('Import', () => openImportExport('import')), button('Export', () => openImportExport('export')), button('Remote gateway', openGateway));
         const search = field(section, 'Search models', 'agy-model-search', searchTerm, 'search');
         search.placeholder = 'Search by name, model ID or provider';
         search.addEventListener('input', () => {

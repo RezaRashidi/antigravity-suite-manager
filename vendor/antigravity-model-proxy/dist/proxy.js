@@ -1064,6 +1064,8 @@ function handleRequest(req, res) {
             const matchedCustomModel = customModels.find((m) => {
                 const enumName = generateModelPlaceholderId(m);
                 return (m.name === matchedModelName ||
+                    m.externalModelName === matchedModelName ||
+                    'models/' + m.externalModelName === matchedModelName ||
                     toSlug(m) === matchedModelName ||
                     enumName === matchedModelName ||
                     'models/' + enumName === matchedModelName);
