@@ -669,7 +669,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 actions.append(button('Configure gateway', () => openConfigureGateway(first), groupStatus));
                 actions.append(button('+ Add model', () => openModelModal(first, 'add-to-gateway'), groupStatus));
                 actions.append(button('Discover models', () => openDiscoverGatewayModels(first), groupStatus));
-                actions.append(button('وارد کردن خودکار مدل‌های free', () => autoImportFreeModels(first, groupStatus), groupStatus));
+                actions.append(button('Auto-import Free & Stealth', () => autoImportFreeModels(first, groupStatus), groupStatus));
                 const allEnabled = models.every((model) => model.enabled !== false);
                 actions.append(button(allEnabled ? 'Disable all' : 'Enable all', async () => {
                     for (const model of models)
@@ -713,10 +713,10 @@ window.addEventListener('DOMContentLoaded', () => {
             const result = requireSuccess(await storageAPI.discoverModels(gateway));
             const choices = result.models || [];
             const freeChoices = choices.filter((m) =>
-                /free/i.test(m.id || '') || /free/i.test(m.displayName || '') || /free/i.test(m.name || '')
+                /free|stealth/i.test(m.id || '') || /free|stealth/i.test(m.displayName || '') || /free|stealth/i.test(m.name || '')
             );
             if (!freeChoices.length) {
-                setStatus(status, 'No models containing "free" were found in this gateway.');
+                setStatus(status, 'No models containing "free" or "stealth" were found in this gateway.');
                 return;
             }
             let count = 0;
@@ -724,7 +724,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 const prior = modelList.find((m) => m.provider === gateway.provider && (m.externalModelName === choice.id || m.name === `models/${gateway.provider}/${choice.id}`));
                 if (prior) {
                     if (prior.enabled === false) {
-                        requireSuccess(await storageAPI.saveCustomModel({ ...prior, enabled: true }));
+                        requireSuccess(await storageAPI.saveCustomModel({ ...prior, enabled: true, originalName: prior.name }));
                         count++;
                     }
                 } else {
@@ -734,6 +734,7 @@ window.addEventListener('DOMContentLoaded', () => {
                         provider: gateway.provider,
                         apiUrl: gateway.apiUrl,
                         apiKey: gateway.apiKey,
+                        copyFrom: gateway.name,
                         apiFormat: gateway.apiFormat || 'openai',
                         externalModelName: choice.id,
                         enabled: true,
@@ -747,7 +748,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 }
             }
             await modelsChanged();
-            setStatus(status, `Imported/enabled ${count} free models successfully!`);
+            setStatus(status, `Imported/enabled ${count} Free & Stealth models successfully!`);
         } catch (err) {
             setStatus(status, String(err?.message || err), true);
         }
@@ -783,11 +784,19 @@ window.addEventListener('DOMContentLoaded', () => {
                 });
                 renderChoices();
             });
+            const selectFreeBtn = button('Select Free & Stealth', () => {
+                choices.forEach((m) => {
+                    if (/free|stealth/i.test(m.id || '') || /free|stealth/i.test(m.displayName || '') || /free|stealth/i.test(m.name || '')) {
+                        selected.add(m.id);
+                    }
+                });
+                renderChoices();
+            });
             const deselectAllBtn = button('Deselect All', () => {
                 selected.clear();
                 renderChoices();
             });
-            toolbar.append(countLabel, selectAllBtn, deselectAllBtn);
+            toolbar.append(countLabel, selectAllBtn, selectFreeBtn, deselectAllBtn);
 
             const listWrapper = element('div', 'agy-discovery-list');
             listWrapper.style.maxHeight = '280px';
@@ -839,13 +848,14 @@ window.addEventListener('DOMContentLoaded', () => {
                     throw new Error('Please select at least one model.');
                 let saved = 0;
                 for (const choice of choices.filter((m) => selected.has(m.id))) {
-                    const prior = modelList.find((m) => m.provider === gateway.provider && m.externalModelName === choice.id);
+                    const prior = modelList.find((m) => m.provider === gateway.provider && (m.externalModelName === choice.id || m.name === `models/${gateway.provider}/${choice.id}`));
                     const config = {
                         name: prior?.name || uniqueName(`models/${gateway.provider}/${choice.id}`),
                         displayName: choice.displayName || choice.id,
                         provider: gateway.provider,
                         apiUrl: gateway.apiUrl,
                         apiKey: gateway.apiKey,
+                        ...(prior ? { originalName: prior.name } : { copyFrom: gateway.name }),
                         apiFormat: gateway.apiFormat || 'openai',
                         externalModelName: choice.id,
                         enabled: true,
@@ -877,12 +887,14 @@ window.addEventListener('DOMContentLoaded', () => {
                 const idVal = manualId.value.trim();
                 if (!idVal)
                     throw new Error('Model ID is required.');
+                const prior = modelList.find((m) => m.provider === gateway.provider && (m.externalModelName === idVal || m.name === `models/${gateway.provider}/${idVal}`));
                 const config = {
-                    name: uniqueName(`models/${gateway.provider}/${idVal}`),
+                    name: prior?.name || uniqueName(`models/${gateway.provider}/${idVal}`),
                     displayName: manualName.value.trim() || idVal,
                     provider: gateway.provider,
                     apiUrl: gateway.apiUrl,
                     apiKey: gateway.apiKey,
+                    ...(prior ? { originalName: prior.name } : { copyFrom: gateway.name }),
                     apiFormat: gateway.apiFormat || 'openai',
                     externalModelName: idVal,
                     enabled: true,
@@ -908,12 +920,14 @@ window.addEventListener('DOMContentLoaded', () => {
                 const idVal = manualId.value.trim();
                 if (!idVal)
                     throw new Error('Model ID is required.');
+                const prior = modelList.find((m) => m.provider === gateway.provider && (m.externalModelName === idVal || m.name === `models/${gateway.provider}/${idVal}`));
                 const config = {
-                    name: uniqueName(`models/${gateway.provider}/${idVal}`),
+                    name: prior?.name || uniqueName(`models/${gateway.provider}/${idVal}`),
                     displayName: manualName.value.trim() || idVal,
                     provider: gateway.provider,
                     apiUrl: gateway.apiUrl,
                     apiKey: gateway.apiKey,
+                    ...(prior ? { originalName: prior.name } : { copyFrom: gateway.name }),
                     apiFormat: gateway.apiFormat || 'openai',
                     externalModelName: idVal,
                     enabled: true,

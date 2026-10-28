@@ -303,7 +303,9 @@ function createModelManager(directory, codec, openExternal, dependencies = { log
         return connection;
     }
     function resolveProbe(input) {
-        const stored = input.name ? store.read().find((model) => model.name === input.name) : undefined;
+        const list = store.read();
+        const stored = (input.name ? list.find((model) => model.name === input.name) : undefined) ||
+                       (input.provider ? list.find((model) => (model.provider === input.provider || (model.apiUrl && input.apiUrl && checkedUrl(model.apiUrl).origin === checkedUrl(input.apiUrl).origin)) && model.apiKey && !(0, modelStore_1.isMaskedSecret)(model.apiKey)) : undefined);
         const model = { ...(stored || {}), ...input };
         if (stored &&
             (stored.provider !== model.provider || checkedUrl(stored.apiUrl).origin !== checkedUrl(model.apiUrl).origin)) {

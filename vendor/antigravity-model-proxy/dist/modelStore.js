@@ -230,17 +230,20 @@ class ModelStore {
             model.name = `models/${model.name || ''}`;
         if (model.name === 'models/')
             throw new Error('Model name is required');
-        if (!model.apiUrl && model.provider) {
-            const list = this.read();
-            const sibling = list.find((item) => item.provider === model.provider && item.apiUrl);
-            if (sibling) {
-                model.apiUrl = sibling.apiUrl;
-                if (!model.apiKey || model.apiKey === 'none') model.apiKey = sibling.apiKey;
-                if (!model.apiFormat) model.apiFormat = sibling.apiFormat;
-            } else if (model.provider === 'odirect') {
-                model.apiUrl = 'https://ai.odirect.app/v1/chat/completions';
-                model.apiFormat = 'openai';
-            }
+        const list = this.read();
+        const sibling = list.find((item) => {
+            if (item.provider && model.provider && item.provider === model.provider) return true;
+            try {
+                if (item.apiUrl && model.apiUrl && new URL(item.apiUrl).origin === new URL(model.apiUrl).origin) return true;
+            } catch (_) {}
+            return false;
+        });
+        if (sibling) {
+            if (!model.apiUrl) model.apiUrl = sibling.apiUrl;
+            if (!model.apiFormat) model.apiFormat = sibling.apiFormat;
+        } else if (model.provider === 'odirect') {
+            if (!model.apiUrl) model.apiUrl = 'https://ai.odirect.app/v1/chat/completions';
+            if (!model.apiFormat) model.apiFormat = 'openai';
         }
         const valid = (0, schemaValidator_1.validateCustomModel)(model);
         if (!valid.valid)
@@ -252,11 +255,12 @@ class ModelStore {
                 throw new Error('Enter fresh credentials when changing the provider or server address');
             }
         }
-        if (isMaskedSecret(model.apiKey) || model.apiKey === undefined) {
-            if (isMaskedSecret(model.apiKey) && !existing?.apiKey)
+        const keySource = (existing?.apiKey && existing.apiKey !== 'none') ? existing : (sibling?.apiKey && sibling.apiKey !== 'none' ? sibling : undefined);
+        if (isMaskedSecret(model.apiKey) || model.apiKey === undefined || (!model.apiKey && keySource?.apiKey)) {
+            if (isMaskedSecret(model.apiKey) && !keySource?.apiKey)
                 throw new Error('Enter a key for this new model');
-            model.apiKey = existing?.apiKey || '';
-            model.encrypted = existing?.encrypted || false;
+            model.apiKey = keySource?.apiKey || '';
+            model.encrypted = keySource ? (keySource === existing ? (existing?.encrypted || false) : (sibling?.encrypted || false)) : false;
             if (model.apiKey && !model.encrypted) {
                 model.apiKey = this.codec.encryptString(decodeSecret(model.apiKey, this.codec));
                 model.encrypted = true;
@@ -270,12 +274,12 @@ class ModelStore {
             model.encrypted = !!plain;
         }
         if (model.customHeaders && typeof model.customHeaders === 'object') {
-            const old = (existing?.customHeaders || {});
+            const old = (existing?.customHeaders || sibling?.customHeaders || {});
             model.customHeaders = Object.fromEntries(Object.entries(model.customHeaders).map(([key, value]) => {
                 if (isMaskedSecret(value)) {
                     if (!old[key])
                         throw new Error(`Enter a value for header ${key}`);
-                    return [key, existing?.encryptedHeaders ? old[key] : this.codec.encryptString(old[key])];
+                    return [key, (existing?.encryptedHeaders || sibling?.encryptedHeaders) ? old[key] : this.codec.encryptString(old[key])];
                 }
                 return [key, this.codec.encryptString(String(value))];
             }));
