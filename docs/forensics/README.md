@@ -41,5 +41,6 @@ This document records the end-to-end diagnostic methodology, reverse-engineering
 - [33. Issue 31: Conversation Forking Bloat Removal & Operational No-Restart Protocol](33_conversation_forking_bloat_removal_and_no_unprompted_restart_rule.md)
 - [34. Issue 32: Repository Update Shallow Clone Blockade (.git/shallow), Hidden Path Discovery Deficit & Patch Sync Gap](34_repo_update_shallow_clone_and_path_discovery_failure.md)
 - [35. Issue 33: Core Quota Router Scoping Regression & Multi-Account Model Selector Sync Failure](35_core_quota_router_failure_analysis_and_fix.md)
-- [36. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
+- [36. Issue 34: Custom Models Multi-Provider Discovery, Selective Activation & Local Proxy Bridge](36_custom_models_multi_provider_discovery_and_proxy_bridge.md)
+- [37. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
 

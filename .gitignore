@@ -9,6 +9,7 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+!vendor/antigravity-model-proxy/dist/
 .venv/
 uv.lock
 

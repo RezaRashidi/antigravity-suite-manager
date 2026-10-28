@@ -25,6 +25,7 @@ antigravity-keyring = "antigravity_suite.cli.keyring:main"
 antigravity-migration = "antigravity_suite.cli.migration:main"
 antigravity-benchmark = "antigravity_suite.benchmark.cli:main"
 antigravity-multi-account = "antigravity_suite.multi_account.cli:main"
+antigravity-models = "antigravity_suite.cli.models:main"
 antigravity-detect = "antigravity_suite.detect.cli:main"
 
 [tool.setuptools.packages.find]

@@ -45,6 +45,7 @@ dispatch_command() {
             if [ "$CLI_ICON_GIVEN" = true ]; then apply_icons_config
             else configure_icons_interactive "$SUB_COMMAND"; fi ;;
         cloud-sync) dispatch_cloud_sync "${CMD_ARGS[@]}" ;;
+        custom-models|models) dispatch_custom_models "${CMD_ARGS[@]}" ;;
         merge-history) merge_history ;;
         export-history|export-chats) export_history "${CMD_ARGS[@]}" ;;
         import-history|import-chats) import_history "${CMD_ARGS[@]}" ;;

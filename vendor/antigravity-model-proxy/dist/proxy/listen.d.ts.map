@@ -1,0 +1,1 @@
+{"version":3,"file":"listen.d.ts","sourceRoot":"","sources":["../../src/proxy/listen.ts"],"names":[],"mappings":"AAEA,OAAO,KAAK,EAAE,MAAM,EAAE,MAAM,MAAM,CAAC;AAGnC,uFAAuF;AACvF,wBAAgB,oBAAoB,CAAC,OAAO,EAAE,MAAM,GAAG,MAAM,GAAG,SAAS,CAQxE;AAED,wBAAgB,WAAW,CAAC,MAAM,EAAE,MAAM,EAAE,aAAa,SAAQ,EAAE,aAAa,UAAO,GAAG,OAAO,CAAC,MAAM,CAAC,CAwBxG"}

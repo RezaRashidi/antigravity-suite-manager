@@ -1,0 +1,68 @@
+{
+  "name": "antigravity",
+  "productName": "Antigravity",
+  "version": "2.0.1",
+  "description": "Antigravity - Agentic Desktop Application",
+  "homepage": "https://antigravity.google",
+  "author": {
+    "name": "Google",
+    "email": "antigravity-support@google.com"
+  },
+  "license": "Apache-2.0",
+  "main": "dist/main.js",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "build": "npx tsc",
+    "dev": "npx tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "npx eslint src/**/*.ts",
+    "lint:fix": "npx eslint src/**/*.ts --fix",
+    "format": "npx prettier --write \"src/**/*.ts\"",
+    "format:check": "npx prettier --check \"src/**/*.ts\"",
+    "clean": "npx tsc --build --clean",
+    "gateway:install": "npm --prefix gateway ci --ignore-scripts",
+    "gateway:build": "npm --prefix gateway run build",
+    "gateway:test": "npm --prefix gateway test",
+    "gateway": "node scripts/gateway.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "doctor:repair": "node scripts/deploy.mjs",
+    "update:check": "node scripts/update-preflight.mjs check",
+    "update:prepare": "node scripts/update-preflight.mjs prepare",
+    "ide:check": "node scripts/ide.mjs check",
+    "ide:apply": "node scripts/ide.mjs apply",
+    "ide:restore": "node scripts/ide.mjs restore",
+    "ide:status": "node scripts/ide.mjs status",
+    "ide:launch": "node scripts/ide.mjs launch",
+    "ide:mcp": "node scripts/ide-mcp.mjs",
+    "proxy:start": "node scripts/desktop-service.mjs start",
+    "proxy:stop": "node scripts/desktop-service.mjs stop",
+    "proxy:status": "node scripts/desktop-service.mjs status",
+    "model:mcp": "node scripts/model-delegation-mcp.mjs",
+    "workers-ai:setup": "node scripts/workers-ai.mjs",
+    "patch:check": "node scripts/deploy.mjs --check",
+    "patch:restore": "node scripts/deploy.mjs --restore",
+    "test:integration": "node scripts/integration-smoke.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "chrome-devtools-mcp": "^1.12.0",
+    "electron-log": "^5.4.3",
+    "electron-updater": "^6.8.11",
+    "shell-env": "^4.0.3"
+  },
+  "devDependencies": {
+    "@electron/asar": "4.3.0",
+    "@types/node": "^25.9.1",
+    "@typescript-eslint/eslint-plugin": "^8.44.1",
+    "@typescript-eslint/parser": "^8.44.1",
+    "eslint": "^9.33.0",
+    "eslint-config-prettier": "^10.1.8",
+    "jsdom": "^29.1.1",
+    "prettier": "^3.6.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.12"
+  }
+}

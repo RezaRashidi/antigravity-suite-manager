@@ -69,8 +69,9 @@ show_classic_menu() {
     echo "36) Enable Native 'Open in IDE' Titlebar Button in App"
     echo "37) Revert / Unpatch Native 'Open in IDE' Button Patch"
     echo "38) Cloud Sync (Rclone Encrypted Cross-System Push/Pull)"
+    echo "39) Custom Models (Multi-Provider, Discovery & Selection)"
     echo "0) Exit"
     echo -e "${CYAN}-----------------------------------------------------${NC}"
-    read -rp "Select an option [0-38]: " choice
+    read -rp "Select an option [0-39]: " choice
     execute_menu_choice "$choice"
 }

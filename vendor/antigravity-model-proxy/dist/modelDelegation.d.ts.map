@@ -1,0 +1,1 @@
+{"version":3,"file":"modelDelegation.d.ts","sourceRoot":"","sources":["../src/modelDelegation.ts"],"names":[],"mappings":"AAAA,uFAAuF;AACvF,OAAO,KAAK,EAAE,eAAe,EAAE,cAAc,EAAE,MAAM,WAAW,CAAC;AAEjE,OAAO,KAAK,EAAE,WAAW,EAAE,MAAM,SAAS,CAAC;AAkD3C,gFAAgF;AAChF,wBAAgB,qBAAqB,CAAC,UAAU,EAAE,MAAM,WAAW,EAAE,IAE3D,KAAK,eAAe,EAAE,KAAK,cAAc,KAAG,OAAO,CAsI5D"}
