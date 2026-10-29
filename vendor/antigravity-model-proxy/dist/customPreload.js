@@ -604,6 +604,7 @@ window.addEventListener('DOMContentLoaded', () => {
                     }
 
                     const filterPayload = JSON.stringify({
+                        active: Array.from(activeSet),
                         deleted: Array.from(deletedModelIdentifiers),
                         disabled: Array.from(disabledSet)
                     });
@@ -611,8 +612,14 @@ window.addEventListener('DOMContentLoaded', () => {
                     const mainWorldCode = `(async () => {
                         try {
                             const payload = ${filterPayload};
+                            const activeSet = new Set(payload.active || []);
                             const deletedSet = new Set(payload.deleted || []);
                             const disabledSet = new Set(payload.disabled || []);
+
+                            for (const a of activeSet) {
+                                deletedSet.delete(a);
+                                deletedSet.delete(a.replace(/^models\\//, ''));
+                            }
 
                             const root = document.getElementById('root') || document.body.firstElementChild;
                             if (!root) return;
@@ -667,8 +674,11 @@ window.addEventListener('DOMContentLoaded', () => {
                                         if (!cfg) return false;
                                         const lbl = (cfg.label || '').toLowerCase().trim();
                                         const stripped = lbl.replace(/^models\\//, '');
-                                        if (deletedSet.has(lbl) || deletedSet.has(stripped)) return false;
-                                        if (disabledSet.has(lbl) || disabledSet.has(stripped)) return false;
+                                        const isActive = activeSet.has(lbl) || activeSet.has(stripped);
+                                        if (!isActive) {
+                                            if (deletedSet.has(lbl) || deletedSet.has(stripped)) return false;
+                                            if (disabledSet.has(lbl) || disabledSet.has(stripped)) return false;
+                                        }
                                         return true;
                                     });
 
@@ -686,7 +696,12 @@ window.addEventListener('DOMContentLoaded', () => {
                                                     modelLabels: grp.modelLabels.filter((lbl) => {
                                                         const norm = (lbl || '').toLowerCase().trim();
                                                         const stripped = norm.replace(/^models\\//, '');
-                                                        return !deletedSet.has(norm) && !deletedSet.has(stripped) && !disabledSet.has(norm) && !disabledSet.has(stripped);
+                                                        const isActive = activeSet.has(norm) || activeSet.has(stripped);
+                                                        if (!isActive) {
+                                                            if (deletedSet.has(norm) || deletedSet.has(stripped)) return false;
+                                                            if (disabledSet.has(norm) || disabledSet.has(stripped)) return false;
+                                                        }
+                                                        return true;
                                                     })
                                                 };
                                             })
