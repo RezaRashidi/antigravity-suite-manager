@@ -113,21 +113,37 @@ function registerCustomModelHandlers() {
     handle('storage:google-pool-status', manager.googlePoolStatus);
     handle('storage:get-proxy-status', async () => ({ proxy: await (0, proxyAgent_1.detectLocalProxy)() }));
     handle('storage:sync-models', async () => {
+        let ls;
         try {
-            const ls = require('./languageServer');
-            if (ls && typeof ls.restartLanguageServer === 'function') {
+            ls = require('../languageServer');
+        } catch (_) {
+            try { ls = require('./languageServer'); } catch (_) {}
+        }
+        let newPort = null;
+        if (ls && typeof ls.restartLanguageServer === 'function') {
+            try {
                 await ls.restartLanguageServer();
+                newPort = typeof ls.getLsPort === 'function' ? ls.getLsPort() : null;
+            } catch (e) {
+                console.error('[Model Patch] restartLanguageServer error:', e);
             }
-        } catch (e) {
-            console.error('[Model Patch] restartLanguageServer error:', e);
         }
         const windows = electron_1.BrowserWindow.getAllWindows();
         for (const win of windows) {
             if (!win.isDestroyed() && win.webContents) {
-                win.webContents.reload();
+                try {
+                    const curUrl = win.webContents.getURL();
+                    if (newPort && curUrl && curUrl.includes('127.0.0.1')) {
+                        const parsed = new URL(curUrl);
+                        parsed.port = String(newPort);
+                        await win.loadURL(parsed.toString());
+                    } else {
+                        win.webContents.reload();
+                    }
+                } catch (_) {}
             }
         }
-        return { success: true };
+        return { success: true, port: newPort };
     });
 }
 //# sourceMappingURL=customIpc.js.map

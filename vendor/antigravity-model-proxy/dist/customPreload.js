@@ -525,7 +525,24 @@ window.addEventListener('DOMContentLoaded', () => {
         window.dispatchEvent(new CustomEvent('agy-models-changed'));
         const mainStatus = document.getElementById('agy-main-status');
         if (mainStatus) {
-            setStatus(mainStatus, 'Changes saved. Click "Sync to Chat" or press F5 to update Chat model selector.');
+            mainStatus.textContent = '';
+            const msg = element('span', '', 'Changes saved! Click to update Chat: ');
+            const syncBtn = element('button', 'agy-btn agy-primary', '🔄 Sync to Chat now');
+            syncBtn.style.padding = '3px 10px';
+            syncBtn.style.marginLeft = '8px';
+            syncBtn.style.fontSize = '12px';
+            syncBtn.style.cursor = 'pointer';
+            syncBtn.onclick = async () => {
+                syncBtn.disabled = true;
+                syncBtn.textContent = 'Syncing…';
+                try {
+                    await storageAPI.syncModels();
+                } catch (e) {
+                    syncBtn.textContent = 'Sync failed';
+                    console.error(e);
+                }
+            };
+            mainStatus.append(msg, syncBtn);
         }
     }
     function uniqueName(base) {
@@ -748,7 +765,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 }
             }
             await modelsChanged();
-            setStatus(status, `Imported/enabled ${count} Free & Stealth models successfully!`);
+            setStatus(status, `Imported/enabled ${count} Free & Stealth models! Click "🔄 Sync to Chat" to update Chat selector.`);
         } catch (err) {
             setStatus(status, String(err?.message || err), true);
         }
@@ -868,7 +885,7 @@ window.addEventListener('DOMContentLoaded', () => {
                     saved++;
                 }
                 await modelsChanged();
-                setStatus(status, `Successfully added ${saved} models.`);
+                setStatus(status, `Successfully added ${saved} models! Click "🔄 Sync to Chat" to update Chat.`);
                 setTimeout(close, 700);
             }, status, true));
 
