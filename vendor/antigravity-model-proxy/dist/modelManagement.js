@@ -279,7 +279,7 @@ function createModelManager(directory, codec, openExternal, dependencies = { log
         }
         catch (error) {
             if (error.code === 'ENOENT')
-                return { url: 'https://ai.odirect.app/v1/', dashboardUrl: 'https://ai.odirect.app/', token: '' };
+                return { url: 'http://127.0.0.1:51000', dashboardUrl: 'http://127.0.0.1:51001', token: '' };
             throw error;
         }
     }

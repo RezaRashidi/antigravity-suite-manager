@@ -579,7 +579,8 @@ window.addEventListener('DOMContentLoaded', () => {
         const gwName = existing?.provider || 'Gateway';
         const { body, status, close } = openModal(`Configure Gateway: ${gwName}`);
         body.append(element('p', 'agy-muted', `Set the base URL and API token for ${gwName}. All models under this gateway will automatically share this endpoint and credential without re-entering them.`));
-        const urlField = field(body, 'Gateway Base URL', 'agy-gw-url', existing?.apiUrl || 'https://ai.odirect.app/v1/', 'url');
+        const urlField = field(body, 'Gateway Base URL', 'agy-gw-url', existing?.apiUrl || '', 'url');
+        urlField.placeholder = 'https://api.example.com/v1/';
         const keyField = field(body, 'API Key / Token', 'agy-gw-key', existing?.apiKey === 'none' ? '' : existing?.apiKey || '', 'password');
         keyField.placeholder = 'Enter provider token (e.g. sk-...)';
         const formatField = selectField(body, 'API Format', 'agy-gw-format', [
@@ -626,9 +627,10 @@ window.addEventListener('DOMContentLoaded', () => {
     function openAddGatewayModal() {
         const { body, status, close } = openModal('Add Gateway / Provider');
         body.append(element('p', 'agy-muted', 'Connect an AI gateway or provider (e.g. ODirect, LiteLLM, vLLM, OpenAI). You can fetch models or add models under it without re-entering the URL.'));
-        const nameField = field(body, 'Gateway Identifier', 'agy-newgw-id', 'odirect');
-        nameField.placeholder = 'e.g. odirect, openai, custom';
-        const urlField = field(body, 'Gateway Base URL', 'agy-newgw-url', 'https://ai.odirect.app/v1/', 'url');
+        const nameField = field(body, 'Gateway Identifier', 'agy-newgw-id', '');
+        nameField.placeholder = 'e.g. gateway, openai, custom';
+        const urlField = field(body, 'Gateway Base URL', 'agy-newgw-url', '', 'url');
+        urlField.placeholder = 'https://api.example.com/v1/';
         const keyField = field(body, 'API Key / Token', 'agy-newgw-key', '', 'password');
         keyField.placeholder = 'Enter token (e.g. sk-...)';
         const formatField = selectField(body, 'API Format', 'agy-newgw-format', [
