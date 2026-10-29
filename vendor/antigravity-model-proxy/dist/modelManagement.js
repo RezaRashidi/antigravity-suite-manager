@@ -362,8 +362,10 @@ function createModelManager(directory, codec, openExternal, dependencies = { log
                 headers['x-api-key'] = model.apiKey;
         }
         else if (format === 'google') {
-            if (model.apiKey)
+            if (model.apiKey) {
                 headers['x-goog-api-key'] = model.apiKey;
+                headers.Authorization = `Bearer ${model.apiKey}`;
+            }
         }
         else if (model.apiKey)
             headers.Authorization = `Bearer ${model.apiKey}`;

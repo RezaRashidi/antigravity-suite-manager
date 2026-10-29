@@ -81,8 +81,10 @@ function getProviderHeaders(provider, apiKey = '', apiFormat) {
     if (apiKey && apiKey !== 'none') {
         if (/^(enc:|fallback:|local-gcm:|DECRYPTION_FAILED)/.test(apiKey))
             throw new Error('API key could not be decrypted; save the key again.');
-        if (format === 'google')
+        if (format === 'google') {
             headers['x-goog-api-key'] = apiKey;
+            headers.Authorization = `Bearer ${apiKey}`;
+        }
         else if (format === 'anthropic')
             headers['x-api-key'] = apiKey;
         else

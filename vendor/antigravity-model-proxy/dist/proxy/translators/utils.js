@@ -327,33 +327,111 @@ function normalizeToolArgs(name, args, schemas) {
     }
     return normalized;
 }
-// ─── Utility Functions ────────────────────────────────────────────────────
-/**
- * Recursively converts Gemini parameter types (UPPERCASE) to lowercase format.
- * Gemini uses uppercase (STRING, NUMBER); OpenAI/Anthropic need lowercase.
- */
-function fixParamTypes(properties) {
-    if (!properties)
+// ─── Utility Functions & Schema Sanitization ──────────────────────────────
+const INTEGER_SCHEMA_FIELDS = ['minLength', 'maxLength', 'minItems', 'maxItems', 'minProperties', 'maxProperties'];
+const NUMBER_SCHEMA_FIELDS = ['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf'];
+
+function sanitizeSchemaNode(schema) {
+    if (!schema || typeof schema !== 'object')
         return;
-    for (const key of Object.keys(properties)) {
-        const val = properties[key];
+    if (Array.isArray(schema)) {
+        for (const item of schema) {
+            sanitizeSchemaNode(item);
+        }
+        return;
+    }
+    // Type coercion (Gemini sends uppercase STRING, INTEGER, etc.)
+    if (typeof schema.type === 'string') {
+        const lower = schema.type.toLowerCase();
+        schema.type = (lower === 'float' || lower === 'double') ? 'number' : lower;
+    } else if (Array.isArray(schema.type)) {
+        schema.type = schema.type.map((t) => (typeof t === 'string' ? t.toLowerCase() : t));
+    }
+    // Integer constraint coercion (protojson sends minLength: "1")
+    for (const key of INTEGER_SCHEMA_FIELDS) {
+        if (key in schema) {
+            if (typeof schema[key] === 'string') {
+                const parsed = parseInt(schema[key], 10);
+                if (!isNaN(parsed)) {
+                    schema[key] = parsed;
+                } else {
+                    delete schema[key];
+                }
+            } else if (typeof schema[key] !== 'number') {
+                delete schema[key];
+            }
+        }
+    }
+    // Number constraint coercion
+    for (const key of NUMBER_SCHEMA_FIELDS) {
+        if (key in schema) {
+            if (typeof schema[key] === 'string') {
+                const parsed = Number(schema[key]);
+                if (!isNaN(parsed)) {
+                    schema[key] = parsed;
+                } else {
+                    delete schema[key];
+                }
+            } else if (typeof schema[key] !== 'number') {
+                delete schema[key];
+            }
+        }
+    }
+    // Remove unsupported or problematic keywords
+    if ('$schema' in schema) {
+        delete schema['$schema'];
+    }
+    // Recurse into properties
+    if (schema.properties && typeof schema.properties === 'object' && !Array.isArray(schema.properties)) {
+        for (const propKey of Object.keys(schema.properties)) {
+            sanitizeSchemaNode(schema.properties[propKey]);
+        }
+    }
+    // Recurse into patternProperties
+    if (schema.patternProperties && typeof schema.patternProperties === 'object') {
+        for (const propKey of Object.keys(schema.patternProperties)) {
+            sanitizeSchemaNode(schema.patternProperties[propKey]);
+        }
+    }
+    // Recurse into items
+    if (schema.items) {
+        sanitizeSchemaNode(schema.items);
+    }
+    // Recurse into additionalProperties
+    if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+        sanitizeSchemaNode(schema.additionalProperties);
+    }
+    // Recurse into combinators
+    for (const comb of ['anyOf', 'oneOf', 'allOf']) {
+        if (Array.isArray(schema[comb])) {
+            for (const sub of schema[comb]) {
+                sanitizeSchemaNode(sub);
+            }
+        }
+    }
+    // Recurse into definitions
+    for (const defsKey of ['$defs', 'definitions']) {
+        if (schema[defsKey] && typeof schema[defsKey] === 'object') {
+            for (const k of Object.keys(schema[defsKey])) {
+                sanitizeSchemaNode(schema[defsKey][k]);
+            }
+        }
+    }
+}
+
+/**
+ * Recursively converts Gemini parameter types to lowercase format
+ * and coerces string-encoded numeric schema constraints (minLength, minProperties, etc.)
+ * into native numbers to satisfy OpenAI and Anthropic JSON Schema validation.
+ */
+function fixParamTypes(target) {
+    if (!target || typeof target !== 'object')
+        return;
+    sanitizeSchemaNode(target);
+    for (const key of Object.keys(target)) {
+        const val = target[key];
         if (val && typeof val === 'object') {
-            const obj = val;
-            if (typeof obj.type === 'string') {
-                obj.type = obj.type.toLowerCase();
-            }
-            if (obj.properties && typeof obj.properties === 'object') {
-                fixParamTypes(obj.properties);
-            }
-            if (obj.items && typeof obj.items === 'object') {
-                const items = obj.items;
-                if (typeof items.type === 'string') {
-                    items.type = items.type.toLowerCase();
-                }
-                if (items.properties && typeof items.properties === 'object') {
-                    fixParamTypes(items.properties);
-                }
-            }
+            sanitizeSchemaNode(val);
         }
     }
 }

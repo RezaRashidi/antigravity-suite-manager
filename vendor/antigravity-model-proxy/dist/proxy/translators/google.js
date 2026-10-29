@@ -98,7 +98,7 @@ function getGoogleApiUrl(baseUrl, modelName, isStream) {
         pathname = pathname.slice(0, -7);
     if (!pathname)
         pathname = '/v1beta';
-    url.pathname = `${pathname}/models/${encodeURIComponent(chosenModel)}:${isStream ? 'streamGenerateContent' : 'generateContent'}`;
+    url.pathname = `${pathname}/models/${encodeURI(chosenModel)}:${isStream ? 'streamGenerateContent' : 'generateContent'}`;
     if (isStream)
         url.searchParams.set('alt', 'sse');
     else if (url.searchParams.get('alt') === 'sse')

@@ -60,12 +60,7 @@ function mapGeminiToolsToOpenAI(geminiTools) {
                 const params = declaration
                     ? JSON.parse(JSON.stringify(declaration))
                     : { type: 'object', properties: {} };
-                if (params.type && typeof params.type === 'string') {
-                    params.type = params.type.toLowerCase();
-                }
-                if (params.properties) {
-                    (0, utils_1.fixParamTypes)(params.properties);
-                }
+                (0, utils_1.fixParamTypes)(params);
                 openaiTools.push({
                     type: 'function',
                     function: {

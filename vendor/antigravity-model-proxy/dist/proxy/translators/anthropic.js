@@ -61,12 +61,7 @@ function mapGeminiToolsToAnthropic(geminiTools) {
                 const params = declaration
                     ? JSON.parse(JSON.stringify(declaration))
                     : { type: 'OBJECT', properties: {} };
-                if (params.type && typeof params.type === 'string') {
-                    params.type = params.type.toLowerCase();
-                }
-                if (params.properties) {
-                    (0, utils_1.fixParamTypes)(params.properties);
-                }
+                (0, utils_1.fixParamTypes)(params);
                 anthropicTools.push({
                     name: func.name,
                     description: func.description || '',

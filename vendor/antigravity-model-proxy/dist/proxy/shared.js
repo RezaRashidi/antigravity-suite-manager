@@ -62,6 +62,7 @@ function startCleanupInterval() {
             }
         }
     }, 300000);
+    cleanupInterval.unref?.();
 }
 function stopCleanupInterval() {
     if (cleanupInterval) {
