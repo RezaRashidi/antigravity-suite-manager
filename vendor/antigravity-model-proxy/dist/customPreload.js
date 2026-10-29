@@ -603,90 +603,121 @@ window.addEventListener('DOMContentLoaded', () => {
                         } catch (_) {}
                     }
 
-                    const root = document.getElementById('root') || document.body.firstElementChild;
-                    if (!root) return resolve();
-                    const fiberKey = Object.keys(root).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactContainer$') || k.startsWith('__reactInternalInstance$'));
-                    if (!fiberKey) return resolve();
-                    const queue = [root[fiberKey]];
-                    let client = null;
-                    let store = null;
-                    let visited = 0;
-                    while (queue.length > 0 && visited < 500) {
-                        const node = queue.shift();
-                        visited++;
-                        if (!node) continue;
-                        if (!store) {
-                            if (node.memoizedProps?.store?.dispatch) store = node.memoizedProps.store;
-                            else if (node.stateNode?.store?.dispatch) store = node.stateNode.store;
-                        }
-                        if (!client) {
-                            if (node.memoizedProps?.value && typeof node.memoizedProps.value.getUserStatus === 'function') {
-                                client = node.memoizedProps.value;
-                            }
-                        }
-                        if (store && client) break;
-                        if (node.child) queue.push(node.child);
-                        if (node.sibling) queue.push(node.sibling);
-                    }
+                    const filterPayload = JSON.stringify({
+                        deleted: Array.from(deletedModelIdentifiers),
+                        disabled: Array.from(disabledSet)
+                    });
 
-                    if (store) {
-                        let statusObj = null;
-                        if (client) {
-                            try {
-                                const statusRes = await client.getUserStatus();
-                                if (statusRes?.userStatus?.cascadeModelConfigData?.clientModelConfigs) {
-                                    statusObj = statusRes.userStatus;
+                    const mainWorldCode = `(async () => {
+                        try {
+                            const payload = ${filterPayload};
+                            const deletedSet = new Set(payload.deleted || []);
+                            const disabledSet = new Set(payload.disabled || []);
+
+                            const root = document.getElementById('root') || document.body.firstElementChild;
+                            if (!root) return;
+                            const keys = Object.keys(root);
+                            const fiberKey = keys.find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactContainer$') || k.startsWith('__reactInternalInstance$'))
+                                || (root.firstElementChild && Object.keys(root.firstElementChild).find(k => k.startsWith('__reactFiber$')));
+                            if (!fiberKey) return;
+                            const startNode = root[fiberKey] || (root.firstElementChild && root.firstElementChild[fiberKey]);
+                            if (!startNode) return;
+
+                            const queue = [startNode];
+                            let client = null;
+                            let store = null;
+                            let visited = 0;
+                            while (queue.length > 0 && visited < 1000) {
+                                const node = queue.shift();
+                                visited++;
+                                if (!node) continue;
+                                if (!store) {
+                                    if (node.memoizedProps?.store?.dispatch) store = node.memoizedProps.store;
+                                    else if (node.stateNode?.store?.dispatch) store = node.stateNode.store;
                                 }
-                            } catch (_) {}
-                        }
-                        if (!statusObj) {
-                            statusObj = store.getState().userStatus;
-                        }
+                                if (!client) {
+                                    if (node.memoizedProps?.value && typeof node.memoizedProps.value.getUserStatus === 'function') {
+                                        client = node.memoizedProps.value;
+                                    } else if (node.memoizedProps?.client && typeof node.memoizedProps.client.getUserStatus === 'function') {
+                                        client = node.memoizedProps.client;
+                                    }
+                                }
+                                if (store && client) break;
+                                if (node.child) queue.push(node.child);
+                                if (node.sibling) queue.push(node.sibling);
+                            }
 
-                        if (statusObj?.cascadeModelConfigData?.clientModelConfigs) {
-                            const rawConfigs = statusObj.cascadeModelConfigData.clientModelConfigs;
-                            const filteredConfigs = rawConfigs.filter((cfg) => {
-                                if (!cfg) return false;
-                                const lbl = (cfg.label || '').toLowerCase().trim();
-                                const stripped = lbl.replace(/^models\//, '');
-                                if (deletedModelIdentifiers.has(lbl) || deletedModelIdentifiers.has(stripped)) return false;
-                                if (disabledSet.has(lbl) || disabledSet.has(stripped)) return false;
-                                return true;
-                            });
+                            if (store) {
+                                let statusObj = null;
+                                if (client) {
+                                    try {
+                                        const statusRes = await client.getUserStatus();
+                                        if (statusRes?.userStatus?.cascadeModelConfigData?.clientModelConfigs) {
+                                            statusObj = statusRes.userStatus;
+                                        }
+                                    } catch (_) {}
+                                }
+                                if (!statusObj) {
+                                    statusObj = store.getState().userStatus;
+                                }
 
-                            const validConfigs = filteredConfigs.filter((cfg) => !!cfg?.modelOrAlias?.choice);
+                                if (statusObj?.cascadeModelConfigData?.clientModelConfigs) {
+                                    const rawConfigs = statusObj.cascadeModelConfigData.clientModelConfigs;
+                                    const filteredConfigs = rawConfigs.filter((cfg) => {
+                                        if (!cfg) return false;
+                                        const lbl = (cfg.label || '').toLowerCase().trim();
+                                        const stripped = lbl.replace(/^models\\//, '');
+                                        if (deletedSet.has(lbl) || deletedSet.has(stripped)) return false;
+                                        if (disabledSet.has(lbl) || disabledSet.has(stripped)) return false;
+                                        return true;
+                                    });
 
-                            const rawSorts = statusObj.cascadeModelConfigData.clientModelSorts;
-                            const filteredSorts = Array.isArray(rawSorts) ? rawSorts.map((sort) => {
-                                if (!sort || !Array.isArray(sort.groups)) return sort;
-                                return {
-                                    ...sort,
-                                    groups: sort.groups.map((grp) => {
-                                        if (!grp || !Array.isArray(grp.modelLabels)) return grp;
+                                    const validConfigs = filteredConfigs.filter((cfg) => !!cfg?.modelOrAlias?.choice);
+
+                                    const rawSorts = statusObj.cascadeModelConfigData.clientModelSorts;
+                                    const filteredSorts = Array.isArray(rawSorts) ? rawSorts.map((sort) => {
+                                        if (!sort || !Array.isArray(sort.groups)) return sort;
                                         return {
-                                            ...grp,
-                                            modelLabels: grp.modelLabels.filter((lbl) => {
-                                                const norm = (lbl || '').toLowerCase().trim();
-                                                const stripped = norm.replace(/^models\//, '');
-                                                return !deletedModelIdentifiers.has(norm) && !deletedModelIdentifiers.has(stripped) && !disabledSet.has(norm) && !disabledSet.has(stripped);
+                                            ...sort,
+                                            groups: sort.groups.map((grp) => {
+                                                if (!grp || !Array.isArray(grp.modelLabels)) return grp;
+                                                return {
+                                                    ...grp,
+                                                    modelLabels: grp.modelLabels.filter((lbl) => {
+                                                        const norm = (lbl || '').toLowerCase().trim();
+                                                        const stripped = norm.replace(/^models\\//, '');
+                                                        return !deletedSet.has(norm) && !deletedSet.has(stripped) && !disabledSet.has(norm) && !disabledSet.has(stripped);
+                                                    })
+                                                };
                                             })
                                         };
-                                    })
-                                };
-                            }) : rawSorts;
+                                    }) : rawSorts;
 
-                            if (validConfigs.length > 0) {
-                                const nextUserStatus = {
-                                    ...statusObj,
-                                    cascadeModelConfigData: {
-                                        ...statusObj.cascadeModelConfigData,
-                                        clientModelConfigs: validConfigs,
-                                        ...(filteredSorts ? { clientModelSorts: filteredSorts } : {}),
+                                    if (validConfigs.length > 0) {
+                                        const nextUserStatus = {
+                                            ...statusObj,
+                                            cascadeModelConfigData: {
+                                                ...statusObj.cascadeModelConfigData,
+                                                clientModelConfigs: validConfigs,
+                                                ...(filteredSorts ? { clientModelSorts: filteredSorts } : {}),
+                                            }
+                                        };
+                                        store.dispatch({ type: 'userStatus/setUserStatus', payload: nextUserStatus });
                                     }
-                                };
-                                store.dispatch({ type: 'userStatus/setUserStatus', payload: nextUserStatus });
+                                }
                             }
+                        } catch (err) {
+                            console.warn('[CustomModels] Dynamic main world sync error:', err);
                         }
+                    })()`;
+
+                    if (electron_1 && electron_1.webFrame && typeof electron_1.webFrame.executeJavaScript === 'function') {
+                        await electron_1.webFrame.executeJavaScript(mainWorldCode);
+                    } else {
+                        const scriptEl = document.createElement('script');
+                        scriptEl.textContent = mainWorldCode;
+                        (document.head || document.documentElement).appendChild(scriptEl);
+                        scriptEl.remove();
                     }
                 } catch (e) {
                     console.warn('[CustomModels] Dynamic model refresh error:', e);
