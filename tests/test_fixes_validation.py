@@ -1688,7 +1688,7 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             fake_home = Path(td)
             real_proj = fake_home / "PhpstormProjects" / "real-project"
             real_proj.mkdir(parents=True)
-            non_existent_proj = fake_home / "PhpstormProjects" / "Odirect"
+            non_existent_proj = fake_home / "PhpstormProjects" / "non-existent-project"
 
             # 1. Validation checks
             self.assertTrue(is_valid_workspace_uri(f"file://{real_proj}", user_home=fake_home))

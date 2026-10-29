@@ -15,9 +15,15 @@ from .models_system import PromptTestMetric
 
 
 def _ensure_bench_git_repo() -> str:
-    path = os.path.expanduser("~/PhpstormProjects/antigravity-suite-manager")
-    if os.path.isdir(os.path.join(path, ".git")):
-        return path
+    suite_dir = os.environ.get("ANTIGRAVITY_SUITE_DIR")
+    if suite_dir and os.path.isdir(os.path.join(suite_dir, ".git")):
+        return suite_dir
+    for cand in [
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        os.path.expanduser("~/.antigravity-suite-manager")
+    ]:
+        if os.path.isdir(os.path.join(cand, ".git")):
+            return cand
     tmp_repo = "/tmp/antigravity-bench-repo"
     os.makedirs(tmp_repo, exist_ok=True)
     if not os.path.isdir(os.path.join(tmp_repo, ".git")):

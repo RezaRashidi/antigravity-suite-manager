@@ -76,18 +76,24 @@ async function openExternalOrAuthWindow(url) {
     }
 }
 let syncDebounceTimer;
+let syncResolvers = [];
+let cachedLsPort = null;
+let cachedCsrfToken = null;
 async function syncLanguageServerAndWindows(getLanguageServerPort) {
     if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
     return new Promise((resolve) => {
+        syncResolvers.push(resolve);
         syncDebounceTimer = setTimeout(async () => {
             syncDebounceTimer = undefined;
+            const currentResolvers = syncResolvers;
+            syncResolvers = [];
             let ls;
             try {
                 ls = require('../languageServer');
             } catch (_) {
                 try { ls = require('./languageServer'); } catch (_) {}
             }
-            let port = (typeof getLanguageServerPort === 'function' ? getLanguageServerPort() : null) || (typeof ls?.getLsPort === 'function' ? ls.getLsPort() : null);
+            let port = (typeof getLanguageServerPort === 'function' ? getLanguageServerPort() : null) || (typeof ls?.getLsPort === 'function' ? ls.getLsPort() : null) || cachedLsPort;
             if (!port) {
                 const windows = electron_1.BrowserWindow.getAllWindows();
                 for (const win of windows) {
@@ -103,27 +109,31 @@ async function syncLanguageServerAndWindows(getLanguageServerPort) {
                     } catch (_) {}
                 }
             }
-            let csrf = null;
-            try {
-                const fs = require('fs');
-                for (const pid of fs.readdirSync('/proc')) {
-                    if (!/^\d+$/.test(pid)) continue;
-                    try {
-                        const cmd = fs.readFileSync('/proc/' + pid + '/cmdline', 'utf8');
-                        if (cmd.includes('language_server') && cmd.includes('--csrf_token')) {
-                            const mCsrf = cmd.match(/--csrf_token[\0=\s]+([0-9a-fA-F-]+)/);
-                            if (mCsrf) {
-                                csrf = mCsrf[1];
-                                if (!port) {
-                                    const mPort = cmd.match(/--(?:https_server_port|http_server_port)[\0=\s]+(\d+)/);
-                                    if (mPort && Number(mPort[1]) > 0) port = Number(mPort[1]);
+            let csrf = cachedCsrfToken;
+            if (!csrf) {
+                try {
+                    const fs = require('fs');
+                    for (const pid of fs.readdirSync('/proc')) {
+                        if (!/^\d+$/.test(pid)) continue;
+                        try {
+                            const cmd = fs.readFileSync('/proc/' + pid + '/cmdline', 'utf8');
+                            if (cmd.includes('language_server') && cmd.includes('--csrf_token')) {
+                                const mCsrf = cmd.match(/--csrf_token[\0=\s]+([0-9a-fA-F-]+)/);
+                                if (mCsrf) {
+                                    csrf = mCsrf[1];
+                                    cachedCsrfToken = csrf;
+                                    if (!port) {
+                                        const mPort = cmd.match(/--(?:https_server_port|http_server_port)[\0=\s]+(\d+)/);
+                                        if (mPort && Number(mPort[1]) > 0) port = Number(mPort[1]);
+                                    }
+                                    break;
                                 }
-                                break;
                             }
-                        }
-                    } catch (_) {}
-                }
-            } catch (_) {}
+                        } catch (_) {}
+                    }
+                } catch (_) {}
+            }
+            if (port) cachedLsPort = port;
 
             if (port && csrf) {
                 const https = require('https');
@@ -161,7 +171,9 @@ async function syncLanguageServerAndWindows(getLanguageServerPort) {
                     } catch (_) {}
                 }
             }
-            resolve({ success: true, dynamic: true });
+            for (const r of currentResolvers) {
+                try { r({ success: true, dynamic: true }); } catch (_) {}
+            }
         }, 120);
     });
 }

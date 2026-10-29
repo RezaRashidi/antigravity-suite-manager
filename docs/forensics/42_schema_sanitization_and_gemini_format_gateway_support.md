@@ -1,13 +1,13 @@
 # Forensics Case 42: Tool Schema Sanitization and Gemini Wire Format Support
 
 ## 1. Executive Summary
-- **Incident**: Testing model `cx/gpt-5.6-luna` (and other custom models via ODirect / 9router) resulted in the planning engine aborting with:
+- **Incident**: Testing model `cx/gpt-5.6-luna` (and other custom models via AIGateway / 9router) resulted in the planning engine aborting with:
   `[Error] Invalid schema for function 'send_message': "1" is not of type "integer"`
 - **User Query**: Why does this occur, and can Gemini native wire format (`apiFormat: 'google'`) be used directly with gateways like 9router without lossy OpenAI translation?
 - **Root Cause**:
   1. Google Antigravity's Language Server (`language_server_linux_x64`, implemented in Go) defines tool parameter schemas in Protobuf. Go's `protojson` marshaler serializes 64-bit integer constraint fields (`minLength`, `maxLength`, `minItems`, `maxItems`, `minProperties`, `maxProperties`) as JSON strings (e.g. `"minLength": "1"`).
   2. The custom model translator (`vendor/antigravity-model-proxy/dist/proxy/translators/openai.js` and `utils.js`) previously only lowercased `type: "STRING"` -> `type: "string"` and only inspected `properties`. It never coerced or cleaned numeric schema constraints.
-  3. When forwarded to OpenAI-compatible gateways (such as LiteLLM, ODirect, Ollama, 9router), JSON Schema validators (Draft 7 / 2020-12) strictly reject string numbers on integer keywords (`"1" is not of type "integer"`).
+  3. When forwarded to OpenAI-compatible gateways (such as LiteLLM, AIGateway, Ollama, 9router), JSON Schema validators (Draft 7 / 2020-12) strictly reject string numbers on integer keywords (`"1" is not of type "integer"`).
   4. Furthermore, gateways like 9router natively support Gemini wire format (`/v1beta/models/...:streamGenerateContent`), but upstream headers previously sent only `x-goog-api-key`, which some reverse proxies reject without `Authorization: Bearer`.
 - **Resolution**:
   1. Implemented deep recursive JSON schema sanitization in `utils.js` (`fixParamTypes` & `sanitizeSchemaNode`) coercing all string integers (`minLength`, `maxLength`, `minItems`, `maxItems`, `minProperties`, `maxProperties`) and floats (`minimum`, `maximum`, `multipleOf`) into native numbers.
@@ -41,7 +41,7 @@ In Antigravity's tool definitions for `send_message`, `schedule`, `run_command`,
 ```
 
 ### 2.2 Strict JSON Schema Rejection
-When `mapGeminiToolsToOpenAI` forwarded these schemas directly into `tools[].function.parameters`, downstream OpenAI-compatible API proxies (such as LiteLLM in ODirect or 9router) validated the schema:
+When `mapGeminiToolsToOpenAI` forwarded these schemas directly into `tools[].function.parameters`, downstream OpenAI-compatible API proxies (such as LiteLLM in AIGateway or 9router) validated the schema:
 ```python
 # jsonschema validator:
 # jsonschema.exceptions.ValidationError: '1' is not of type 'integer'
@@ -70,7 +70,7 @@ headers.Authorization = `Bearer ${apiKey}`;
 ```
 This guarantees interoperability with:
 - Google AI Studio endpoints (`generativelanguage.googleapis.com`)
-- Local & third-party AI routers (9router, LiteLLM, OneAPI, ODirect)
+- Local & third-party AI routers (9router, LiteLLM, OneAPI, AIGateway)
 
 ### 3.3 Slashed Model Names in Gemini REST URL (`google.js`)
 Changed `encodeURIComponent(chosenModel)` to `encodeURI(chosenModel)`.

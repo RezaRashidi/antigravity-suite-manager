@@ -16,19 +16,8 @@ function install(getLanguageServerPort) {
     void electron_1.app.whenReady().then(() => {
         electron_1.session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
             const proxyPort = (0, proxy_1.getProxyPort)();
-            if (!proxyPort)
-                return callback({});
-            if (details.url.includes('SetCloudCodeURL')) {
+            if (proxyPort && details.url.includes('SetCloudCodeURL')) {
                 return callback({ cancel: true });
-            }
-            const lsPort = getLanguageServerPort();
-            if (!lsPort)
-                return callback({});
-            const url = new URL(details.url);
-            if (!['http:', 'https:'].includes(url.protocol) ||
-                !['127.0.0.1', 'localhost'].includes(url.hostname) ||
-                Number(url.port) !== lsPort) {
-                return callback({});
             }
             callback({});
         });

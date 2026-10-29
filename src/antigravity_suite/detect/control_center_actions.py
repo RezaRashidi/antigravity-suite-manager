@@ -29,6 +29,7 @@ from antigravity_suite.detect.control_center_ops import (
 from antigravity_suite.detect.control_center_patches import (
     handle_control_center_f5_patch,
     handle_control_center_fork_patch,
+    handle_control_center_models_patch,
     handle_control_center_open_ide_patch,
     handle_control_center_rtl_patch,
     handle_control_center_selector_patch,
@@ -47,6 +48,7 @@ __all__ = [
     "handle_control_center_keyring_global",
     "handle_control_center_launch",
     "handle_control_center_merge_history",
+    "handle_control_center_models_patch",
     "handle_control_center_multi_account",
     "handle_control_center_open_ide_patch",
     "handle_control_center_rtl_patch",

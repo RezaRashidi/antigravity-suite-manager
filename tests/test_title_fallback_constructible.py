@@ -15,8 +15,8 @@ from antigravity_suite.history.title_resolver import (
 
 class TestTitleFallbackConstructible(unittest.TestCase):
     def test_constructible_fallback_generation(self):
-        fallbacks = get_constructible_fallback_titles(workspace="Odirect")
-        self.assertIn("odirect chat", fallbacks)
+        fallbacks = get_constructible_fallback_titles(workspace="WorkspaceAlpha")
+        self.assertIn("workspacealpha chat", fallbacks)
         self.assertIn("conversation", fallbacks)
         self.assertNotIn("how to fork a chat", fallbacks)
 
@@ -27,30 +27,30 @@ class TestTitleFallbackConstructible(unittest.TestCase):
         self.assertTrue(is_workspace_fallback_title("Desktop: My Project"))
 
         # Workspace fallback matching
-        self.assertTrue(is_workspace_fallback_title("Odirect Chat", "Odirect"))
+        self.assertTrue(is_workspace_fallback_title("WorkspaceAlpha Chat", "WorkspaceAlpha"))
         self.assertTrue(is_workspace_fallback_title(".Antigravity Suite Manager Chat", ".antigravity-suite-manager"))
 
         # Authentic titles ending in 'Chat' must NOT be classified as fallback
-        self.assertFalse(is_workspace_fallback_title("How To Fork A Chat", "Odirect"))
-        self.assertFalse(is_workspace_fallback_title("Chat with PDF", "Odirect"))
-        self.assertFalse(is_workspace_fallback_title("Fast Live Chat Implementation", "Odirect"))
+        self.assertFalse(is_workspace_fallback_title("How To Fork A Chat", "WorkspaceAlpha"))
+        self.assertFalse(is_workspace_fallback_title("Chat with PDF", "WorkspaceAlpha"))
+        self.assertFalse(is_workspace_fallback_title("Fast Live Chat Implementation", "WorkspaceAlpha"))
 
     def test_pick_first_valid_title_preserves_authentic_chat_titles(self):
         cands = [
-            "Odirect Chat",             # Fallback
+            "WorkspaceAlpha Chat",             # Fallback
             "How To Fork A Chat",       # Authentic candidate
             "Conversation",             # Generic
         ]
-        winner = pick_first_valid_title(cands, prompt_cands=set(), fallback_workspace="Odirect")
+        winner = pick_first_valid_title(cands, prompt_cands=set(), fallback_workspace="WorkspaceAlpha")
         self.assertEqual(winner, "How To Fork A Chat")
 
     def test_resolve_best_title_selection(self):
         title, src = resolve_best_title(
-            existing_candidates=["Odirect Chat"],
+            existing_candidates=["WorkspaceAlpha Chat"],
             llm_candidates=["How To Fork A Chat"],
             clean_artifact_title=None,
             prompt_cands=set(),
-            fallback_workspace="Odirect",
+            fallback_workspace="WorkspaceAlpha",
         )
         self.assertEqual(title, "How To Fork A Chat")
         self.assertEqual(src, "llm_summary")

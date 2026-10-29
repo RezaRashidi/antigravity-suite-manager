@@ -59,6 +59,10 @@ function normalizeBaseUrl(url) {
     }
     return cleaned;
 }
+function sameOrigin(a, b) {
+    try { return Boolean(a && b && new URL(a).origin === new URL(b).origin); }
+    catch { return false; }
+}
 function object(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value))
         throw new Error('Expected an object');
@@ -263,7 +267,7 @@ class ModelStore {
         if (!valid.valid)
             throw new Error(valid.error);
         if (existing &&
-            (model.provider !== existing.provider || new URL(model.apiUrl).origin !== new URL(existing.apiUrl).origin)) {
+            (model.provider !== existing.provider || !sameOrigin(model.apiUrl, existing.apiUrl))) {
             if ((existing.apiKey && existing.apiKey !== 'none' && (!model.apiKey || isMaskedSecret(model.apiKey))) ||
                 Object.values(model.customHeaders || {}).some(isMaskedSecret)) {
                 throw new Error('Enter fresh credentials when changing the provider or server address');
@@ -363,6 +367,7 @@ class ModelStore {
         writeJsonAtomic(this.filename, { models });
     }
     delete(name) {
+        if (!name || typeof name !== 'string' || !name.trim()) return;
         const target = (typeof name === 'string' && !name.startsWith('models/')) ? `models/${name}` : name;
         const stripped = (typeof name === 'string' && name.startsWith('models/')) ? name.slice(7) : name;
         const nameLower = (typeof name === 'string' ? name : '').toLowerCase().trim();

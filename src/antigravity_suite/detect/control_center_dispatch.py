@@ -21,6 +21,7 @@ from antigravity_suite.detect.control_center_actions import (
     handle_control_center_keyring_global,
     handle_control_center_launch,
     handle_control_center_merge_history,
+    handle_control_center_models_patch,
     handle_control_center_multi_account,
     handle_control_center_open_ide_patch,
     handle_control_center_rtl_patch,
@@ -53,6 +54,7 @@ def dispatch_control_center_choice(choice: str, manage_sh: str, installer_sh: st
     elif up == "Y": handle_control_center_open_ide_patch(manage_sh, unified)
     elif up == "F": handle_control_center_f5_patch(manage_sh, unified)
     elif up == "R": handle_control_center_rtl_patch(manage_sh, unified)
+    elif up in ["CM", "MODELS"]: handle_control_center_models_patch(manage_sh, unified)
     elif up == "O": handle_control_center_icons(manage_sh)
     elif up == "G": handle_control_center_keyring_global(manage_sh)
     elif up == "X": handle_control_center_clean_data(manage_sh)

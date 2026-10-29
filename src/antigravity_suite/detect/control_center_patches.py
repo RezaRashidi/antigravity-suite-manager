@@ -65,3 +65,21 @@ def handle_control_center_rtl_patch(manage_sh: str, unified: Optional[List[Dict[
     c = input("Select action [1-2, Default: 1]: ").strip()
     if c not in ["0"]:
         run_target_patch(manage_sh, "unpatch-rtl" if c == "2" else "rtl", unified, "RTL Patch", force=(c != "2"))
+
+
+def handle_control_center_models_patch(manage_sh: str, unified: Optional[List[Dict[str, Any]]] = None) -> None:
+    print(f"\n{CYAN}--- In-App Custom Models Settings UI Patch ---{NC}")
+    print("  [1] Apply / Inject Custom Models UI into Antigravity App (Patch)")
+    print("  [2] Revert / Unpatch Custom Models UI from Antigravity App")
+    print("  [3] Open Custom Models CLI Manager (Providers, Keys, Discovery)")
+    print("  [0] Return")
+    c = input("Select action [1-3, Default: 1]: ").strip()
+    if c in ["0"]:
+        return
+    if c == "2":
+        subprocess.run(["bash", manage_sh, "unpatch-models"], check=False)
+    elif c == "3":
+        subprocess.run(["bash", manage_sh, "custom-models", "menu"], check=False)
+    else:
+        subprocess.run(["bash", manage_sh, "patch-models", "--force"], check=False)
+    input("\nPress Enter to return to Control Center...")

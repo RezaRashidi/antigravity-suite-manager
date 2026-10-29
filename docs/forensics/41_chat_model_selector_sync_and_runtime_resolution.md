@@ -1,7 +1,7 @@
 # Case 41: Chat Model Selector Refresh Failure, Language Server Sync, and Runtime Path Resolution
 
 ## 1. Executive Summary
-After configuring multiple custom models under a gateway (e.g. ODirect), users noticed that newly added models were saved in Settings but did not appear in the Antigravity Chat UI Model Selector dropdown. The dropdown only displayed the initial model ("REZA"), failing to reflect newly imported models (`cx/gpt-6-luna`, `cx/gpt-5.6-terra`, `cx/gpt-5.6-luna`).
+After configuring multiple custom models under a gateway (e.g. AIGateway), users noticed that newly added models were saved in Settings but did not appear in the Antigravity Chat UI Model Selector dropdown. The dropdown only displayed the initial model ("DEMO-MODEL"), failing to reflect newly imported models (`cx/gpt-6-luna`, `cx/gpt-5.6-terra`, `cx/gpt-5.6-luna`).
 
 This forensic analysis identifies the root causes across process boundaries (Electron Main, Preload Renderer, and Go Language Server) and details the fix applied to `customIpc.js` and `customPreload.js`.
 
@@ -16,7 +16,7 @@ Antigravity executes across three communicating processes:
 3. **Electron Main Process & Proxy (`localhost:50999`)**: Reads `~/.gemini/antigravity/custom_models.json`, merges custom models into `/v1internal:fetchAvailableModels`, and handles custom model streaming completions.
 
 ### 2.2 Stale React State & 5-Minute Polling Gap
-- When Antigravity first started, `custom_models.json` contained only `reza`. The Chat UI queried `GetAvailableModels` on boot and loaded only `reza`.
+- When Antigravity first started, `custom_models.json` contained only `demo-model`. The Chat UI queried `GetAvailableModels` on boot and loaded only `demo-model`.
 - When the user added 4 new models in Settings, they were written to disk. However:
   1. The Language Server only queries `/v1internal:fetchAvailableModels` every 5 minutes.
   2. The Chat UI's React dropdown **never polls** `GetAvailableModels` after mounting.
@@ -64,7 +64,7 @@ In `modelsChanged()`, dynamically injected a clickable, high-visibility `🔄 Sy
 ## 4. Verification & Validation
 1. **Runtime Verification**:
    - Inspected `language_server` response on live port via curl. Verified `response.models` and `agentModelSorts` contains all 4 models:
-     `custom-reza`, `custom-cx-gpt-6-luna`, `custom-cx-gpt-5-6-terra`, `custom-cx-gpt-5-6-luna`.
+     `custom-demo-model`, `custom-cx-gpt-6-luna`, `custom-cx-gpt-5-6-terra`, `custom-cx-gpt-5-6-luna`.
 2. **Asar Verification**:
    - Re-packed and verified `app.asar` via `./manage-antigravity.sh patch-models --force`.
    - Confirmed coexistence of F5 reload, RTL, multi-account selector, and custom models patches.

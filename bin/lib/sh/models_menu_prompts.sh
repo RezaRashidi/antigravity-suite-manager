@@ -4,7 +4,7 @@
 _prompt_add_provider() {
     local mpy; mpy="$(get_models_py)"
     echo -e "\n\033[1;34m--- Add New Custom Model Provider ---\033[0m"
-    read -rp "Provider Name (e.g., ODDirect, Ollama, OpenRouter): " pname
+    read -rp "Provider Name (e.g., OpenAI, Ollama, OpenRouter): " pname
     read -rp "Base URL (e.g., https://api.example.com/v1): " pbaseUrl
     read -rp "API Token / Key (leave blank for local Ollama): " ptoken
     python3 "$mpy" add-provider --name "$pname" --url "$pbaseUrl" --token "$ptoken"
@@ -27,7 +27,7 @@ _prompt_select_models() {
     if [ "$s_opt" = "1" ]; then
         python3 "$mpy" enable-all --provider "$pid"
     else
-        read -rp "Enter model IDs (e.g. reza, cx/gpt-6-sol): " s_ids
+        read -rp "Enter model IDs (e.g. gpt-4o, llama3): " s_ids
         python3 "$mpy" select --provider "$pid" --models "$s_ids"
     fi
 }
@@ -36,7 +36,7 @@ _prompt_test_provider() {
     local mpy; mpy="$(get_models_py)"
     echo -e "\n\033[1;34m--- Test Connection & Benchmark Latency ---\033[0m"
     read -rp "Provider ID: " pid
-    read -rp "Model ID to test (e.g. reza): " t_model
+    read -rp "Model ID to test (e.g. gpt-4o): " t_model
     python3 "$mpy" test --provider "$pid" --model "$t_model"
 }
 

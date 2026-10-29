@@ -34,7 +34,7 @@ def render_control_center_overview(unified: List[Dict[str, Any]]) -> None:
     print(f"{BOLD}{CYAN}[ PATCHES & CUSTOMIZATION ]{NC}")
     print("  [T] Multi-Account Selector   [J] Conversation Forking     [Y] Open in IDE Button")
     print("  [F] F5 Reload Patch          [R] RTL Typography Patch     [O] Icons & Visual Theme")
-    print("  [G] Keyring Storage Mode     [X] Clean Data & Cache\n")
+    print("  [CM] Custom Models UI Patch  [G] Keyring Storage Mode     [X] Clean Data & Cache\n")
     print(f"{BOLD}{CYAN}[ ACCOUNTS & SYSTEM ]{NC}")
     print("  [A] Multi-Account Manager    [M] Live Request Traffic     [K] Speed Benchmark")
     print("  [D] Restart Services         [Q] Exit Setup")

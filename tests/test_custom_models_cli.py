@@ -11,7 +11,7 @@ class TestCustomModelsCLI(unittest.TestCase):
         p = build_parser()
         args = p.parse_args([])
         self.assertEqual(args.action, "list")
-        self.assertEqual(args.model, "reza")
+        self.assertEqual(args.model, "gpt-4o")
 
     @patch("antigravity_suite.cli.models.op_list", return_value=0)
     def test_main_list(self, mock_list):
@@ -31,21 +31,21 @@ class TestCustomModelsCLI(unittest.TestCase):
 
     @patch("antigravity_suite.cli.models.op_fetch", return_value=0)
     def test_main_fetch(self, mock_fetch):
-        code = main(["fetch", "--provider", "odirect"])
+        code = main(["fetch", "--provider", "test-provider"])
         self.assertEqual(code, 0)
-        mock_fetch.assert_called_once_with("odirect")
+        mock_fetch.assert_called_once_with("test-provider")
 
     @patch("antigravity_suite.cli.models.op_select", return_value=0)
     def test_main_select(self, mock_sel):
-        code = main(["select", "--provider", "odirect", "--models", "reza,m2"])
+        code = main(["select", "--provider", "test-provider", "--models", "m1,m2"])
         self.assertEqual(code, 0)
-        mock_sel.assert_called_once_with("odirect", ["reza", "m2"])
+        mock_sel.assert_called_once_with("test-provider", ["m1", "m2"])
 
     @patch("antigravity_suite.cli.models.op_test", return_value=0)
     def test_main_test_action(self, mock_test):
-        code = main(["test", "--provider", "odirect", "--model", "reza"])
+        code = main(["test", "--provider", "test-provider", "--model", "m1"])
         self.assertEqual(code, 0)
-        mock_test.assert_called_once_with("odirect", "reza")
+        mock_test.assert_called_once_with("test-provider", "m1")
 
     @patch("antigravity_suite.cli.models.op_proxy", return_value=0)
     def test_main_proxy_actions(self, mock_proxy):

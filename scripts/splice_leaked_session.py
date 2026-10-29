@@ -66,8 +66,9 @@ def main() -> int:
 
     if args.execute:
         print("[History Sync] Triggering background synchronization...")
-        os.system(f"/home/reza/.local/bin/antigravity-merge-history.py --master {gemini}")
-        print("[Complete] All leaked turns successfully spliced into Running Two AntiGravity Apps Same Account.")
+        merge_cmd = os.path.expanduser("~/.local/bin/antigravity-merge-history.py")
+        os.system(f"python3 {merge_cmd} --master {gemini}")
+        print("[Complete] All leaked turns successfully spliced into target conversation.")
     return 0
 
 

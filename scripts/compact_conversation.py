@@ -58,7 +58,8 @@ def main() -> int:
     update_summaries(gemini, args.cid, new_count, dry_run=not args.execute)
     if args.execute:
         print("[History Sync] Triggering background synchronization...")
-        os.system(f"/home/reza/.local/bin/antigravity-merge-history.py --master {gemini}")
+        merge_cmd = os.path.expanduser("~/.local/bin/antigravity-merge-history.py")
+        os.system(f"python3 {merge_cmd} --master {gemini}")
         print(f"[Success] Conversation {args.cid[:8]} successfully compacted to {new_count} steps!")
 
     return 0

@@ -20,12 +20,12 @@ Invalid model configuration: Invalid URL
 ```
 
 ### 1.2 Inspection of `custom_models.json` & `proxy.js`
-In `~/.gemini/antigravity/custom_models.json`, models discovered or imported under provider `odirect` were stored with model identifiers, capabilities, and names, but without explicit per-model `apiUrl` or `apiKey` fields:
+In `~/.gemini/antigravity/custom_models.json`, models discovered or imported under provider `gateway` were stored with model identifiers, capabilities, and names, but without explicit per-model `apiUrl` or `apiKey` fields:
 ```json
 {
-  "id": "models/odirect-cx/gpt-6.1-sol",
+  "id": "models/gateway-cx/gpt-6.1-sol",
   "model_id": "cx/gpt-6.1-sol",
-  "provider": "odirect",
+  "provider": "gateway",
   "name": "cx/gpt-6.1-sol",
   "enabled": false
 }
@@ -47,7 +47,7 @@ Furthermore, in `schemaValidator.js`:
 const validProviders = providers.map(p => p.id);
 if (!validProviders.includes(provider)) { ... }
 ```
-`odirect` was not included in `PROVIDERS`, causing any runtime validation checks on `provider: "odirect"` to fail validation and be skipped by `loadCustomModels()`.
+`gateway` was not included in `PROVIDERS`, causing any runtime validation checks on `provider: "gateway"` to fail validation and be skipped by `loadCustomModels()`.
 
 ---
 
@@ -63,9 +63,9 @@ Users should configure an AI Gateway (Base URL, API Token, Protocol Format) once
 3. **`ModelStore.prepare` Safeguard:** When saving or mutating a single model under an existing Gateway, sibling provider attributes are automatically inherited if omitted.
 
 ### 2.3 Provider Extensibility
-1. Added `odirect` to `providers.js`:
+1. Added `gateway` to `providers.js`:
    ```javascript
-   preset('odirect', 'ODirect (AI Gateway)', 'https://api.example.com/v1/chat/completions', 'openai', true)
+   preset('gateway', 'AIGateway (AI Gateway)', 'https://api.example.com/v1/chat/completions', 'openai', true)
    ```
 2. Relaxed provider validation in `schemaValidator.js` to accept alphanumeric identifiers matching `/^[a-z0-9_-]+$/i`, enabling arbitrary custom gateways without core patch modifications.
 

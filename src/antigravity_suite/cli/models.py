@@ -24,7 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--url", default="", help="Provider Base URL")
     p.add_argument("--token", default=None, help="Bearer API key or token")
     p.add_argument("--provider", default="", help="Target provider ID or name")
-    p.add_argument("--model", default="reza", help="Model ID to test")
+    p.add_argument("--model", default="gpt-4o", help="Model ID to test")
     p.add_argument("--models", default="", help="Comma-separated model IDs to select")
     return p
 

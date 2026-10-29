@@ -527,6 +527,7 @@ window.addEventListener('DOMContentLoaded', () => {
         return () => accounts.map((account) => ({ ...account }));
     }
     let refreshSelectorTimeout;
+    let refreshResolvers = [];
     const deletedModelIdentifiers = new Set();
     const knownCustomModelLabels = new Set();
     function recordDeletedModel(m) {
@@ -544,8 +545,11 @@ window.addEventListener('DOMContentLoaded', () => {
     function refreshChatModelSelectorDynamically() {
         if (refreshSelectorTimeout) clearTimeout(refreshSelectorTimeout);
         return new Promise((resolve) => {
+            refreshResolvers.push(resolve);
             refreshSelectorTimeout = setTimeout(async () => {
                 refreshSelectorTimeout = undefined;
+                const currentResolvers = refreshResolvers;
+                refreshResolvers = [];
                 try {
                     customModelsCache.ts = 0;
 
@@ -675,7 +679,10 @@ window.addEventListener('DOMContentLoaded', () => {
                                         if (!cfg) return false;
                                         const lbl = (cfg.label || '').toLowerCase().trim();
                                         const stripped = lbl.replace(/^models\\//, '');
-                                        const modelName = (cfg.modelOrAlias?.model?.name || cfg.modelOrAlias?.model || '').toLowerCase().trim();
+                                        const modelTarget = (cfg?.modelOrAlias?.choice?.case === 'model' ? cfg.modelOrAlias.choice.value : null)
+                                            || cfg?.modelOrAlias?.model
+                                            || (cfg?.modelOrAlias?.choice?.value);
+                                        const modelName = (typeof modelTarget === 'string' ? modelTarget : modelTarget?.name || '').toLowerCase().trim();
                                         const modelStripped = modelName.replace(/^models\\//, '');
                                         const isActive = activeSet.has(lbl) || activeSet.has(stripped) || (modelName && (activeSet.has(modelName) || activeSet.has(modelStripped)));
                                         if (!isActive) {
@@ -685,7 +692,13 @@ window.addEventListener('DOMContentLoaded', () => {
                                         return true;
                                     });
 
-                                    const validConfigs = filteredConfigs.filter((cfg) => !!cfg?.modelOrAlias?.choice);
+                                    const validConfigs = filteredConfigs.filter((cfg) => {
+                                        if (!cfg?.modelOrAlias) return false;
+                                        if (cfg?.modelOrAlias?.choice) {
+                                            return cfg.modelOrAlias.choice.case !== undefined && cfg.modelOrAlias.choice.value !== undefined;
+                                        }
+                                        return Boolean(cfg.modelOrAlias.model || cfg.modelOrAlias.alias);
+                                    });
 
                                     const rawSorts = statusObj.cascadeModelConfigData.clientModelSorts;
                                     const filteredSorts = Array.isArray(rawSorts) ? rawSorts.map((sort) => {
@@ -752,8 +765,11 @@ window.addEventListener('DOMContentLoaded', () => {
                     }
                 } catch (e) {
                     console.warn('[CustomModels] Dynamic model refresh error:', e);
+                } finally {
+                    for (const r of currentResolvers) {
+                        try { r(); } catch (_) {}
+                    }
                 }
-                resolve();
             }, 60);
         });
     }
@@ -832,7 +848,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
     function openAddGatewayModal() {
         const { body, status, close } = openModal('Add Gateway / Provider');
-        body.append(element('p', 'agy-muted', 'Connect an AI gateway or provider (e.g. ODirect, LiteLLM, vLLM, OpenAI). You can fetch models or add models under it without re-entering the URL.'));
+        body.append(element('p', 'agy-muted', 'Connect an AI gateway or provider (e.g. OpenAI, DeepSeek, LiteLLM, Ollama). You can fetch models or add models under it without re-entering the URL.'));
         const nameField = field(body, 'Gateway Identifier', 'agy-newgw-id', '');
         nameField.placeholder = 'e.g. gateway, openai, custom';
         const urlField = field(body, 'Gateway Base URL', 'agy-newgw-url', '', 'url');
@@ -1649,7 +1665,12 @@ window.addEventListener('DOMContentLoaded', () => {
         }
     }
     function findSettingsMount() {
-        const headings = Array.from(document.querySelectorAll('h1,h2,h3,h4,[role="heading"],div,span'));
+        const modalContainer = document.querySelector('[role="dialog"], [role="tabpanel"], [class*="modal" i], [class*="dialog" i], [class*="settings" i]');
+        if (!modalContainer && !document.querySelector('button[aria-label*="refresh quota" i]')) {
+            return null;
+        }
+        const searchRoot = modalContainer || document;
+        const headings = Array.from(searchRoot.querySelectorAll('h1,h2,h3,h4,[role="heading"],div,span'));
         const heading = headings.find((node) => node.children.length === 0 &&
             /^(Models\s*(?:&|and)\s*Usage|Model Settings|MCP Servers|MCP)$/i.test(node.textContent?.trim() || '') &&
             !node.closest('#agy-custom-models-section,button,nav,[role="tablist"],[hidden],[aria-hidden="true"]'));
@@ -1668,7 +1689,7 @@ window.addEventListener('DOMContentLoaded', () => {
             }
             return heading.parentElement?.parentElement || heading.parentElement;
         }
-        const refresh = Array.from(document.querySelectorAll('button')).find((node) =>
+        const refresh = Array.from(searchRoot.querySelectorAll('button')).find((node) =>
             !node.closest('#agy-custom-models-section') &&
             /refresh quota/i.test(`${node.getAttribute('aria-label') || ''} ${node.title || ''}`));
         const legacy = refresh?.parentElement?.parentElement?.parentElement;
@@ -1749,6 +1770,8 @@ window.addEventListener('DOMContentLoaded', () => {
         let pending;
         const observer = new MutationObserver(() => {
             if (document.getElementById('agy-custom-models-section'))
+                return;
+            if (!document.querySelector('[role="dialog"], [role="tabpanel"], [class*="modal" i], [class*="dialog" i], [class*="settings" i], button[aria-label*="refresh quota" i]'))
                 return;
             if (pending)
                 clearTimeout(pending);

@@ -1,7 +1,7 @@
 # Case 40: Gateway Credentials Inheritance, Manual Model Addition, and Free & Stealth Auto-Import
 
 ## 1. Executive Summary
-In Antigravity Custom Models settings UI, users configuring gateways (e.g., ODirect `https://api.example.com/v1`) encountered `Error: Enter a key for this new model` when:
+In Antigravity Custom Models settings UI, users configuring gateways (e.g., AIGateway `https://api.example.com/v1`) encountered `Error: Enter a key for this new model` when:
 1. Adding a new model manually within the "Discover Models" modal (`Enter model ID manually`).
 2. Selecting discovered models and clicking `Add Selected Models`.
 3. Clicking the auto-import button for free/stealth models.
@@ -65,7 +65,7 @@ In `resolveProbe(input)`:
 ---
 
 ## 4. Verification & Testing
-1. Tested `ModelStore.prepare()` with masked (`'********'`) and empty API keys on live `custom_models.json` with `provider: 'odirect'`. Correctly inherited encrypted machine key without throwing.
+1. Tested `ModelStore.prepare()` with masked (`'********'`) and empty API keys on live `custom_models.json` with `provider: 'gateway'`. Correctly inherited encrypted machine key without throwing.
 2. Verified error is still thrown if an entirely new provider without credentials or siblings is entered.
 3. Re-deployed patch via `./manage-antigravity.sh patch-models --force`. Verified multi-patch coexistence (`RTL`, `F5`, `Selector`, `ModelPatch`).
 4. Ran all 214 tests in `pytest`. All passed.

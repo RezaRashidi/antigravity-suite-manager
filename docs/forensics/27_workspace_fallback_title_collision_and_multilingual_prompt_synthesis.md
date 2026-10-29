@@ -5,9 +5,9 @@
 
 ### چت اول: `e069face-57b3-48ee-9745-449f02f17aab`
 * **عنوان اصیل (تولید شده توسط مدل / کاربر):** `"How To Fork A Chat"`
-* **ورک‌اسپیس:** `Odirect`
-* **عنوان تحریف‌شده در سایدبار و دیتابیس‌ها:** `"Odirect Chat"`
-* **رفتار:** با وجود آنکه عنوان معتبر `"How To Fork A Chat"` برای این چت وجود داشت، موتور مرجر در هر دوره سینک آن را نادیده گرفته و به نام پوشه ورک‌اسپیس جاری (`"Odirect Chat"`) تبدیل می‌کرد.
+* **ورک‌اسپیس:** `WorkspaceAlpha`
+* **عنوان تحریف‌شده در سایدبار و دیتابیس‌ها:** `"WorkspaceAlpha Chat"`
+* **رفتار:** با وجود آنکه عنوان معتبر `"How To Fork A Chat"` برای این چت وجود داشت، موتور مرجر در هر دوره سینک آن را نادیده گرفته و به نام پوشه ورک‌اسپیس جاری (`"WorkspaceAlpha Chat"`) تبدیل می‌کرد.
 
 ### چت دوم: `421402e0-384e-4cd0-a196-0bec02aa6bdc`
 * **پرامپت کاربر:** `"من می خوام چند مودم را با کابل به سیستم وصل کنم چطوری می تونم با سوییچ میشه"`
@@ -32,7 +32,7 @@ if cand.endswith(" Chat"):
 1. عنوان معتبر این چت `"How To Fork A Chat"` بود که کلمه آخر آن `"Chat"` است.
 2. شرط `s.endswith(" Chat")` مقدار `True` برگرداند.
 3. در نتیجه، مرجر این عنوان معتبر را به عنوان یک عنوان پیش‌فرض نامعتبر تلقی کرد و آن را رد صلاحیت نمود (`cand = ""`).
-4. مرجر به اولویت fallback سقوط کرد و نام پوشه ورک‌اسپیس (`Odirect`) را برداشته و عنوان `"Odirect Chat"` را تولید و در دیتابیس‌ها ثبت کرد.
+4. مرجر به اولویت fallback سقوط کرد و نام پوشه ورک‌اسپیس (`WorkspaceAlpha`) را برداشته و عنوان `"WorkspaceAlpha Chat"` را تولید و در دیتابیس‌ها ثبت کرد.
 
 ### ب) بررسی علت عدم ایجاد مارک‌داون در چت `421402e0`
 بررسی دقیق فایل‌های لاگ `transcript_full.jsonl` و ساختار ذخیره‌سازی Antigravity نشان داد:
@@ -61,17 +61,17 @@ if cand.endswith(" Chat"):
 
 به جای استفاده از روش‌های حدسی NLP یا استاپ‌وردهای زبانی، منطق سیستم بر اساس **شناخت دقیق عناوینی که کد می‌تواند برای این چت بسازد** پیاده‌سازی شد:
 
-### ۱. محاسبه عناوین قابل ساخت برای هر ورک‌اسپیس ([title_fallback.py](file:///home/reza/.antigravity-suite-manager/src/antigravity_suite/history/title_fallback.py))
+### ۱. محاسبه عناوین قابل ساخت برای هر ورک‌اسپیس ([title_fallback.py](file:///home/demo-model/.antigravity-suite-manager/src/antigravity_suite/history/title_fallback.py))
 تابع `get_constructible_fallback_titles(workspace)` دقیقاً عناوینی را که خود مرجر ممکن است بر اساس نام ورک‌اسپیس چت بسازد محاسبه می‌کند:
-- برای چت `e069face` با ورک‌اسپیس `Odirect`، مجموعه عناوین قابل ساخت شامل موارد زیر است:
-  `{"odirect chat", "odirect", "conversation", "untitled conversation", "new chat", "chat"}`
+- برای چت `e069face` با ورک‌اسپیس `WorkspaceAlpha`، مجموعه عناوین قابل ساخت شامل موارد زیر است:
+  `{"gateway chat", "gateway", "conversation", "untitled conversation", "new chat", "chat"}`
 - تابع `is_workspace_fallback_title(title, fallback_workspace)` بررسی می‌کند که آیا عنوان کاندید جزو این مجموعه قابل ساخت است یا خیر:
-  - عنوان `"Odirect Chat"` در این مجموعه است $\rightarrow$ رد می‌شود (عنوان بازگشتی است).
+  - عنوان `"WorkspaceAlpha Chat"` در این مجموعه است $\rightarrow$ رد می‌شود (عنوان بازگشتی است).
   - عنوان `"How To Fork A Chat"` در این مجموعه **نیست** $\rightarrow$ به عنوان عنوان اصیل پذیرفته می‌شود!
 
 ### ۲. حذف کامل ماژول ساختگی `title_topic.py`
 - فایل `src/antigravity_suite/history/title_topic.py` به طور کامل حذف گردید.
-- کلیه وابستگی‌های آن در [title_sanitizer.py](file:///home/reza/.antigravity-suite-manager/src/antigravity_suite/history/title_sanitizer.py) و [title_resolver.py](file:///home/reza/.antigravity-suite-manager/src/antigravity_suite/history/title_resolver.py) پاکسازی شد.
+- کلیه وابستگی‌های آن در [title_sanitizer.py](file:///home/demo-model/.antigravity-suite-manager/src/antigravity_suite/history/title_sanitizer.py) و [title_resolver.py](file:///home/demo-model/.antigravity-suite-manager/src/antigravity_suite/history/title_resolver.py) پاکسازی شد.
 
 ### ۳. رعایت سقف سخت‌گیرانه خطوط کد (حداکثر ۱۰۰ خط)
 - تمام فایل‌های کدی ایجاد یا اصلاح‌شده در کل مخزن (`src/`، `bin/`، `scripts/`) زیر ۱۰۰ خط هستند.
@@ -81,7 +81,7 @@ if cand.endswith(" Chat"):
 ## ۴. نتایج اعتبارسنجی و تست‌ها
 
 ۱. **تست‌های واحد رگرسیون:**
-   - فایل تستی [tests/test_title_fallback_constructible.py](file:///home/reza/.antigravity-suite-manager/tests/test_title_fallback_constructible.py) اجرا شد و صحت تفکیک عناوین اصیل خاتمه‌یافته با کلمه `Chat` تایید شد.
+   - فایل تستی [tests/test_title_fallback_constructible.py](file:///home/demo-model/.antigravity-suite-manager/tests/test_title_fallback_constructible.py) اجرا شد و صحت تفکیک عناوین اصیل خاتمه‌یافته با کلمه `Chat` تایید شد.
    - اجرای ۱۶۸ تست کل پروژه (`pytest tests/`) با موفقیت ۱۰۰٪ پاس شد.
 
 ۲. **بررسی عدم وجود فایل کدی بالای ۱۰۰ خط:**
