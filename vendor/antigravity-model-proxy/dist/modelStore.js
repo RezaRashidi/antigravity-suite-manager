@@ -365,15 +365,24 @@ class ModelStore {
     delete(name) {
         const target = (typeof name === 'string' && !name.startsWith('models/')) ? `models/${name}` : name;
         const stripped = (typeof name === 'string' && name.startsWith('models/')) ? name.slice(7) : name;
+        const nameLower = (typeof name === 'string' ? name : '').toLowerCase().trim();
+        const targetLower = (typeof target === 'string' ? target : '').toLowerCase().trim();
+        const strippedLower = (typeof stripped === 'string' ? stripped : '').toLowerCase().trim();
         const models = this.read().filter((model) => {
-            if (model.name === target || model.name === name || model.name === stripped) return false;
-            if (model.externalModelName && (model.externalModelName === name || model.externalModelName === stripped || `models/${model.externalModelName}` === name)) return false;
-            if (model.displayName && (model.displayName === name || model.displayName === stripped)) return false;
+            const mName = (model.name || '').toLowerCase().trim();
+            const mExt = (model.externalModelName || '').toLowerCase().trim();
+            const mDisp = (model.displayName || '').toLowerCase().trim();
+            if (mName === targetLower || mName === nameLower || mName === strippedLower) return false;
+            if (mExt && (mExt === nameLower || mExt === strippedLower || `models/${mExt}` === nameLower)) return false;
+            if (mDisp && (mDisp === nameLower || mDisp === strippedLower || `models/${mDisp}` === nameLower)) return false;
             return true;
         });
         for (const model of models) {
             if (Array.isArray(model.fallbackModels))
-                model.fallbackModels = model.fallbackModels.filter((item) => item !== target && item !== name && item !== stripped);
+                model.fallbackModels = model.fallbackModels.filter((item) => {
+                    const itemLower = (typeof item === 'string' ? item : '').toLowerCase().trim();
+                    return itemLower !== targetLower && itemLower !== nameLower && itemLower !== strippedLower;
+                });
         }
         writeJsonAtomic(this.filename, { models });
     }

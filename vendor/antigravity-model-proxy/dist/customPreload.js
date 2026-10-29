@@ -526,55 +526,69 @@ window.addEventListener('DOMContentLoaded', () => {
         renderAccounts();
         return () => accounts.map((account) => ({ ...account }));
     }
-    function findRefreshButton() {
-        return (Array.from(document.querySelectorAll('button')).find((node) => !node.closest('#agy-custom-models-section') &&
-            (node.textContent?.trim() === 'Refresh' ||
-                /refresh quota/i.test(`${node.getAttribute('aria-label') || ''} ${node.title || ''}`))) || null);
-    }
-    async function refreshChatModelSelectorDynamically() {
-        try {
-            customModelsCache.ts = 0;
-            const csrfToken = window.__APP_CONFIG__?.csrfToken;
-            const headers = {
-                'Content-Type': 'application/json',
-                'Connect-Protocol-Version': '1',
-                'x-codeium-csrf-token': csrfToken || '',
-            };
-            try {
-                await fetch('/exa.language_server_pb.LanguageServerService/GetAvailableModels', {
-                    method: 'POST',
-                    headers,
-                    body: JSON.stringify({ forceRefresh: true }),
-                });
-            } catch (_) {}
+    let refreshSelectorTimeout;
+    function refreshChatModelSelectorDynamically() {
+        if (refreshSelectorTimeout) clearTimeout(refreshSelectorTimeout);
+        return new Promise((resolve) => {
+            refreshSelectorTimeout = setTimeout(async () => {
+                refreshSelectorTimeout = undefined;
+                try {
+                    customModelsCache.ts = 0;
+                    const csrfToken = window.__APP_CONFIG__?.csrfToken;
+                    const headers = {
+                        'Content-Type': 'application/json',
+                        'Connect-Protocol-Version': '1',
+                        'x-codeium-csrf-token': csrfToken || '',
+                    };
+                    try {
+                        await fetch('/exa.language_server_pb.LanguageServerService/GetAvailableModels', {
+                            method: 'POST',
+                            headers,
+                            body: JSON.stringify({ forceRefresh: true }),
+                        });
+                    } catch (_) {}
 
-            const res = await fetch('/exa.language_server_pb.LanguageServerService/GetUserStatus', {
-                method: 'POST',
-                headers,
-                body: '{}',
-            });
-            const data = await res.json();
-            if (data?.userStatus) {
-                const root = document.getElementById('root') || document.body.firstElementChild;
-                if (root) {
+                    const root = document.getElementById('root') || document.body.firstElementChild;
+                    if (!root) return resolve();
                     const fiberKey = Object.keys(root).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactContainer$') || k.startsWith('__reactInternalInstance$'));
-                    if (fiberKey) {
-                        const queue = [root[fiberKey]];
-                        while (queue.length > 0) {
-                            const node = queue.shift();
-                            if (!node) continue;
-                            const store = node.memoizedProps?.store || node.stateNode?.store;
-                            if (store && typeof store.dispatch === 'function') {
-                                store.dispatch({ type: 'userStatus/setUserStatus', payload: data.userStatus });
-                                break;
+                    if (!fiberKey) return resolve();
+                    const queue = [root[fiberKey]];
+                    let client = null;
+                    let store = null;
+                    let visited = 0;
+                    while (queue.length > 0 && visited < 500) {
+                        const node = queue.shift();
+                        visited++;
+                        if (!node) continue;
+                        if (!store) {
+                            if (node.memoizedProps?.store?.dispatch) store = node.memoizedProps.store;
+                            else if (node.stateNode?.store?.dispatch) store = node.stateNode.store;
+                        }
+                        if (!client) {
+                            if (node.memoizedProps?.value && typeof node.memoizedProps.value.getUserStatus === 'function') {
+                                client = node.memoizedProps.value;
                             }
-                            if (node.child) queue.push(node.child);
-                            if (node.sibling) queue.push(node.sibling);
+                        }
+                        if (store && client) break;
+                        if (node.child) queue.push(node.child);
+                        if (node.sibling) queue.push(node.sibling);
+                    }
+
+                    if (client && store) {
+                        const statusRes = await client.getUserStatus();
+                        if (statusRes?.userStatus?.cascadeModelConfigData?.clientModelConfigs) {
+                            const configs = statusRes.userStatus.cascadeModelConfigData.clientModelConfigs;
+                            if (configs.length > 0 && configs[0]?.modelOrAlias?.choice) {
+                                store.dispatch({ type: 'userStatus/setUserStatus', payload: statusRes.userStatus });
+                            }
                         }
                     }
+                } catch (e) {
+                    console.warn('[CustomModels] Dynamic model refresh error:', e);
                 }
-            }
-        } catch (_) {}
+                resolve();
+            }, 100);
+        });
     }
     electron_1.ipcRenderer.on('storage:models-changed', () => {
         customModelsCache.ts = 0;
@@ -583,11 +597,7 @@ window.addEventListener('DOMContentLoaded', () => {
     async function modelsChanged() {
         customModelsCache.ts = 0;
         await renderCustomModelsList();
-        findRefreshButton()?.click();
         window.dispatchEvent(new CustomEvent('agy-models-changed'));
-        try {
-            await storageAPI.syncModels();
-        } catch (_) {}
         await refreshChatModelSelectorDynamically();
         const mainStatus = document.getElementById('agy-main-status');
         if (mainStatus) {
@@ -766,7 +776,8 @@ window.addEventListener('DOMContentLoaded', () => {
                         const result = requireSuccess(await storageAPI.testModelConnection(model));
                         setStatus(rowStatus, result.message || 'Connection successful.');
                     }, rowStatus), button('Edit', () => openModelModal(model, 'edit'), rowStatus), button('Duplicate', () => openModelModal(model, 'duplicate'), rowStatus), button('Delete', async () => {
-                        requireSuccess(await storageAPI.deleteCustomModel(model.name));
+                        setStatus(rowStatus, 'Deleting…');
+                        requireSuccess(await storageAPI.deleteCustomModel(model.name || model.displayName || model.externalModelName));
                         await modelsChanged();
                     }, rowStatus));
                     row.append(info, actions);
@@ -1483,7 +1494,9 @@ window.addEventListener('DOMContentLoaded', () => {
             }
             return heading.parentElement?.parentElement || heading.parentElement;
         }
-        const refresh = findRefreshButton();
+        const refresh = Array.from(document.querySelectorAll('button')).find((node) =>
+            !node.closest('#agy-custom-models-section') &&
+            /refresh quota/i.test(`${node.getAttribute('aria-label') || ''} ${node.title || ''}`));
         const legacy = refresh?.parentElement?.parentElement?.parentElement;
         if (legacy && /MCP|Model Context Protocol/i.test(legacy.textContent || ''))
             return legacy;
