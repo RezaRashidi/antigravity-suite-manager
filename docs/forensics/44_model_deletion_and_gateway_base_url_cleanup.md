@@ -3,7 +3,7 @@
 ## 1. Incident Overview
 - **User Symptoms**:
   1. Deleted model (`oc/jev`) remained visible in the Chat model selector dropdown even after clicking "Delete" in the Settings panel.
-  2. The full endpoint URL (`https://ai.odirect.app/v1/chat/completions`) was written and displayed in Gateway configurations, group headers, and provider presets instead of the clean base URL form (`https://ai.odirect.app/v1/`).
+  2. The full endpoint URL (`https://api.example.com/v1/chat/completions`) was written and displayed in Gateway configurations, group headers, and provider presets instead of the clean base URL form (`https://api.example.com/v1/`).
   3. Requested a forensic audit of the patch pipeline to ensure all fixes are correctly compiled and applied to `/opt/Antigravity-x64/resources/app.asar`.
 
 ---
@@ -16,7 +16,7 @@
 2. **Persistent Full-Endpoint Gateway URLs**:
    - Upstream presets in `providers.js` and default fallbacks in `modelStore.js` explicitly appended `/chat/completions` or `/messages` to `defaultUrl` and `apiUrl`.
    - In `openConfigureGateway`, `openAddGatewayModal`, and `openModelModal`, existing URLs containing `/chat/completions` were displayed as-is without stripping the endpoint suffix.
-   - All 19 configured models in `~/.gemini/antigravity/custom_models.json` had persisted `"apiUrl": "https://ai.odirect.app/v1/chat/completions"` from legacy imports.
+   - All 19 configured models in `~/.gemini/antigravity/custom_models.json` had persisted `"apiUrl": "https://api.example.com/v1/chat/completions"` from legacy imports.
 
 ---
 
@@ -25,7 +25,7 @@
    - Implemented in `modelStore.js` and `customPreload.js`:
      - Strips hash fragments and query parameters (`url.split(/[?#]/)[0]`).
      - Strips trailing endpoints (`/chat/completions`, `/completions`, `/messages`, `/models`, `:streamGenerateContent`, `:generateContent`).
-     - Ensures clean, standardized base URL with trailing slash (e.g. `https://ai.odirect.app/v1/`).
+     - Ensures clean, standardized base URL with trailing slash (e.g. `https://api.example.com/v1/`).
    - Cleaned all default provider presets in `providers.js`.
    - Automatically normalizes `apiUrl` in `store.save`, `store.import`, `openConfigureGateway`, `openAddGatewayModal`, and `autoImportFreeModels`.
 2. **Multi-Identifier Model Deletion Matching**:
@@ -42,7 +42,7 @@
    - Directly injects into React Fiber (`__reactFiber$`, `__reactContainer$`, `__reactInternalInstance$`) and dispatches `userStatus/setUserStatus` to all windows.
    - Invalidates `customModelsCache.ts = 0` in all window contexts.
 4. **Data Store Migration**:
-   - Migrated all existing models in `~/.gemini/antigravity/custom_models.json` to clean `apiUrl: "https://ai.odirect.app/v1/"`.
+   - Migrated all existing models in `~/.gemini/antigravity/custom_models.json` to clean normalized Base URLs.
 5. **Patcher Verification**:
    - Repackaged and deployed to `/opt/Antigravity-x64/resources/app.asar` with `./manage-antigravity.sh patch-models --force`.
    - Confirmed byte-level parity between `dist/modelPatch/` in `app.asar` and `vendor/antigravity-model-proxy/dist/`.

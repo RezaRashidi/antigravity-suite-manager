@@ -234,7 +234,7 @@ async function runCustomModelRequest(res, primary, originalBody, isStream, allMo
                         const body = (0, requestOptions_1.trimContext)(originalBody, model.contextWindow, outputBudget);
                         const effectiveModel = outputBudget ? { ...model, maxOutputTokens: outputBudget } : model;
                         payload = (0, requestOptions_1.applyRequestOptions)(registry.translateRequest(model.provider, body, externalName, format, stateKey), effectiveModel, format, isStream);
-                        const rawTarget = model.apiUrl || (model.provider === 'odirect' ? 'https://ai.odirect.app/v1/' : '');
+                        const rawTarget = model.apiUrl || '';
                         let hasSpecificPath = false;
                         try {
                             hasSpecificPath = /\/(?:chat\/completions|completions|messages|models\/[^/]+:(?:streamGenerateContent|generateContent))$/.test(new URL(rawTarget).pathname);

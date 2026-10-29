@@ -2,12 +2,12 @@
 
 ## 1. Executive Summary
 - **User Requests**:
-  1. Default Gateway Base URL to `https://ai.odirect.app/v1/` and automatically append necessary endpoints (`/chat/completions`, `/models`, etc.) without requiring user path manipulation.
+  1. Default Gateway Base URL to `https://api.example.com/v1/` and automatically append necessary endpoints (`/chat/completions`, `/models`, etc.) without requiring user path manipulation.
   2. Full codebase audit across custom model proxy, translators, UI injection, and IPC to ensure zero bugs or unhandled edge cases.
   3. Redesign the model selector update mechanism so it is dynamic and non-destructive: do NOT kill/restart the Language Server, do NOT reload the window or disrupt in-flight chats, active subagents, or running tasks.
 - **Root Causes Discovered**:
   1. **Destructive Sync Mechanism**: In Case 41, `storage:sync-models` used `ls.restartLanguageServer()` and `win.loadURL(newUrl)` / `win.webContents.reload()`. This killed the Go language server process and reloaded webContents, crashing active LLM generation streams, terminating background subagents, and erasing editor drafts.
-  2. **URL Construction Trailing Slash Inconsistencies**: Gateway Base URL defaulted to `https://ai.odirect.app/v1` without a trailing slash. Appending `/chat/completions` or `/models` in various modules lacked multi-slash collapsing (`/+/g`), causing double slashes (`//models`) or path truncation if users entered trailing slashes.
+  2. **URL Construction Trailing Slash Inconsistencies**: Gateway Base URL defaulted to `https://api.example.com/v1` without a trailing slash. Appending `/chat/completions` or `/models` in various modules lacked multi-slash collapsing (`/+/g`), causing double slashes (`//models`) or path truncation if users entered trailing slashes.
   3. **Silent Model Deletion Failure**: `modelStore.delete(name)` filtered strictly by exact string matching without normalizing the `models/` prefix. Un-prefixed model names (`odirect/gpt-4o`) silently failed to delete while reporting success.
   4. **Batch Import Name Collisions**: In `autoImportFreeModels` and `Add Selected Models`, `uniqueName()` checked against a stale in-memory array (`modelList`), resulting in duplicate key errors on batch import.
   5. **Context Window vs Output Token Clamping**: When gateways reported `max_tokens >= context_length`, `validateCustomModel` rejected models with `'maxOutputTokens must be smaller than contextWindow'`.
@@ -29,7 +29,7 @@ Antigravity's chat UI stores models in Redux Toolkit state (`userStatus.cascadeM
 4. **Result**: Dropdown updates in <50ms. Zero process restarts, zero window reloads, zero aborted streams.
 
 ### 2.2 Gateway Base URL Normalization & Automatic Path Appending
-1. **Defaults**: Updated default gateway URL across `customPreload.js` and `modelManagement.js` to `https://ai.odirect.app/v1/`.
+1. **Defaults**: Updated default gateway URL across `customPreload.js` and `modelManagement.js` to `https://api.example.com/v1/`.
 2. **Multi-Slash Collapsing**:
    - `registry.js`: `url.pathname.replace(/\/+/g, '/').replace(/\/+$/, '')`
    - `google.js`: `url.pathname.replace(/\/+/g, '/').replace(/\/+$/, '').replace(/:(?:streamGenerateContent|generateContent)$/, '')`

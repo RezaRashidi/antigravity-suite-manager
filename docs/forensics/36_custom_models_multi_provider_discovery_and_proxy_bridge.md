@@ -11,7 +11,7 @@ The user requested:
 3. Dynamic model discovery fetching the complete list of available models from each provider (`/v1/models` or compatible endpoints).
 4. Dual selection capability: either displaying and enabling all models at once, or selectively picking specific models by identifier.
 5. Live test validation using a real OpenAI-compatible endpoint:
-   - Base URL: `https://ai.odirect.app/v1`
+   - Base URL: `https://api.example.com/v1`
    - Token: `sk-ca523b247038011e-8nmvcd-027e56a7`
    - Target Model: `reza`
 6. Strict adherence to codebase architecture rules: **every code file strictly `<= 100 lines`**.
@@ -72,8 +72,8 @@ The user requested:
 
 ## 4. Verification & Live Validation Results
 
-### 4.1 Live Provider Discovery & Test on `ai.odirect.app`
-- Provider registered: `ODirect` with Base URL `https://ai.odirect.app/v1`.
+### 4.1 Live Provider Discovery & Test on `api.example.com`
+- Provider registered: `ODirect` with Base URL `https://api.example.com/v1`.
 - Discovery successfully fetched 36 models including `reza`, `cx/gpt-6.1-sol`, `ag/claude-sonnet-5-5`.
 - Selective activation executed: `reza` and `ag/claude-sonnet-5-5` set to `[ON]`, remaining 34 models set to `[OFF]`.
 - End-to-end latency benchmark on model `reza`: successfully returned response `pong` with 2815 ms latency.

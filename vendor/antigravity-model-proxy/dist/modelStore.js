@@ -111,8 +111,8 @@ function normalizeModelConfig(payload) {
     if (entries.length > 5000)
         throw new Error('Too many models (maximum 5000)');
     const providerDefaults = new Map();
-    providerDefaults.set('odirect', {
-        apiUrl: 'https://ai.odirect.app/v1/',
+    providerDefaults.set('gateway', {
+        apiUrl: 'http://127.0.0.1:8000/v1/',
         apiFormat: 'openai',
     });
     if (typeof value === 'object' && value !== null) {
@@ -257,9 +257,6 @@ class ModelStore {
         if (sibling) {
             if (!model.apiUrl) model.apiUrl = sibling.apiUrl;
             if (!model.apiFormat) model.apiFormat = sibling.apiFormat;
-        } else if (model.provider === 'odirect') {
-            if (!model.apiUrl) model.apiUrl = 'https://ai.odirect.app/v1/';
-            if (!model.apiFormat) model.apiFormat = 'openai';
         }
         if (model.apiUrl) model.apiUrl = normalizeBaseUrl(model.apiUrl);
         const valid = (0, schemaValidator_1.validateCustomModel)(model);

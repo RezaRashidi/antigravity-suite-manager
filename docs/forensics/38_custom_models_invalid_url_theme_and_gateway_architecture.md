@@ -65,7 +65,7 @@ Users should configure an AI Gateway (Base URL, API Token, Protocol Format) once
 ### 2.3 Provider Extensibility
 1. Added `odirect` to `providers.js`:
    ```javascript
-   preset('odirect', 'ODirect (AI Gateway)', 'https://ai.odirect.app/v1/chat/completions', 'openai', true)
+   preset('odirect', 'ODirect (AI Gateway)', 'https://api.example.com/v1/chat/completions', 'openai', true)
    ```
 2. Relaxed provider validation in `schemaValidator.js` to accept alphanumeric identifiers matching `/^[a-z0-9_-]+$/i`, enabling arbitrary custom gateways without core patch modifications.
 

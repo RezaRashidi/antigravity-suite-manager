@@ -5,7 +5,7 @@ _prompt_add_provider() {
     local mpy; mpy="$(get_models_py)"
     echo -e "\n\033[1;34m--- Add New Custom Model Provider ---\033[0m"
     read -rp "Provider Name (e.g., ODDirect, Ollama, OpenRouter): " pname
-    read -rp "Base URL (e.g., https://ai.odirect.app/v1): " pbaseUrl
+    read -rp "Base URL (e.g., https://api.example.com/v1): " pbaseUrl
     read -rp "API Token / Key (leave blank for local Ollama): " ptoken
     python3 "$mpy" add-provider --name "$pname" --url "$pbaseUrl" --token "$ptoken"
 }

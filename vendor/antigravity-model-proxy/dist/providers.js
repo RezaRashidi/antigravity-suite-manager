@@ -5,7 +5,7 @@ exports.getProvider = getProvider;
 exports.resolveApiFormat = resolveApiFormat;
 const preset = (id, label, defaultUrl, apiFormat = 'openai', keyRequired = true) => ({ id, label, defaultUrl, apiFormat, keyRequired });
 exports.PROVIDERS = [
-    preset('odirect', 'ODirect (AI Gateway)', 'https://ai.odirect.app/v1/', 'openai', true),
+    preset('gateway', 'AI Gateway (OpenAI-compatible)', 'http://127.0.0.1:8000/v1/', 'openai', true),
     preset('9router', '9Router (Local AI Gateway)', 'http://127.0.0.1:20128/v1/', 'openai', true),
     preset('openai', 'OpenAI', 'https://api.openai.com/v1/'),
     preset('anthropic', 'Anthropic', 'https://api.anthropic.com/v1/', 'anthropic'),

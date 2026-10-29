@@ -548,7 +548,7 @@ function createModelManager(directory, codec, openExternal, dependencies = { log
                 name: `models/gateway-${model.id}`,
                 externalModelName: model.id,
                 displayName: `${model.displayName} (Gateway)`,
-                provider: isGoogleFormat ? 'google' : 'odirect',
+                provider: isGoogleFormat ? 'google' : 'gateway',
                 apiFormat: isGoogleFormat ? 'google' : 'openai',
                 gateway: true,
                 contextWindow: model.contextWindow ?? 128000,
