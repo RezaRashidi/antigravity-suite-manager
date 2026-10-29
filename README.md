@@ -6,6 +6,7 @@
 [![Per-Chat Multi-Account](https://img.shields.io/badge/Multi--Account-Per--Chat%20Selector-success.svg)](#-flagship-feature-per-chat-multi-account-selector-app--ide)
 [![Live Quota Telemetry](https://img.shields.io/badge/Telemetry-Gemini%20%2B%20Claude%20Limits-purple.svg)](#-live-quota-telemetry--usage-flyout)
 [![3-Way Instances](https://img.shields.io/badge/3--Way%20Instances-Shared%20Chats-success.svg)](#shared-chat-history--profile-isolation)
+[![Custom Models](https://img.shields.io/badge/Custom%20Models-OpenAI%20%7C%20Anthropic%20%7C%20DeepSeek%20%7C%20Ollama-blue.svg)](#-custom-models--multi-provider-gateway-guide)
 [![Language](https://img.shields.io/badge/Language-Bash%20%7C%20Node.js%20%7C%20Python%20%7C%20C-brightgreen.svg)](#architecture--profile-isolation)
 
 A comprehensive Linux automation suite and advanced runtime engine for **Google Antigravity** (Desktop App) and **Antigravity IDE** (VS Code edition).
@@ -175,6 +176,13 @@ Automate account management directly from your keyboard without touching the mou
 - **Desktop App Enablement**: Activated via runtime experiment overrides (`enable-conversation-forking`, `enable-fork-in-new-worktree`, `enable-fork-at-historical-step`), backed directly by the Language Server's native `forkConversation` RPC engine.
 - **Standalone Modular Patch**: Decoupled into its own independent CLI commands (`manage-antigravity.sh fork` / `unpatch-fork`) and Control Center option (`[J]`), with unwanted developer status bar footers cleanly eliminated.
 
+### 10. 🤖 Custom Models & Multi-Provider Gateway (In-App Settings & CLI)
+- **Universal Multi-Provider Ecosystem**: Connect OpenAI, Anthropic Claude, DeepSeek, Ollama, OpenRouter, LiteLLM, vLLM, LocalAI, or any custom API gateway directly into Antigravity.
+- **Native In-App Settings UI**: Seamlessly injected "Custom Models" tab in the Desktop App settings to manage providers, gateways, base URLs, credentials, and live model testing.
+- **Zero-Downtime Dynamic Redux Sync**: Adding, editing, or deleting models updates the prompt bar model selector dropdown in under 50ms without restarting the Language Server or reloading windows.
+- **Ultra-Low CPU Architecture**: Container-scoped DOM observers (0% idle overhead), promise resolver queues, and cached Language Server credentials ensure buttery-smooth typing and streaming.
+- **Safe Multi-Patch Coexistence**: Operates in total harmony alongside RTL (`antigravity-rtl`), manual F5 reload, and prompt-bar Multi-Account Selector patches.
+
 ---
 
 ## 📖 Multi-Account Selector Guide
@@ -279,6 +287,84 @@ Forking is decoupled into its own independent, toggleable patch module:
 - **Desktop App Activation**: Configures early main-world flags via Electron `webFrame` in `preload.js` and seeds `jetski.developer.customFlagOverrides` (`enable-conversation-forking`, `enable-fork-in-new-worktree`, `enable-fork-at-historical-step`).
 - **Clean UI (No Developer Status Bar)**: Prevents and suppresses the unwanted bottom developer status bar ("Reset State") using multi-tier styling and DOM lifecycle guards (`preload.js` isolated style injection, `styles.css`, and `mount.js`).
 - **Language Server Backend**: The underlying language server binary handles `forkConversation` natively, cloning the trajectory metadata, step sequence, and workspace context cleanly.
+
+---
+
+## 🤖 Custom Models & Multi-Provider Gateway Guide
+
+The **Custom Models & Multi-Provider Gateway subsystem** extends Antigravity beyond Google's default model ecosystem, allowing you to run external models (GPT-4o, Claude 3.5 Sonnet, DeepSeek V3/R1, Llama 3, Qwen, etc.) alongside Gemini directly within the native chat prompt bar.
+
+```
++-----------------------------------------------------------------------------------+
+|               Antigravity Desktop App (In-App Settings & Prompt Bar)              |
+|                                                                                   |
+|  +-----------------------------------------------------------------------------+  |
+|  | Settings > Custom Models                                                    |  |
+|  | Gateway Base URL: [ https://api.example.com/v1/          ] [ Test Gateway ] |  |
+|  | API Key:          [ ••••••••••••••••••••••••••••••••••• ] [ Auto-Import ]  |  |
+|  | Models Configured: [ 19 models active ]                   [ + Add Model ]  |  |
+|  +-----------------------------------------------------------------------------+  |
+|                                                                                   |
+|  +-----------------------------------------------------------------------------+  |
+|  | Chat Input Prompt Bar                                                       |  |
+|  | [Model: DeepSeek R1 (Custom) ▼]  [@ Account: user1@gmail.com ▼]  [ Send ➤ ] |  |
+|  +-----------------------------------------------------------------------------+  |
++-----------------------------------------------------------------------------------+
+```
+
+### 1. In-App Settings UI Injection
+Inject the Custom Models UI directly into the Antigravity Desktop App's native settings modal:
+
+```bash
+# Apply / Inject Custom Models UI into Antigravity Desktop App
+~/manage-antigravity.sh patch-models
+
+# Force re-apply (recommended after Antigravity updates)
+FORCE_INSTALL=true ~/manage-antigravity.sh patch-models --force
+
+# Revert / Unpatch Custom Models UI (restores clean original files)
+~/manage-antigravity.sh unpatch-models
+```
+
+You can also manage the patch interactively from the Control Center:
+```bash
+~/manage-antigravity.sh center    # Select [CM] Custom Models UI Patch
+```
+
+### 2. Multi-Provider Compatibility
+The built-in proxy bridge translates Antigravity's internal Protobuf and ConnectRPC stream protocol into industry-standard formats:
+- **OpenAI Compatible**: OpenAI (`gpt-4o`, `o1`), DeepSeek (`deepseek-chat`, `deepseek-reasoner`), Groq, Together AI, Mistral.
+- **Anthropic Claude**: Anthropic Messages API (`claude-3-5-sonnet-20241022`, `claude-3-opus`).
+- **Local & Self-Hosted**: Ollama (`ollama/llama3`), vLLM, LocalAI, LM Studio, Open WebUI.
+- **Aggregators & Gateways**: OpenRouter, LiteLLM, Cloudflare AI Gateway, Portkey, or any custom API gateway with automatic Base URL normalization (`https://api.example.com/v1/`).
+
+### 3. CLI Custom Models Manager
+Manage providers, API keys, models, and run live diagnostic tests directly from the command line:
+
+```bash
+# List all configured models, providers, and gateway status
+~/manage-antigravity.sh custom-models list
+
+# Add or configure a provider or gateway
+~/manage-antigravity.sh custom-models add-provider
+
+# Fetch and auto-discover available models from a provider
+~/manage-antigravity.sh custom-models fetch
+
+# Select active models to expose in Antigravity's model dropdown
+~/manage-antigravity.sh custom-models select
+
+# Test connectivity and token generation for a specific model
+~/manage-antigravity.sh custom-models test <model-name>
+
+# Inspect proxy bridge status and active port
+~/manage-antigravity.sh custom-models proxy-status
+```
+
+### 4. Zero-Downtime Dynamic Synchronization
+- **Instant In-Memory Updates**: Adding, updating, or deleting a model in the UI instantly dispatches fresh user status directly into React Redux and notifies the Go Language Server. Changes reflect in under 50ms.
+- **No Disruptions**: Never restarts the Language Server process, never reloads the browser window, and never drops in-flight chat streams, background subagents, or terminal sessions.
+- **Safe Multi-Patch Architecture**: Fully compatible with the Arabic/Persian RTL patch (`antigravity-rtl`), F5 reload patch, and Per-Chat Multi-Account Selector.
 
 ---
 
@@ -447,6 +533,9 @@ python3 scripts/compact_conversation.py --cid <conversation-id> --base-step <sta
 | `unpatch-f5` | | Revert F5 reload sync patch |
 | `rtl` | | Apply / re-apply Persian & Arabic RTL patch |
 | `unpatch-rtl` | | Revert Persian & Arabic RTL patch |
+| `patch-models` | `models-patch` | Apply Custom Models UI patch to Antigravity Desktop App |
+| `unpatch-models` | | Revert Custom Models UI patch |
+| `custom-models` | `models` | Manage custom models, gateways, API keys, discovery & proxy bridge |
 | `fork` | `patch-fork` | Apply conversation forking patch to App & IDE |
 | `unpatch-fork` | | Revert conversation forking patch |
 | `create-instance` | `add` | Create arbitrary App or IDE instances with shared/isolated history |
@@ -513,7 +602,7 @@ graph TD
 For deep engineering specifications, wire protocols, database schemas, and forensics investigations:
 
 * **[Forensics & Debugging Guide](docs/forensics/README.md)** (`docs/forensics/`):
-  26 detailed incident investigations covering Protobuf tag parsing, ConnectRPC loopbacks, 2027y timestamp fixes, OAuth client collision resolutions, cross-conversation session splicing, and Language Server checkpoint hooks.
+  45 detailed incident investigations covering Protobuf tag parsing, ConnectRPC loopbacks, 2027y timestamp fixes, OAuth client collision resolutions, cross-conversation session splicing, Language Server checkpoint hooks, and custom models multi-provider proxy integration.
 * **[Storage Architecture & Specifications](docs/architecture/README.md)** (`docs/architecture/`):
   13 architectural specifications covering process mapping, directory taxonomies, SQLite wire protocols, Protobuf reflection, and multi-account selector internals ([Chapter 12](docs/architecture/12_multi_account_selector_architecture.md)).
 
