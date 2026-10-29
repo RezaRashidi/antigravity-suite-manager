@@ -625,12 +625,13 @@ window.addEventListener('DOMContentLoaded', () => {
                             if (!root) return;
                             const keys = Object.keys(root);
                             const fiberKey = keys.find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactContainer$') || k.startsWith('__reactInternalInstance$'))
-                                || (root.firstElementChild && Object.keys(root.firstElementChild).find(k => k.startsWith('__reactFiber$')));
+                                || (root.firstElementChild && Object.keys(root.firstElementChild).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactContainer$') || k.startsWith('__reactInternalInstance$')));
                             if (!fiberKey) return;
                             const startNode = root[fiberKey] || (root.firstElementChild && root.firstElementChild[fiberKey]);
                             if (!startNode) return;
+                            const rootNode = startNode.current || startNode;
 
-                            const queue = [startNode];
+                            const queue = [rootNode];
                             let client = null;
                             let store = null;
                             let visited = 0;
@@ -656,7 +657,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
                             if (store) {
                                 let statusObj = null;
-                                if (client) {
+                                if (client && typeof client.getUserStatus === 'function') {
                                     try {
                                         const statusRes = await client.getUserStatus();
                                         if (statusRes?.userStatus?.cascadeModelConfigData?.clientModelConfigs) {
@@ -664,8 +665,8 @@ window.addEventListener('DOMContentLoaded', () => {
                                         }
                                     } catch (_) {}
                                 }
-                                if (!statusObj) {
-                                    statusObj = store.getState().userStatus;
+                                if (!statusObj && typeof store.getState === 'function') {
+                                    statusObj = store.getState()?.userStatus;
                                 }
 
                                 if (statusObj?.cascadeModelConfigData?.clientModelConfigs) {
@@ -674,10 +675,12 @@ window.addEventListener('DOMContentLoaded', () => {
                                         if (!cfg) return false;
                                         const lbl = (cfg.label || '').toLowerCase().trim();
                                         const stripped = lbl.replace(/^models\\//, '');
-                                        const isActive = activeSet.has(lbl) || activeSet.has(stripped);
+                                        const modelName = (cfg.modelOrAlias?.model?.name || cfg.modelOrAlias?.model || '').toLowerCase().trim();
+                                        const modelStripped = modelName.replace(/^models\\//, '');
+                                        const isActive = activeSet.has(lbl) || activeSet.has(stripped) || (modelName && (activeSet.has(modelName) || activeSet.has(modelStripped)));
                                         if (!isActive) {
-                                            if (deletedSet.has(lbl) || deletedSet.has(stripped)) return false;
-                                            if (disabledSet.has(lbl) || disabledSet.has(stripped)) return false;
+                                            if (deletedSet.has(lbl) || deletedSet.has(stripped) || (modelName && (deletedSet.has(modelName) || deletedSet.has(modelStripped)))) return false;
+                                            if (disabledSet.has(lbl) || disabledSet.has(stripped) || (modelName && (disabledSet.has(modelName) || disabledSet.has(modelStripped)))) return false;
                                         }
                                         return true;
                                     });
@@ -726,13 +729,26 @@ window.addEventListener('DOMContentLoaded', () => {
                         }
                     })()`;
 
+                    let executed = false;
                     if (electron_1 && electron_1.webFrame && typeof electron_1.webFrame.executeJavaScript === 'function') {
-                        await electron_1.webFrame.executeJavaScript(mainWorldCode);
-                    } else {
-                        const scriptEl = document.createElement('script');
-                        scriptEl.textContent = mainWorldCode;
-                        (document.head || document.documentElement).appendChild(scriptEl);
-                        scriptEl.remove();
+                        try {
+                            await electron_1.webFrame.executeJavaScript(mainWorldCode);
+                            executed = true;
+                        } catch (err) {
+                            console.warn('[CustomModels] webFrame.executeJavaScript error, trying script fallback:', err);
+                        }
+                    }
+                    if (!executed && typeof document !== 'undefined') {
+                        try {
+                            const scriptEl = document.createElement('script');
+                            const nonce = document.querySelector('script[nonce]')?.nonce;
+                            if (nonce) scriptEl.setAttribute('nonce', nonce);
+                            scriptEl.textContent = mainWorldCode;
+                            (document.head || document.documentElement).appendChild(scriptEl);
+                            scriptEl.remove();
+                        } catch (err) {
+                            console.warn('[CustomModels] Dynamic script fallback error:', err);
+                        }
                     }
                 } catch (e) {
                     console.warn('[CustomModels] Dynamic model refresh error:', e);
@@ -1463,6 +1479,12 @@ window.addEventListener('DOMContentLoaded', () => {
                     ? 'Select models below, then choose Add selected.'
                     : 'This provider returned no models. You can enter a model ID manually.');
             }, status), button('Save model', async () => {
+                if (existing && (existing.name || existing.displayName || existing.externalModelName)) {
+                    const nextCfg = modelConfig(modelId.value, displayName.value.trim());
+                    if (existing.name && existing.name !== nextCfg.name) {
+                        recordDeletedModel(existing);
+                    }
+                }
                 requireSuccess(await storageAPI.saveCustomModel(modelConfig(modelId.value, displayName.value.trim())));
                 await modelsChanged();
                 close();

@@ -58,3 +58,7 @@ def test_preload_dynamic_filtering_logic():
     assert "recordDeletedModel" in preload
     assert "clientModelSorts" in preload
     assert "cfg?.modelOrAlias?.choice" in preload
+    assert "webFrame.executeJavaScript" in preload
+    assert "client.getUserStatus" in preload
+    assert "userStatus/setUserStatus" in preload
+    assert "startNode.current || startNode" in preload
