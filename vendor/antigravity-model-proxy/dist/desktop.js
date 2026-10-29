@@ -10,7 +10,7 @@ function install(getLanguageServerPort) {
     if (installed)
         return;
     installed = true;
-    (0, customIpc_1.registerCustomModelHandlers)();
+    (0, customIpc_1.registerCustomModelHandlers)(getLanguageServerPort);
     // Registered before the vendor's ready callback, without replacing its startup,
     // updater, WSL integration, certificate policy, or window configuration.
     void electron_1.app.whenReady().then(() => {

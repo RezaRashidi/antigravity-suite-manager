@@ -75,7 +75,121 @@ async function openExternalOrAuthWindow(url) {
         await electron_1.shell.openExternal(url);
     }
 }
-function registerCustomModelHandlers() {
+async function syncLanguageServerAndWindows(getLanguageServerPort) {
+    let ls;
+    try {
+        ls = require('../languageServer');
+    } catch (_) {
+        try { ls = require('./languageServer'); } catch (_) {}
+    }
+    let port = (typeof getLanguageServerPort === 'function' ? getLanguageServerPort() : null) || (typeof ls?.getLsPort === 'function' ? ls.getLsPort() : null);
+    let csrf = null;
+    try {
+        const fs = require('fs');
+        for (const pid of fs.readdirSync('/proc')) {
+            if (!/^\d+$/.test(pid)) continue;
+            try {
+                const cmd = fs.readFileSync('/proc/' + pid + '/cmdline', 'utf8');
+                if (cmd.includes('language_server') && cmd.includes('--csrf_token')) {
+                    const mCsrf = cmd.match(/--csrf_token[\0=\s]+([0-9a-fA-F-]+)/);
+                    if (mCsrf) {
+                        csrf = mCsrf[1];
+                        if (!port) {
+                            const mPort = cmd.match(/--https_server_port[\0=\s]+(\d+)/);
+                            if (mPort && Number(mPort[1]) > 0) port = Number(mPort[1]);
+                        }
+                        break;
+                    }
+                }
+            } catch (_) {}
+        }
+    } catch (_) {}
+
+    let userStatus = null;
+    if (port && csrf) {
+        const https = require('https');
+        const rpcCall = (method, payload) => new Promise((resolve) => {
+            const data = JSON.stringify(payload);
+            const req = https.request({
+                hostname: '127.0.0.1',
+                port,
+                path: `/exa.language_server_pb.LanguageServerService/${method}`,
+                method: 'POST',
+                rejectUnauthorized: false,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-codeium-csrf-token': csrf,
+                    'Content-Length': Buffer.byteLength(data),
+                },
+                timeout: 4000,
+            }, (res) => {
+                let buf = '';
+                res.on('data', (c) => { buf += c; });
+                res.on('end', () => {
+                    try { resolve(JSON.parse(buf)); } catch (_) { resolve(null); }
+                });
+            });
+            req.on('error', () => resolve(null));
+            req.on('timeout', () => { req.destroy(); resolve(null); });
+            req.write(data);
+            req.end();
+        });
+
+        try {
+            await rpcCall('GetAvailableModels', { forceRefresh: true });
+            const statusRes = await rpcCall('GetUserStatus', {});
+            if (statusRes?.userStatus) {
+                userStatus = statusRes.userStatus;
+            }
+        } catch (_) {}
+    }
+
+    const serializedPayload = JSON.stringify(userStatus);
+    const injectionScript = `
+    (() => {
+        try {
+            if (typeof customModelsCache !== 'undefined') {
+                customModelsCache.ts = 0;
+            }
+            const payload = ${serializedPayload};
+            if (payload) {
+                const root = document.getElementById('root') || document.body.firstElementChild;
+                if (root) {
+                    const fiberKey = Object.keys(root).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactContainer$') || k.startsWith('__reactInternalInstance$'));
+                    if (fiberKey) {
+                        const queue = [root[fiberKey]];
+                        while (queue.length > 0) {
+                            const node = queue.shift();
+                            if (!node) continue;
+                            const store = node.memoizedProps?.store || node.stateNode?.store;
+                            if (store && typeof store.dispatch === 'function') {
+                                store.dispatch({ type: 'userStatus/setUserStatus', payload: payload });
+                                break;
+                            }
+                            if (node.child) queue.push(node.child);
+                            if (node.sibling) queue.push(node.sibling);
+                        }
+                    }
+                }
+            }
+        } catch (_) {}
+        window.dispatchEvent(new CustomEvent('agy-models-changed'));
+    })();
+    `;
+
+    const windows = electron_1.BrowserWindow.getAllWindows();
+    for (const win of windows) {
+        if (!win.isDestroyed() && win.webContents) {
+            try {
+                win.webContents.send('storage:models-changed');
+                await win.webContents.executeJavaScript(injectionScript);
+            } catch (_) {}
+        }
+    }
+    return { success: true, dynamic: true, modelsUpdated: !!userStatus };
+}
+
+function registerCustomModelHandlers(getLanguageServerPort) {
     const manager = (0, modelManagement_1.createModelManager)(path.join(electron_1.app.getPath('home'), '.gemini', 'antigravity'), cryptoStore, openExternalOrAuthWindow);
     const handle = (channel, action) => {
         electron_1.ipcMain.handle(channel, async (_event, ...args) => {
@@ -93,20 +207,12 @@ function registerCustomModelHandlers() {
     handle('storage:get-custom-models', () => manager.store.list());
     handle('storage:save-custom-model', async (model) => {
         const res = await manager.saveModel(model);
-        for (const win of electron_1.BrowserWindow.getAllWindows()) {
-            if (!win.isDestroyed() && win.webContents) {
-                try { win.webContents.send('storage:models-changed'); } catch (_) {}
-            }
-        }
+        await syncLanguageServerAndWindows(getLanguageServerPort);
         return res;
     });
     handle('storage:delete-custom-model', async (name) => {
         manager.store.delete(name);
-        for (const win of electron_1.BrowserWindow.getAllWindows()) {
-            if (!win.isDestroyed() && win.webContents) {
-                try { win.webContents.send('storage:models-changed'); } catch (_) {}
-            }
-        }
+        await syncLanguageServerAndWindows(getLanguageServerPort);
         return { success: true };
     });
     handle('storage:test-model-connection', (model) => manager.testModel(model));
@@ -125,114 +231,6 @@ function registerCustomModelHandlers() {
     handle('storage:google-test-account', manager.googleTestAccount);
     handle('storage:google-pool-status', manager.googlePoolStatus);
     handle('storage:get-proxy-status', async () => ({ proxy: await (0, proxyAgent_1.detectLocalProxy)() }));
-    handle('storage:sync-models', async () => {
-        let ls;
-        try {
-            ls = require('../languageServer');
-        } catch (_) {
-            try { ls = require('./languageServer'); } catch (_) {}
-        }
-        let port = typeof ls?.getLsPort === 'function' ? ls.getLsPort() : null;
-        let csrf = null;
-        try {
-            const fs = require('fs');
-            for (const pid of fs.readdirSync('/proc')) {
-                if (!/^\d+$/.test(pid)) continue;
-                try {
-                    const cmd = fs.readFileSync('/proc/' + pid + '/cmdline', 'utf8');
-                    if (cmd.includes('language_server') && cmd.includes('--csrf_token')) {
-                        const mCsrf = cmd.match(/--csrf_token[\0=\s]+([0-9a-fA-F-]+)/);
-                        if (mCsrf) {
-                            csrf = mCsrf[1];
-                            if (!port) {
-                                const mPort = cmd.match(/--extension_server_port[\0=\s]+(\d+)/);
-                                if (mPort) port = Number(mPort[1]);
-                            }
-                            break;
-                        }
-                    }
-                } catch (_) {}
-            }
-        } catch (_) {}
-
-        let userStatus = null;
-        if (port && csrf) {
-            const https = require('https');
-            const rpcCall = (method, payload) => new Promise((resolve) => {
-                const data = JSON.stringify(payload);
-                const req = https.request({
-                    hostname: '127.0.0.1',
-                    port,
-                    path: `/exa.language_server_pb.LanguageServerService/${method}`,
-                    method: 'POST',
-                    rejectUnauthorized: false,
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-codeium-csrf-token': csrf,
-                        'Content-Length': Buffer.byteLength(data),
-                    },
-                    timeout: 4000,
-                }, (res) => {
-                    let buf = '';
-                    res.on('data', (c) => { buf += c; });
-                    res.on('end', () => {
-                        try { resolve(JSON.parse(buf)); } catch (_) { resolve(null); }
-                    });
-                });
-                req.on('error', () => resolve(null));
-                req.on('timeout', () => { req.destroy(); resolve(null); });
-                req.write(data);
-                req.end();
-            });
-
-            try {
-                await rpcCall('GetAvailableModels', { forceRefresh: true });
-                const statusRes = await rpcCall('GetUserStatus', {});
-                if (statusRes?.userStatus) {
-                    userStatus = statusRes.userStatus;
-                }
-            } catch (_) {}
-        }
-
-        const serializedPayload = JSON.stringify(userStatus);
-        const injectionScript = `
-        (() => {
-            try {
-                const payload = ${serializedPayload};
-                if (payload) {
-                    const root = document.getElementById('root') || document.body.firstElementChild;
-                    if (root) {
-                        const fiberKey = Object.keys(root).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'));
-                        if (fiberKey) {
-                            const queue = [root[fiberKey]];
-                            while (queue.length > 0) {
-                                const node = queue.shift();
-                                if (!node) continue;
-                                const store = node.memoizedProps?.store || node.stateNode?.store;
-                                if (store && typeof store.dispatch === 'function') {
-                                    store.dispatch({ type: 'userStatus/setUserStatus', payload: payload });
-                                    break;
-                                }
-                                if (node.child) queue.push(node.child);
-                                if (node.sibling) queue.push(node.sibling);
-                            }
-                        }
-                    }
-                }
-            } catch (_) {}
-            window.dispatchEvent(new CustomEvent('agy-models-changed'));
-        })();
-        `;
-
-        const windows = electron_1.BrowserWindow.getAllWindows();
-        for (const win of windows) {
-            if (!win.isDestroyed() && win.webContents) {
-                try {
-                    await win.webContents.executeJavaScript(injectionScript);
-                } catch (_) {}
-            }
-        }
-        return { success: true, dynamic: true, modelsUpdated: !!userStatus };
-    });
+    handle('storage:sync-models', () => syncLanguageServerAndWindows(getLanguageServerPort));
 }
 //# sourceMappingURL=customIpc.js.map

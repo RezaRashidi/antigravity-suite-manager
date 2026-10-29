@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ModelStore = void 0;
+exports.normalizeBaseUrl = normalizeBaseUrl;
 exports.normalizeModelConfig = normalizeModelConfig;
 exports.readModelConfig = readModelConfig;
 exports.writeJsonAtomic = writeJsonAtomic;
@@ -45,6 +46,19 @@ const fs = __importStar(require("node:fs"));
 const path = __importStar(require("node:path"));
 const node_crypto_1 = require("node:crypto");
 const schemaValidator_1 = require("./schemaValidator");
+function normalizeBaseUrl(url) {
+    if (!url || typeof url !== 'string') return '';
+    let cleaned = url.trim();
+    if (!cleaned) return '';
+    cleaned = cleaned.split(/[?#]/)[0].trim();
+    cleaned = cleaned.replace(/\/+(?:chat\/completions|completions|messages|models(?:\/.*)?|v1beta\/(?:models|chat\/completions))(?:\/.*)?$/, '');
+    cleaned = cleaned.replace(/:?(?:streamGenerateContent|generateContent)$/, '');
+    cleaned = cleaned.replace(/\/+$/, '');
+    if (cleaned) {
+        cleaned += '/';
+    }
+    return cleaned;
+}
 function object(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value))
         throw new Error('Expected an object');
@@ -98,7 +112,7 @@ function normalizeModelConfig(payload) {
         throw new Error('Too many models (maximum 5000)');
     const providerDefaults = new Map();
     providerDefaults.set('odirect', {
-        apiUrl: 'https://ai.odirect.app/v1/chat/completions',
+        apiUrl: 'https://ai.odirect.app/v1/',
         apiFormat: 'openai',
     });
     if (typeof value === 'object' && value !== null) {
@@ -107,7 +121,7 @@ function normalizeModelConfig(payload) {
             for (const [id, gw] of Object.entries(gwSource)) {
                 if (gw && typeof gw === 'object') {
                     providerDefaults.set(id, {
-                        apiUrl: gw.apiUrl || (gw.url ? (gw.url.endsWith('/chat/completions') ? gw.url : `${gw.url.replace(/\/+$/, '')}/chat/completions`) : ''),
+                        apiUrl: normalizeBaseUrl(gw.apiUrl || gw.url || ''),
                         apiKey: gw.apiKey || gw.token || '',
                         apiFormat: gw.apiFormat || gw.format || 'openai',
                     });
@@ -120,7 +134,7 @@ function normalizeModelConfig(payload) {
             const p = item.provider;
             if (p && item.apiUrl && (!providerDefaults.has(p) || !providerDefaults.get(p).apiKey)) {
                 providerDefaults.set(p, {
-                    apiUrl: item.apiUrl,
+                    apiUrl: normalizeBaseUrl(item.apiUrl),
                     apiKey: item.apiKey,
                     apiFormat: item.apiFormat || 'openai',
                 });
@@ -144,6 +158,8 @@ function normalizeModelConfig(payload) {
             if (!model.apiFormat && def.apiFormat)
                 model.apiFormat = def.apiFormat;
         }
+        if (model.apiUrl)
+            model.apiUrl = normalizeBaseUrl(model.apiUrl);
         if (model.extraHeaders && !model.customHeaders)
             model.customHeaders = model.extraHeaders;
         if (model.useRawBaseUrl !== undefined && model.rawUrl === undefined)
@@ -242,9 +258,10 @@ class ModelStore {
             if (!model.apiUrl) model.apiUrl = sibling.apiUrl;
             if (!model.apiFormat) model.apiFormat = sibling.apiFormat;
         } else if (model.provider === 'odirect') {
-            if (!model.apiUrl) model.apiUrl = 'https://ai.odirect.app/v1/chat/completions';
+            if (!model.apiUrl) model.apiUrl = 'https://ai.odirect.app/v1/';
             if (!model.apiFormat) model.apiFormat = 'openai';
         }
+        if (model.apiUrl) model.apiUrl = normalizeBaseUrl(model.apiUrl);
         const valid = (0, schemaValidator_1.validateCustomModel)(model);
         if (!valid.valid)
             throw new Error(valid.error);
@@ -350,10 +367,16 @@ class ModelStore {
     }
     delete(name) {
         const target = (typeof name === 'string' && !name.startsWith('models/')) ? `models/${name}` : name;
-        const models = this.read().filter((model) => model.name !== target && model.name !== name);
+        const stripped = (typeof name === 'string' && name.startsWith('models/')) ? name.slice(7) : name;
+        const models = this.read().filter((model) => {
+            if (model.name === target || model.name === name || model.name === stripped) return false;
+            if (model.externalModelName && (model.externalModelName === name || model.externalModelName === stripped || `models/${model.externalModelName}` === name)) return false;
+            if (model.displayName && (model.displayName === name || model.displayName === stripped)) return false;
+            return true;
+        });
         for (const model of models) {
             if (Array.isArray(model.fallbackModels))
-                model.fallbackModels = model.fallbackModels.filter((item) => item !== target && item !== name);
+                model.fallbackModels = model.fallbackModels.filter((item) => item !== target && item !== name && item !== stripped);
         }
         writeJsonAtomic(this.filename, { models });
     }

@@ -47,5 +47,6 @@ This document records the end-to-end diagnostic methodology, reverse-engineering
 - [39. Issue 37: Model Selector Sync, Instant Deletion, and Auto-Import Free Models](39_model_selector_sync_instant_delete_and_auto_import_free_models.md)
 - [40. Issue 38: Gateway Credentials Inheritance, Manual Model Addition, and Free & Stealth Auto-Import](40_gateway_credentials_inheritance_and_stealth_free_import.md)
 - [41. Issue 39: Chat Model Selector Refresh Failure, Language Server Sync, and Runtime Path Resolution](41_chat_model_selector_sync_and_runtime_resolution.md)
-- [42. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
+- [42. Issue 40: Model Deletion Invalidation, Gateway Base URL Normalization & Patch Verification](44_model_deletion_and_gateway_base_url_cleanup.md)
+- [43. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
 

@@ -21,6 +21,19 @@ window.addEventListener('DOMContentLoaded', () => {
             throw new Error(result?.error || 'The operation could not be completed.');
         return result;
     };
+    function normalizeBaseUrl(url) {
+        if (!url || typeof url !== 'string') return '';
+        let cleaned = url.trim();
+        if (!cleaned) return '';
+        cleaned = cleaned.split(/[?#]/)[0].trim();
+        cleaned = cleaned.replace(/\/+(?:chat\/completions|completions|messages|models(?:\/.*)?|v1beta\/(?:models|chat\/completions))(?:\/.*)?$/, '');
+        cleaned = cleaned.replace(/:?(?:streamGenerateContent|generateContent)$/, '');
+        cleaned = cleaned.replace(/\/+$/, '');
+        if (cleaned) {
+            cleaned += '/';
+        }
+        return cleaned;
+    }
     function element(tag, className = '', text = '') {
         const node = document.createElement(tag);
         node.className = className;
@@ -520,14 +533,24 @@ window.addEventListener('DOMContentLoaded', () => {
     }
     async function refreshChatModelSelectorDynamically() {
         try {
+            customModelsCache.ts = 0;
             const csrfToken = window.__APP_CONFIG__?.csrfToken;
+            const headers = {
+                'Content-Type': 'application/json',
+                'Connect-Protocol-Version': '1',
+                'x-codeium-csrf-token': csrfToken || '',
+            };
+            try {
+                await fetch('/exa.language_server_pb.LanguageServerService/GetAvailableModels', {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ forceRefresh: true }),
+                });
+            } catch (_) {}
+
             const res = await fetch('/exa.language_server_pb.LanguageServerService/GetUserStatus', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Connect-Protocol-Version': '1',
-                    'x-codeium-csrf-token': csrfToken || '',
-                },
+                headers,
                 body: '{}',
             });
             const data = await res.json();
@@ -553,13 +576,19 @@ window.addEventListener('DOMContentLoaded', () => {
             }
         } catch (_) {}
     }
-    electron_1.ipcRenderer.on('storage:models-changed', refreshChatModelSelectorDynamically);
+    electron_1.ipcRenderer.on('storage:models-changed', () => {
+        customModelsCache.ts = 0;
+        void refreshChatModelSelectorDynamically();
+    });
     async function modelsChanged() {
         customModelsCache.ts = 0;
         await renderCustomModelsList();
         findRefreshButton()?.click();
         window.dispatchEvent(new CustomEvent('agy-models-changed'));
-        void storageAPI.syncModels().then(refreshChatModelSelectorDynamically).catch(console.error);
+        try {
+            await storageAPI.syncModels();
+        } catch (_) {}
+        await refreshChatModelSelectorDynamically();
         const mainStatus = document.getElementById('agy-main-status');
         if (mainStatus) {
             mainStatus.textContent = '';
@@ -579,7 +608,7 @@ window.addEventListener('DOMContentLoaded', () => {
         const gwName = existing?.provider || 'Gateway';
         const { body, status, close } = openModal(`Configure Gateway: ${gwName}`);
         body.append(element('p', 'agy-muted', `Set the base URL and API token for ${gwName}. All models under this gateway will automatically share this endpoint and credential without re-entering them.`));
-        const urlField = field(body, 'Gateway Base URL', 'agy-gw-url', existing?.apiUrl || '', 'url');
+        const urlField = field(body, 'Gateway Base URL', 'agy-gw-url', normalizeBaseUrl(existing?.apiUrl) || '', 'url');
         urlField.placeholder = 'https://api.example.com/v1/';
         const keyField = field(body, 'API Key / Token', 'agy-gw-key', existing?.apiKey === 'none' ? '' : existing?.apiKey || '', 'password');
         keyField.placeholder = 'Enter provider token (e.g. sk-...)';
@@ -592,7 +621,7 @@ window.addEventListener('DOMContentLoaded', () => {
         const actions = element('div', 'agy-actions');
         actions.append(button('Test Gateway Connection', async () => {
             setStatus(status, 'Testing gateway…');
-            const targetUrl = validUrl(urlField.value);
+            const targetUrl = normalizeBaseUrl(validUrl(urlField.value));
             const targetKey = keyField.value.trim() || existing?.apiKey || 'none';
             const result = requireSuccess(await storageAPI.testModelConnection({
                 provider: existing.provider,
@@ -603,7 +632,7 @@ window.addEventListener('DOMContentLoaded', () => {
             setStatus(status, result.message || 'Gateway connection successful!');
         }, status), button('Save Gateway Settings', async () => {
             setStatus(status, 'Updating models in gateway…');
-            const targetUrl = validUrl(urlField.value);
+            const targetUrl = normalizeBaseUrl(validUrl(urlField.value));
             const targetKey = keyField.value.trim();
             const models = await storageAPI.getCustomModels();
             let count = 0;
@@ -642,7 +671,7 @@ window.addEventListener('DOMContentLoaded', () => {
         const actions = element('div', 'agy-actions');
         actions.append(button('Fetch and Select Models', async () => {
             const gwId = nameField.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'custom';
-            const gwUrl = validUrl(urlField.value);
+            const gwUrl = normalizeBaseUrl(validUrl(urlField.value));
             const gwKey = keyField.value.trim() || 'none';
             setStatus(status, 'Connecting to gateway and fetching models…');
             const probe = {
@@ -658,7 +687,7 @@ window.addEventListener('DOMContentLoaded', () => {
             openModelModal(probe, 'discover');
         }, status, true), button('Save Gateway', async () => {
             const gwId = nameField.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'custom';
-            const gwUrl = validUrl(urlField.value);
+            const gwUrl = normalizeBaseUrl(validUrl(urlField.value));
             const gwKey = keyField.value.trim() || 'none';
             requireSuccess(await storageAPI.saveCustomModel({
                 name: `models/${gwId}-default`,
@@ -706,7 +735,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 const header = element('div', 'agy-group-heading');
                 const heading = element('div');
                 const enabledCount = models.filter((model) => model.enabled !== false).length;
-                heading.append(element('h3', '', `${first.provider} · ${enabledCount}/${models.length} models enabled`), element('div', 'agy-muted', first.apiUrl));
+                heading.append(element('h3', '', `${first.provider} · ${enabledCount}/${models.length} models enabled`), element('div', 'agy-muted', normalizeBaseUrl(first.apiUrl)));
                 const groupStatus = statusNode();
                 const actions = element('div', 'agy-actions');
                 actions.append(button('Configure gateway', () => openConfigureGateway(first), groupStatus));
@@ -788,7 +817,7 @@ window.addEventListener('DOMContentLoaded', () => {
                         name: getUniqueBatchName(`models/${gateway.provider}/${choice.id}`),
                         displayName: choice.displayName || choice.id,
                         provider: gateway.provider,
-                        apiUrl: gateway.apiUrl,
+                        apiUrl: normalizeBaseUrl(gateway.apiUrl),
                         apiKey: gateway.apiKey,
                         copyFrom: gateway.name,
                         apiFormat: gateway.apiFormat || 'openai',
@@ -922,7 +951,7 @@ window.addEventListener('DOMContentLoaded', () => {
                         name: prior?.name || getUniqueBatchName(`models/${gateway.provider}/${choice.id}`),
                         displayName: choice.displayName || choice.id,
                         provider: gateway.provider,
-                        apiUrl: gateway.apiUrl,
+                        apiUrl: normalizeBaseUrl(gateway.apiUrl),
                         apiKey: gateway.apiKey,
                         ...(prior ? { originalName: prior.name } : { copyFrom: gateway.name }),
                         apiFormat: gateway.apiFormat || 'openai',
@@ -1037,7 +1066,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 throw new Error('Provider presets are unavailable. Close this dialog and try again.');
             const provider = selectField(body, 'Provider', 'agy-provider', providers.map((preset) => [preset.id, preset.label]), existing?.provider || providers[0].id);
             const preset = () => providers.find((value) => value.id === provider.value) || providers[0];
-            const apiUrl = field(body, 'API URL', 'agy-api-url', existing?.apiUrl || preset().defaultUrl, 'url');
+            const apiUrl = field(body, 'API URL', 'agy-api-url', normalizeBaseUrl(existing?.apiUrl || preset().defaultUrl), 'url');
             const apiKey = field(body, 'API key', 'agy-api-key', existing?.apiKey === 'none' ? '' : existing?.apiKey || '', 'password');
             apiKey.placeholder = preset().keyRequired ? 'Enter provider API key' : 'Optional for local servers';
             const apiFormat = selectField(body, 'API format', 'agy-api-format', [
@@ -1173,7 +1202,7 @@ window.addEventListener('DOMContentLoaded', () => {
                     ...connection(),
                     name: localName || name.value.trim() || uniqueName(`models/${provider.value}/${id}`),
                     provider: provider.value,
-                    apiUrl: apiUrl.value.trim(),
+                    apiUrl: normalizeBaseUrl(apiUrl.value.trim()),
                     apiKey: apiKey.value.trim() || 'none',
                     externalModelName: id.trim(),
                     displayName: title || id.trim(),
@@ -1308,7 +1337,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 setStatus(status, `Saved ${saved} models.`);
             }, status));
             provider.addEventListener('change', () => {
-                apiUrl.value = preset().defaultUrl;
+                apiUrl.value = normalizeBaseUrl(preset().defaultUrl);
                 apiFormat.value = preset().apiFormat;
                 apiKey.value = '';
                 choices = [];

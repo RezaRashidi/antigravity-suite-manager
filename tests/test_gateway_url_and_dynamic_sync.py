@@ -31,21 +31,27 @@ def test_google_url_normalization_with_trailing_slash():
 
 def test_model_store_delete_normalization():
     node_code = """
-    const { ModelStore } = require('./vendor/antigravity-model-proxy/dist/modelStore');
+    const { ModelStore, normalizeBaseUrl } = require('./vendor/antigravity-model-proxy/dist/modelStore');
     const fs = require('fs');
     const tmp = '/tmp/test_models_' + Date.now() + '.json';
     fs.writeFileSync(tmp, JSON.stringify({
         models: [
-            { name: 'models/test-m1', displayName: 'M1', provider: 'p1' },
-            { name: 'models/test-m2', displayName: 'M2', provider: 'p2' }
+            { name: 'models/odirect/oc/jev-1.13-free', externalModelName: 'oc/jev-1.13-free', displayName: 'Jev Free', provider: 'odirect' },
+            { name: 'models/test-m2', externalModelName: 'm2', displayName: 'M2', provider: 'p2' }
         ]
     }));
     const store = new ModelStore(tmp, null);
-    store.delete('test-m1');
+    store.delete('oc/jev-1.13-free');
     const remaining = store.read();
     fs.unlinkSync(tmp);
-    console.log(JSON.stringify(remaining.map(m => m.name)));
+    console.log(JSON.stringify({
+        remaining: remaining.map(m => m.name),
+        baseClean1: normalizeBaseUrl('https://ai.odirect.app/v1/chat/completions'),
+        baseClean2: normalizeBaseUrl('https://generativelanguage.googleapis.com/v1beta:streamGenerateContent')
+    }));
     """
     res = subprocess.run(["node", "-e", node_code], capture_output=True, text=True, check=True)
-    names = json.loads(res.stdout.strip())
-    assert names == ["models/test-m2"]
+    out = json.loads(res.stdout.strip())
+    assert out["remaining"] == ["models/test-m2"]
+    assert out["baseClean1"] == "https://ai.odirect.app/v1/"
+    assert out["baseClean2"] == "https://generativelanguage.googleapis.com/v1beta/"
