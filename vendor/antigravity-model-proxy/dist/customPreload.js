@@ -527,6 +527,20 @@ window.addEventListener('DOMContentLoaded', () => {
         return () => accounts.map((account) => ({ ...account }));
     }
     let refreshSelectorTimeout;
+    const deletedModelIdentifiers = new Set();
+    const knownCustomModelLabels = new Set();
+    function recordDeletedModel(m) {
+        if (!m) return;
+        const candidates = typeof m === 'string' ? [m] : [m.name, m.displayName, m.externalModelName];
+        for (const c of candidates) {
+            if (c && typeof c === 'string') {
+                const norm = c.toLowerCase().trim();
+                deletedModelIdentifiers.add(norm);
+                deletedModelIdentifiers.add(norm.replace(/^models\//, ''));
+                deletedModelIdentifiers.add('models/' + norm.replace(/^models\//, ''));
+            }
+        }
+    }
     function refreshChatModelSelectorDynamically() {
         if (refreshSelectorTimeout) clearTimeout(refreshSelectorTimeout);
         return new Promise((resolve) => {
@@ -534,19 +548,60 @@ window.addEventListener('DOMContentLoaded', () => {
                 refreshSelectorTimeout = undefined;
                 try {
                     customModelsCache.ts = 0;
-                    const csrfToken = window.__APP_CONFIG__?.csrfToken;
-                    const headers = {
-                        'Content-Type': 'application/json',
-                        'Connect-Protocol-Version': '1',
-                        'x-codeium-csrf-token': csrfToken || '',
-                    };
+
+                    let customModels = [];
                     try {
-                        await fetch('/exa.language_server_pb.LanguageServerService/GetAvailableModels', {
-                            method: 'POST',
-                            headers,
-                            body: JSON.stringify({ forceRefresh: true }),
-                        });
+                        const raw = await storageAPI.getCustomModels();
+                        if (Array.isArray(raw)) customModels = raw;
                     } catch (_) {}
+
+                    const enabledModels = customModels.filter((m) => m.enabled !== false);
+                    const disabledModels = customModels.filter((m) => m.enabled === false);
+
+                    const disabledSet = new Set();
+                    for (const m of disabledModels) {
+                        for (const k of [m.displayName, m.name, m.externalModelName]) {
+                            if (k && typeof k === 'string') {
+                                const norm = k.toLowerCase().trim();
+                                disabledSet.add(norm);
+                                disabledSet.add(norm.replace(/^models\//, ''));
+                            }
+                        }
+                    }
+
+                    const activeSet = new Set();
+                    for (const m of enabledModels) {
+                        for (const k of [m.displayName, m.name, m.externalModelName]) {
+                            if (k && typeof k === 'string') {
+                                const norm = k.toLowerCase().trim();
+                                activeSet.add(norm);
+                                activeSet.add(norm.replace(/^models\//, ''));
+                            }
+                        }
+                    }
+
+                    for (const prev of knownCustomModelLabels) {
+                        if (!activeSet.has(prev) && !disabledSet.has(prev)) {
+                            deletedModelIdentifiers.add(prev);
+                        }
+                    }
+                    for (const k of activeSet) knownCustomModelLabels.add(k);
+                    for (const k of disabledSet) knownCustomModelLabels.add(k);
+
+                    const csrfToken = window.__APP_CONFIG__?.csrfToken;
+                    if (csrfToken) {
+                        try {
+                            await fetch('/exa.language_server_pb.LanguageServerService/GetAvailableModels', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Connect-Protocol-Version': '1',
+                                    'x-codeium-csrf-token': csrfToken,
+                                },
+                                body: JSON.stringify({ forceRefresh: true }),
+                            });
+                        } catch (_) {}
+                    }
 
                     const root = document.getElementById('root') || document.body.firstElementChild;
                     if (!root) return resolve();
@@ -574,12 +629,62 @@ window.addEventListener('DOMContentLoaded', () => {
                         if (node.sibling) queue.push(node.sibling);
                     }
 
-                    if (client && store) {
-                        const statusRes = await client.getUserStatus();
-                        if (statusRes?.userStatus?.cascadeModelConfigData?.clientModelConfigs) {
-                            const configs = statusRes.userStatus.cascadeModelConfigData.clientModelConfigs;
-                            if (configs.length > 0 && configs[0]?.modelOrAlias?.choice) {
-                                store.dispatch({ type: 'userStatus/setUserStatus', payload: statusRes.userStatus });
+                    if (store) {
+                        let statusObj = null;
+                        if (client) {
+                            try {
+                                const statusRes = await client.getUserStatus();
+                                if (statusRes?.userStatus?.cascadeModelConfigData?.clientModelConfigs) {
+                                    statusObj = statusRes.userStatus;
+                                }
+                            } catch (_) {}
+                        }
+                        if (!statusObj) {
+                            statusObj = store.getState().userStatus;
+                        }
+
+                        if (statusObj?.cascadeModelConfigData?.clientModelConfigs) {
+                            const rawConfigs = statusObj.cascadeModelConfigData.clientModelConfigs;
+                            const filteredConfigs = rawConfigs.filter((cfg) => {
+                                if (!cfg) return false;
+                                const lbl = (cfg.label || '').toLowerCase().trim();
+                                const stripped = lbl.replace(/^models\//, '');
+                                if (deletedModelIdentifiers.has(lbl) || deletedModelIdentifiers.has(stripped)) return false;
+                                if (disabledSet.has(lbl) || disabledSet.has(stripped)) return false;
+                                return true;
+                            });
+
+                            const validConfigs = filteredConfigs.filter((cfg) => !!cfg?.modelOrAlias?.choice);
+
+                            const rawSorts = statusObj.cascadeModelConfigData.clientModelSorts;
+                            const filteredSorts = Array.isArray(rawSorts) ? rawSorts.map((sort) => {
+                                if (!sort || !Array.isArray(sort.groups)) return sort;
+                                return {
+                                    ...sort,
+                                    groups: sort.groups.map((grp) => {
+                                        if (!grp || !Array.isArray(grp.modelLabels)) return grp;
+                                        return {
+                                            ...grp,
+                                            modelLabels: grp.modelLabels.filter((lbl) => {
+                                                const norm = (lbl || '').toLowerCase().trim();
+                                                const stripped = norm.replace(/^models\//, '');
+                                                return !deletedModelIdentifiers.has(norm) && !deletedModelIdentifiers.has(stripped) && !disabledSet.has(norm) && !disabledSet.has(stripped);
+                                            })
+                                        };
+                                    })
+                                };
+                            }) : rawSorts;
+
+                            if (validConfigs.length > 0) {
+                                const nextUserStatus = {
+                                    ...statusObj,
+                                    cascadeModelConfigData: {
+                                        ...statusObj.cascadeModelConfigData,
+                                        clientModelConfigs: validConfigs,
+                                        ...(filteredSorts ? { clientModelSorts: filteredSorts } : {}),
+                                    }
+                                };
+                                store.dispatch({ type: 'userStatus/setUserStatus', payload: nextUserStatus });
                             }
                         }
                     }
@@ -587,7 +692,7 @@ window.addEventListener('DOMContentLoaded', () => {
                     console.warn('[CustomModels] Dynamic model refresh error:', e);
                 }
                 resolve();
-            }, 100);
+            }, 60);
         });
     }
     electron_1.ipcRenderer.on('storage:models-changed', () => {
@@ -777,6 +882,7 @@ window.addEventListener('DOMContentLoaded', () => {
                         setStatus(rowStatus, result.message || 'Connection successful.');
                     }, rowStatus), button('Edit', () => openModelModal(model, 'edit'), rowStatus), button('Duplicate', () => openModelModal(model, 'duplicate'), rowStatus), button('Delete', async () => {
                         setStatus(rowStatus, 'Deleting…');
+                        recordDeletedModel(model);
                         requireSuccess(await storageAPI.deleteCustomModel(model.name || model.displayName || model.externalModelName));
                         await modelsChanged();
                     }, rowStatus));

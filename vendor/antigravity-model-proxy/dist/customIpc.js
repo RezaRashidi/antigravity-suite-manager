@@ -88,6 +88,21 @@ async function syncLanguageServerAndWindows(getLanguageServerPort) {
                 try { ls = require('./languageServer'); } catch (_) {}
             }
             let port = (typeof getLanguageServerPort === 'function' ? getLanguageServerPort() : null) || (typeof ls?.getLsPort === 'function' ? ls.getLsPort() : null);
+            if (!port) {
+                const windows = electron_1.BrowserWindow.getAllWindows();
+                for (const win of windows) {
+                    try {
+                        const u = win.webContents?.getURL();
+                        if (u) {
+                            const parsed = new URL(u);
+                            if (parsed.port && Number(parsed.port) > 0) {
+                                port = Number(parsed.port);
+                                break;
+                            }
+                        }
+                    } catch (_) {}
+                }
+            }
             let csrf = null;
             try {
                 const fs = require('fs');
@@ -111,11 +126,10 @@ async function syncLanguageServerAndWindows(getLanguageServerPort) {
             } catch (_) {}
 
             if (port && csrf) {
-                const http = require('http');
                 const https = require('https');
-                const tryRpc = (protoModule) => new Promise((res) => {
+                await new Promise((res) => {
                     const data = JSON.stringify({ forceRefresh: true });
-                    const req = protoModule.request({
+                    const req = https.request({
                         hostname: '127.0.0.1',
                         port,
                         path: '/exa.language_server_pb.LanguageServerService/GetAvailableModels',
@@ -123,10 +137,11 @@ async function syncLanguageServerAndWindows(getLanguageServerPort) {
                         rejectUnauthorized: false,
                         headers: {
                             'Content-Type': 'application/json',
+                            'Connect-Protocol-Version': '1',
                             'x-codeium-csrf-token': csrf,
                             'Content-Length': Buffer.byteLength(data),
                         },
-                        timeout: 2500,
+                        timeout: 3000,
                     }, (r) => {
                         r.resume();
                         r.on('end', () => res(true));
@@ -136,8 +151,6 @@ async function syncLanguageServerAndWindows(getLanguageServerPort) {
                     req.write(data);
                     req.end();
                 });
-                const ok = await tryRpc(http);
-                if (!ok) await tryRpc(https);
             }
 
             const windows = electron_1.BrowserWindow.getAllWindows();

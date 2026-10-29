@@ -21,11 +21,6 @@ function install(getLanguageServerPort) {
             if (details.url.includes('SetCloudCodeURL')) {
                 return callback({ cancel: true });
             }
-            if (details.url.includes('LanguageServerService/GetAvailableModels')) {
-                return callback({
-                    redirectURL: `http://127.0.0.1:${proxyPort}/GetAvailableModels?ls=${encodeURIComponent(details.url)}`,
-                });
-            }
             const lsPort = getLanguageServerPort();
             if (!lsPort)
                 return callback({});

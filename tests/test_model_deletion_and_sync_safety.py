@@ -48,3 +48,13 @@ def test_custom_ipc_no_raw_redux_injection():
         content = f.read()
     assert "executeJavaScript(injectionScript)" not in content
     assert "type: 'userStatus/setUserStatus', payload: payload" not in content
+    assert "win.webContents?.getURL()" in content
+    assert "Connect-Protocol-Version" in content
+
+def test_preload_dynamic_filtering_logic():
+    with open("vendor/antigravity-model-proxy/dist/customPreload.js", "r") as f:
+        preload = f.read()
+    assert "deletedModelIdentifiers" in preload
+    assert "recordDeletedModel" in preload
+    assert "clientModelSorts" in preload
+    assert "cfg?.modelOrAlias?.choice" in preload
