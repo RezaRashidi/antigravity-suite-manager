@@ -358,8 +358,11 @@ function mapOpenAIToGemini(openAiRes, modelName, toolSchemas) {
     }
     const reasoning = choice?.message?.reasoning_content || choice?.message?.reasoning || '';
     const parts = [];
-    if (reasoning)
+    if (reasoning) {
+        shared_1.modelReasoningContent.set(modelName, reasoning);
+        (0, shared_1.touchStateTimestamp)(shared_1.stateTimestamps.reasoning, modelName);
         parts.push({ text: reasoning, thought: true });
+    }
     if (text)
         parts.push({ text });
     const finishReason = choice?.finish_reason === 'stop' ? 'STOP' : 'OTHER';
@@ -445,6 +448,11 @@ function mapOpenAIChunkToGemini(chunk, modelName, streamKey, toolSchemas) {
                 }
                 return { functionCall: { name: translated.name, args: translated.args, id: tc.id } };
             });
+            if (context.accumulatedReasoning) {
+                shared_1.modelReasoningContent.set(streamId, context.accumulatedReasoning);
+                shared_1.modelReasoningContent.set(modelName, context.accumulatedReasoning);
+                (0, shared_1.touchStateTimestamp)(shared_1.stateTimestamps.reasoning, streamId);
+            }
             shared_1.activeStreamContexts.delete(streamId);
             return { content: { parts, role: 'model' }, finishReason: 'TOOL_CALL', index: 0 };
         }
@@ -459,9 +467,19 @@ function mapOpenAIChunkToGemini(chunk, modelName, streamKey, toolSchemas) {
                 });
                 if (dsml2.cleanText)
                     parts.unshift({ text: dsml2.cleanText });
+                if (context.accumulatedReasoning) {
+                    shared_1.modelReasoningContent.set(streamId, context.accumulatedReasoning);
+                    shared_1.modelReasoningContent.set(modelName, context.accumulatedReasoning);
+                    (0, shared_1.touchStateTimestamp)(shared_1.stateTimestamps.reasoning, streamId);
+                }
                 shared_1.activeStreamContexts.delete(streamId);
                 return { content: { parts, role: 'model' }, finishReason: 'TOOL_CALL', index: 0 };
             }
+        }
+        if (context.accumulatedReasoning) {
+            shared_1.modelReasoningContent.set(streamId, context.accumulatedReasoning);
+            shared_1.modelReasoningContent.set(modelName, context.accumulatedReasoning);
+            (0, shared_1.touchStateTimestamp)(shared_1.stateTimestamps.reasoning, streamId);
         }
         shared_1.activeStreamContexts.delete(streamId);
         return { content: { parts: text ? [{ text }] : [], role: 'model' }, finishReason: 'STOP', index: 0 };

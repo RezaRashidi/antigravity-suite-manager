@@ -86,7 +86,7 @@ function mapGoogleChunkToGemini(chunk, _modelName) {
  */
 function getGoogleApiUrl(baseUrl, modelName, isStream) {
     const url = new URL(baseUrl);
-    let pathname = url.pathname.replace(/\/+$/, '').replace(/:(?:streamGenerateContent|generateContent)$/, '');
+    let pathname = url.pathname.replace(/\/+/g, '/').replace(/\/+$/, '').replace(/:(?:streamGenerateContent|generateContent)$/, '');
     const modelsIndex = pathname.lastIndexOf('/models/');
     const existingModel = modelsIndex >= 0 ? pathname.slice(modelsIndex + 8) : '';
     const chosenModel = (modelName || '').replace(/^models\//, '') || decodeURIComponent(existingModel);
@@ -96,7 +96,7 @@ function getGoogleApiUrl(baseUrl, modelName, isStream) {
         pathname = pathname.slice(0, modelsIndex);
     else if (pathname.endsWith('/models'))
         pathname = pathname.slice(0, -7);
-    if (!pathname)
+    if (!pathname || pathname === '/')
         pathname = '/v1beta';
     url.pathname = `${pathname}/models/${encodeURI(chosenModel)}:${isStream ? 'streamGenerateContent' : 'generateContent'}`;
     if (isStream)

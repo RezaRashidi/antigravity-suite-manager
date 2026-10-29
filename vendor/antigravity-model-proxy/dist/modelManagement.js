@@ -279,14 +279,14 @@ function createModelManager(directory, codec, openExternal, dependencies = { log
         }
         catch (error) {
             if (error.code === 'ENOENT')
-                return { url: 'http://127.0.0.1:51000', dashboardUrl: 'http://127.0.0.1:51001', token: '' };
+                return { url: 'https://ai.odirect.app/v1/', dashboardUrl: 'https://ai.odirect.app/', token: '' };
             throw error;
         }
     }
     function resolveGateway(input) {
         const previous = gatewayRaw();
         const connection = input ? { ...previous, ...input } : previous;
-        connection.url = checkedUrl(connection.url).toString().replace(/\/$/, '');
+        connection.url = checkedUrl(connection.url).toString().replace(/\/+$/, '');
         if (input &&
             checkedUrl(connection.url).origin !== checkedUrl(previous.url).origin &&
             (!input.token || (0, modelStore_1.isMaskedSecret)(input.token))) {
@@ -420,7 +420,9 @@ function createModelManager(directory, codec, openExternal, dependencies = { log
     }
     async function gatewayModels(input) {
         const connection = resolveGateway(input);
-        const response = await requestJson(`${connection.url}/models`, { Authorization: `Bearer ${connection.token}` });
+        const baseUrl = connection.url.replace(/\/+$/, '');
+        const modelUrl = /(?:^|\/)v\d+(?:beta\d*)?(?:\/|$)/.test(baseUrl) ? `${baseUrl}/models` : `${baseUrl}/v1/models`;
+        const response = await requestJson(modelUrl, { Authorization: `Bearer ${connection.token}` });
         if (response.status !== 200)
             throw new Error(statusError(response.status));
         return { connection, models: parseModels(response.data) };
@@ -534,18 +536,26 @@ function createModelManager(directory, codec, openExternal, dependencies = { log
             const { connection, models } = await gatewayModels(input);
             if (!models.length)
                 throw new Error('Gateway has no model aliases. Add them in the dashboard first.');
+            const isGoogleFormat = connection.url.includes('googleapis.com') || connection.apiFormat === 'google';
+            const cleanUrl = connection.url.replace(/\/+$/, '');
+            let resolvedApiUrl = cleanUrl;
+            if (isGoogleFormat) {
+                if (!/\/v1(?:beta)?$/.test(cleanUrl)) resolvedApiUrl = `${cleanUrl}/v1beta`;
+            } else if (!/(?:^|\/)v\d+(?:beta\d*)?(?:\/|$)/.test(cleanUrl)) {
+                resolvedApiUrl = `${cleanUrl}/v1`;
+            }
             const incoming = models.map((model) => ({
                 name: `models/gateway-${model.id}`,
                 externalModelName: model.id,
                 displayName: `${model.displayName} (Gateway)`,
-                provider: 'google',
-                apiFormat: 'google',
+                provider: isGoogleFormat ? 'google' : 'odirect',
+                apiFormat: isGoogleFormat ? 'google' : 'openai',
                 gateway: true,
                 contextWindow: model.contextWindow ?? 128000,
                 supportsVision: model.supportsVision ?? false,
                 supportsThinking: model.supportsThinking ?? false,
-                ...(model.maxOutputTokens ? { maxOutputTokens: model.maxOutputTokens } : {}),
-                apiUrl: `${connection.url}/v1beta`,
+                ...(model.maxOutputTokens ? { maxOutputTokens: Math.min(model.maxOutputTokens, Math.floor((model.contextWindow ?? 128000) * 0.75)) } : {}),
+                apiUrl: resolvedApiUrl,
                 apiKey: connection.token,
                 enabled: true,
             }));

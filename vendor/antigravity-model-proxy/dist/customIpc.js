@@ -91,9 +91,22 @@ function registerCustomModelHandlers() {
         });
     };
     handle('storage:get-custom-models', () => manager.store.list());
-    handle('storage:save-custom-model', manager.saveModel);
-    handle('storage:delete-custom-model', (name) => {
+    handle('storage:save-custom-model', async (model) => {
+        const res = await manager.saveModel(model);
+        for (const win of electron_1.BrowserWindow.getAllWindows()) {
+            if (!win.isDestroyed() && win.webContents) {
+                try { win.webContents.send('storage:models-changed'); } catch (_) {}
+            }
+        }
+        return res;
+    });
+    handle('storage:delete-custom-model', async (name) => {
         manager.store.delete(name);
+        for (const win of electron_1.BrowserWindow.getAllWindows()) {
+            if (!win.isDestroyed() && win.webContents) {
+                try { win.webContents.send('storage:models-changed'); } catch (_) {}
+            }
+        }
         return { success: true };
     });
     handle('storage:test-model-connection', (model) => manager.testModel(model));
@@ -119,31 +132,107 @@ function registerCustomModelHandlers() {
         } catch (_) {
             try { ls = require('./languageServer'); } catch (_) {}
         }
-        let newPort = null;
-        if (ls && typeof ls.restartLanguageServer === 'function') {
-            try {
-                await ls.restartLanguageServer();
-                newPort = typeof ls.getLsPort === 'function' ? ls.getLsPort() : null;
-            } catch (e) {
-                console.error('[Model Patch] restartLanguageServer error:', e);
+        let port = typeof ls?.getLsPort === 'function' ? ls.getLsPort() : null;
+        let csrf = null;
+        try {
+            const fs = require('fs');
+            for (const pid of fs.readdirSync('/proc')) {
+                if (!/^\d+$/.test(pid)) continue;
+                try {
+                    const cmd = fs.readFileSync('/proc/' + pid + '/cmdline', 'utf8');
+                    if (cmd.includes('language_server') && cmd.includes('--csrf_token')) {
+                        const mCsrf = cmd.match(/--csrf_token[\0=\s]+([0-9a-fA-F-]+)/);
+                        if (mCsrf) {
+                            csrf = mCsrf[1];
+                            if (!port) {
+                                const mPort = cmd.match(/--extension_server_port[\0=\s]+(\d+)/);
+                                if (mPort) port = Number(mPort[1]);
+                            }
+                            break;
+                        }
+                    }
+                } catch (_) {}
             }
+        } catch (_) {}
+
+        let userStatus = null;
+        if (port && csrf) {
+            const https = require('https');
+            const rpcCall = (method, payload) => new Promise((resolve) => {
+                const data = JSON.stringify(payload);
+                const req = https.request({
+                    hostname: '127.0.0.1',
+                    port,
+                    path: `/exa.language_server_pb.LanguageServerService/${method}`,
+                    method: 'POST',
+                    rejectUnauthorized: false,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-codeium-csrf-token': csrf,
+                        'Content-Length': Buffer.byteLength(data),
+                    },
+                    timeout: 4000,
+                }, (res) => {
+                    let buf = '';
+                    res.on('data', (c) => { buf += c; });
+                    res.on('end', () => {
+                        try { resolve(JSON.parse(buf)); } catch (_) { resolve(null); }
+                    });
+                });
+                req.on('error', () => resolve(null));
+                req.on('timeout', () => { req.destroy(); resolve(null); });
+                req.write(data);
+                req.end();
+            });
+
+            try {
+                await rpcCall('GetAvailableModels', { forceRefresh: true });
+                const statusRes = await rpcCall('GetUserStatus', {});
+                if (statusRes?.userStatus) {
+                    userStatus = statusRes.userStatus;
+                }
+            } catch (_) {}
         }
+
+        const serializedPayload = JSON.stringify(userStatus);
+        const injectionScript = `
+        (() => {
+            try {
+                const payload = ${serializedPayload};
+                if (payload) {
+                    const root = document.getElementById('root') || document.body.firstElementChild;
+                    if (root) {
+                        const fiberKey = Object.keys(root).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'));
+                        if (fiberKey) {
+                            const queue = [root[fiberKey]];
+                            while (queue.length > 0) {
+                                const node = queue.shift();
+                                if (!node) continue;
+                                const store = node.memoizedProps?.store || node.stateNode?.store;
+                                if (store && typeof store.dispatch === 'function') {
+                                    store.dispatch({ type: 'userStatus/setUserStatus', payload: payload });
+                                    break;
+                                }
+                                if (node.child) queue.push(node.child);
+                                if (node.sibling) queue.push(node.sibling);
+                            }
+                        }
+                    }
+                }
+            } catch (_) {}
+            window.dispatchEvent(new CustomEvent('agy-models-changed'));
+        })();
+        `;
+
         const windows = electron_1.BrowserWindow.getAllWindows();
         for (const win of windows) {
             if (!win.isDestroyed() && win.webContents) {
                 try {
-                    const curUrl = win.webContents.getURL();
-                    if (newPort && curUrl && curUrl.includes('127.0.0.1')) {
-                        const parsed = new URL(curUrl);
-                        parsed.port = String(newPort);
-                        await win.loadURL(parsed.toString());
-                    } else {
-                        win.webContents.reload();
-                    }
+                    await win.webContents.executeJavaScript(injectionScript);
                 } catch (_) {}
             }
         }
-        return { success: true, port: newPort };
+        return { success: true, dynamic: true, modelsUpdated: !!userStatus };
     });
 }
 //# sourceMappingURL=customIpc.js.map

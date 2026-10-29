@@ -349,10 +349,11 @@ class ModelStore {
         writeJsonAtomic(this.filename, { models });
     }
     delete(name) {
-        const models = this.read().filter((model) => model.name !== name);
+        const target = (typeof name === 'string' && !name.startsWith('models/')) ? `models/${name}` : name;
+        const models = this.read().filter((model) => model.name !== target && model.name !== name);
         for (const model of models) {
             if (Array.isArray(model.fallbackModels))
-                model.fallbackModels = model.fallbackModels.filter((item) => item !== name);
+                model.fallbackModels = model.fallbackModels.filter((item) => item !== target && item !== name);
         }
         writeJsonAtomic(this.filename, { models });
     }

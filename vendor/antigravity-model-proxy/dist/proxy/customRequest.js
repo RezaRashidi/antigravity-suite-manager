@@ -235,7 +235,11 @@ async function runCustomModelRequest(res, primary, originalBody, isStream, allMo
                         const effectiveModel = outputBudget ? { ...model, maxOutputTokens: outputBudget } : model;
                         payload = (0, requestOptions_1.applyRequestOptions)(registry.translateRequest(model.provider, body, externalName, format, stateKey), effectiveModel, format, isStream);
                         const rawTarget = model.apiUrl || (model.provider === 'odirect' ? 'https://ai.odirect.app/v1/chat/completions' : '');
-                        const target = cloudCode || model.rawUrl
+                        let hasSpecificPath = false;
+                        try {
+                            hasSpecificPath = /\/(?:chat\/completions|completions|messages|models\/[^/]+:(?:streamGenerateContent|generateContent))$/.test(new URL(rawTarget).pathname);
+                        } catch (_) {}
+                        const target = (cloudCode || (model.rawUrl && hasSpecificPath))
                             ? rawTarget
                             : registry.getProviderUrl(rawTarget, externalName, isStream, registry.getTranslator(model.provider, format));
                         url = new URL(target);
@@ -286,8 +290,23 @@ async function runCustomModelRequest(res, primary, originalBody, isStream, allMo
                     const status = upstream.statusCode || 502;
                     if (status < 200 || status >= 300) {
                         const retryAfter = (0, requestOptions_1.parseRetryAfter)(upstream.headers['retry-after']);
+                        let errBody = '';
+                        try {
+                            const errChunks = [];
+                            for await (const chunk of upstream) {
+                                errChunks.push(chunk);
+                                if (errChunks.reduce((acc, c) => acc + c.length, 0) > 4096) break;
+                            }
+                            errBody = Buffer.concat(errChunks).toString('utf8');
+                            try {
+                                const parsed = JSON.parse(errBody);
+                                const msg = parsed?.error?.message || parsed?.error || parsed?.message;
+                                if (msg && typeof msg === 'string') errBody = msg;
+                            } catch (_) {}
+                        } catch (_) {}
                         upstream.destroy();
-                        throw new UpstreamError(`Upstream returned HTTP ${status}.`, status, status === 408 || status === 429 || status >= 500, retryAfter, status !== 400 && status !== 422);
+                        const detailMsg = errBody ? `Upstream returned HTTP ${status}: ${errBody}` : `Upstream returned HTTP ${status}.`;
+                        throw new UpstreamError(detailMsg, status, status === 408 || status === 429 || status >= 500, retryAfter, status !== 400 && status !== 422);
                     }
                     if (isStream && String(upstream.headers['content-type']).includes('text/event-stream')) {
                         const decoder = new string_decoder_1.StringDecoder('utf8');

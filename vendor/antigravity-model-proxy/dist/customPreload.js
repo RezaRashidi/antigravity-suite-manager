@@ -518,31 +518,55 @@ window.addEventListener('DOMContentLoaded', () => {
             (node.textContent?.trim() === 'Refresh' ||
                 /refresh quota/i.test(`${node.getAttribute('aria-label') || ''} ${node.title || ''}`))) || null);
     }
+    async function refreshChatModelSelectorDynamically() {
+        try {
+            const csrfToken = window.__APP_CONFIG__?.csrfToken;
+            const res = await fetch('/exa.language_server_pb.LanguageServerService/GetUserStatus', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Connect-Protocol-Version': '1',
+                    'x-codeium-csrf-token': csrfToken || '',
+                },
+                body: '{}',
+            });
+            const data = await res.json();
+            if (data?.userStatus) {
+                const root = document.getElementById('root') || document.body.firstElementChild;
+                if (root) {
+                    const fiberKey = Object.keys(root).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactContainer$') || k.startsWith('__reactInternalInstance$'));
+                    if (fiberKey) {
+                        const queue = [root[fiberKey]];
+                        while (queue.length > 0) {
+                            const node = queue.shift();
+                            if (!node) continue;
+                            const store = node.memoizedProps?.store || node.stateNode?.store;
+                            if (store && typeof store.dispatch === 'function') {
+                                store.dispatch({ type: 'userStatus/setUserStatus', payload: data.userStatus });
+                                break;
+                            }
+                            if (node.child) queue.push(node.child);
+                            if (node.sibling) queue.push(node.sibling);
+                        }
+                    }
+                }
+            }
+        } catch (_) {}
+    }
+    electron_1.ipcRenderer.on('storage:models-changed', refreshChatModelSelectorDynamically);
     async function modelsChanged() {
         customModelsCache.ts = 0;
         await renderCustomModelsList();
         findRefreshButton()?.click();
         window.dispatchEvent(new CustomEvent('agy-models-changed'));
+        void storageAPI.syncModels().then(refreshChatModelSelectorDynamically).catch(console.error);
         const mainStatus = document.getElementById('agy-main-status');
         if (mainStatus) {
             mainStatus.textContent = '';
-            const msg = element('span', '', 'Changes saved! Click to update Chat: ');
-            const syncBtn = element('button', 'agy-btn agy-primary', '🔄 Sync to Chat now');
-            syncBtn.style.padding = '3px 10px';
-            syncBtn.style.marginLeft = '8px';
-            syncBtn.style.fontSize = '12px';
-            syncBtn.style.cursor = 'pointer';
-            syncBtn.onclick = async () => {
-                syncBtn.disabled = true;
-                syncBtn.textContent = 'Syncing…';
-                try {
-                    await storageAPI.syncModels();
-                } catch (e) {
-                    syncBtn.textContent = 'Sync failed';
-                    console.error(e);
-                }
-            };
-            mainStatus.append(msg, syncBtn);
+            const msg = element('span', '', '✓ Models saved & synced to Chat dynamically');
+            msg.className = 'agy-status';
+            msg.style.color = '#10b981';
+            mainStatus.append(msg);
         }
     }
     function uniqueName(base) {
@@ -555,7 +579,7 @@ window.addEventListener('DOMContentLoaded', () => {
         const gwName = existing?.provider || 'Gateway';
         const { body, status, close } = openModal(`Configure Gateway: ${gwName}`);
         body.append(element('p', 'agy-muted', `Set the base URL and API token for ${gwName}. All models under this gateway will automatically share this endpoint and credential without re-entering them.`));
-        const urlField = field(body, 'Gateway Base URL', 'agy-gw-url', existing?.apiUrl || 'https://ai.odirect.app/v1', 'url');
+        const urlField = field(body, 'Gateway Base URL', 'agy-gw-url', existing?.apiUrl || 'https://ai.odirect.app/v1/', 'url');
         const keyField = field(body, 'API Key / Token', 'agy-gw-key', existing?.apiKey === 'none' ? '' : existing?.apiKey || '', 'password');
         keyField.placeholder = 'Enter provider token (e.g. sk-...)';
         const formatField = selectField(body, 'API Format', 'agy-gw-format', [
@@ -604,7 +628,7 @@ window.addEventListener('DOMContentLoaded', () => {
         body.append(element('p', 'agy-muted', 'Connect an AI gateway or provider (e.g. ODirect, LiteLLM, vLLM, OpenAI). You can fetch models or add models under it without re-entering the URL.'));
         const nameField = field(body, 'Gateway Identifier', 'agy-newgw-id', 'odirect');
         nameField.placeholder = 'e.g. odirect, openai, custom';
-        const urlField = field(body, 'Gateway Base URL', 'agy-newgw-url', 'https://ai.odirect.app/v1', 'url');
+        const urlField = field(body, 'Gateway Base URL', 'agy-newgw-url', 'https://ai.odirect.app/v1/', 'url');
         const keyField = field(body, 'API Key / Token', 'agy-newgw-key', '', 'password');
         keyField.placeholder = 'Enter token (e.g. sk-...)';
         const formatField = selectField(body, 'API Format', 'agy-newgw-format', [
@@ -737,6 +761,14 @@ window.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             let count = 0;
+            const allocatedNames = new Set(modelList.map((m) => m.name));
+            const getUniqueBatchName = (base) => {
+                let name = base, index = 2;
+                while (allocatedNames.has(name) || modelList.some((model) => model.name === name))
+                    name = `${base}-${index++}`;
+                allocatedNames.add(name);
+                return name;
+            };
             for (const choice of freeChoices) {
                 const prior = modelList.find((m) => m.provider === gateway.provider && (m.externalModelName === choice.id || m.name === `models/${gateway.provider}/${choice.id}`));
                 if (prior) {
@@ -745,8 +777,13 @@ window.addEventListener('DOMContentLoaded', () => {
                         count++;
                     }
                 } else {
+                    let ctx = choice.contextWindow;
+                    let maxOut = choice.maxOutputTokens;
+                    if (ctx && maxOut && maxOut >= ctx) {
+                        maxOut = Math.min(maxOut, Math.floor(ctx * 0.75));
+                    }
                     const config = {
-                        name: uniqueName(`models/${gateway.provider}/${choice.id}`),
+                        name: getUniqueBatchName(`models/${gateway.provider}/${choice.id}`),
                         displayName: choice.displayName || choice.id,
                         provider: gateway.provider,
                         apiUrl: gateway.apiUrl,
@@ -755,8 +792,8 @@ window.addEventListener('DOMContentLoaded', () => {
                         apiFormat: gateway.apiFormat || 'openai',
                         externalModelName: choice.id,
                         enabled: true,
-                        contextWindow: choice.contextWindow,
-                        maxOutputTokens: choice.maxOutputTokens,
+                        contextWindow: ctx,
+                        maxOutputTokens: maxOut,
                         supportsVision: choice.supportsVision,
                         supportsThinking: choice.supportsThinking,
                     };
@@ -765,7 +802,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 }
             }
             await modelsChanged();
-            setStatus(status, `Imported/enabled ${count} Free & Stealth models! Click "🔄 Sync to Chat" to update Chat selector.`);
+            setStatus(status, `Imported/enabled ${count} Free & Stealth models! Models synced dynamically to Chat.`);
         } catch (err) {
             setStatus(status, String(err?.message || err), true);
         }
@@ -864,10 +901,23 @@ window.addEventListener('DOMContentLoaded', () => {
                 if (!selected.size)
                     throw new Error('Please select at least one model.');
                 let saved = 0;
+                const allocatedNames = new Set(modelList.map((m) => m.name));
+                const getUniqueBatchName = (base) => {
+                    let name = base, index = 2;
+                    while (allocatedNames.has(name) || modelList.some((model) => model.name === name))
+                        name = `${base}-${index++}`;
+                    allocatedNames.add(name);
+                    return name;
+                };
                 for (const choice of choices.filter((m) => selected.has(m.id))) {
                     const prior = modelList.find((m) => m.provider === gateway.provider && (m.externalModelName === choice.id || m.name === `models/${gateway.provider}/${choice.id}`));
+                    let ctx = choice.contextWindow;
+                    let maxOut = choice.maxOutputTokens;
+                    if (ctx && maxOut && maxOut >= ctx) {
+                        maxOut = Math.min(maxOut, Math.floor(ctx * 0.75));
+                    }
                     const config = {
-                        name: prior?.name || uniqueName(`models/${gateway.provider}/${choice.id}`),
+                        name: prior?.name || getUniqueBatchName(`models/${gateway.provider}/${choice.id}`),
                         displayName: choice.displayName || choice.id,
                         provider: gateway.provider,
                         apiUrl: gateway.apiUrl,
@@ -876,8 +926,8 @@ window.addEventListener('DOMContentLoaded', () => {
                         apiFormat: gateway.apiFormat || 'openai',
                         externalModelName: choice.id,
                         enabled: true,
-                        contextWindow: choice.contextWindow,
-                        maxOutputTokens: choice.maxOutputTokens,
+                        contextWindow: ctx,
+                        maxOutputTokens: maxOut,
                         supportsVision: choice.supportsVision,
                         supportsThinking: choice.supportsThinking,
                     };
@@ -885,7 +935,7 @@ window.addEventListener('DOMContentLoaded', () => {
                     saved++;
                 }
                 await modelsChanged();
-                setStatus(status, `Successfully added ${saved} models! Click "🔄 Sync to Chat" to update Chat.`);
+                setStatus(status, `Successfully added ${saved} models! Models synced dynamically to Chat.`);
                 setTimeout(close, 700);
             }, status, true));
 
@@ -1448,8 +1498,10 @@ window.addEventListener('DOMContentLoaded', () => {
         const actions = element('div', 'agy-actions');
         actions.append(
             button('🔄 Sync to Chat', async () => {
-                setStatus(status, 'Syncing models with Chat & reloading IDE…');
+                setStatus(status, 'Syncing models dynamically to Chat…');
                 await storageAPI.syncModels();
+                await refreshChatModelSelectorDynamically();
+                setStatus(status, '✓ Models synced dynamically to Chat!');
             }, undefined, true),
             button('+ Add gateway', openAddGatewayModal),
             button('Discover local', discoverLocal),

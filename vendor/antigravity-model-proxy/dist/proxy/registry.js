@@ -105,7 +105,7 @@ function getProviderUrl(baseUrl, modelName, isStream, translator) {
     if (typeof translator?.getGoogleApiUrl === 'function')
         return translator.getGoogleApiUrl(baseUrl, modelName, isStream);
     const url = new URL(baseUrl);
-    let pathname = url.pathname.replace(/\/+$/, '');
+    let pathname = url.pathname.replace(/\/+/g, '/').replace(/\/+$/, '');
     const anthropicFormat = translator === anthropic;
     pathname = pathname.replace(/\/(?:chat\/completions|completions|messages)$/, '');
     if (!pathname)
