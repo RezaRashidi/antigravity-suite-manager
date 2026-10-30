@@ -27,6 +27,10 @@ reapply_detected_patches() {
         log_info "Re-applying Conversation Forking patch to App..."
         FORCE_INSTALL=true patch_fork_app
     fi
+    if [ "$HAD_APP_MODELS" = true ]; then
+        log_info "Re-applying Custom Models UI patch to App..."
+        FORCE_INSTALL=true patch_models_app
+    fi
     if [ "$HAD_IDE_FORK" = true ]; then
         log_info "Re-applying Conversation Forking patch to IDE..."
         FORCE_INSTALL=true patch_fork_ide
@@ -45,7 +49,7 @@ update_all() {
     detect_active_app_patches
     detect_active_ide_patches
     log_info "Pre-update active patch detection:"
-    log_info "  • App: Selector=${HAD_APP_SELECTOR}, RTL=${HAD_APP_RTL}, F5=${HAD_APP_F5}, Fork=${HAD_APP_FORK}"
+    log_info "  • App: Selector=${HAD_APP_SELECTOR}, RTL=${HAD_APP_RTL}, F5=${HAD_APP_F5}, Fork=${HAD_APP_FORK}, Models=${HAD_APP_MODELS}"
     log_info "  • IDE: Selector=${HAD_IDE_SELECTOR}, RTL=${HAD_IDE_RTL}, Fork=${HAD_IDE_FORK}"
 
     log_info "Starting full suite update..."

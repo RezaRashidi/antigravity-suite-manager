@@ -2,6 +2,12 @@
 # Routines to revert native 'Open in IDE' titlebar button patch
 
 unpatch_open_ide_app() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --app-dir) APP_INSTALL_DIR="$2"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
     ensure_app_install_dir
     local asar="${APP_INSTALL_DIR}/resources/app.asar"
     local p_js; p_js="$(get_open_ide_patch_js)"

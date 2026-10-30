@@ -54,3 +54,20 @@ class TestTitleFallbackConstructible(unittest.TestCase):
         )
         self.assertEqual(title, "How To Fork A Chat")
         self.assertEqual(src, "llm_summary")
+
+    def test_bare_project_name_is_not_fallback(self):
+        ws = "file:///home/reza/PhpstormProjects/Odirect"
+        self.assertFalse(is_workspace_fallback_title("Odirect", ws))
+        self.assertFalse(is_workspace_fallback_title("odirect", ws))
+        self.assertTrue(is_workspace_fallback_title("Odirect Chat", ws))
+
+    def test_manual_annotation_priority_over_stale_sqlite_title(self):
+        title, src = resolve_best_title(
+            existing_candidates=["odirect", "Project Refactoring And Feature Organization"],
+            llm_candidates=[],
+            clean_artifact_title="Project Refactoring And Feature Organization",
+            prompt_cands=set(),
+            fallback_workspace="file:///home/reza/PhpstormProjects/Odirect",
+        )
+        self.assertEqual(title, "odirect")
+        self.assertEqual(src, "existing_clean")

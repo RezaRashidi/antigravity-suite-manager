@@ -35,6 +35,7 @@ function handleApiRequest(req, res, bodyStr) {
                 setActiveAccount(data.email);
                 const s = require('./server.js');
                 if (s.setLastCascadeId) s.setLastCascadeId(data.cascadeId, data.email);
+                try { require('./telemetry.js').forceRefreshLanguageServerQuota(); } catch (_) {}
             }
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ ok: true }));
@@ -49,6 +50,7 @@ function handleApiRequest(req, res, bodyStr) {
                 const s = require('./server.js');
                 if (s.setLastCascadeId) s.setLastCascadeId(data.cascadeId, data.email);
             }
+            try { require('./telemetry.js').forceRefreshLanguageServerQuota(); } catch (_) {}
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ ok: true }));
         } catch (_) { res.writeHead(400); res.end(JSON.stringify({ error: 'bad json' })); }

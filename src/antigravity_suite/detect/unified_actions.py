@@ -8,9 +8,10 @@ import os
 import subprocess
 from typing import Any, Dict, List, Tuple
 
-from antigravity_suite.detect.constants import CYAN, GREEN, NC
+from antigravity_suite.detect.constants import GREEN, NC
 from antigravity_suite.detect.launchers import get_launcher_binary, update_launcher_binary
 from antigravity_suite.detect.paths_config import save_paths_config
+from antigravity_suite.detect.unified_patches import handle_unified_patches_and_reinstall
 
 
 def handle_unified_engine_relocate(eng_p: str, is_p_app: bool, is_p_ide: bool, curr_app: str, curr_ide: str, custom_paths: List[str], launcher_f: str, u_item: Dict[str, Any]) -> Tuple[str, str, str]:
@@ -52,48 +53,8 @@ def handle_unified_target_role(eng_p: str, is_p_app: bool, is_p_ide: bool, curr_
     return curr_app, curr_ide
 
 
-def handle_unified_patches_and_reinstall(choice: str, u_item: Dict[str, Any], eng_p: str, manage_sh: str) -> None:
-    c_type = "ide" if "IDE" in u_item.get("type", "") else "app"
-    flag = "--ide-dir" if c_type == "ide" else "--app-dir"
-    if choice in ["8", "5"]:
-        print(f"\n{CYAN}Downloading & installing fresh {u_item['type']} into {eng_p}...{NC}")
-        subprocess.run(["bash", manage_sh, "install", c_type, flag, eng_p, "--force"], check=False)
-    elif choice.upper() == "U":
-        print(f"\n{CYAN}Smart updating {u_item['type']} at {eng_p} with force re-patch...{NC}")
-        subprocess.run(["bash", manage_sh, "update", c_type, flag, eng_p, "--force"], check=False)
-    elif choice.upper() == "R":
-        print(f"\n{CYAN}Applying RTL patch to {u_item['type']} at {eng_p}...{NC}")
-        subprocess.run(["bash", manage_sh, "rtl", c_type, flag, eng_p, "--force"], check=False)
-    elif choice.upper() in ["UNPATCH-RTL", "UR"]:
-        print(f"\n{CYAN}Reverting RTL patch from {u_item['type']} at {eng_p}...{NC}")
-        subprocess.run(["bash", manage_sh, "unpatch-rtl", c_type, flag, eng_p], check=False)
-    elif choice.upper() == "F" and "IDE" not in u_item.get("type", ""):
-        print(f"\n{CYAN}Applying F5 reload & isolation patch to {eng_p}...{NC}")
-        subprocess.run(["bash", manage_sh, "f5", "--app-dir", eng_p, "--force"], check=False)
-    elif choice.upper() in ["UNPATCH-F5", "UF"] and "IDE" not in u_item.get("type", ""):
-        print(f"\n{CYAN}Reverting F5 reload patch from {eng_p}...{NC}")
-        subprocess.run(["bash", manage_sh, "unpatch-f5", "--app-dir", eng_p], check=False)
-    elif choice.upper() == "J":
-        inst_name = u_item.get("name", u_item.get("type", "Instance"))
-        print(f"\n{CYAN}--- Conversation Forking Patch ({inst_name}) ---{NC}")
-        print("  [1] Apply / Update Forking Patch\n  [2] Revert / Unpatch Forking Patch\n  [0] Cancel")
-        j_c = input("Select action [1-2, Default: 1]: ").strip()
-        if j_c in ["1", ""]:
-            print(f"\n{CYAN}Applying Conversation Forking patch to {u_item['type']} at {eng_p}...{NC}")
-            subprocess.run(["bash", manage_sh, "fork", c_type, flag, eng_p, "--force"], check=False)
-        elif j_c == "2":
-            print(f"\n{CYAN}Reverting Conversation Forking patch from {u_item['type']} at {eng_p}...{NC}")
-            subprocess.run(["bash", manage_sh, "unpatch-fork", c_type, flag, eng_p], check=False)
-    elif choice.upper() == "T":
-        inst_name = u_item.get("name", u_item.get("type", "Instance"))
-        print(f"\n{CYAN}--- Multi-Account Selector Patch ({inst_name}) ---{NC}")
-        print("  [1] Apply / Update Selector Patch\n  [2] Revert / Unpatch Selector Patch\n  [0] Cancel")
-        sel_c = input("Select action [1-2, Default: 1]: ").strip()
-        if sel_c in ["1", ""]:
-            print(f"\n{CYAN}Applying Multi-Account Selector patch to {u_item['type']} at {eng_p}...{NC}")
-            subprocess.run(["bash", manage_sh, "selector", c_type, flag, eng_p, "--force"], check=False)
-        elif sel_c == "2":
-            print(f"\n{CYAN}Reverting Multi-Account Selector patch from {u_item['type']} at {eng_p}...{NC}")
-            subprocess.run(["bash", manage_sh, "unpatch-selector", c_type, flag, eng_p], check=False)
-
-
+__all__ = [
+    "handle_unified_engine_relocate",
+    "handle_unified_target_role",
+    "handle_unified_patches_and_reinstall",
+]

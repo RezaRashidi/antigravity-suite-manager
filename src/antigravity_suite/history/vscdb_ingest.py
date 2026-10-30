@@ -52,17 +52,18 @@ def ingest_vscdb_summaries(
                     if not raw: continue
                     parsed = parse_cascade_summary(raw)
 
+                    ide_sum, ide_annot = (parsed.get("summary") or "").strip(), (parsed.get("title") or "").strip()
+                    cands = [c for c in [ide_annot, ide_sum] if c and is_clean_title(c) and not is_workspace_fallback_title(c)]
+                    if not cands and u_id in all_summaries:
+                        continue
+
                     curr_parsed, curr_t = None, ""
                     if u_id in all_summaries:
                         curr_parsed = parse_cascade_summary(all_summaries[u_id])
                         curr_t = (curr_parsed.get("title") or curr_parsed.get("summary") or "").strip()
                         if curr_t and is_clean_title(curr_t) and not is_workspace_fallback_title(curr_t) and "@[" not in curr_t:
-                            continue
-
-                    ide_sum, ide_annot = (parsed.get("summary") or "").strip(), (parsed.get("title") or "").strip()
-                    cands = [c for c in [ide_sum, ide_annot] if c and is_clean_title(c) and not is_workspace_fallback_title(c)]
-                    if not cands and u_id in all_summaries:
-                        continue
+                            if curr_t in cands or curr_t == ide_annot:
+                                continue
 
                     db_p = master_conv_dir / f"{u_id}.db"
                     tr_p = master_conv_dir.parent / "brain" / u_id / ".system_generated" / "logs" / "transcript.jsonl"

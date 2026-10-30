@@ -4,8 +4,13 @@ Fast Incremental Dirty-Checking for Conversation Item Resolution.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, Tuple
+
+from antigravity_suite.history.extractor_cleaners import is_clean_title
+from antigravity_suite.history.extractor_pbtxt import decode_pbtxt_string
+from antigravity_suite.history.title_fallback import is_workspace_fallback_title
 
 
 def is_item_clean(
@@ -42,6 +47,18 @@ def is_item_clean(
         is_pinned_curr = bool(parsed_raw.get("pinned", False))
         if is_pinned_wanted != is_pinned_curr:
             return False
+
+    anno_file = db_file.parent.parent / "annotations" / f"{conv_id}.pbtxt"
+    if anno_file.is_file():
+        try:
+            with open(anno_file, "r", encoding="utf-8", errors="ignore") as af:
+                m = re.search(r'title\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', af.read())
+            if m:
+                clean_anno = decode_pbtxt_string(m.group(1))
+                if clean_anno and clean_anno != title and is_clean_title(clean_anno) and not is_workspace_fallback_title(clean_anno):
+                    return False
+        except Exception:
+            pass
 
     if cached_stats and conv_id in cached_stats:
         c_db_mtime, c_db_size, c_tr_mtime, c_tr_size = cached_stats[conv_id]

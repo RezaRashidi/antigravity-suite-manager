@@ -66,7 +66,7 @@ def resolve_conversation_item(
     proj_id = mapped_pid if (mapped_pid and mapped_pid != "outside-of-project") else (existing_proj or "")
 
     final_title, title_source = resolve_best_title(
-        existing_candidates=[curr_title, meta["anno_title"], parsed_raw.get("title", "")],
+        existing_candidates=[meta["anno_title"], curr_title, parsed_raw.get("title", "")],
         llm_candidates=[parsed_raw.get("summary", ""), curr_prev],
         clean_artifact_title=ext_t,
         prompt_cands=prompt_cands,

@@ -145,4 +145,37 @@ async function fetchDirectAccountQuotas(account) {
     });
 }
 
-module.exports = { _quotaCache, parseGroupsToBuckets, fetchLanguageServerTelemetry, fetchDirectAccountQuotas };
+async function forceRefreshLanguageServerQuota() {
+    const ls = findLanguageServerInfo();
+    if (!ls?.ports?.length) return false;
+    for (const port of ls.ports) {
+        for (const client of [http, https]) {
+            try {
+                await new Promise((resolve) => {
+                    const req = client.request({
+                        hostname: '127.0.0.1',
+                        port,
+                        method: 'POST',
+                        rejectUnauthorized: false,
+                        path: '/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Connect-Protocol-Version': '1',
+                            'x-codeium-csrf-token': ls.csrf,
+                        },
+                        timeout: 1200
+                    }, (r) => {
+                        r.on('data', () => {});
+                        r.on('end', resolve);
+                    });
+                    req.on('error', resolve);
+                    req.write(JSON.stringify({ forceRefresh: true }));
+                    req.end();
+                });
+            } catch (_) {}
+        }
+    }
+    return true;
+}
+
+module.exports = { _quotaCache, parseGroupsToBuckets, fetchLanguageServerTelemetry, fetchDirectAccountQuotas, forceRefreshLanguageServerQuota, findLanguageServerInfo };

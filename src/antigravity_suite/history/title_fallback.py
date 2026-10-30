@@ -39,7 +39,6 @@ def get_constructible_fallback_titles(
         for variant in [raw_name, clean_name]:
             if variant:
                 fallbacks.add(f"{variant.lower()} chat")
-                fallbacks.add(variant.lower())
     return fallbacks
 
 

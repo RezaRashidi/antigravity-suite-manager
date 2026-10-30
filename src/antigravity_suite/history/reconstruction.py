@@ -24,11 +24,9 @@ def gather_candidate_transcripts(
     brain_pools: List[str],
     master_brain_dir: Path,
     tombstones: Optional[Set[str]] = None,
+    subagents: Optional[Set[str]] = None,
 ) -> Dict[str, str]:
-    """
-    Scans all brain pools and gathers the single largest and most complete
-    transcript log file for every conversation UUID, skipping tombstones.
-    """
+    """Scans brain pools and gathers the most complete transcript log file per UUID."""
     candidate_transcripts: Dict[str, str] = {}
     all_brain_pools = [str(master_brain_dir)] + [
         p for p in brain_pools if os.path.realpath(p) != str(master_brain_dir)
@@ -43,7 +41,7 @@ def gather_candidate_transcripts(
             c_uuid = os.path.basename(b_item)
             if not re.match(r"^[0-9a-fA-F-]{36}$", c_uuid):
                 continue
-            if tombstones and c_uuid in tombstones:
+            if (tombstones and c_uuid in tombstones) or (subagents and c_uuid in subagents):
                 continue
 
             tf = os.path.join(b_item, ".system_generated", "logs", "transcript_full.jsonl")
@@ -64,19 +62,16 @@ def reconstruct_missing_databases(
     master_conv_dir: Path,
     force_rebuild: bool = False,
     tombstones: Optional[Set[str]] = None,
+    subagents: Optional[Set[str]] = None,
 ) -> int:
-    """
-    Reconstructs missing or incomplete SQLite databases from authentic transcript logs
-    and repairs any missing step index gaps in existing databases.
-    Skips any conversation marked in tombstones.
-    Returns:
-        Number of databases successfully reconstructed or repaired.
-    """
+    """Reconstructs missing SQLite databases from authentic transcripts, skipping tombstones and subagents."""
     databases_reconstructed = 0
-    candidate_transcripts = gather_candidate_transcripts(brain_pools, master_brain_dir, tombstones=tombstones)
+    candidate_transcripts = gather_candidate_transcripts(
+        brain_pools, master_brain_dir, tombstones=tombstones, subagents=subagents
+    )
 
     for c_uuid, tf in candidate_transcripts.items():
-        if tombstones and c_uuid in tombstones:
+        if (tombstones and c_uuid in tombstones) or (subagents and c_uuid in subagents):
             continue
         target_db = master_conv_dir / f"{c_uuid}.db"
         if not target_db.exists() or is_synthesized_db_incomplete(target_db) or force_rebuild:

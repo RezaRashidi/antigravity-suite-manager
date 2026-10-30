@@ -2,7 +2,13 @@
 # In-app Custom Models Settings UI patch for Antigravity App
 
 patch_models_app() {
-    for arg in "$@"; do [ "$arg" = "--force" ] || [ "$arg" = "-f" ] && FORCE_INSTALL=true; done
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --force|-f) FORCE_INSTALL=true; shift ;;
+            --app-dir) APP_INSTALL_DIR="$2"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
     ensure_rtl_dirs 2>/dev/null || auto_detect_installations 2>/dev/null || true
     ensure_models_patch_runtime || return 1
     local asar="${APP_INSTALL_DIR}/resources/app.asar"
@@ -42,6 +48,12 @@ patch_models_app() {
 }
 
 unpatch_models_app() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --app-dir) APP_INSTALL_DIR="$2"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
     ensure_rtl_dirs 2>/dev/null || auto_detect_installations 2>/dev/null || true
     ensure_models_patch_runtime || return 1
     local asar="${APP_INSTALL_DIR}/resources/app.asar"

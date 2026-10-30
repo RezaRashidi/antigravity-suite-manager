@@ -1923,6 +1923,33 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
                 self.assertIn("selector", t_args)
                 self.assertIn("/opt/test", t_args)
 
+            mock_sub.reset_mock()
+            with unittest.mock.patch("builtins.input", return_value="1"):
+                handle_unified_patches_and_reinstall("CM", u_item, "/opt/test", "/bin/manage.sh")
+                self.assertTrue(mock_sub.called)
+                cm_args = mock_sub.call_args[0][0]
+                self.assertIn("--force", cm_args)
+                self.assertIn("patch-models", cm_args)
+                self.assertIn("/opt/test", cm_args)
+
+            mock_sub.reset_mock()
+            with unittest.mock.patch("builtins.input", return_value="1"):
+                handle_unified_patches_and_reinstall("Y", u_item, "/opt/test", "/bin/manage.sh")
+                self.assertTrue(mock_sub.called)
+                y_args = mock_sub.call_args[0][0]
+                self.assertIn("--force", y_args)
+                self.assertIn("open-ide", y_args)
+                self.assertIn("/opt/test", y_args)
+
+            mock_sub.reset_mock()
+            with unittest.mock.patch("builtins.input", return_value="1"):
+                handle_unified_patches_and_reinstall("J", u_item, "/opt/test", "/bin/manage.sh")
+                self.assertTrue(mock_sub.called)
+                j_args = mock_sub.call_args[0][0]
+                self.assertIn("--force", j_args)
+                self.assertIn("fork", j_args)
+                self.assertIn("/opt/test", j_args)
+
     def test_control_center_selector_patch_target_selection(self):
         """Verifies handle_control_center_selector_patch prompts for target and passes explicit args."""
         from antigravity_suite.detect.control_center_actions import handle_control_center_selector_patch

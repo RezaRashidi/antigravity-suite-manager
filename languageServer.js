@@ -1,4 +1,4 @@
-try { require('./multi_account_router').startMultiAccountRouter(); } catch (_) {}
+try { require('./multi_account_router.js').startMultiAccountRouter(); } catch (_) {}
 "use strict";
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -198,7 +198,10 @@ function setupNodeModules(env, modules) {
  * After resolving, callers should monitor `handle.exitPromise` to detect
  * crashes that occur after startup.
  */
-function startLanguageServer(port, csrf, options = {}) {
+async function startLanguageServer(port, csrf, options = {}) {
+    /* antigravity-model-patch: vendor-runtime-v1 */
+    const __antigravityModelPatchUrl = options.wsl ? undefined : 'http://localhost:' + await require('./modelPatch/proxy').startProxy();
+
     const { headless, hostBridgeUrl, hostBridgeToken, wsl } = options;
     return new Promise((resolve, reject) => {
         const logStream = fs.createWriteStream((0, paths_1.getLsLogPath)(), { flags: 'w' });
@@ -220,11 +223,12 @@ function startLanguageServer(port, csrf, options = {}) {
             '--app_data_dir',
             (0, paths_1.getAppDataDirName)(),
             '--api_server_url',
-            'https://generativelanguage.googleapis.com',
+            (__antigravityModelPatchUrl || 'https://generativelanguage.googleapis.com'),
             '--cloud_code_endpoint',
-            (process.env.ANTIGRAVITY_CLOUD_CODE_ENDPOINT || 'http://127.0.0.1:41999'),
+            (__antigravityModelPatchUrl || 'https://daily-cloudcode-pa.googleapis.com'),
             '--enable_sidecars',
         ];
+        if (__antigravityModelPatchUrl) args.push('--inference_api_server_url', __antigravityModelPatchUrl);
         // Point the LS at the main process' host bridge server. The LS tolerates
         // these being absent, but we always pass them when the server is up.
         if (hostBridgeUrl && hostBridgeToken) {
@@ -356,15 +360,10 @@ function setIntentionalTermination(value) {
  * Start the language server AND set up the restart monitoring loop.
  * Resolves with the handle on first successful startup.
  */
-let _lastPort = 0;
-let _lastCsrf = '';
-let _lastOptions = null;
-let _isRestarting = false;
-
 async function startAndMonitorLanguageServer(port, csrf, options = {}) {
-    _lastPort = port;
-    _lastCsrf = csrf;
-    _lastOptions = options;
+    _lastPort = arguments[0];
+    _lastCsrf = arguments[1];
+    _lastOptions = arguments[2];
     setIntentionalTermination(false); // Reset
     const handle = await startLanguageServer(port, csrf, options);
     _lsPort = handle.port;
@@ -375,20 +374,26 @@ async function startAndMonitorLanguageServer(port, csrf, options = {}) {
     return handle;
 }
 
+let _lastPort = 0;
+let _lastCsrf = '';
+let _lastOptions = null;
+let _isRestarting = false;
+
 async function restartLanguageServer() {
     if (_isRestarting) return;
     _isRestarting = true;
-    _restartCount = 0;
+    try { _restartCount = 0; } catch (_) {}
     console.log('[LanguageServer] Clean restart requested...');
     try {
+        try { if (typeof setIntentionalTermination === 'function') setIntentionalTermination(true); } catch (_) {}
         await killLanguageServer();
-        setIntentionalTermination(false);
+        try { if (typeof setIntentionalTermination === 'function') setIntentionalTermination(false); } catch (_) {}
         const newHandle = await startLanguageServer(_lastPort, _lastCsrf, _lastOptions);
         _lsPort = newHandle.port;
         if (_lastOptions && _lastOptions.onPortChanged) {
             _lastOptions.onPortChanged(_lsPort);
         }
-        monitorLsCrashInternal(newHandle, _lastPort, _lastCsrf, _lastOptions);
+        monitorLsCrashInternal(newHandle, _lsPort, _lastCsrf, _lastOptions);
         console.log('[LanguageServer] Restarted successfully on port ' + _lsPort);
     } catch (err) {
         console.error('[LanguageServer] Restart failed: ' + err.message);

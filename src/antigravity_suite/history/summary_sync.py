@@ -30,6 +30,7 @@ def synchronize_master_summaries(
     tombstones: Optional[Set[str]] = None,
     candidate_vscdbs: Optional[List[str]] = None,
     force_rebuild: bool = False,
+    subagents: Optional[Set[str]] = None,
 ) -> Tuple[sqlite3.Connection, Dict[str, bytes]]:
     """Synchronizes conversation metadata in SQLite conversation_summaries.db and proto dict."""
     home = Path(user_home).resolve() if user_home else get_user_home()
@@ -43,6 +44,8 @@ def synchronize_master_summaries(
         cur.executemany("DELETE FROM conversation_summaries WHERE conversation_id = ?;", [(t,) for t in tombstones])
         try: cur.executemany("DELETE FROM conversations_fts WHERE conversation_id = ?;", [(t,) for t in tombstones])
         except Exception: pass
+    from antigravity_suite.history.subagents import purge_subagents_from_store
+    purge_subagents_from_store(master_conv_dir, con, subagents)
     cur.execute("CREATE TABLE IF NOT EXISTS sync_file_stats (conv_id TEXT PRIMARY KEY, db_mtime REAL, db_size INTEGER, tr_mtime REAL, tr_size INTEGER);")
     cached_stats = {r[0]: (r[1], r[2], r[3], r[4]) for r in cur.execute("SELECT conv_id, db_mtime, db_size, tr_mtime, tr_size FROM sync_file_stats;").fetchall()}
     con.commit()
@@ -50,21 +53,18 @@ def synchronize_master_summaries(
 
     # Ingest existing valid summaries from SQLite
     for c_id, row in existing_rows.items():
-        if not (tombstones and c_id in tombstones) and row[4]:
+        if not (tombstones and c_id in tombstones) and not (subagents and c_id in subagents) and row[4]:
             raw = extract_pure_binary_summary(row[4])
-            if raw and len(raw) > 20:
-                all_summaries[c_id] = raw
+            if raw and len(raw) > 20: all_summaries[c_id] = raw
 
     # Ingest master protobuf binary summaries if available
     if master_proto.is_file():
         try:
-            with open(master_proto, "rb") as f:
-                proto_data = f.read()
+            with open(master_proto, "rb") as f: proto_data = f.read()
             for c_uuid, raw in extract_entries_from_proto(proto_data).items():
-                if not (tombstones and c_uuid in tombstones) and raw and len(raw) > 20 and c_uuid not in all_summaries:
+                if not (tombstones and c_uuid in tombstones) and not (subagents and c_uuid in subagents) and raw and len(raw) > 20 and c_uuid not in all_summaries:
                     all_summaries[c_uuid] = raw
-        except Exception:
-            pass
+        except Exception: pass
 
     if candidate_vscdbs:
         from antigravity_suite.history.vscdb_sync import ingest_vscdb_summaries
@@ -72,11 +72,8 @@ def synchronize_master_summaries(
         existing_rows = load_existing_summaries(master_sum_db)
 
     all_conv_ids = collect_all_conversation_ids(
-        master_conv_dir=master_conv_dir,
-        existing_rows=existing_rows,
-        extra_ids=all_summaries.keys(),
-        tombstones=tombstones,
-        master_brain_dir=master_brain_dir,
+        master_conv_dir=master_conv_dir, existing_rows=existing_rows, extra_ids=all_summaries.keys(),
+        tombstones=tombstones, master_brain_dir=master_brain_dir, subagents=subagents,
     )
     project_mappings = discover_project_mappings(home)
 
@@ -91,6 +88,6 @@ def synchronize_master_summaries(
     if stats.dirty_conv_ids:
         cur.executemany("INSERT OR REPLACE INTO sync_file_stats VALUES (?, ?, ?, ?, ?);", [(cid, cached_stats[cid][0], cached_stats[cid][1], cached_stats[cid][2], cached_stats[cid][3]) for cid in stats.dirty_conv_ids if cid in cached_stats])
 
-    all_summaries = {cid: raw for cid, raw in all_summaries.items() if cid in all_conv_ids}
+    all_summaries = {cid: raw for cid, raw in all_summaries.items() if cid in all_conv_ids and not (subagents and cid in subagents)}
     con.commit()
     return con, all_summaries

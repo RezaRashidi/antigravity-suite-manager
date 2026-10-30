@@ -13,7 +13,12 @@ from antigravity_suite.proto.vscdb import build_summaries_state, build_unified_s
 from antigravity_suite.proto.wire import extract_entries_from_proto, extract_pure_binary_summary
 
 
-def merge_ide_active_state(all_summaries: Dict[str, bytes], old_traj_b64: Optional[str]) -> Dict[str, bytes]:
+def merge_ide_active_state(
+    all_summaries: Dict[str, bytes],
+    old_traj_b64: Optional[str],
+    tombstones: Optional[Set[str]] = None,
+    subagents: Optional[Set[str]] = None,
+) -> Dict[str, bytes]:
     """Merges in-memory summaries with old IDE trajectory summaries preserving active step counts."""
     state_summaries = dict(all_summaries)
     if not old_traj_b64:
@@ -21,10 +26,14 @@ def merge_ide_active_state(all_summaries: Dict[str, bytes], old_traj_b64: Option
     try:
         existing_entries = extract_entries_from_proto(base64.b64decode(old_traj_b64))
         for e_cid, e_bin in existing_entries.items():
+            if (tombstones and e_cid in tombstones) or (subagents and e_cid in subagents):
+                continue
             e_raw = extract_pure_binary_summary(e_bin)
             if not e_raw:
                 continue
             e_parsed = parse_cascade_summary(e_raw)
+            if e_parsed.get("parent_conversation_id") or e_parsed.get("nesting_depth", 0) > 0:
+                continue
             e_sc = e_parsed.get("step_count", 0)
             if e_cid in state_summaries:
                 curr = parse_cascade_summary(state_summaries[e_cid])

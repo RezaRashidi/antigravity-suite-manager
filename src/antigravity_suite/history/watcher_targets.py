@@ -24,6 +24,13 @@ def get_mtime_snapshot(conv_dirs: List[str], brain_dirs: List[str], extra_files:
                         snapshot[f] = os.path.getmtime(f)
                     except Exception:
                         pass
+            anno_d = os.path.join(os.path.dirname(d), "annotations")
+            if os.path.isdir(anno_d):
+                for f in glob.glob(os.path.join(anno_d, "*.pbtxt")):
+                    try:
+                        snapshot[f] = os.path.getmtime(f)
+                    except Exception:
+                        pass
     for b in brain_dirs:
         if os.path.isdir(b):
             for pat in [os.path.join(b, "*", ".system_generated", "logs", "*.jsonl"), os.path.join(b, "*", "*.md")]:

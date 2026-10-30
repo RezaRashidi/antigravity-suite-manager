@@ -23,7 +23,13 @@ get_open_ide_patch_js() {
 }
 
 patch_open_ide_app() {
-    for arg in "$@"; do [ "$arg" = "--force" ] || [ "$arg" = "-f" ] && FORCE_INSTALL=true; done
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --force|-f) FORCE_INSTALL=true; shift ;;
+            --app-dir) APP_INSTALL_DIR="$2"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
     ensure_app_install_dir
     ensure_open_ide_symlink
     local asar="${APP_INSTALL_DIR}/resources/app.asar"

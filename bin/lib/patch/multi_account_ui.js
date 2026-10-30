@@ -85,6 +85,7 @@
                         try { await fetch(apiH() + "/api/multi-account/bind", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cascadeId, email: em, active: true }) }); } catch (_) {}
                         if (!state.bindings) state.bindings = {}; state.bindings[cascadeId] = em;
                         state.active_default = em; state.bindings.__active_account = em;
+                        try { if (window.__antigravityRefreshModels) void window.__antigravityRefreshModels(); } catch (_) {}
                         render(); toast(`✓ Switched chat to ${em.split("@")[0]}`);
                     }
                     dd.classList.remove("open"); fly?.classList.remove("visible");

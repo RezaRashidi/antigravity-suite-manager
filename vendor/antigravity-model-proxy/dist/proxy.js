@@ -234,12 +234,43 @@ function loadCustomModels() {
         return [];
     }
 }
+// ─── Multi-Account Forwarding Bridge ─────────────────────────────────────
+const MULTI_ACCOUNT_PORT = 41999;
+let _multiAccountAvailable = null;
+let _lastMultiAccountCheck = 0;
+
+function isMultiAccountAvailable() {
+    if (_multiAccountAvailable !== null && Date.now() - _lastMultiAccountCheck < 15000) {
+        return _multiAccountAvailable;
+    }
+    _lastMultiAccountCheck = Date.now();
+    try {
+        const testReq = http.request({
+            hostname: '127.0.0.1',
+            port: MULTI_ACCOUNT_PORT,
+            path: '/healthz',
+            method: 'GET',
+            timeout: 800,
+        }, (testRes) => {
+            _multiAccountAvailable = (testRes.statusCode === 200);
+        });
+        testReq.on('error', () => { _multiAccountAvailable = false; });
+        testReq.end();
+    } catch (_) {
+        _multiAccountAvailable = false;
+    }
+    return _multiAccountAvailable ?? true;
+}
+
 // ─── Google Proxy ─────────────────────────────────────────────────────────
-function proxyToGoogle(req, res, reqBody) {
+function proxyToGoogle(req, res, reqBody, allowMultiAccount = true) {
     const isCloudCodeUrl = req.url.includes('v1internal') || req.url.includes('daily-cloudcode');
-    const targetUrl = isCloudCodeUrl
-        ? 'https://daily-cloudcode-pa.googleapis.com'
-        : 'https://generativelanguage.googleapis.com';
+    const useMultiAccount = isCloudCodeUrl && allowMultiAccount && isMultiAccountAvailable();
+    const targetUrl = useMultiAccount
+        ? `http://127.0.0.1:${MULTI_ACCOUNT_PORT}`
+        : (isCloudCodeUrl
+            ? 'https://daily-cloudcode-pa.googleapis.com'
+            : 'https://generativelanguage.googleapis.com');
     const parsedUrl = new URL(req.url, targetUrl);
     const headers = {
         ...req.headers,
@@ -252,12 +283,13 @@ function proxyToGoogle(req, res, reqBody) {
     if (shouldBufferAndModify) {
         delete headers['accept-encoding'];
     }
+    const transport = useMultiAccount ? http : https;
     const options = {
         method: req.method,
         headers: headers,
-        agent: (0, proxyAgent_1.getProxyAgent)(),
+        agent: useMultiAccount ? undefined : (0, proxyAgent_1.getProxyAgent)(),
     };
-    const proxyReq = https.request(parsedUrl, options, (proxyRes) => {
+    const proxyReq = transport.request(parsedUrl, options, (proxyRes) => {
         // P0-5: Timeout for Google proxy requests (60s)
         proxyReq.setTimeout(60000, () => {
             electron_log_1.default.error('[Proxy] Google proxy request timed out after 60s');
@@ -307,9 +339,16 @@ function proxyToGoogle(req, res, reqBody) {
         }
     });
     proxyReq.on('error', (err) => {
+        if (useMultiAccount && (err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET') && !res.headersSent) {
+            _multiAccountAvailable = false;
+            electron_log_1.default.warn('[Proxy] MultiAccountRouter unreachable, falling back directly to Google:', err.message);
+            return proxyToGoogle(req, res, reqBody, false);
+        }
         electron_log_1.default.error('[Proxy] Google Forwarding Error:', err);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: { message: 'Proxy forwarding failed: ' + err.message } }));
+        if (!res.headersSent) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: { message: 'Proxy forwarding failed: ' + err.message } }));
+        }
     });
     if (reqBody) {
         proxyReq.write(reqBody);
@@ -696,7 +735,8 @@ function handleRequest(req, res) {
         // 1. Intercept /v1internal:fetchAvailableModels
         if (req.url.includes('/v1internal:fetchAvailableModels')) {
             electron_log_1.default.info('[Proxy] Intercepting fetchAvailableModels request');
-            const targetUrl = 'https://daily-cloudcode-pa.googleapis.com';
+            const useMa = isMultiAccountAvailable();
+            const targetUrl = useMa ? `http://127.0.0.1:${MULTI_ACCOUNT_PORT}` : 'https://daily-cloudcode-pa.googleapis.com';
             const parsedUrl = new URL(req.url, targetUrl);
             const fwdHeaders = {
                 ...req.headers,
@@ -708,8 +748,10 @@ function handleRequest(req, res) {
             const fwdOptions = {
                 method: req.method,
                 headers: fwdHeaders,
+                agent: useMa ? undefined : (0, proxyAgent_1.getProxyAgent)(),
             };
-            const googleReq = https.request(parsedUrl, fwdOptions, (googleRes) => {
+            const transport = useMa ? http : https;
+            const googleReq = transport.request(parsedUrl, fwdOptions, (googleRes) => {
                 // P0-5: Timeout for fetchAvailableModels forward request (5s in restricted regions)
                 googleReq.setTimeout(5000, () => {
                     electron_log_1.default.error('[Proxy] fetchAvailableModels forward request timed out');

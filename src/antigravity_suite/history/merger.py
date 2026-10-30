@@ -76,13 +76,13 @@ def merge_histories(
     candidate_vscdbs = discover_candidate_vscdbs(home, ide_candidates)
     stats.conv_stores_scanned, stats.brain_stores_scanned = len(conv_pools), len(brain_pools)
 
-    tombstones, pinned_ids = prepare_and_merge_pools(
+    tombstones, pinned_ids, subagents = prepare_and_merge_pools(
         effective_master, m_conv_dir, m_brain_dir, conv_pools, brain_pools,
         candidate_vscdbs, home, force_rebuild, skip_backup, stats
     )
 
     con, all_summaries = synchronize_master_summaries(
-        effective_master, m_conv_dir, m_brain_dir, m_sum_db, m_proto, stats, pinned_ids, home, tombstones, candidate_vscdbs, force_rebuild
+        effective_master, m_conv_dir, m_brain_dir, m_sum_db, m_proto, stats, pinned_ids, home, tombstones, candidate_vscdbs, force_rebuild, subagents=subagents
     )
 
     finalize_and_distribute_history(

@@ -30,7 +30,8 @@ def update_existing_from_ide(
 ) -> bool:
     """Updates an existing conversation summary if IDE has an authentic title."""
     is_fb = is_workspace_fallback_title(curr_t)
-    if not (ide_title and (not curr_t or not is_clean_title(curr_t) or is_prompt_text(curr_t, conv_prompts) or is_fb)):
+    is_diff = bool(ide_title and ide_title != curr_t and is_clean_title(ide_title) and not is_prompt_text(ide_title, conv_prompts))
+    if not (ide_title and (not curr_t or not is_clean_title(curr_t) or is_prompt_text(curr_t, conv_prompts) or is_fb or is_diff)):
         return False
 
     db_ws_uri, db_proj_id = get_db_trajectory_meta(db_p)

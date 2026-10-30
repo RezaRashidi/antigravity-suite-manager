@@ -26,28 +26,30 @@ def collect_all_conversation_ids(
     extra_ids: Optional[Iterable[str]] = None,
     tombstones: Optional[Set[str]] = None,
     master_brain_dir: Optional[Path] = None,
+    subagents: Optional[Set[str]] = None,
 ) -> Set[str]:
-    """Scans databases, protobufs, and existing rows for 36-char UUIDs, skipping tombstones."""
+    """Scans databases, protobufs, and existing rows for 36-char UUIDs, skipping tombstones and subagents."""
     all_conv_ids: Set[str] = set()
     uuid_pattern = re.compile(r"^[0-9a-fA-F-]{36}$")
+    excluded = (tombstones or set()) | (subagents or set())
 
     for db_f in glob.glob(os.path.join(str(master_conv_dir), "*.db")):
         cid = os.path.basename(db_f)[:-3]
-        if uuid_pattern.match(cid) and not (tombstones and cid in tombstones):
+        if uuid_pattern.match(cid) and cid not in excluded:
             all_conv_ids.add(cid)
 
     for pb_f in glob.glob(os.path.join(str(master_conv_dir), "*.pb")):
         cid = os.path.basename(pb_f)[:-3]
-        if uuid_pattern.match(cid) and not (tombstones and cid in tombstones):
+        if uuid_pattern.match(cid) and cid not in excluded:
             all_conv_ids.add(cid)
 
     for cid in existing_rows.keys():
-        if uuid_pattern.match(cid) and not (tombstones and cid in tombstones):
+        if uuid_pattern.match(cid) and cid not in excluded:
             all_conv_ids.add(cid)
 
     if extra_ids:
         for cid in extra_ids:
-            if uuid_pattern.match(cid) and not (tombstones and cid in tombstones):
+            if uuid_pattern.match(cid) and cid not in excluded:
                 all_conv_ids.add(cid)
 
     return all_conv_ids

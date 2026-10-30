@@ -81,7 +81,7 @@ def configure_unified_instance(u_item: Dict[str, Any], curr_app: str, curr_ide: 
             elif choice == "7": eng_p, curr_app, curr_ide = handle_unified_engine_relocate(eng_p, is_p_app, is_p_ide, curr_app, curr_ide, custom_paths, launcher_f, u_item)
             elif choice == "8": handle_unified_patches_and_reinstall(choice, u_item, eng_p, manage_sh)
             elif choice == "9": curr_app, curr_ide = handle_unified_target_role(eng_p, is_p_app, is_p_ide, curr_app, curr_ide); save_paths_config(curr_app, curr_ide, custom_paths)
-            elif choice.upper() in ["R", "F", "U", "T", "J"]: handle_unified_patches_and_reinstall(choice, u_item, eng_p, manage_sh)
+            elif choice.upper() in ["R", "F", "U", "T", "J", "CM", "MODELS", "Y"]: handle_unified_patches_and_reinstall(choice, u_item, eng_p, manage_sh)
         else:
             if choice == "1": eng_p, curr_app, curr_ide = handle_unified_engine_relocate(eng_p, is_p_app, is_p_ide, curr_app, curr_ide, custom_paths, launcher_f, u_item)
             elif choice == "2": curr_app, curr_ide = handle_unified_target_role(eng_p, is_p_app, is_p_ide, curr_app, curr_ide); save_paths_config(curr_app, curr_ide, custom_paths)
@@ -89,5 +89,5 @@ def configure_unified_instance(u_item: Dict[str, Any], curr_app: str, curr_ide: 
                 cmd_name = input("Launcher command name: ").strip() or "antigravity-custom"
                 create_launcher_and_desktop(cmd_name, u_item["type"], eng.get("executable") if eng else os.path.join(eng_p, "antigravity"), eng_p)
             elif choice == "4": toggle_keyring_for_path(eng_p)
-            elif choice in ["5", "r", "R", "f", "F", "u", "U", "t", "T", "j", "J"]: handle_unified_patches_and_reinstall(choice, u_item, eng_p, manage_sh)
+            elif choice.upper() in ["5", "R", "F", "U", "T", "J", "CM", "MODELS", "Y"]: handle_unified_patches_and_reinstall(choice, u_item, eng_p, manage_sh)
     return curr_app, curr_ide

@@ -18,6 +18,7 @@ def merge_brain_folders(
     brain_pools: List[str],
     master_brain_dir: Path,
     tombstones: Optional[Set[str]] = None,
+    subagents: Optional[Set[str]] = None,
 ) -> int:
     """Merges project brain folders and transcripts from external pools into master_brain_dir."""
     brain_folders_merged = 0
@@ -28,7 +29,7 @@ def merge_brain_folders(
             if not os.path.isdir(b_item):
                 continue
             c_uuid = os.path.basename(b_item)
-            if not UUID_REGEX.match(c_uuid) or (tombstones and c_uuid in tombstones):
+            if not UUID_REGEX.match(c_uuid) or (tombstones and c_uuid in tombstones) or (subagents and c_uuid in subagents):
                 continue
 
             target_brain_item = master_brain_dir / c_uuid

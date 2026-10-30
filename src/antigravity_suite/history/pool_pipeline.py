@@ -20,6 +20,7 @@ from antigravity_suite.history.discovery import (
 )
 from antigravity_suite.history.pool_merger import merge_brain_folders, merge_raw_db_pools
 from antigravity_suite.history.reconstruction import reconstruct_missing_databases
+from antigravity_suite.history.subagents import discover_subagent_uuids
 
 
 def prepare_and_merge_pools(
@@ -33,7 +34,7 @@ def prepare_and_merge_pools(
     force_rebuild: bool,
     skip_backup: bool,
     stats: SyncStats,
-) -> Tuple[Set[str], Set[str]]:
+) -> Tuple[Set[str], Set[str], Set[str]]:
     """Executes backup, deletion synchronization, raw file pool ingestion, and pinned discovery."""
     if not skip_backup:
         backup_entry = HistoryBackupManager.create_pre_merge_backup(
@@ -55,19 +56,21 @@ def prepare_and_merge_pools(
         user_home=home,
     )
     tombstones = get_tombstones(effective_master)
+    subagents = discover_subagent_uuids(brain_pools + [str(master_brain_dir)])
 
     stats.db_files_merged = merge_raw_db_pools(conv_pools, master_conv_dir, tombstones=tombstones)
-    stats.brain_folders_merged = merge_brain_folders(brain_pools, master_brain_dir, tombstones=tombstones)
+    stats.brain_folders_merged = merge_brain_folders(brain_pools, master_brain_dir, tombstones=tombstones, subagents=subagents)
     stats.databases_reconstructed = reconstruct_missing_databases(
         brain_pools=brain_pools,
         master_brain_dir=master_brain_dir,
         master_conv_dir=master_conv_dir,
         force_rebuild=force_rebuild,
         tombstones=tombstones,
+        subagents=subagents,
     )
 
     pinned_ids = discover_pinned_conversation_ids(user_home=home)
     replicate_pinned_conversations_order(pinned_ids, user_home=home)
     replicate_projects_order(user_home=home)
 
-    return tombstones, pinned_ids
+    return tombstones, pinned_ids, subagents
