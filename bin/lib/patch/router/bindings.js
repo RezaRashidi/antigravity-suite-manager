@@ -53,6 +53,12 @@ function getActiveAccountEmail(accountsMap = {}) {
         _activeAccountEmail = b.__active_account;
         return _activeAccountEmail;
     }
+    for (const [em, acc] of Object.entries(accountsMap)) {
+        if (acc && acc.is_primary) {
+            _activeAccountEmail = acc.email || em;
+            return _activeAccountEmail;
+        }
+    }
     const accounts = Object.keys(accountsMap);
     return accounts[0] || null;
 }

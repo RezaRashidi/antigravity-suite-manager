@@ -15,23 +15,6 @@ try {
                         if (k === 'titlebarComponent' && v && typeof v === 'object') { v.showOpenIde = true; return v; }
                         return v;
                     };
-                    if (typeof window !== 'undefined') {
-                        let _i = window.ide;
-                        Object.defineProperty(window, 'ide', {
-                            configurable: true, enumerable: true,
-                            get() { return _i || { isInstalled: async () => true }; },
-                            set(val) {
-                                if (val && typeof val.isInstalled === 'function') {
-                                    const orig = val.isInstalled;
-                                    val.isInstalled = async function() {
-                                        try { if (await orig.apply(this, arguments)) return true; } catch (_) {}
-                                        return true;
-                                    };
-                                }
-                                _i = val;
-                            }
-                        });
-                    }
                 } catch (_) {}
             })();`
         }]);

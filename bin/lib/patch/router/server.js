@@ -68,10 +68,7 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
             const isAccountRpc = req.url && (
                 isGen ||
                 req.url.includes('retrieveUserQuota') ||
-                req.url.includes('fetchAvailableModels') ||
-                req.url.includes('loadCodeAssist') ||
-                req.url.includes('fetchUserInfo') ||
-                req.url.includes('listModelConfigs')
+                req.url.includes('fetchAvailableModels')
             );
             let token = null, boundEmail = 'Primary (Native)';
             if (isAccountRpc) {

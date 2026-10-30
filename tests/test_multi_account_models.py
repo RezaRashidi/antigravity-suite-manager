@@ -61,3 +61,11 @@ class TestMultiAccountModels(unittest.TestCase):
         self.assertEqual(int(pid_file.read_text().strip()), os.getpid())
         release_login_lock()
         self.assertFalse(pid_file.exists())
+
+    def test_load_account_with_id_token_email(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "token.json"
+            p.write_text('{"token": {"access_token": "ya29.xyz"}, "id_token_email": "standalone@gmail.com"}')
+            acc = load_account_from_file(p)
+            self.assertIsNotNone(acc)
+            self.assertEqual(acc.email, "standalone@gmail.com")

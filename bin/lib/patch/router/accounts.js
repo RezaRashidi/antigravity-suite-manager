@@ -84,7 +84,7 @@ function loadAllAccounts() {
     for (const f of findPrimaryTokenFiles()) {
         try {
             const d = JSON.parse(fs.readFileSync(f, 'utf8'));
-            let em = d.email;
+            let em = d.email || d.id_token_email;
             if (!em && d.id_token) {
                 const parts = d.id_token.split('.');
                 if (parts[1]) em = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8')).email;
@@ -103,7 +103,7 @@ function loadAllAccounts() {
         if (kToken) {
             try {
                 const d = JSON.parse(kToken);
-                let em = d.email;
+                let em = d.email || d.id_token_email;
                 if (!em && d.id_token) {
                     const parts = d.id_token.split('.');
                     if (parts[1]) em = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8')).email;

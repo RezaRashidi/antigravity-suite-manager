@@ -33,7 +33,7 @@ def load_account_from_file(path: Path) -> Optional[AccountRecord]:
             token_type=tok_d.get("token_type", "Bearer"),
         )
         claims = parse_jwt_claims(d.get("id_token", ""))
-        email = d.get("email") or claims.get("email", "")
+        email = d.get("email") or d.get("id_token_email") or claims.get("email", "")
         if not email:
             return None
         return AccountRecord(
