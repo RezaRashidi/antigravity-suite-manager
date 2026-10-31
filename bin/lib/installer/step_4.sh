@@ -45,7 +45,29 @@ step_4_deploy_scripts() {
         [ -f "${TARGET_ICONS}/antigravity-master-white.png" ] && cp -f "${TARGET_ICONS}/antigravity-master-white.png" "${TARGET_ICONS}/antigravity-ide.png" 2>/dev/null || true
     fi
 
-    ln -sfn "${TARGET_BIN}/manage-antigravity.sh" "${REAL_HOME}/manage-antigravity.sh"
+    ln -sfn "${TARGET_BIN}/manage-antigravity.sh" "${TARGET_BIN}/manage-antigravity" 2>/dev/null || true
+    ln -sfn "${TARGET_BIN}/manage-antigravity.sh" "${TARGET_BIN}/antigravity-suite" 2>/dev/null || true
+    ln -sfn "${TARGET_BIN}/manage-antigravity.sh" "${REAL_HOME}/manage-antigravity.sh" 2>/dev/null || true
+    ln -sfn "${TARGET_BIN}/manage-antigravity.sh" "${REAL_HOME}/manage-antigravity" 2>/dev/null || true
+
+    if [ -w "/usr/local/bin" ]; then
+        ln -sfn "${TARGET_BIN}/manage-antigravity.sh" "/usr/local/bin/manage-antigravity" 2>/dev/null || true
+        ln -sfn "${TARGET_BIN}/manage-antigravity.sh" "/usr/local/bin/manage-antigravity.sh" 2>/dev/null || true
+        ln -sfn "${TARGET_BIN}/manage-antigravity.sh" "/usr/local/bin/antigravity-suite" 2>/dev/null || true
+    elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+        sudo -n ln -sfn "${TARGET_BIN}/manage-antigravity.sh" "/usr/local/bin/manage-antigravity" 2>/dev/null || true
+        sudo -n ln -sfn "${TARGET_BIN}/manage-antigravity.sh" "/usr/local/bin/manage-antigravity.sh" 2>/dev/null || true
+        sudo -n ln -sfn "${TARGET_BIN}/manage-antigravity.sh" "/usr/local/bin/antigravity-suite" 2>/dev/null || true
+    fi
+
+    for rc in "${REAL_HOME}/.bashrc" "${REAL_HOME}/.zshrc" "${REAL_HOME}/.profile"; do
+        if [ -f "$rc" ]; then
+            if ! grep -q '\.local/bin' "$rc" 2>/dev/null; then
+                echo -e '\n# Added by Antigravity Suite Manager\nexport PATH="${HOME}/.local/bin:${PATH}"' >> "$rc" 2>/dev/null || true
+            fi
+        fi
+    done
+
     chown -R "${REAL_USER}:${REAL_USER}" "$TARGET_BIN" "$TARGET_ICONS" "$TARGET_CONF" "${REAL_HOME}/manage-antigravity.sh" "${REAL_HOME}/install.sh" 2>/dev/null || true
     echo -e "${GREEN}[OK] Installed management tools to ${TARGET_BIN} and symlinked ~/manage-antigravity.sh${NC}"
 }

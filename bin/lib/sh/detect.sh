@@ -8,6 +8,10 @@ get_detect_script() {
         echo "${script_dir}/bin/antigravity-detect.py"
     elif [ -f "${script_dir}/antigravity-detect.py" ]; then
         echo "${script_dir}/antigravity-detect.py"
+    elif [ -n "${ANTIGRAVITY_SUITE_DIR:-}" ] && [ -f "${ANTIGRAVITY_SUITE_DIR}/bin/antigravity-detect.py" ]; then
+        echo "${ANTIGRAVITY_SUITE_DIR}/bin/antigravity-detect.py"
+    elif [ -f "${REAL_HOME:-$HOME}/.antigravity-suite-manager/bin/antigravity-detect.py" ]; then
+        echo "${REAL_HOME:-$HOME}/.antigravity-suite-manager/bin/antigravity-detect.py"
     elif [ -f "${LOCAL_BIN}/antigravity-detect.py" ]; then
         echo "${LOCAL_BIN}/antigravity-detect.py"
     fi

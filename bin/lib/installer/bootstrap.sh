@@ -36,6 +36,36 @@ check_auto_bootstrap() {
             cp -f "${INSTALL_REPO_DIR}/assets"/antigravity-master-*.png "${REAL_HOME}/.local/share/icons/" 2>/dev/null || true
         fi
 
+        # Register python package and symlinks
+        local py_ver
+        py_ver=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo "3")
+        local user_sp="${REAL_HOME}/.local/lib/python${py_ver}/site-packages"
+        mkdir -p "$user_sp" 2>/dev/null || true
+        echo "${INSTALL_REPO_DIR}/src" > "${user_sp}/antigravity_suite.pth" 2>/dev/null || true
+
+        ln -sfn "${REAL_HOME}/.local/bin/manage-antigravity.sh" "${REAL_HOME}/.local/bin/manage-antigravity" 2>/dev/null || true
+        ln -sfn "${REAL_HOME}/.local/bin/manage-antigravity.sh" "${REAL_HOME}/.local/bin/antigravity-suite" 2>/dev/null || true
+        ln -sfn "${REAL_HOME}/.local/bin/manage-antigravity.sh" "${REAL_HOME}/manage-antigravity.sh" 2>/dev/null || true
+        ln -sfn "${REAL_HOME}/.local/bin/manage-antigravity.sh" "${REAL_HOME}/manage-antigravity" 2>/dev/null || true
+
+        if [ -w "/usr/local/bin" ]; then
+            ln -sfn "${REAL_HOME}/.local/bin/manage-antigravity.sh" "/usr/local/bin/manage-antigravity" 2>/dev/null || true
+            ln -sfn "${REAL_HOME}/.local/bin/manage-antigravity.sh" "/usr/local/bin/manage-antigravity.sh" 2>/dev/null || true
+            ln -sfn "${REAL_HOME}/.local/bin/manage-antigravity.sh" "/usr/local/bin/antigravity-suite" 2>/dev/null || true
+        elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+            sudo -n ln -sfn "${REAL_HOME}/.local/bin/manage-antigravity.sh" "/usr/local/bin/manage-antigravity" 2>/dev/null || true
+            sudo -n ln -sfn "${REAL_HOME}/.local/bin/manage-antigravity.sh" "/usr/local/bin/manage-antigravity.sh" 2>/dev/null || true
+            sudo -n ln -sfn "${REAL_HOME}/.local/bin/manage-antigravity.sh" "/usr/local/bin/antigravity-suite" 2>/dev/null || true
+        fi
+
+        for rc in "${REAL_HOME}/.bashrc" "${REAL_HOME}/.zshrc" "${REAL_HOME}/.profile"; do
+            if [ -f "$rc" ]; then
+                if ! grep -q '\.local/bin' "$rc" 2>/dev/null; then
+                    echo -e '\n# Added by Antigravity Suite Manager\nexport PATH="${HOME}/.local/bin:${PATH}"' >> "$rc" 2>/dev/null || true
+                fi
+            fi
+        done
+
         if [ -r /dev/tty ] && [ ! -t 0 ]; then
             exec bash "${INSTALL_REPO_DIR}/install.sh" "$@" < /dev/tty
         else

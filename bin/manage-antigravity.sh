@@ -9,6 +9,20 @@ export ELECTRON_OZONE_PLATFORM_HINT="x11"
 
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
+
+# Discover Suite repository root and export PYTHONPATH
+if [ -z "$ANTIGRAVITY_SUITE_DIR" ]; then
+    for cand in "${SCRIPT_DIR}/.." "${SCRIPT_DIR}" "${REAL_HOME:-$HOME}/.antigravity-suite-manager" "/opt/antigravity-suite-manager"; do
+        if [ -d "${cand}/src/antigravity_suite" ]; then
+            export ANTIGRAVITY_SUITE_DIR="$(cd "$cand" && pwd)"
+            break
+        fi
+    done
+fi
+if [ -n "$ANTIGRAVITY_SUITE_DIR" ] && [ -d "${ANTIGRAVITY_SUITE_DIR}/src" ]; then
+    export PYTHONPATH="${ANTIGRAVITY_SUITE_DIR}/src:${PYTHONPATH:-}"
+fi
+
 LIB_SH_DIR=""
 for cand in "${SCRIPT_DIR}/lib/sh" "/usr/local/bin/lib/sh" "${HOME}/.local/bin/lib/sh"; do
     if [ -d "$cand" ]; then

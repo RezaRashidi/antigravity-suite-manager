@@ -2226,6 +2226,25 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
         self.assertIn("Bootstrapping Antigravity Suite Manager from GitHub", content)
         self.assertIn("manage-antigravity.sh", content)
 
+    def test_direct_detect_py_standalone_resolution(self):
+        """Case 49: Verifies that bin/antigravity-detect.py resolves src/ without PYTHONPATH or .pth."""
+        detect_script = os.path.join(os.path.dirname(__file__), "..", "bin", "antigravity-detect.py")
+        self.assertTrue(os.path.isfile(detect_script))
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        res = subprocess.run([sys.executable, detect_script, "--show-paths"], env=env, capture_output=True, text=True, cwd="/tmp")
+        self.assertEqual(res.returncode, 0, f"Error running detect script directly: {res.stderr}")
+        self.assertIn("Antigravity App", res.stdout)
+
+    def test_install_sh_path_and_symlinks(self):
+        """Case 49: Verifies that install.sh configures PATH export and management symlinks."""
+        install_sh = os.path.join(os.path.dirname(__file__), "..", "install.sh")
+        content = Path(install_sh).read_text(encoding="utf-8")
+        self.assertIn("setup_suite_env_and_links", content)
+        self.assertIn("manage-antigravity", content)
+        self.assertIn("antigravity-suite", content)
+        self.assertIn(".local/bin", content)
+
 
 if __name__ == "__main__":
     unittest.main()

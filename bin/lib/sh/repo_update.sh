@@ -79,7 +79,20 @@ update_suite_repo() {
     mkdir -p "$user_sp" 2>/dev/null || true
     echo "${repo_dir}/src" > "${user_sp}/antigravity_suite.pth" 2>/dev/null || true
 
-    ln -sfn "${LOCAL_BIN}/manage-antigravity.sh" "${REAL_HOME}/manage-antigravity.sh"
+    ln -sfn "${LOCAL_BIN}/manage-antigravity.sh" "${LOCAL_BIN}/manage-antigravity" 2>/dev/null || true
+    ln -sfn "${LOCAL_BIN}/manage-antigravity.sh" "${LOCAL_BIN}/antigravity-suite" 2>/dev/null || true
+    ln -sfn "${LOCAL_BIN}/manage-antigravity.sh" "${REAL_HOME}/manage-antigravity.sh" 2>/dev/null || true
+    ln -sfn "${LOCAL_BIN}/manage-antigravity.sh" "${REAL_HOME}/manage-antigravity" 2>/dev/null || true
+
+    if [ -w "/usr/local/bin" ]; then
+        ln -sfn "${LOCAL_BIN}/manage-antigravity.sh" "/usr/local/bin/manage-antigravity" 2>/dev/null || true
+        ln -sfn "${LOCAL_BIN}/manage-antigravity.sh" "/usr/local/bin/manage-antigravity.sh" 2>/dev/null || true
+        ln -sfn "${LOCAL_BIN}/manage-antigravity.sh" "/usr/local/bin/antigravity-suite" 2>/dev/null || true
+    elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+        sudo -n ln -sfn "${LOCAL_BIN}/manage-antigravity.sh" "/usr/local/bin/manage-antigravity" 2>/dev/null || true
+        sudo -n ln -sfn "${LOCAL_BIN}/manage-antigravity.sh" "/usr/local/bin/manage-antigravity.sh" 2>/dev/null || true
+        sudo -n ln -sfn "${LOCAL_BIN}/manage-antigravity.sh" "/usr/local/bin/antigravity-suite" 2>/dev/null || true
+    fi
 
     log_info "Restarting background services with updated codebase..."
     restart_suite_services
