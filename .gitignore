@@ -7,9 +7,10 @@ __pycache__/
 .pytest_cache/
 .hypothesis/
 *.egg-info/
-build/
-dist/
+/build/
+/dist/
 !vendor/antigravity-model-proxy/dist/
+!vendor/antigravity-model-proxy/node_modules/**
 .venv/
 uv.lock
 

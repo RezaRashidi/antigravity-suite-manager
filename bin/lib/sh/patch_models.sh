@@ -31,6 +31,8 @@ patch_models_app() {
         cp -f "$orig" "$asar"
     fi
     local script; script="$(get_models_deploy_script)"
+    local sdir; sdir="$(dirname "$(dirname "$script")")"
+    export NODE_PATH="${sdir}/node_modules:${REAL_HOME:-$HOME}/.local/node_modules:${NODE_PATH}"
     local res_dir="${APP_INSTALL_DIR}/resources"
     log_info "Injecting Custom Models Settings UI into Antigravity App..."
     if ! node "$script" --resources "$res_dir"; then
@@ -68,6 +70,8 @@ unpatch_models_app() {
     detect_active_patches "$asar"
     local had_f5="$ACTIVE_PATCH_F5" had_rtl="$ACTIVE_PATCH_RTL" had_sel="$ACTIVE_PATCH_SELECTOR"
     local script; script="$(get_models_deploy_script)"
+    local sdir; sdir="$(dirname "$(dirname "$script")")"
+    export NODE_PATH="${sdir}/node_modules:${REAL_HOME:-$HOME}/.local/node_modules:${NODE_PATH}"
     local res_dir="${APP_INSTALL_DIR}/resources"
     log_info "Restoring Antigravity App from in-app custom models patch..."
     if ! node "$script" --restore --resources "$res_dir"; then
