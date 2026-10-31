@@ -6,7 +6,7 @@ setup_ide_shortcuts() {
 
     auto_detect_installations
     if [ -z "$IDE_INSTALL_DIR" ] || [ ! -f "${IDE_INSTALL_DIR}/antigravity-ide" ]; then
-        for cand in "$IDE_INSTALL_DIR" "/opt/antigravity-ide" "/opt/antigravity" "/opt/antigravity2"; do
+        for cand in "$IDE_INSTALL_DIR" "${REAL_HOME:-$HOME}/.local/share/antigravity-ide" "/opt/antigravity-ide" "/opt/antigravity" "/opt/antigravity2"; do
             if [ -n "$cand" ] && [ -f "${cand}/antigravity-ide" ]; then
                 IDE_INSTALL_DIR="$cand"
                 break
