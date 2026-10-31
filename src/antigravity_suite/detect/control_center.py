@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import os
 from antigravity_suite.detect.configure_unified import configure_unified_instance
-from antigravity_suite.detect.constants import REAL_HOME
+from antigravity_suite.detect.constants import REAL_HOME, get_bin_script, get_suite_root_dir
 from antigravity_suite.detect.control_center_dispatch import dispatch_control_center_choice
 from antigravity_suite.detect.control_center_render import render_control_center_overview
 from antigravity_suite.detect.paths_config import save_paths_config
@@ -17,10 +17,11 @@ __all__ = ["render_control_center_overview", "run_control_center"]
 
 def run_control_center() -> None:
     local_bin = os.path.join(REAL_HOME, ".local", "bin")
-    manage_sh = os.path.join(local_bin, "manage-antigravity.sh")
-    if not os.path.isfile(manage_sh):
-        manage_sh = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "bin", "manage-antigravity.sh")
-    installer_sh = os.path.join(os.path.dirname(manage_sh), "..", "install.sh")
+    manage_sh = get_bin_script("manage-antigravity.sh")
+    installer_sh = os.path.join(get_suite_root_dir(), "install.sh")
+    if not os.path.isfile(installer_sh):
+        installer_sh = os.path.join(os.path.dirname(manage_sh), "..", "install.sh")
+
 
     while True:
         unified, curr_app, curr_ide, custom_paths = get_unified_instances()

@@ -11,14 +11,12 @@ import subprocess
 import sys
 from typing import Any, Dict
 
-from antigravity_suite.detect.constants import GREEN, NC
+from antigravity_suite.detect.constants import GREEN, NC, get_bin_script
 from antigravity_suite.detect.launchers import get_launcher_binary, update_launcher_binary
 
 
 def toggle_clone_keyring(clone: Dict[str, Any], launcher_f: str, cache_f: str, is_acc1: bool, cid: str, is_normal: bool, local_bin: str) -> None:
-    tool_py = os.path.join(local_bin, "antigravity-keyring.py")
-    if not os.path.isfile(tool_py):
-        tool_py = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "bin", "antigravity-keyring.py")
+    tool_py = get_bin_script("antigravity-keyring.py")
     new_mode = "gnome" if is_normal else "normal"
     if is_acc1: subprocess.run([sys.executable, tool_py, "set", "app1", new_mode], check=False)
     elif cid == "app2": subprocess.run([sys.executable, tool_py, "set", "app2", new_mode], check=False)

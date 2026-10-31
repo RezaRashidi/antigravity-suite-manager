@@ -18,8 +18,9 @@ def _ensure_bench_git_repo() -> str:
     suite_dir = os.environ.get("ANTIGRAVITY_SUITE_DIR")
     if suite_dir and os.path.isdir(os.path.join(suite_dir, ".git")):
         return suite_dir
+    from antigravity_suite.detect.constants import get_suite_root_dir
     for cand in [
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        get_suite_root_dir(),
         os.path.expanduser("~/.antigravity-suite-manager")
     ]:
         if os.path.isdir(os.path.join(cand, ".git")):

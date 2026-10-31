@@ -22,9 +22,8 @@ def trigger_history_merge() -> None:
     if os.environ.get("ANTIGRAVITY_TEST_MODE") == "1" or os.environ.get("ANTIGRAVITY_SKIP_SAFETY_BACKUP") == "1":
         return
 
-    merge_script = os.path.join(LOCAL_BIN, "antigravity-merge-history.py")
-    if not os.path.isfile(merge_script):
-        merge_script = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "bin", "antigravity-merge-history.py")
+    from antigravity_suite.detect.constants import get_bin_script
+    merge_script = get_bin_script("antigravity-merge-history.py")
 
     if os.path.isfile(merge_script):
         try:

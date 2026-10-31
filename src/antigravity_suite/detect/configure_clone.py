@@ -14,7 +14,7 @@ from antigravity_suite.detect.clone_actions import (
     handle_clone_profile_relocate,
 )
 from antigravity_suite.detect.clone_keyring_icon import regen_clone_icons, toggle_clone_keyring
-from antigravity_suite.detect.constants import BLUE, BOLD, CYAN, GREEN, NC, REAL_HOME, YELLOW
+from antigravity_suite.detect.constants import BLUE, BOLD, CYAN, GREEN, NC, REAL_HOME, YELLOW, get_bin_script
 from antigravity_suite.detect.history_toggle import safe_toggle_history_mode
 from antigravity_suite.detect.launchers import get_launcher_binary
 from antigravity_suite.detect.process import is_acc1_running, is_main_ide_running
@@ -23,9 +23,7 @@ from antigravity_suite.detect.process import is_acc1_running, is_main_ide_runnin
 def configure_single_clone(clone: Dict[str, Any]) -> None:
     local_bin = os.path.join(REAL_HOME, ".local", "bin")
     local_apps = os.path.join(REAL_HOME, ".local", "share", "applications")
-    manage_sh = os.path.join(local_bin, "manage-antigravity.sh")
-    if not os.path.isfile(manage_sh):
-        manage_sh = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "bin", "manage-antigravity.sh")
+    manage_sh = get_bin_script("manage-antigravity.sh")
 
     while True:
         cid, p_dir = clone["id"], clone["profile_dir"]

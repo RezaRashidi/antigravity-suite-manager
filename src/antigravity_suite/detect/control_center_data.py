@@ -7,13 +7,11 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from antigravity_suite.detect.constants import CYAN, NC, RED
+from antigravity_suite.detect.constants import CYAN, NC, RED, get_bin_script
 
 
 def handle_control_center_export_import(choice: str, local_bin: str) -> None:
-    tool_py = os.path.join(local_bin, "antigravity-migration.py")
-    if not os.path.isfile(tool_py):
-        tool_py = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "bin", "antigravity-migration.py")
+    tool_py = get_bin_script("antigravity-migration.py")
     if choice.upper() == "E":
         print(f"\n{CYAN}--- Export Antigravity Suite or History Archive ---{NC}\n  [1] Full Bundle  [2] History Only  [3] Suite Configs Only")
         exp_c = input("Enter selection [1-3, Default: 1]: ").strip()
@@ -32,9 +30,7 @@ def handle_control_center_export_import(choice: str, local_bin: str) -> None:
 def handle_control_center_backups(local_bin: str) -> None:
     print(f"\n{CYAN}--- Manage Antigravity Backups & Snapshots ---{NC}\n  [1] List Snapshots  [2] Full Suite Backup  [3] App Backup  [4] IDE Backup  [5] History Backup  [6] Restore  [0] Return")
     b_c = input("Enter choice [0-6, Default: 1]: ").strip()
-    tool_py = os.path.join(local_bin, "antigravity-migration.py")
-    if not os.path.isfile(tool_py):
-        tool_py = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "bin", "antigravity-migration.py")
+    tool_py = get_bin_script("antigravity-migration.py")
     cat_map = {"2": "all", "3": "app", "4": "ide", "5": "history"}
     if b_c in cat_map:
         subprocess.run([sys.executable, tool_py, "create-backup", "--category", cat_map[b_c], "--label", f"{cat_map[b_c]}_control_center"], check=False)

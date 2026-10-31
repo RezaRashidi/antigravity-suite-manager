@@ -16,8 +16,9 @@ from antigravity_suite.icon.png_writer import resample_raw
 def ensure_scale_binary() -> None:
     """Auto-compiles scale_icon utility if binary is absent."""
     if not os.path.isfile(SCALE_BIN) or not os.access(SCALE_BIN, os.X_OK):
+        from antigravity_suite.detect.constants import get_suite_root_dir
         candidates = [
-            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "src", "scale_icon.c"),
+            os.path.join(get_suite_root_dir(), "src", "scale_icon.c"),
             os.path.join(REAL_HOME, ".antigravity-suite-manager", "src", "scale_icon.c"),
         ]
         for sc in candidates:

@@ -2,7 +2,7 @@
 # Auto-bootstrap installer if executed outside cloned repository (curl / pipe)
 
 check_auto_bootstrap() {
-    if [ -f "${SCRIPT_DIR}/bin/manage-antigravity.sh" ] || [ -f "${SCRIPT_DIR}/manage-antigravity.sh" ] || [ -f "${REAL_HOME}/.local/bin/manage-antigravity.sh" ]; then
+    if [ -f "${SCRIPT_DIR}/bin/manage-antigravity.sh" ] || [ -f "${SCRIPT_DIR}/manage-antigravity.sh" ] || [ -f "${REAL_HOME}/.local/bin/manage-antigravity.sh" ] || [ -f "${REAL_HOME}/.antigravity-suite-manager/bin/manage-antigravity.sh" ]; then
         return 0
     fi
     if [ -z "${BASH_SOURCE[1]:-}" ] || [ ! -f "${SCRIPT_DIR}/src/scale_icon.c" ] || [ ! -f "${SCRIPT_DIR}/bin/manage-antigravity.sh" ]; then

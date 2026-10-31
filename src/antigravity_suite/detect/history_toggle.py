@@ -9,7 +9,7 @@ import os
 import subprocess
 import sys
 
-from antigravity_suite.detect.constants import NC, YELLOW
+from antigravity_suite.detect.constants import NC, YELLOW, get_bin_script
 from antigravity_suite.detect.history_app_toggle import toggle_app_history
 from antigravity_suite.detect.history_ide_toggle import toggle_ide_history
 
@@ -23,16 +23,13 @@ def safe_toggle_history_mode(is_ide: bool, is_acc1: bool, is_shared: bool, p_dir
     os.makedirs(os.path.join(shared_pool, "conversations"), exist_ok=True)
     os.makedirs(os.path.join(shared_pool, "brain"), exist_ok=True)
 
-    migration_tool = os.path.join(local_bin, "antigravity-migration.py")
-    if not os.path.isfile(migration_tool):
-        migration_tool = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "bin", "antigravity-migration.py")
+    migration_tool = get_bin_script("antigravity-migration.py")
     if os.path.isfile(migration_tool):
         safe_label = f"pre_toggle_{name or 'instance'}"
         subprocess.run([sys.executable, migration_tool, "create-backup", "--category", "history", "--label", safe_label], check=False)
 
-    merge_script = os.path.join(local_bin, "antigravity-merge-history.py")
-    if not os.path.isfile(merge_script):
-        merge_script = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "bin", "antigravity-merge-history.py")
+    merge_script = get_bin_script("antigravity-merge-history.py")
+
 
     ts = int(datetime.datetime.now().timestamp())
     if is_ide:

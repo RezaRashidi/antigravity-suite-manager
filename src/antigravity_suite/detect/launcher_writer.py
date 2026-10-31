@@ -8,7 +8,7 @@ import os
 import subprocess
 import sys
 
-from antigravity_suite.detect.constants import GREEN, NC, REAL_HOME
+from antigravity_suite.detect.constants import GREEN, NC, REAL_HOME, get_bin_script
 
 
 def create_launcher_and_desktop(cmd_name: str, app_type: str, exe_target: str, install_dir: str) -> None:
@@ -45,9 +45,7 @@ def toggle_keyring_for_path(install_dir: str) -> None:
     print("  [1] Switch to Normal File Storage (Bypasses GNOME Keyring - Recommended)")
     print("  [2] Switch to GNOME Keyring (Secret Service)")
     k_choice = input("Select storage mode [1-2]: ").strip()
-    keyring_tool = os.path.join(REAL_HOME, ".local", "bin", "antigravity-keyring.py")
-    if not os.path.isfile(keyring_tool):
-        keyring_tool = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "bin", "antigravity-keyring.py")
+    keyring_tool = get_bin_script("antigravity-keyring.py")
     if os.path.isfile(keyring_tool):
         mode = "normal" if k_choice == "1" else "gnome"
         subprocess.run([sys.executable, keyring_tool, "set", "all", mode], check=False)

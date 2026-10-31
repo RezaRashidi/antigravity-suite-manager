@@ -15,7 +15,7 @@ from antigravity_suite.detect.clone_actions import (
 )
 from antigravity_suite.detect.clone_keyring_icon import regen_clone_icons, toggle_clone_keyring
 from antigravity_suite.detect.configure_unified_menu import render_unified_header
-from antigravity_suite.detect.constants import GREEN, NC, REAL_HOME, YELLOW
+from antigravity_suite.detect.constants import GREEN, NC, REAL_HOME, YELLOW, get_bin_script
 from antigravity_suite.detect.history_toggle import safe_toggle_history_mode
 from antigravity_suite.detect.inspectors import inspect_app_dir, inspect_ide_dir
 from antigravity_suite.detect.launchers import create_launcher_and_desktop, get_launcher_binary, toggle_keyring_for_path
@@ -31,9 +31,7 @@ from antigravity_suite.detect.unified_actions import (
 def configure_unified_instance(u_item: Dict[str, Any], curr_app: str, curr_ide: str, custom_paths: List[str]) -> Tuple[str, str]:
     local_bin = os.path.join(REAL_HOME, ".local", "bin")
     local_apps = os.path.join(REAL_HOME, ".local", "share", "applications")
-    manage_sh = os.path.join(local_bin, "manage-antigravity.sh")
-    if not os.path.isfile(manage_sh):
-        manage_sh = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "bin", "manage-antigravity.sh")
+    manage_sh = get_bin_script("manage-antigravity.sh")
 
     while True:
         c, eng = u_item.get("clone"), u_item.get("engine")

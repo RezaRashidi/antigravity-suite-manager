@@ -9,7 +9,7 @@ import re
 import subprocess
 from typing import Any, Dict, List, Tuple
 
-from antigravity_suite.detect.constants import BOLD, CYAN, GREEN, NC, REAL_HOME, YELLOW
+from antigravity_suite.detect.constants import BOLD, CYAN, GREEN, NC, REAL_HOME, YELLOW, get_bin_script
 from antigravity_suite.detect.launchers import create_launcher_and_desktop, toggle_keyring_for_path
 
 
@@ -69,9 +69,7 @@ def configure_single_installation(item: Dict[str, Any], curr_app: str, curr_ide:
             toggle_keyring_for_path(item["path"])
         elif sub_c == "5":
             c_type = "ide" if "IDE" in item["type"] else "app"
-            manage_sh = os.path.join(REAL_HOME, ".local", "bin", "manage-antigravity.sh")
-            if not os.path.isfile(manage_sh):
-                manage_sh = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "bin", "manage-antigravity.sh")
+            manage_sh = get_bin_script("manage-antigravity.sh")
             flag = "--ide-dir" if c_type == "ide" else "--app-dir"
             subprocess.run(["bash", manage_sh, "install", c_type, flag, item["path"]], check=False)
     return curr_app, curr_ide

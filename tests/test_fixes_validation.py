@@ -2195,9 +2195,41 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             subprocess.run(cmd_ide_unpatch, check=True)
             self.assertIn('.get("conversationForking")?.enabled??!1', main_ide.read_text())
 
+    def test_bin_script_resolution_no_src_bin(self):
+        """Case 48: Verifies that get_bin_script and get_suite_root_dir never resolve to invalid 'src/bin'."""
+        from antigravity_suite.detect.constants import get_bin_script, get_suite_root_dir
+        root = get_suite_root_dir()
+        self.assertTrue(os.path.isdir(root))
+        self.assertTrue(os.path.isfile(os.path.join(root, "bin", "manage-antigravity.sh")))
+
+        # Test manage-antigravity.sh resolution
+        manage_sh = get_bin_script("manage-antigravity.sh")
+        self.assertNotIn("src/bin", manage_sh)
+        self.assertTrue(os.path.isfile(manage_sh))
+        self.assertTrue(manage_sh.endswith("bin/manage-antigravity.sh"))
+
+        # Test tools resolution
+        for tool in ["antigravity-migration.py", "antigravity-keyring.py", "antigravity-merge-history.py"]:
+            t_path = get_bin_script(tool)
+            self.assertNotIn("src/bin", t_path)
+            self.assertTrue(os.path.isfile(t_path))
+
+    def test_install_sh_bootstrap_integrity(self):
+        """Case 48: Verifies install.sh syntax and self-contained bootstrapping logic."""
+        install_sh = os.path.join(os.path.dirname(__file__), "..", "install.sh")
+        self.assertTrue(os.path.isfile(install_sh))
+        # Check bash syntax
+        res = subprocess.run(["bash", "-n", install_sh], capture_output=True, text=True)
+        self.assertEqual(res.returncode, 0, f"Syntax error in install.sh: {res.stderr}")
+
+        content = Path(install_sh).read_text(encoding="utf-8")
+        self.assertIn("Bootstrapping Antigravity Suite Manager from GitHub", content)
+        self.assertIn("manage-antigravity.sh", content)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
 
