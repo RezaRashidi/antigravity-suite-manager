@@ -53,6 +53,24 @@ detect_active_patches() {
     fi
 }
 
+restore_pristine_models_base() {
+    local asar="$1" orig="$2"
+    detect_active_patches "$asar"
+    local has_active=false
+    if [ "$ACTIVE_PATCH_F5" = "true" ] || [ "$ACTIVE_PATCH_RTL" = "true" ] || \
+       [ "$ACTIVE_PATCH_SELECTOR" = "true" ] || [ "$ACTIVE_PATCH_FORK" = "true" ] || \
+       [ "$ACTIVE_PATCH_OPEN_IDE" = "true" ]; then
+        has_active=true
+    fi
+    if [ ! -f "$orig" ] || [ "$has_active" != "true" ]; then
+        cp -p "$asar" "$orig"
+        [ "$has_active" != "true" ] && rm -rf "$(dirname "$asar")/.antigravity-model-patch" 2>/dev/null || true
+        return 0
+    fi
+    log_info "Temporarily restoring pristine base for model patcher..."
+    cp -f "$orig" "$asar"
+}
+
 reapply_post_model_patches() {
     local f5="$1" rtl="$2" sel="$3" fork="$4" open_ide="$5"
     local asar="${APP_INSTALL_DIR}/resources/app.asar"

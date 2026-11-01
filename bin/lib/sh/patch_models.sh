@@ -23,14 +23,9 @@ patch_models_app() {
     log_info "Ensuring permissions for ${APP_INSTALL_DIR}..."
     fix_permissions "$APP_INSTALL_DIR"
     local orig="${asar}.orig"
-    [ ! -f "$orig" ] && cp -p "$asar" "$orig"
-    detect_active_patches "$asar"
+    restore_pristine_models_base "$asar" "$orig"
     local had_f5="$ACTIVE_PATCH_F5" had_rtl="$ACTIVE_PATCH_RTL" had_sel="$ACTIVE_PATCH_SELECTOR"
     local had_fork="$ACTIVE_PATCH_FORK" had_open_ide="$ACTIVE_PATCH_OPEN_IDE"
-    if [ "$had_f5" = "true" ] || [ "$had_rtl" = "true" ] || [ "$had_sel" = "true" ] || [ "$had_fork" = "true" ] || [ "$had_open_ide" = "true" ]; then
-        log_info "Temporarily restoring pristine base for model patcher..."
-        cp -f "$orig" "$asar"
-    fi
     local script; script="$(get_models_deploy_script)"
     local sdir; sdir="$(dirname "$(dirname "$script")")"
     export NODE_PATH="${sdir}/node_modules:${REAL_HOME:-$HOME}/.local/node_modules:${NODE_PATH}"

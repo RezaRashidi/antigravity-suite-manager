@@ -82,6 +82,14 @@ install_binary() {
         sudo tar -zxf "$archive_path" --no-same-owner --strip-components=1 -C "$target_dir"
     fi
 
+    if [ "$name" = "Antigravity-App" ]; then
+        rm -f "$target_dir/resources/app.asar.orig" "$target_dir/resources/app.asar.bak"* 2>/dev/null || true
+        rm -rf "$target_dir/resources/.antigravity-model-patch" 2>/dev/null || true
+        [ -f "$target_dir/resources/app.asar" ] && cp -p "$target_dir/resources/app.asar" "$target_dir/resources/app.asar.orig" 2>/dev/null || true
+    elif [ "$name" = "Antigravity-IDE" ]; then
+        rm -f "$target_dir/bin/language_server_linux_x64.bin.orig" 2>/dev/null || true
+    fi
+
     fix_permissions "$target_dir"
     log_success "${name} v${ver} extracted successfully in ${target_dir}"
 }

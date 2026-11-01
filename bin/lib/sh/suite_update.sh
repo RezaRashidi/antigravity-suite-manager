@@ -3,33 +3,37 @@
 
 reapply_detected_patches() {
     log_info "Re-applying previously applied patches..."
-    if [ "$HAD_APP_SELECTOR" = true ]; then
-        log_info "Re-applying Multi-Account Selector to App..."
-        FORCE_INSTALL=true patch_selector_app
-    fi
-    if [ "$HAD_IDE_SELECTOR" = true ]; then
-        log_info "Re-applying Multi-Account Selector to IDE..."
-        FORCE_INSTALL=true patch_selector_ide
+    if [ "$HAD_APP_MODELS" = true ]; then
+        log_info "Re-applying Custom Models UI patch to App..."
+        FORCE_INSTALL=true patch_models_app
     fi
     if [ "$HAD_APP_RTL" = true ] && [ "$SKIP_RTL" != true ]; then
         log_info "Re-applying RTL patch to App..."
         FORCE_INSTALL=true patch_rtl_app --force
     fi
-    if [ "$HAD_IDE_RTL" = true ] && [ "$SKIP_RTL" != true ]; then
-        log_info "Re-applying RTL patch to IDE..."
-        FORCE_INSTALL=true patch_rtl_ide --force
-    fi
     if [ "$HAD_APP_F5" = true ] && [ "$SKIP_F5" != true ]; then
         log_info "Re-applying F5 reload patch to App..."
         FORCE_INSTALL=true patch_f5_reload --force
+    fi
+    if [ "$HAD_APP_SELECTOR" = true ]; then
+        log_info "Re-applying Multi-Account Selector to App..."
+        FORCE_INSTALL=true patch_selector_app
     fi
     if [ "$HAD_APP_FORK" = true ]; then
         log_info "Re-applying Conversation Forking patch to App..."
         FORCE_INSTALL=true patch_fork_app
     fi
-    if [ "$HAD_APP_MODELS" = true ]; then
-        log_info "Re-applying Custom Models UI patch to App..."
-        FORCE_INSTALL=true patch_models_app
+    if [ "$HAD_APP_OPEN_IDE" = true ]; then
+        log_info "Re-applying Open in IDE button to App..."
+        FORCE_INSTALL=true patch_open_ide_app
+    fi
+    if [ "$HAD_IDE_RTL" = true ] && [ "$SKIP_RTL" != true ]; then
+        log_info "Re-applying RTL patch to IDE..."
+        FORCE_INSTALL=true patch_rtl_ide --force
+    fi
+    if [ "$HAD_IDE_SELECTOR" = true ]; then
+        log_info "Re-applying Multi-Account Selector to IDE..."
+        FORCE_INSTALL=true patch_selector_ide
     fi
     if [ "$HAD_IDE_FORK" = true ]; then
         log_info "Re-applying Conversation Forking patch to IDE..."
@@ -49,7 +53,7 @@ update_all() {
     detect_active_app_patches
     detect_active_ide_patches
     log_info "Pre-update active patch detection:"
-    log_info "  • App: Selector=${HAD_APP_SELECTOR}, RTL=${HAD_APP_RTL}, F5=${HAD_APP_F5}, Fork=${HAD_APP_FORK}, Models=${HAD_APP_MODELS}"
+    log_info "  • App: Selector=${HAD_APP_SELECTOR}, RTL=${HAD_APP_RTL}, F5=${HAD_APP_F5}, Fork=${HAD_APP_FORK}, OpenIDE=${HAD_APP_OPEN_IDE}, Models=${HAD_APP_MODELS}"
     log_info "  • IDE: Selector=${HAD_IDE_SELECTOR}, RTL=${HAD_IDE_RTL}, Fork=${HAD_IDE_FORK}"
 
     log_info "Starting full suite update..."
