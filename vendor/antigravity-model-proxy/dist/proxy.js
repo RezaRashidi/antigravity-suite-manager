@@ -90,6 +90,167 @@ function toSlug(model) {
             .replace(/^-+|-+$/g, '')
             .toLowerCase());
 }
+function getModelsCatalogCachePath() {
+    const geminiDir = path.join(electron_1.app.getPath('home'), '.gemini', 'antigravity');
+    return path.join(geminiDir, 'cached_available_models.json');
+}
+let _cachedUpstreamCatalog = null;
+function loadCachedCatalog() {
+    if (_cachedUpstreamCatalog) return _cachedUpstreamCatalog;
+    try {
+        const cacheFile = getModelsCatalogCachePath();
+        if (fs.existsSync(cacheFile)) {
+            const raw = fs.readFileSync(cacheFile, 'utf8');
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object' && !parsed.error && (parsed.models || parsed.availableModels || parsed.available_models)) {
+                _cachedUpstreamCatalog = parsed;
+                return _cachedUpstreamCatalog;
+            }
+        }
+    } catch (e) {
+        electron_log_1.default.warn('[Proxy] Failed to load cached models catalog:', e);
+    }
+    return null;
+}
+function saveCachedCatalog(catalog) {
+    if (!catalog || typeof catalog !== 'object' || catalog.error) return;
+    if (!catalog.models && !catalog.availableModels && !catalog.available_models) return;
+    _cachedUpstreamCatalog = catalog;
+    try {
+        const cacheFile = getModelsCatalogCachePath();
+        fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
+        fs.writeFileSync(cacheFile, JSON.stringify(catalog), 'utf8');
+    } catch (e) {
+        electron_log_1.default.warn('[Proxy] Failed to persist models catalog cache:', e);
+    }
+}
+function buildModelsCatalogResponse(upstreamCatalog, customModels) {
+    const base = upstreamCatalog && typeof upstreamCatalog === 'object' && !upstreamCatalog.error
+        ? JSON.parse(JSON.stringify(upstreamCatalog))
+        : { models: {} };
+    delete base.error;
+    const mergeModels = (target) => {
+        if (Array.isArray(target)) {
+            const mapped = customModels.map((m) => {
+                const cap = (0, modelUtils_1.detectModelCapabilities)(m, true);
+                return {
+                    name: 'models/' + generateModelPlaceholderId(m),
+                    version: '1.0',
+                    displayName: m.displayName,
+                    description: m.description,
+                    inputTokenLimit: cap.maxTokens,
+                    outputTokenLimit: cap.maxOutputTokens,
+                    supportedGenerationMethods: ['generateContent', 'countTokens'],
+                    temperature: cap.isThinking ? undefined : 0.7,
+                    topP: cap.isThinking ? undefined : 0.9,
+                    topK: cap.isThinking ? undefined : 40,
+                };
+            });
+            return [...mapped, ...target];
+        }
+        else if (target && typeof target === 'object') {
+            const result = { ...target };
+            customModels.forEach((m) => {
+                const slug = toSlug(m);
+                const cap = (0, modelUtils_1.detectModelCapabilities)(m, true);
+                const entry = {
+                    displayName: m.displayName,
+                    supportsImages: cap.supportsImages,
+                    supportsThinking: cap.isThinking,
+                    recommended: true,
+                    maxTokens: cap.maxTokens,
+                    maxOutputTokens: cap.maxOutputTokens,
+                    tokenizerType: 'LLAMA_WITH_SPECIAL',
+                    model: generateModelPlaceholderId(m),
+                    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
+                    modelProvider: 'MODEL_PROVIDER_GOOGLE',
+                    supportsVideo: false,
+                    supportedMimeTypes: {
+                        'text/plain': true,
+                        'text/markdown': true,
+                        'text/html': true,
+                        'text/css': true,
+                        'text/xml': true,
+                        'text/csv': true,
+                        'application/json': true,
+                        'application/pdf': true,
+                        'application/x-javascript': true,
+                        'application/x-typescript': true,
+                        'application/x-python-code': true,
+                        'application/x-ipynb+json': true,
+                        ...(cap.supportsImages ? {
+                            'image/png': true,
+                            'image/jpeg': true,
+                            'image/webp': true,
+                            'image/gif': true,
+                            'image/heic': true,
+                            'image/heif': true,
+                        } : {})
+                    }
+                };
+                result[slug] = entry;
+                m._slug = slug;
+            });
+            return result;
+        }
+        return target;
+    };
+    let merged = false;
+    if (base.models) {
+        base.models = mergeModels(base.models);
+        merged = true;
+    }
+    if (base.availableModels) {
+        base.availableModels = mergeModels(base.availableModels);
+        merged = true;
+    }
+    if (base.available_models) {
+        base.available_models = mergeModels(base.available_models);
+        merged = true;
+    }
+    if (!merged) {
+        base.models = mergeModels({});
+    }
+    const customSlugs = customModels.map((m) => m._slug || toSlug(m)).filter(Boolean);
+    if (customSlugs.length > 0) {
+        let attached = false;
+        if (base.agentModelSorts && Array.isArray(base.agentModelSorts)) {
+            base.agentModelSorts.forEach((sort) => {
+                if (sort.groups && Array.isArray(sort.groups)) {
+                    sort.groups.forEach((group) => {
+                        if (group.modelIds && Array.isArray(group.modelIds)) {
+                            attached = true;
+                            customSlugs.forEach((slug) => {
+                                if (!group.modelIds.includes(slug)) {
+                                    group.modelIds.push(slug);
+                                }
+                            });
+                        }
+                    });
+                }
+            });
+        }
+        if (!attached) {
+            if (!base.agentModelSorts || !Array.isArray(base.agentModelSorts)) {
+                base.agentModelSorts = [];
+            }
+            base.agentModelSorts.push({
+                displayName: 'Custom models',
+                groups: [{ modelIds: customSlugs }]
+            });
+        }
+    }
+    return base;
+}
+function sendFallbackCatalog(res, reason) {
+    if (res.headersSent) return;
+    const customModels = loadCustomModels();
+    const cached = loadCachedCatalog();
+    electron_log_1.default.warn(`[Proxy] Using fallback models catalog (${reason}), cached available: ${!!cached}, custom count: ${customModels.length}`);
+    const finalCatalog = buildModelsCatalogResponse(cached, customModels);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(finalCatalog));
+}
 // ─── Model Loading ────────────────────────────────────────────────────────
 function loadCustomModels() {
     const filePath = getCustomModelsPath();
@@ -754,208 +915,37 @@ function handleRequest(req, res) {
             const googleReq = transport.request(parsedUrl, fwdOptions, (googleRes) => {
                 // P0-5: Timeout for fetchAvailableModels forward request (5s in restricted regions)
                 googleReq.setTimeout(5000, () => {
-                    electron_log_1.default.error('[Proxy] fetchAvailableModels forward request timed out');
+                    electron_log_1.default.error("[Proxy] fetchAvailableModels forward request timed out");
                     googleReq.destroy();
-                    if (!res.headersSent) {
-                        const customModels = loadCustomModels();
-                        const mappedCustom = {};
-                        customModels.forEach((m) => {
-                            const slug = toSlug(m);
-                            mappedCustom[slug] = {
-                                displayName: m.displayName,
-                                maxTokens: (0, modelUtils_1.detectModelCapabilities)(m).maxTokens,
-                                maxOutputTokens: (0, modelUtils_1.detectModelCapabilities)(m).maxOutputTokens,
-                                model: generateModelPlaceholderId(m),
-                                apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
-                                modelProvider: 'MODEL_PROVIDER_GOOGLE',
-                            };
-                        });
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ models: mappedCustom }));
-                    }
+                    sendFallbackCatalog(res, "timeout");
                 });
-                let googleBody = '';
-                googleRes.on('data', (chunk) => (googleBody += chunk));
-                googleRes.on('end', () => {
+                let googleBody = "";
+                googleRes.on("data", (chunk) => (googleBody += chunk));
+                googleRes.on("end", () => {
                     try {
                         electron_log_1.default.info(`[Proxy] fetchAvailableModels response status: ${googleRes.statusCode}, body length: ${googleBody.length}`);
-                        const googleJson = JSON.parse(googleBody);
-                        const customModels = loadCustomModels();
-                        electron_log_1.default.info(`[Proxy] Loaded custom models count: ${customModels.length}`);
-                        const mergeModels = (target) => {
-                            if (Array.isArray(target)) {
-                                const mapped = customModels.map((m) => {
-                                    const cap = (0, modelUtils_1.detectModelCapabilities)(m, true);
-                                    return {
-                                        name: 'models/' + generateModelPlaceholderId(m),
-                                        version: '1.0',
-                                        displayName: m.displayName,
-                                        description: m.description,
-                                        inputTokenLimit: cap.maxTokens,
-                                        outputTokenLimit: cap.maxOutputTokens,
-                                        supportedGenerationMethods: ['generateContent', 'countTokens'],
-                                        temperature: cap.isThinking ? undefined : 0.7,
-                                        topP: cap.isThinking ? undefined : 0.9,
-                                        topK: cap.isThinking ? undefined : 40,
-                                    };
-                                });
-                                return [...mapped, ...target];
-                            }
-                            else if (target && typeof target === 'object') {
-                                const result = { ...target };
-                                customModels.forEach((m) => {
-                                    const slug = toSlug(m);
-                                    const cap = (0, modelUtils_1.detectModelCapabilities)(m, true);
-                                    const entry = {
-                                        displayName: m.displayName,
-                                        supportsImages: cap.supportsImages,
-                                        supportsThinking: cap.isThinking,
-                                        recommended: true,
-                                        maxTokens: cap.maxTokens,
-                                        maxOutputTokens: cap.maxOutputTokens,
-                                        tokenizerType: 'LLAMA_WITH_SPECIAL',
-                                        model: generateModelPlaceholderId(m),
-                                        apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
-                                        modelProvider: 'MODEL_PROVIDER_GOOGLE',
-                                    };
-                                    if (cap.supportsImages) {
-                                        entry.supportsVideo = false;
-                                        entry.supportedMimeTypes = {
-                                            'image/png': true,
-                                            'image/jpeg': true,
-                                            'image/webp': true,
-                                            'image/gif': true,
-                                            'image/heic': true,
-                                            'image/heif': true,
-                                            'text/plain': true,
-                                            'text/markdown': true,
-                                            'text/html': true,
-                                            'text/css': true,
-                                            'text/xml': true,
-                                            'text/csv': true,
-                                            'application/json': true,
-                                            'application/pdf': true,
-                                            'application/x-javascript': true,
-                                            'application/x-typescript': true,
-                                            'application/x-python-code': true,
-                                            'application/x-ipynb+json': true,
-                                        };
-                                    }
-                                    else {
-                                        entry.supportsVideo = false;
-                                        entry.supportedMimeTypes = {
-                                            'text/plain': true,
-                                            'text/markdown': true,
-                                            'text/html': true,
-                                            'text/css': true,
-                                            'text/xml': true,
-                                            'text/csv': true,
-                                            'application/json': true,
-                                            'application/pdf': true,
-                                            'application/x-javascript': true,
-                                            'application/x-typescript': true,
-                                            'application/x-python-code': true,
-                                            'application/x-ipynb+json': true,
-                                        };
-                                    }
-                                    result[slug] = entry;
-                                    m._slug = slug;
-                                    electron_log_1.default.info(`[Proxy] Custom model "${m.displayName}" => slug: ${slug} => model: ${generateModelPlaceholderId(m)} => thinking: ${cap.isThinking} => images: ${cap.supportsImages}`);
-                                });
-                                return result;
-                            }
-                            return target;
-                        };
-                        let merged = false;
-                        if (googleJson.models) {
-                            googleJson.models = mergeModels(googleJson.models);
-                            merged = true;
-                        }
-                        if (googleJson.availableModels) {
-                            googleJson.availableModels = mergeModels(googleJson.availableModels);
-                            merged = true;
-                        }
-                        if (googleJson.available_models) {
-                            googleJson.available_models = mergeModels(googleJson.available_models);
-                            merged = true;
-                        }
-                        if (!merged) {
-                            const modelsMap = {};
-                            customModels.forEach((m) => {
-                                const slug = toSlug(m);
-                                modelsMap[slug] = {
-                                    displayName: m.displayName,
-                                    recommended: true,
-                                    maxTokens: (0, modelUtils_1.detectModelCapabilities)(m).maxTokens,
-                                    maxOutputTokens: (0, modelUtils_1.detectModelCapabilities)(m).maxOutputTokens,
-                                    tokenizerType: 'LLAMA_WITH_SPECIAL',
-                                    model: generateModelPlaceholderId(m),
-                                    apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
-                                    modelProvider: 'MODEL_PROVIDER_GOOGLE',
-                                };
-                                m._slug = slug;
-                            });
-                            googleJson.models = modelsMap;
-                        }
-                        // Inject custom model slugs into agentModelSorts
-                        const customSlugs = customModels.map((m) => m._slug).filter(Boolean);
-                        if (customSlugs.length > 0) {
-                            if (googleJson.agentModelSorts && Array.isArray(googleJson.agentModelSorts)) {
-                                googleJson.agentModelSorts.forEach((sort) => {
-                                    if (sort.groups && Array.isArray(sort.groups)) {
-                                        sort.groups.forEach((group) => {
-                                            if (group.modelIds && Array.isArray(group.modelIds)) {
-                                                customSlugs.forEach((slug) => {
-                                                    if (!group.modelIds.includes(slug)) {
-                                                        group.modelIds.push(slug);
-                                                    }
-                                                });
-                                            }
-                                        });
-                                    }
-                                });
+                        if (googleRes.statusCode === 200 && googleBody && googleBody.length > 50) {
+                            const googleJson = JSON.parse(googleBody);
+                            if (!googleJson.error && (googleJson.models || googleJson.availableModels || googleJson.available_models)) {
+                                saveCachedCatalog(googleJson);
+                                const customModels = loadCustomModels();
+                                electron_log_1.default.info(`[Proxy] Loaded custom models count: ${customModels.length}`);
+                                const finalCatalog = buildModelsCatalogResponse(googleJson, customModels);
+                                res.writeHead(200, { "Content-Type": "application/json" });
+                                return res.end(JSON.stringify(finalCatalog));
                             }
                         }
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify(googleJson));
+                        sendFallbackCatalog(res, `upstream HTTP ${googleRes.statusCode}`);
                     }
                     catch (err) {
-                        electron_log_1.default.error('[Proxy] Parsing fetchAvailableModels failed, returning custom models:', err);
-                        const customModels = loadCustomModels();
-                        const mappedCustom = {};
-                        customModels.forEach((m) => {
-                            const slug = toSlug(m);
-                            mappedCustom[slug] = {
-                                displayName: m.displayName,
-                                maxTokens: (0, modelUtils_1.detectModelCapabilities)(m).maxTokens,
-                                maxOutputTokens: (0, modelUtils_1.detectModelCapabilities)(m).maxOutputTokens,
-                                model: generateModelPlaceholderId(m),
-                                apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
-                                modelProvider: 'MODEL_PROVIDER_GOOGLE',
-                            };
-                        });
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ models: mappedCustom }));
+                        electron_log_1.default.error("[Proxy] Parsing fetchAvailableModels failed, using fallback:", err);
+                        sendFallbackCatalog(res, "parse error");
                     }
                 });
             });
-            googleReq.on('error', (err) => {
-                electron_log_1.default.error('[Proxy] Forwarding fetchAvailableModels failed:', err);
-                const customModels = loadCustomModels();
-                const mappedCustom = {};
-                customModels.forEach((m) => {
-                    const slug = toSlug(m);
-                    mappedCustom[slug] = {
-                        displayName: m.displayName,
-                        maxTokens: (0, modelUtils_1.detectModelCapabilities)(m).maxTokens,
-                        maxOutputTokens: (0, modelUtils_1.detectModelCapabilities)(m).maxOutputTokens,
-                        model: generateModelPlaceholderId(m),
-                        apiProvider: 'API_PROVIDER_GOOGLE_GEMINI',
-                        modelProvider: 'MODEL_PROVIDER_GOOGLE',
-                    };
-                });
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ models: mappedCustom }));
+            googleReq.on("error", (err) => {
+                electron_log_1.default.error("[Proxy] Forwarding fetchAvailableModels failed:", err);
+                sendFallbackCatalog(res, `forward error: ${err.message}`);
             });
             if (fullBody && fullBody.length > 0) {
                 googleReq.write(fullBody);
@@ -1011,10 +1001,11 @@ function handleRequest(req, res) {
                             topP: 0.9,
                             topK: 40,
                         }));
-                        if (googleJson.models) {
+                        if (googleRes.statusCode === 200 && !googleJson.error && Array.isArray(googleJson.models)) {
                             googleJson.models = [...mappedCustom, ...googleJson.models];
                         }
                         else {
+                            delete googleJson.error;
                             googleJson.models = mappedCustom;
                         }
                         res.writeHead(200, { 'Content-Type': 'application/json' });
