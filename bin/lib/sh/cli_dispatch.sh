@@ -76,6 +76,7 @@ dispatch_command() {
         unpatch-open-ide) dispatch_unpatch_open_ide "${CMD_ARGS[@]}" ;;
         patch-models|models-patch) dispatch_patch_models "${CMD_ARGS[@]}" ;;
         unpatch-models) dispatch_unpatch_models "${CMD_ARGS[@]}" ;;
+        patch-all|apply-all|patch-everything) FORCE_INSTALL=true dispatch_patch_all "${CMD_ARGS[@]}" ;;
         unpatch|restore|revert-patch|unpatch-all) auto_detect_installations; unpatch_antigravity ;;
         traffic|trace|monitor) dispatch_traffic ;;
         update) dispatch_update ;;

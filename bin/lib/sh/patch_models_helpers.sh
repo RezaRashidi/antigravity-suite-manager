@@ -32,21 +32,29 @@ detect_active_patches() {
     ACTIVE_PATCH_F5=false
     ACTIVE_PATCH_RTL=false
     ACTIVE_PATCH_SELECTOR=false
+    ACTIVE_PATCH_FORK=false
+    ACTIVE_PATCH_OPEN_IDE=false
     [ ! -f "$asar" ] && return 0
 
-    if grep -qa "restartLanguageServer" "$asar" 2>/dev/null; then
+    if grep -qa "restartLanguageServer" "$asar" 2>/dev/null || grep -qa "ANTIGRAVITY_SUITE_F5_PATCH" "$asar" 2>/dev/null; then
         ACTIVE_PATCH_F5=true
     fi
     if grep -qa "ANTIGRAVITY RTL PATCH" "$asar" 2>/dev/null; then
         ACTIVE_PATCH_RTL=true
     fi
-    if grep -qa "multi_account_ui" "$asar" 2>/dev/null; then
+    if grep -qa "ANTIGRAVITY_SUITE_SELECTOR_PATCH" "$asar" 2>/dev/null || grep -qa "multi_account_ui" "$asar" 2>/dev/null; then
         ACTIVE_PATCH_SELECTOR=true
+    fi
+    if grep -qa "ANTIGRAVITY_SUITE_FORK_PATCH" "$asar" 2>/dev/null || grep -qa "FORK_EXP_PRELOAD_START" "$asar" 2>/dev/null; then
+        ACTIVE_PATCH_FORK=true
+    fi
+    if grep -qa "ANTIGRAVITY_SUITE_OPEN_IDE_PATCH" "$asar" 2>/dev/null; then
+        ACTIVE_PATCH_OPEN_IDE=true
     fi
 }
 
 reapply_post_model_patches() {
-    local f5="$1" rtl="$2" sel="$3"
+    local f5="$1" rtl="$2" sel="$3" fork="$4" open_ide="$5"
     local asar="${APP_INSTALL_DIR}/resources/app.asar"
     if [ "$rtl" = "true" ]; then
         log_info "Re-applying RTL patch on top of custom models patch..."
@@ -61,4 +69,13 @@ reapply_post_model_patches() {
         log_info "Re-applying multi-account selector on top of custom models patch..."
         FORCE_INSTALL=true patch_selector_app >/dev/null 2>&1 || patch_selector_app
     fi
+    if [ "$fork" = "true" ]; then
+        log_info "Re-applying conversation forking on top of custom models patch..."
+        FORCE_INSTALL=true patch_fork_app >/dev/null 2>&1 || patch_fork_app
+    fi
+    if [ "$open_ide" = "true" ]; then
+        log_info "Re-applying Open in IDE button on top of custom models patch..."
+        FORCE_INSTALL=true patch_open_ide_app >/dev/null 2>&1 || patch_open_ide_app
+    fi
 }
+

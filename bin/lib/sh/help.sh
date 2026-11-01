@@ -47,6 +47,7 @@ Commands:
   models        Custom models & multi-provider discovery/selection (alias: custom-models)
   patch-models  Inject custom models settings UI into Antigravity App (in-app patch)
   unpatch-models Revert in-app custom models settings UI patch
+  patch-all     Apply all available patches in dependency order [all|app|ide]
   unpatch       Restore clean unmodified original app.asar (revert all patches)
   rtl           Apply / re-apply antigravity-rtl to App and IDE
   unpatch-rtl   Revert RTL typography patch from App and IDE

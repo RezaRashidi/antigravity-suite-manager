@@ -84,3 +84,9 @@ dispatch_unpatch_models() {
     auto_detect_installations
     unpatch_models_app "$@"
 }
+
+dispatch_patch_all() {
+    auto_detect_installations
+    patch_all "${SUB_COMMAND:-all}" "$@"
+}
+

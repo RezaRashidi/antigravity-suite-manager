@@ -21,7 +21,7 @@ unpatch_f5() {
         return 0
     fi
 
-    if grep -qa "multi_account_ui" "$asar_file"; then
+    if grep -qa "ANTIGRAVITY_SUITE_SELECTOR_PATCH" "$asar_file" 2>/dev/null || grep -qa "multi_account_ui" "$asar_file" 2>/dev/null; then
         log_info "Reverting F5 patch while preserving account selector..."
         unpatch_antigravity
         patch_selector

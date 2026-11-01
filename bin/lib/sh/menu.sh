@@ -72,8 +72,9 @@ show_classic_menu() {
     echo "39) Custom Models (Multi-Provider, Discovery & Selection)"
     echo "40) Inject In-App Custom Models Settings UI (Antigravity App Patch)"
     echo "41) Revert / Unpatch In-App Custom Models Settings UI"
+    echo "42) Apply All Patches (Models, RTL, F5, Selector, Fork, Open IDE)"
     echo "0) Exit"
     echo -e "${CYAN}-----------------------------------------------------${NC}"
-    read -rp "Select an option [0-41]: " choice
+    read -rp "Select an option [0-42]: " choice
     execute_menu_choice "$choice"
 }

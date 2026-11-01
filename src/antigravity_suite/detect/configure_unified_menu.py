@@ -30,7 +30,8 @@ def render_unified_header(u_item: Dict[str, Any], c: Dict[str, Any] | None, p_di
         print(f"\n{BOLD}Patches & Customizations for this Engine:{NC}")
         print("  [T] Multi-Account Selector        [J] Conversation Forking")
         print("  [CM] Custom Models UI Patch       [Y] Open in IDE Button")
-        print("  [R] Apply RTL Typography Patch    [F] Apply F5 Reload Patch\n  [0] Done (Return)")
+        print("  [R] Apply RTL Typography Patch    [F] Apply F5 Reload Patch")
+        print("  [AP] Apply All Patches            [0] Done (Return)")
     else:
         print(f"{BOLD}Engine & Installation Settings:{NC}")
         print("  [1] Relocate Directory            [2] Set Primary Target")
@@ -39,5 +40,6 @@ def render_unified_header(u_item: Dict[str, Any], c: Dict[str, Any] | None, p_di
         print(f"\n{BOLD}Patches & Customizations for this Engine:{NC}")
         print("  [T] Multi-Account Selector        [J] Conversation Forking")
         print("  [CM] Custom Models UI Patch       [Y] Open in IDE Button")
-        print("  [R] Apply RTL Typography Patch    [F] Apply F5 Reload Patch\n  [0] Done (Return)")
+        print("  [R] Apply RTL Typography Patch    [F] Apply F5 Reload Patch")
+        print("  [AP] Apply All Patches            [0] Done (Return)")
     print(f"{CYAN}----------------------------------------------------------------------------------------{NC}")

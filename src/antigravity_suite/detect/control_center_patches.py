@@ -83,3 +83,18 @@ def handle_control_center_models_patch(manage_sh: str, unified: Optional[List[Di
     else:
         subprocess.run(["bash", manage_sh, "patch-models", "--force"], check=False)
     input("\nPress Enter to return to Control Center...")
+
+
+def handle_control_center_patch_all(manage_sh: str, unified: Optional[List[Dict[str, Any]]] = None) -> None:
+    print(f"\n{CYAN}--- Apply All Antigravity Patches (Models, RTL, F5, Selector, Fork, Open IDE) ---{NC}")
+    print("  [1] Apply All Patches (App & IDE in dependency order)")
+    print("  [2] Revert / Restore All Patches (Clean pristine state)")
+    print("  [0] Return")
+    c = input("Select action [1-2, Default: 1]: ").strip()
+    if c in ["0"]:
+        return
+    if c == "2":
+        subprocess.run(["bash", manage_sh, "unpatch"], check=False)
+    else:
+        run_target_patch(manage_sh, "patch-all", unified, "All Patches", force=True)
+
