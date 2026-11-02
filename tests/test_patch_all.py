@@ -45,3 +45,14 @@ class TestPatchAll(unittest.TestCase):
         with open(self.patches_py, "r", encoding="utf-8") as f:
             p_content = f.read()
         self.assertIn("def handle_control_center_patch_all", p_content)
+
+    def test_configure_unified_handles_ap(self):
+        conf_py = self.root / "src/antigravity_suite/detect/configure_unified.py"
+        menu_py = self.root / "src/antigravity_suite/detect/configure_unified_menu.py"
+        with open(menu_py, "r", encoding="utf-8") as f:
+            m_content = f.read()
+        self.assertIn("[AP] Apply All Patches", m_content)
+
+        with open(conf_py, "r", encoding="utf-8") as f:
+            c_content = f.read()
+        self.assertIn('"AP"', c_content)
