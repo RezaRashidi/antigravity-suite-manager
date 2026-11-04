@@ -36,14 +36,19 @@ async function refreshQuotasAsync() {
                 ]);
                 if (direct && direct.status === 'ok' && direct.buckets?.length > 0) {
                     acc.quotas = direct.buckets; acc.license_status = 'ok';
-                    const isPro = direct.buckets.some(b => b.family === 'claude');
+                    const isPro = (acc.plan && acc.plan.toLowerCase().includes('pro')) ||
+                                  (acc.tier && acc.tier.toUpperCase() === 'PRO') ||
+                                  (direct.buckets.length >= 4) ||
+                                  direct.buckets.some(b => b.family === 'claude');
                     acc.tier = isPro ? 'PRO' : 'FREE';
+                    acc.plan = isPro ? (acc.plan || 'Google AI Pro') : 'Free';
                     return;
                 }
                 if (acc.is_primary && lsTelemetry?.buckets?.length > 0) {
                     acc.quotas = lsTelemetry.buckets; acc.license_status = 'ok';
-                    const isPro = lsTelemetry.buckets.some(b => b.family === 'claude');
-                    acc.tier = isPro ? 'PRO' : (acc.tier || 'PRO');
+                    const planName = lsTelemetry.plan || 'Google AI Pro';
+                    acc.plan = planName;
+                    acc.tier = (planName.toLowerCase().includes('pro') || lsTelemetry.tierId === 'g1-pro-tier') ? 'PRO' : 'FREE';
                     return;
                 }
                 const prev = _quotaCache.accounts?.find(a => a.email?.toLowerCase() === acc.email?.toLowerCase());

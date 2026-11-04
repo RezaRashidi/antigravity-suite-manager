@@ -81,7 +81,26 @@ async function fetchLanguageServerTelemetry() {
                 req.on('error', () => resolve(null));
                 req.write('{}'); req.end();
             });
-            if (res) return res;
+            if (res) {
+                try {
+                    const lca = await new Promise((resolveLca) => {
+                        const lcaReq = client.request({ hostname: '127.0.0.1', port, method: 'POST', rejectUnauthorized: false, path: '/exa.language_server_pb.LanguageServerService/GetLoadCodeAssist', headers: { 'Content-Type': 'application/json', 'x-codeium-csrf-token': ls.csrf, 'Content-Length': 2 }, timeout: 800 }, (r) => {
+                            let d = ''; r.on('data', c => d += c);
+                            r.on('end', () => {
+                                try { resolveLca(JSON.parse(d)?.response || null); } catch (_) { resolveLca(null); }
+                            });
+                        });
+                        lcaReq.on('error', () => resolveLca(null));
+                        lcaReq.write('{}'); lcaReq.end();
+                    });
+                    if (lca) {
+                        const paid = lca.paidTier || lca.g1Tier || lca.currentTier;
+                        if (paid?.name) res.plan = paid.name;
+                        if (paid?.id) res.tierId = paid.id;
+                    }
+                } catch (_) {}
+                return res;
+            }
         }
     }
     return null;

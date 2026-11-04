@@ -62,21 +62,22 @@
             body = `<div style="font-size:11px;color:var(--agy-dropdown-subtext);padding:8px 0;">Loading usage telemetry...</div>`;
         }
 
-        const hasClaude = Array.isArray(acc.quotas) && acc.quotas.some(b => b.family === 'claude');
-        let badgeText = hasClaude ? 'PRO' : 'FREE';
-        if (acc.tier) {
-            if (acc.tier === 'No License' || acc.license_status === 'no_license') badgeText = 'NO LICENSE';
-            else if (acc.tier === 'Resource Exhausted' || acc.license_status === 'exhausted') badgeText = 'EXHAUSTED';
-            else if (hasClaude || acc.tier === 'PRO' || acc.tier === 'TEAMS_TIER_PRO') badgeText = 'PRO';
-            else if (acc.tier.toLowerCase().includes('free') || acc.tier === 'UNKNOWN_TIER') badgeText = 'FREE';
-            else badgeText = acc.tier.split(' ')[0].toUpperCase();
-        }
+        const planName = acc.plan || (acc.userTier?.name) || (acc.tier === 'PRO' ? 'Google AI Pro' : (acc.tier || 'Google AI Pro'));
+        let badgeText = 'PRO';
+        if (acc.tier === 'No License' || acc.license_status === 'no_license') badgeText = 'NO LICENSE';
+        else if (acc.tier === 'Resource Exhausted' || acc.license_status === 'exhausted') badgeText = 'EXHAUSTED';
+        else if (planName.toLowerCase().includes('pro') || acc.tier === 'PRO' || acc.tier === 'TEAMS_TIER_PRO') badgeText = 'PRO';
+        else if (acc.tier && (acc.tier.toLowerCase().includes('free') || acc.tier === 'UNKNOWN_TIER')) badgeText = 'FREE';
+        else badgeText = 'PRO';
 
         const footer = `<div class="agy-usage-footer"><button class="agy-flyout-logout-btn" data-email="${email}">Log Out (${email})</button></div>`;
 
         return `
             <div class="agy-usage-flyout-header">
-                <div><div class="agy-usage-title">Usage limits</div><div class="agy-usage-email-sub">${email}</div></div>
+                <div>
+                    <div class="agy-usage-title">Usage limits</div>
+                    <div class="agy-usage-email-sub">${email} • <span style="color:var(--agy-accent,#38bdf8);font-weight:600;">${planName}</span></div>
+                </div>
                 <span class="agy-tier-badge">${badgeText}</span>
             </div>
             ${body}

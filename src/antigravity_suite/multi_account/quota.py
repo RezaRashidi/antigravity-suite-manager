@@ -57,9 +57,6 @@ def fetch_account_quotas(account: AccountRecord) -> List[QuotaBucket]:
 
 
 def fetch_account_tier(account: AccountRecord) -> str:
-    if any(q.family == "claude" for q in account.quotas):
-        account.tier = "PRO"
-        return "PRO"
     if not account.token or not account.token.access_token:
         return account.tier
     url = "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
@@ -74,10 +71,25 @@ def fetch_account_tier(account: AccountRecord) -> str:
     try:
         with urllib.request.urlopen(req, timeout=5.0) as resp:
             data = json.loads(resp.read().decode("utf-8", "ignore"))
-            tier = data.get("currentTier", {}).get("name", "")
-            if tier:
-                account.tier = tier
-                return tier
+            # Native Google AI Pro detection from paidTier / g1Tier
+            paid = data.get("paidTier") or data.get("g1Tier") or data.get("userTier")
+            if paid and (paid.get("name") or paid.get("id")):
+                name = paid.get("name") or paid.get("id") or ""
+                account.plan = paid.get("name", "Google AI Pro")
+                account.tier = "PRO" if ("pro" in name.lower() or "g1" in name.lower()) else name
+                return account.tier
+            allowed = data.get("allowedTiers", [])
+            for t in allowed:
+                tid = t.get("id", "")
+                tname = t.get("name", "")
+                if tid in ["standard-tier", "g1-pro-tier"] or "code assist" in tname.lower():
+                    account.plan = "Google AI Pro"
+                    account.tier = "PRO"
+                    return "PRO"
     except Exception:
         pass
+    if any(q.family == "claude" for q in account.quotas) or len(account.quotas) >= 4:
+        account.plan = "Google AI Pro"
+        account.tier = "PRO"
+        return "PRO"
     return account.tier
