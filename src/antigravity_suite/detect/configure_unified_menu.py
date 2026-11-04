@@ -31,7 +31,7 @@ def render_unified_header(u_item: Dict[str, Any], c: Dict[str, Any] | None, p_di
         print("  [T] Multi-Account Selector        [J] Conversation Forking")
         print("  [CM] Custom Models UI Patch       [Y] Open in IDE Button")
         print("  [SA] Subagents Swarm Patch        [AP] Apply All Patches")
-        print("  [R] Apply RTL Typography Patch    [F] Apply F5 Reload Patch")
+        print("  [R] Apply RTL Typography Patch")
         print("  [0] Done (Return)")
     else:
         print(f"{BOLD}Engine & Installation Settings:{NC}")
@@ -42,6 +42,6 @@ def render_unified_header(u_item: Dict[str, Any], c: Dict[str, Any] | None, p_di
         print("  [T] Multi-Account Selector        [J] Conversation Forking")
         print("  [CM] Custom Models UI Patch       [Y] Open in IDE Button")
         print("  [SA] Subagents Swarm Patch        [AP] Apply All Patches")
-        print("  [R] Apply RTL Typography Patch    [F] Apply F5 Reload Patch")
+        print("  [R] Apply RTL Typography Patch")
         print("  [0] Done (Return)")
     print(f"{CYAN}----------------------------------------------------------------------------------------{NC}")

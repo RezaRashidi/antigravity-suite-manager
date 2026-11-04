@@ -14,9 +14,6 @@ install_antigravity_app() {
     if [ "$SKIP_RTL" != true ]; then
         patch_rtl_app
     fi
-    if [ "$SKIP_F5" != true ]; then
-        patch_f5_reload
-    fi
 
     log_info "Verifying post-install status..."
     check_status
@@ -38,7 +35,7 @@ install_antigravity_ide() {
 }
 
 install_antigravity_all() {
-    log_info "Executing Full Antigravity Suite Installation (App + IDE + RTL + F5)..."
+    log_info "Executing Full Antigravity Suite Installation (App + IDE + RTL)..."
     resolve_dynamic_urls
     check_status
 
@@ -53,9 +50,6 @@ install_antigravity_all() {
 
     if [ "$SKIP_RTL" != true ]; then
         patch_rtl_all
-    fi
-    if [ "$SKIP_F5" != true ]; then
-        patch_f5_reload
     fi
 
     log_info "Verifying post-install status..."

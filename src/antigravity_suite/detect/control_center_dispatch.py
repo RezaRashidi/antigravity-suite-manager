@@ -14,7 +14,6 @@ from antigravity_suite.detect.control_center_actions import (
     handle_control_center_clean_data,
     handle_control_center_clone,
     handle_control_center_export_import,
-    handle_control_center_f5_patch,
     handle_control_center_fork_patch,
     handle_control_center_icons,
     handle_control_center_install,
@@ -54,7 +53,6 @@ def dispatch_control_center_choice(choice: str, manage_sh: str, installer_sh: st
     elif up == "T": handle_control_center_selector_patch(manage_sh, unified)
     elif up == "J": handle_control_center_fork_patch(manage_sh, unified)
     elif up == "Y": handle_control_center_open_ide_patch(manage_sh, unified)
-    elif up == "F": handle_control_center_f5_patch(manage_sh, unified)
     elif up == "R": handle_control_center_rtl_patch(manage_sh, unified)
     elif up in ["CM", "MODELS"]: handle_control_center_models_patch(manage_sh, unified)
     elif up in ["SA", "SUBAGENTS", "SUBAGENT", "SWARM"]: handle_control_center_subagents_patch(manage_sh)

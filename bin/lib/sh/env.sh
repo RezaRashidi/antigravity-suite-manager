@@ -52,7 +52,6 @@ PATHS_CONF="${ICONS_CONF_DIR}/paths.conf"
 FORCE_INSTALL=false
 USE_CACHE=true
 SKIP_RTL=false
-SKIP_F5=false
 APP_URL=""
 IDE_URL=""
 TARGET_APP_VER=""

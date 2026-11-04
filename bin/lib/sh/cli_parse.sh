@@ -34,8 +34,6 @@ parse_cli_args() {
             wizard|setup|center|control-center) COMMAND="wizard"; shift; CMD_ARGS=("$@"); break ;;
             rtl|patch-rtl) COMMAND="rtl"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
             unpatch-rtl) COMMAND="unpatch-rtl"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi; CMD_ARGS=("$@"); break ;;
-            f5|patch-f5) COMMAND="f5"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
-            unpatch-f5) COMMAND="unpatch-f5"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi; CMD_ARGS=("$@"); break ;;
             selector|patch-selector) COMMAND="patch-selector"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
             unpatch-selector) COMMAND="unpatch-selector"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
             fork|patch-fork) COMMAND="fork"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
@@ -54,7 +52,6 @@ parse_cli_args() {
             update-all) COMMAND="update"; SUB_COMMAND="all"; shift ;;
             update-app) COMMAND="update"; SUB_COMMAND="app"; shift ;;
             update-ide) COMMAND="update"; SUB_COMMAND="ide"; shift ;;
-            update-f5) COMMAND="update"; SUB_COMMAND="f5"; shift ;;
             update-repo|self-update|update-self|24) COMMAND="update-repo"; shift ;;
             benchmark|bench|speed-test|26) COMMAND="benchmark"; shift; CMD_ARGS=("$@"); break ;;
             multi-account|multiaccount|accounts|27) COMMAND="multi-account"; shift; CMD_ARGS=("$@"); break ;;

@@ -30,7 +30,6 @@ from antigravity_suite.detect.control_center_subagents import (
     handle_control_center_subagents_patch,
 )
 from antigravity_suite.detect.control_center_patches import (
-    handle_control_center_f5_patch,
     handle_control_center_fork_patch,
     handle_control_center_models_patch,
     handle_control_center_open_ide_patch,
@@ -45,7 +44,6 @@ __all__ = [
     "handle_control_center_clean_data",
     "handle_control_center_clone",
     "handle_control_center_export_import",
-    "handle_control_center_f5_patch",
     "handle_control_center_fork_patch",
     "handle_control_center_icons",
     "handle_control_center_install",

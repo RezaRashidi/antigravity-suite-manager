@@ -1,5 +1,5 @@
 """
-Patch management actions for Control Center (Selector, Fork, F5, RTL, Open IDE).
+Patch management actions for Control Center (Selector, Fork, RTL, Open IDE).
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from antigravity_suite.detect.control_center_patches_helpers import run_target_p
 
 def handle_control_center_selector_patch(manage_sh: str, unified: Optional[List[Dict[str, Any]]] = None) -> None:
     print(f"\n{CYAN}--- Prompt-Bar Multi-Account Selector Patch ---{NC}")
-    print("  [1] Apply / Update Prompt-Bar Multi-Account Selector Patch\n  [2] Revert / Unpatch Prompt-Bar Selector Patch (Preserves F5)\n  [0] Return")
+    print("  [1] Apply / Update Prompt-Bar Multi-Account Selector Patch\n  [2] Revert / Unpatch Prompt-Bar Selector Patch\n  [0] Return")
     c = input("Select action [1-2, Default: 1]: ").strip()
     if c not in ["0"]:
         run_target_patch(manage_sh, "unpatch-selector" if c == "2" else "selector", unified, "Selector Patch", force=True)
@@ -32,31 +32,6 @@ def handle_control_center_open_ide_patch(manage_sh: str, unified: Optional[List[
     c = input("Select action [1-2, Default: 1]: ").strip()
     if c not in ["0"]:
         run_target_patch(manage_sh, "unpatch-open-ide" if c == "2" else "open-ide", unified, "Open IDE Patch", force=True)
-
-
-def handle_control_center_f5_patch(manage_sh: str, unified: Optional[List[Dict[str, Any]]] = None) -> None:
-    print(f"\n{CYAN}--- F5 Manual Sync Backend Reload Patch ---{NC}")
-    print("  [1] Apply / Re-apply F5 Backend Reload Patch\n  [2] Revert / Unpatch F5 Reload Patch\n  [0] Return")
-    c = input("Select action [1-2, Default: 1]: ").strip()
-    if c in ["0"]: return
-    action_cmd = "unpatch-f5" if c == "2" else "f5"
-    app_instances = [it for it in (unified or []) if "IDE" not in it.get("type", "")]
-    if app_instances:
-        print(f"\n{BOLD}Target App Instance for F5 Patch:{NC}\n  [A] All App Instances")
-        for idx, item in enumerate(app_instances, 1):
-            print(f"  [{idx}] {item['name']} at {item['engine_path']}")
-        print("  [0] Cancel")
-        t = input(f"Select target [A, 1-{len(app_instances)}, Default: A]: ").strip()
-        if t in ["0"]: return
-        if t.upper() in ["A", ""]:
-            for it in app_instances:
-                subprocess.run(["bash", manage_sh, action_cmd, "--app-dir", it["engine_path"], "--force"], check=False)
-        elif t.isdigit() and 1 <= int(t) <= len(app_instances):
-            subprocess.run(["bash", manage_sh, action_cmd, "--app-dir", app_instances[int(t) - 1]["engine_path"], "--force"], check=False)
-        else: print(f"{RED}[ERROR] Invalid target selection.{NC}")
-    else:
-        subprocess.run(["bash", manage_sh, action_cmd, "--force"], check=False)
-    input("\nPress Enter to return to Control Center...")
 
 
 def handle_control_center_rtl_patch(manage_sh: str, unified: Optional[List[Dict[str, Any]]] = None) -> None:
@@ -86,7 +61,7 @@ def handle_control_center_models_patch(manage_sh: str, unified: Optional[List[Di
 
 
 def handle_control_center_patch_all(manage_sh: str, unified: Optional[List[Dict[str, Any]]] = None) -> None:
-    print(f"\n{CYAN}--- Apply All Antigravity Patches (Models, RTL, F5, Selector, Fork, Open IDE) ---{NC}")
+    print(f"\n{CYAN}--- Apply All Antigravity Patches (Models, RTL, Selector, Fork, Open IDE) ---{NC}")
     print("  [1] Apply All Patches (App & IDE in dependency order)")
     print("  [2] Revert / Restore All Patches (Clean pristine state)")
     print("  [0] Return")

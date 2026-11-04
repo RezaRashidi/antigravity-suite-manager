@@ -17,7 +17,6 @@ detect_active_app_patches() {
     local asar="${APP_INSTALL_DIR}/resources/app.asar"
     HAD_APP_SELECTOR=false
     HAD_APP_RTL=false
-    HAD_APP_F5=false
     HAD_APP_FORK=false
     HAD_APP_OPEN_IDE=false
     HAD_APP_MODELS=false
@@ -29,9 +28,6 @@ detect_active_app_patches() {
     fi
     if grep -qa "ANTIGRAVITY RTL PATCH" "$asar" 2>/dev/null; then
         HAD_APP_RTL=true
-    fi
-    if grep -qa "restartLanguageServer" "$asar" 2>/dev/null || grep -qa "ANTIGRAVITY_SUITE_F5_PATCH" "$asar" 2>/dev/null; then
-        HAD_APP_F5=true
     fi
     if grep -qa "ANTIGRAVITY_SUITE_FORK_PATCH" "$asar" 2>/dev/null || grep -qa "FORK_EXP_PRELOAD_START" "$asar" 2>/dev/null; then
         HAD_APP_FORK=true

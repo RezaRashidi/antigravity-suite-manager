@@ -24,7 +24,6 @@ Options:
   --acc2-recolor <true|false> Toggle color recoloring for Antigravity 2 (true=Violet, false=original)
   --ide-icon <white|black>    Set Antigravity IDE icon theme (white or black)
   --skip-rtl                  Skip RTL patching step
-  --skip-f5                   Skip F5 reload patching step
 
 Setup Steps (1-8):
   1) Check System & Dependencies (aliases: prereqs, dep)

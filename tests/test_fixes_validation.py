@@ -184,18 +184,10 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
         sig = inspect.signature(keyring.purge_antigravity_from_keyring)
         self.assertIn("target", sig.parameters)
 
-    def test_f5_patch_syntax_and_wmclass(self):
-        """Bugs 3.1 & 3.2: Verifies no comma in WM_CLASS command and _lsPort initialized."""
+    def test_f5_patch_retired(self):
+        """Verifies F5 patch has been retired and file removed."""
         patch_path = os.path.join(os.path.dirname(__file__), "..", "bin", "antigravity-f5-patch.js")
-        with open(patch_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        # Bug 3.1: No comma after WM_CLASS in xprop command and secure execFile used
-        self.assertNotIn('WM_CLASS,', content)
-        self.assertIn("execFile('xprop', ['-id', String(xid), '-f', 'WM_CLASS', '8s', '-set', 'WM_CLASS', wmClass]", content)
-
-        # Bug 3.2: _lsPort declared
-        self.assertIn("let _lsPort = 0;", content)
+        self.assertFalse(os.path.exists(patch_path))
 
     def test_sqlite_wal_sync_and_cleanup(self):
         """Bug 5.1: Verifies SQLite WAL and SHM sidecars are synced and stale WALs removed."""
@@ -274,11 +266,9 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
         self.assertIn("'antigravity' in attrs.get('username'", content)
 
     def test_f5_patch_no_lastport_overwrite(self):
-        """Bug L3-4.1: Verifies _lastPort = _lsPort is removed to preserve ephemeral port 0."""
+        """Bug L3-4.1: Verifies F5 patch script is no longer present."""
         patch_path = os.path.join(os.path.dirname(__file__), "..", "bin", "antigravity-f5-patch.js")
-        with open(patch_path, "r", encoding="utf-8") as f:
-            content = f.read()
-        self.assertNotIn("_lastPort = _lsPort;", content)
+        self.assertFalse(os.path.exists(patch_path))
 
     def test_migration_restore_cleanup_and_tokens(self):
         """Bugs L2-4.1 & L3-5.1: Verifies restore_backup cleans up post-backup convs and restores OAuth tokens."""
@@ -1901,13 +1891,6 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
         from antigravity_suite.detect.unified_actions import handle_unified_patches_and_reinstall
         with unittest.mock.patch("subprocess.run") as mock_sub:
             u_item = {"type": "Antigravity App"}
-            handle_unified_patches_and_reinstall("F", u_item, "/opt/test", "/bin/manage.sh")
-            self.assertTrue(mock_sub.called)
-            args = mock_sub.call_args[0][0]
-            self.assertIn("--force", args)
-            self.assertIn("f5", args)
-
-            mock_sub.reset_mock()
             handle_unified_patches_and_reinstall("R", u_item, "/opt/test", "/bin/manage.sh")
             self.assertTrue(mock_sub.called)
             r_args = mock_sub.call_args[0][0]
@@ -1969,26 +1952,10 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
                 self.assertIn("/opt/Antigravity-x64", args)
                 self.assertIn("--force", args)
 
-    def test_patch_utils_reload_replaces_stale_handler(self):
-        """Verifies patchUtilsReload strips old/broken onRestartRequested and injects restartLanguageServer."""
-        script = """
-        const { patchUtilsReload } = require("./bin/lib/patch/patch_utils_reload");
-        const stale = `
-        onQuitRequested: () => {
-            exports.showQuitConfirmation = true;
-            electron_1.app.quit();
-        },
-        onRestartRequested: async () => {
-            try {} catch(_) {}
-        },
-    });`;
-        const res = patchUtilsReload(stale);
-        if (!res.includes("restartLanguageServer") || res.includes("try {} catch(_) {}")) {
-            process.exit(1);
-        }
-        """
-        proc = subprocess.run(["node", "-e", script], cwd=os.path.dirname(os.path.dirname(__file__)))
-        self.assertEqual(proc.returncode, 0)
+    def test_patch_utils_reload_retired(self):
+        """Verifies patch_utils_reload.js is retired along with F5 patch."""
+        script_path = os.path.join(os.path.dirname(__file__), "..", "bin", "lib", "patch", "patch_utils_reload.js")
+        self.assertFalse(os.path.exists(script_path))
 
     def test_checkpoint_sync_build_and_ensure(self):
         """Verifies build_step23_payload and ensure_db_checkpoint_title inject authentic titles."""
@@ -2133,22 +2100,10 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
             plan_file.write_text("# Authentic Task Plan Title\nSteps...")
             self.assertEqual(extract_brain_title(str(b_dir)), "Authentic Task Plan Title")
 
-    def test_patch_main_desktop_name(self):
-        """Verifies patchMain applies ANTIGRAVITY_DESKTOP_NAME to dist/main.js."""
-        import tempfile
-        import subprocess
-        with tempfile.TemporaryDirectory() as td:
-            dist = Path(td) / "dist"
-            dist.mkdir()
-            main_js = dist / "main.js"
-            main_js.write_text("const gotTheLock = electron_1.app.requestSingleInstanceLock();")
-
-            patch_script = Path(__file__).resolve().parent.parent / "bin" / "lib" / "patch" / "patch_main.js"
-            cmd = ["node", "-e", f"const {{ patchMain }} = require('{patch_script}'); patchMain('{td}');"]
-            subprocess.run(cmd, check=True)
-
-            patched_main = main_js.read_text()
-            self.assertIn("ANTIGRAVITY_DESKTOP_NAME", patched_main)
+    def test_patch_main_retired(self):
+        """Verifies patch_main.js is retired along with F5 patch."""
+        patch_script = Path(__file__).resolve().parent.parent / "bin" / "lib" / "patch" / "patch_main.js"
+        self.assertFalse(patch_script.exists())
 
     def test_patch_app_and_ide_conversation_forking(self):
         """Verifies patchAppConversationForking & patchIdeConversationForking apply and unpatch cleanly."""

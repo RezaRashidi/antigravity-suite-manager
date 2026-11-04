@@ -1,5 +1,5 @@
 """
-Patcher utilities for Antigravity Suite (RTL, F5 reload, and checksum integrity).
+Patcher utilities for Antigravity Suite (RTL, checksum integrity, and custom patches).
 """
 
 from antigravity_suite.patch.ide_checksums import (

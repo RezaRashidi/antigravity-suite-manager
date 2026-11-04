@@ -62,7 +62,6 @@ patch_rtl_ide() {
 patch_rtl_all() {
     patch_rtl_app "$@"
     patch_rtl_ide "$@"
-    patch_f5_reload "$@"
 }
 
 update_rtl() {

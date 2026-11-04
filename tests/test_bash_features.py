@@ -71,7 +71,7 @@ class TestBashLibraryAndPatches(unittest.TestCase):
         self.assertIn("Clean / Delete Antigravity Data", code)
         self.assertIn("Uninstall Antigravity Apps", code)
         self.assertIn("Revert / Unpatch RTL Patcher", code)
-        self.assertIn("Revert / Unpatch F5 Manual Sync Backend Reload Patch", code)
+        self.assertIn("Revert / Unpatch In-App Custom Models Settings UI", code)
 
         dispatcher_sh = os.path.join(_BIN_DIR, "lib", "sh", "menu_dispatcher.sh")
         with open(dispatcher_sh, "r", encoding="utf-8") as f:

@@ -21,7 +21,7 @@ from status_env_inspect import (
     check_write,
     scan_all_installations,
 )
-from status_inspect import B, BOLD, C, G, NC, R, Y, check_app_f5, check_app_rtl, check_ide_rtl, get_app_version, get_ide_version
+from status_inspect import B, BOLD, C, G, NC, R, Y, check_app_rtl, check_ide_rtl, get_app_version, get_ide_version
 
 
 def main() -> None:
@@ -45,16 +45,16 @@ def main() -> None:
     has_acc2 = os.path.isfile(os.path.join(local_bin, "antigravity-acc2")) and os.path.isdir(prof2_dir)
     app_st = f"{G}Up-to-date{NC}" if (app_ver and app_ver == targ_app_ver) else (f"{Y}Update Available{NC}" if app_ver else f"{R}Not Installed{NC}")
     ide_st = f"{G}Up-to-date{NC}" if (ide_ver and ide_ver == targ_ide_ver) else (f"{Y}Update Available{NC}" if ide_ver else f"{R}Not Installed{NC}")
-    app_rtl, app_f5, ide_rtl = check_app_rtl(app_dir), check_app_f5(app_dir), check_ide_rtl(ide_dir)
+    app_rtl, ide_rtl = check_app_rtl(app_dir), check_ide_rtl(ide_dir)
 
     print(f"{C}========================================================================================{NC}")
     print(f"{BOLD}{C}                    Antigravity Suite Version & Patch Inspection                        {NC}")
     print(f"{C}========================================================================================{NC}")
-    print(f"{BOLD}{B}Target                 Installed    Latest Available  Status          RTL Patch   F5 Patch{NC}")
+    print(f"{BOLD}{B}Target                 Installed    Latest Available  Status          RTL Patch{NC}")
     print(f"----------------------------------------------------------------------------------------")
     app_tgt = "Antigravity (Acc 1&2)" if has_acc2 else "Antigravity App"
-    print(f"{app_tgt:<23}{app_ver or 'N/A':<12} {targ_app_ver:<17} {app_st:<24} {app_rtl:<20} {app_f5}")
-    print(f"{'Antigravity IDE':<23}{ide_ver or 'N/A':<12} {targ_ide_ver:<17} {ide_st:<24} {ide_rtl:<20} N/A")
+    print(f"{app_tgt:<23}{app_ver or 'N/A':<12} {targ_app_ver:<17} {app_st:<24} {app_rtl}")
+    print(f"{'Antigravity IDE':<23}{ide_ver or 'N/A':<12} {targ_ide_ver:<17} {ide_st:<24} {ide_rtl}")
     print(f"----------------------------------------------------------------------------------------")
     print(f"{BOLD}Detected System Installations:{NC}")
     installs = scan_all_installations()

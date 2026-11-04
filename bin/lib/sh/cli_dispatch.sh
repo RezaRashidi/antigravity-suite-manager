@@ -60,8 +60,6 @@ dispatch_command() {
         remove-instance) remove_instance "${CMD_ARGS[@]}" ;;
         clean-data|delete-data|purge-data) dispatch_clean_data "${CMD_ARGS[@]}" ;;
         uninstall) dispatch_uninstall "${CMD_ARGS[@]}" ;;
-        f5|patch-f5) dispatch_f5 ;;
-        unpatch-f5) dispatch_unpatch_f5 ;;
         rtl|patch-rtl) FORCE_INSTALL=true dispatch_rtl ;;
         unpatch-rtl) dispatch_unpatch_rtl "${CMD_ARGS[@]}" ;;
         update-rtl) update_rtl ;;

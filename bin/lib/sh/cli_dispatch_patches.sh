@@ -4,7 +4,7 @@
 dispatch_rtl() {
     auto_detect_installations
     case "${SUB_COMMAND:-all}" in
-        app) patch_rtl_app; patch_f5_reload ;;
+        app) patch_rtl_app ;;
         ide) patch_rtl_ide ;;
         all|*) patch_rtl_all ;;
     esac
@@ -35,16 +35,6 @@ dispatch_unpatch_selector() {
         ide) unpatch_selector_ide "$@" ;;
         all|*) unpatch_selector "$@" ;;
     esac
-}
-
-dispatch_f5() {
-    auto_detect_installations
-    FORCE_INSTALL=true patch_f5_reload "$@"
-}
-
-dispatch_unpatch_f5() {
-    auto_detect_installations
-    unpatch_f5 "$@"
 }
 
 dispatch_fork() {

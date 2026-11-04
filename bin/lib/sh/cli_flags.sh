@@ -13,8 +13,6 @@ parse_patch_arg() {
     case "$1" in
         rtl|patch-rtl) COMMAND="rtl"; shift_sub_arg "$2"; return $? ;;
         unpatch-rtl) COMMAND="unpatch-rtl"; shift_sub_arg "$2"; return $? ;;
-        f5|patch-f5) COMMAND="f5"; shift_sub_arg "$2"; return $? ;;
-        unpatch-f5) COMMAND="unpatch-f5"; shift_sub_arg "$2"; return $? ;;
         selector|patch-selector|patch-accounts) COMMAND="patch-selector"; shift_sub_arg "$2"; return $? ;;
         unpatch-selector|unpatch-accounts) COMMAND="unpatch-selector"; shift_sub_arg "$2"; return $? ;;
         fork|patch-fork) COMMAND="fork"; shift_sub_arg "$2"; return $? ;;
@@ -47,7 +45,6 @@ parse_config_flag() {
         --force|-f) FORCE_INSTALL=true; return 1 ;;
         --no-cache) USE_CACHE=false; return 1 ;;
         --skip-rtl) SKIP_RTL=true; return 1 ;;
-        --skip-f5) SKIP_F5=true; return 1 ;;
         *) return 0 ;;
     esac
 }

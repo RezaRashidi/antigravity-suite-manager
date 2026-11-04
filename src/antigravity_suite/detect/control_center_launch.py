@@ -61,8 +61,8 @@ def handle_control_center_steps(manage_sh: str, installer_sh: str) -> None:
 
 
 def handle_control_center_update(manage_sh: str) -> None:
-    print(f"\n{CYAN}--- Smart Update Antigravity Suite ---{NC}\n  [1] Everything  [2] App  [3] IDE  [4] RTL  [5] F5  [0] Return")
-    u_c = input("Select update target [1-5, Default: 1]: ").strip()
-    acts = {"2": ["update", "app"], "3": ["update", "ide"], "4": ["update-rtl"], "5": ["update-f5"]}
+    print(f"\n{CYAN}--- Smart Update Antigravity Suite ---{NC}\n  [1] Everything  [2] App  [3] IDE  [4] RTL  [0] Return")
+    u_c = input("Select update target [1-4, Default: 1]: ").strip()
+    acts = {"2": ["update", "app"], "3": ["update", "ide"], "4": ["update-rtl"]}
     subprocess.run(["bash", manage_sh] + acts.get(u_c, ["update"]), check=False)
     input("\nPress Enter to return to Control Center...")

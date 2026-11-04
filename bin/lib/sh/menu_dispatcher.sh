@@ -13,9 +13,7 @@ execute_menu_choice() {
         7) setup_account_2 ;;
         8) update_rtl ;;
         9) unpatch_rtl_all ;;
-        10) FORCE_INSTALL=true patch_f5_reload ;;
-        11) unpatch_f5 ;;
-        12) configure_icons_interactive ;;
+        10|12) configure_icons_interactive ;;
         13) dispatch_migrate_chats ;;
         14) create_instance ;;
         15) list_instances ;;

@@ -1,48 +1,24 @@
 # Antigravity Suite Manager
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![OS: Linux](https://img.shields.io/badge/OS-Ubuntu%20%7C%20Debian%20%7C%20Linux-E95420.svg?logo=linux)](#platform-compatibility--requirements)
-[![Tested On](https://img.shields.io/badge/Tested%20On-Ubuntu%2024.04%20LTS-blue.svg)](#platform-compatibility--requirements)
-[![Per-Chat Multi-Account](https://img.shields.io/badge/Multi--Account-Per--Chat%20Selector-success.svg)](#-flagship-feature-per-chat-multi-account-selector-app--ide)
-[![Live Quota Telemetry](https://img.shields.io/badge/Telemetry-Gemini%20%2B%20Claude%20Limits-purple.svg)](#-live-quota-telemetry--usage-flyout)
-[![3-Way Instances](https://img.shields.io/badge/3--Way%20Instances-Shared%20Chats-success.svg)](#shared-chat-history--profile-isolation)
-[![Custom Models](https://img.shields.io/badge/Custom%20Models-OpenAI%20%7C%20Anthropic%20%7C%20DeepSeek%20%7C%20Ollama-blue.svg)](#-custom-models--multi-provider-gateway-guide)
-[![Language](https://img.shields.io/badge/Language-Bash%20%7C%20Node.js%20%7C%20Python%20%7C%20C-brightgreen.svg)](#architecture--profile-isolation)
+[![OS: Linux](https://img.shields.io/badge/OS-Ubuntu%20%7C%20Debian%20%7C%20Linux-E95420.svg?logo=linux)](#quick-install)
+[![Multi-Account](https://img.shields.io/badge/Multi--Account-Per--Chat%20Selector-success.svg)](#1--per-chat-multi-account-selector--subagent-swarms)
+[![Custom Models](https://img.shields.io/badge/Custom%20Models-OpenAI%20%7C%20Anthropic%20%7C%20Ollama-blue.svg)](#2--custom-models--multi-provider-gateway)
+[![Unified Workspace](https://img.shields.io/badge/Unified%20Workspace-App%20%2B%20IDE%20v2.6.0-purple.svg)](#3--unified-app--ide-workspace--one-shot-chat-migrator)
+[![RTL Support](https://img.shields.io/badge/RTL-Persian%20%26%20Arabic-green.svg)](#6--first-class-persian--arabic-rtl-typography)
 
-A comprehensive Linux automation suite and advanced runtime engine for **Google Antigravity** (Desktop App) and **Antigravity IDE** (VS Code edition).
+A lightweight, powerful Linux management suite and runtime booster for **Google Antigravity** (Desktop App) and **Antigravity IDE** (VS Code edition).
 
-Runs on Ubuntu and Debian-based Linux distributions across GNOME, KDE Plasma, XFCE, Cinnamon, and all standard X11/Wayland desktop environments.
-
----
-
-> ### 🌟 What Makes This Suite Unique?
-> 
-> **Seamless Per-Chat Multi-Account Switching inside BOTH the Desktop App and the IDE!**
-> 
-> You no longer need to log out, switch profiles, or run multiple heavy application windows just to switch Google accounts when one account hits its quota limit. With our **In-App Account Selector**, each conversation can be pinned to a completely different Google account with independent Gemini & Claude quotas, full real-time telemetry, and instant `/switch` slash commands.
+Eliminates quota exhaustion bottlenecks, unlocks third-party AI models (Claude, OpenAI, DeepSeek, Ollama), bridges the Desktop App and IDE into a unified database, and injects essential power-user productivity tools.
 
 ---
 
 ## ⚡ Quick Install
 
-Install the complete Antigravity Suite (Multi-Account Selector, App, IDE, 3-Way Sync, RTL, and CLI tools) in one command:
+Install the complete Antigravity Suite in one command:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/RezaRashidi/antigravity-suite-manager/main/install.sh | bash
-```
-
-To install non-interactively with default options:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/RezaRashidi/antigravity-suite-manager/main/install.sh | bash -s -- -y
-```
-
-Or clone and run locally:
-
-```bash
-git clone https://github.com/RezaRashidi/antigravity-suite-manager.git
-cd antigravity-suite-manager
-./install.sh
 ```
 
 To update an existing installation anytime:
@@ -51,7 +27,7 @@ To update an existing installation anytime:
 ~/manage-antigravity.sh update
 ```
 
-Launch the interactive Control Center dashboard:
+Open the modern interactive Control Center:
 
 ```bash
 ~/manage-antigravity.sh center
@@ -59,571 +35,124 @@ Launch the interactive Control Center dashboard:
 
 ---
 
-## 🎯 Flagship Feature: Per-Chat Multi-Account Selector (App & IDE)
+## 🚀 Core Features
 
-The **Multi-Account Selector subsystem** solves the #1 limitation of Google Antigravity: **strict single-account lock-in and quota exhaustion bottlenecks**.
+### 1. 🛡️ Per-Chat Multi-Account Selector & Subagent Swarms
+
+Overcomes single-account lock-in and quota exhaustion by enabling granular, per-conversation Google account selection directly inside the prompt bar.
 
 ```
 +-----------------------------------------------------------------------------------+
-|               Antigravity Desktop App / Antigravity IDE (VS Code)                 |
+|               Antigravity Desktop App / Antigravity IDE                           |
 |                                                                                   |
-|  +-----------------------------------------------------------------------------+  |
-|  | Chat Input Prompt Bar                                                       |  |
-|  | [Model: Gemini 1.5 Pro ▼]  [@ Account: user1@gmail.com ▼]  [ Send ➤ ]        |  |
-|  +-------------------------------------------+---------------------------------+  |
-|                                              | Click to switch account            |
-|                                              v                                    |
-|                       +-----------------------------------------------+           |
-|                       |  Google Accounts (Per-Chat Binding)           |           |
-|                       |  -------------------------------------------  |           |
-|                       |  ● user1@gmail.com       [✓ Active]  [Usage ›]|           |
-|                       |  ○ user2@work.com                    [Usage ›]|           |
-|                       |  ○ user3@client.com                  [Usage ›]|           |
-|                       |  -------------------------------------------  |           |
-|                       |  [ + Add Account ]              [ Refresh ]   |           |
-|                       +----------------------+------------------------+           |
-|                                              | Hover "Usage ›"                    |
-|                                              v                                    |
-|                       +-----------------------------------------------+           |
-|                       |  Usage Limits (Live Quota Telemetry)          |           |
-|                       |  -------------------------------------------  |           |
-|                       |  Gemini Models:                               |           |
-|                       |  [████████████████░░░░] 78% (Resets in 2d 4h) |           |
-|                       |  Claude & GPT Models:                         |           |
-|                       |  [████████████████████] 100% (5h limit fresh) |           |
-|                       |  -------------------------------------------  |           |
-|                       |  [ Log Out ]                                  |           |
-|                       +-----------------------------------------------+           |
+|  [Model: Gemini 2.0 Pro ▼]  [@ Account: work@gmail.com ▼]  [ Send ➤ ]            |
+|                             |                                                     |
+|                             +--> ● user1@gmail.com       [78% Quota] [Usage ›]    |
+|                                  ● work@gmail.com        [Active]    [Usage ›]    |
+|                                  + [ + Add Account ]    [ Refresh ]               |
 +-----------------------------------------------------------------------------------+
 ```
 
-### 1. 🔀 Granular Per-Conversation Account Binding
-- **Per-Chat Independence**: Bind Conversation A to `user1@gmail.com`, Conversation B to `user2@gmail.com`, and Conversation C to `client@company.com`.
-- **Zero Window Juggling**: Switch accounts in 1 click right next to the model selector trigger. No application reboots, no browser re-authentications.
-- **Persistent State**: Conversation bindings (`cascadeId` -> `email`) are saved in `~/.config/antigravity/accounts/bindings.json` and persist across application restarts.
-
-### 2. 📊 Live Quota Telemetry & Usage Flyout
-- **Hover to Inspect**: Hover over **Usage ›** next to any account in the dropdown to instantly view real-time quota telemetry bars.
-- **Dual SLA Monitoring**:
-  - **Gemini Models**: Real-time remaining percentage and weekly/5-hour reset timers.
-  - **Claude and GPT Models**: Independent quota percentages and proactive warning alerts when Claude 5-hour rate limits are reached.
-- **Account Tier Badging**: Displays live badge status (`PRO`, `FREE`, `EXHAUSTED`, `NO LICENSE`).
-
-### 3. 💬 In-Chat Slash Commands
-Automate account management directly from your keyboard without touching the mouse:
-
-| Slash Command | Purpose |
-| :--- | :--- |
-| `/whoami` | Displays the active Google account, conversation binding, and quota status for the current chat session. |
-| `/accounts` | Lists all registered accounts in your vault, primary status, and real-time remaining quota percentages. |
-| `/switch <id\|email>` | Immediately switches and binds the current conversation to another account (e.g., `/switch 2` or `/switch work@gmail.com`). |
-
-> [!NOTE]
-> The slash commands are automatically indexed by Antigravity's chat autocomplete system via skills installed in `~/.gemini/config/skills/` and `~/.gemide/config/skills/`.
-
-### 4. ⚡ Seamless Loopback Proxy Router (`127.0.0.1:41999`)
-- Transparent in-process loopback HTTP/SSE reverse proxy running between the client UI, Language Server, and Google's backend (`daily-cloudcode-pa.googleapis.com`).
-- **Dynamic Token Rewriting**: Inspects every `streamGenerateContent` request, identifies the active conversation (`cascadeId`), and injects the corresponding account's Google Bearer token.
-- **Official Consumer Scopes**: Uses official Antigravity consumer OAuth client credentials (`1071006060591-...`) to ensure full entitlement for personal Gmail and Google One AI Premium users.
-
-### 5. 🔒 Singleton Background OAuth CLI Daemon
-- **Unified Login Lock (`login.pid`)**: When initiating account login via the UI (`+ Add Account`) or CLI, the suite acquires a cross-process lock (`~/.config/antigravity/accounts/login.pid`).
-- **Zero Collision Between App & IDE**: If login is triggered in the Desktop App while the IDE is running (or vice-versa), only a single background OAuth listener spins up, preventing duplicate processes and callback port conflicts.
-- **180-Second Stale Lock Auto-Recovery**: If a previous login process was interrupted, abandoned, or killed abruptly, stale locks older than 180 seconds are automatically reclaimed without blocking new logins.
-
-### 6. 🌐 Network Telemetry Isolation & Error Resilience
-- **HostBridge Exclusion**: The in-process proxy router deliberately excludes internal Electron communication channels (specifically `HostBridgeServer` on port `39967`) and restricts port scans.
-- **Zero `write EPIPE` Crashes**: Prevents unexpected socket resets or broken pipes when internal IPC servers drop unhandled probes, guaranteeing 100% stable background telemetry even across intermittent internet drops.
+- **Per-Conversation Account Binding**: Pin Conversation A to personal Gmail, Conversation B to a Google One AI Premium account, and Conversation C to a work account with independent quotas.
+- **Subagent Dynamic Swarm Allocator**: When invoking subagents, the suite automatically allocates idle connected accounts so parallel subagents work concurrently without draining your active conversation's quota.
+- **Live Quota Telemetry**: Hover over **Usage ›** to inspect real-time weekly and 5-hour reset timers for Gemini and Claude models.
+- **In-Chat Slash Commands**:
+  - `/whoami`: Displays active Google account, conversation binding, and quota status.
+  - `/accounts`: Lists all registered vault accounts and real-time quotas.
+  - `/switch <id|email>`: Instantly switches the current conversation to another account.
 
 ---
 
-## 🚀 Key Features at a Glance
+### 2. 🤖 Custom Models & Multi-Provider Gateway
 
-### 1. 🛡️ Per-Chat Multi-Account Selector (App & IDE)
-- Integrated into both **Antigravity Desktop App** (`app.asar`) and **Antigravity IDE** (`workbench.desktop.main.js`).
-- Dynamic viewport anchoring: dropdown and flyout menus automatically reposition during window resize and scroll.
-- Decoupled from GNOME Keyring: stores tokens in a clean, headless-safe JSON vault with automated token rotation.
+Connect external AI providers directly into the native Antigravity UI:
 
-### 2. 🔄 3-Way Unified Chat History & Cross-Instance Brain Synchronization
-- **Universal Conversation Continuity**: All chat history, active conversations, SQLite summaries, and brain artifacts are symlinked across App 1, App 2, custom instances, and Antigravity IDE.
-- **SQLite WAL Safety**: Operates via SQLite Write-Ahead Logging (`.db-wal`), enabling concurrent multi-process access without database locks or corruption.
-
-### 3. 🖥️ Taskbar De-Grouping & Multi-Instance Engine
-- **Independent Window Identity**: Overrides Electron's default `WM_CLASS` to bind each instance to its own unique identifier (`antigravity-1`, `antigravity-2`, `antigravity-ide`).
-- **Runtime X11 Window Injector**: Lightweight daemon (`antigravity-apply-icon.py`) dynamically synchronizes `_NET_WM_ICON` properties directly onto X11 window surfaces.
-
-### 4. 🎨 C-Powered High-Resolution Icon Engine & Visual Theming
-- **Catmull-Rom Bicubic Resampler**: Custom C scaler (`src/scale_icon.c`) with premultiplied alpha calculation, generating crisp icons from 16×16 tray up to 1024×1024 Retina/4K displays.
-- **Theme Customization**: Black and White themes, plus hue-shift accent tinting (Violet glow) for secondary profiles.
-
-### 5. 🔐 Dual-Mode Credential Decoupling (Keyring vs File Storage)
-- **Freedom from GNOME Keyring**: Toggle between system GNOME Keyring (D-Bus Secret Service) and clean, headless-friendly Normal file storage (`--password-store=basic` + `jetski-standalone-oauth-token`).
-- **Zero-Downtime Token Migration**: Automatically extracts active tokens when migrating from Keyring to Normal mode.
-
-### 6. ✍️ First-Class Persian & Arabic RTL Typography
-- **Automated RTL Integration**: Embedded patch from [antigravity-rtl](https://github.com/mmnaderi/antigravity-rtl) providing right-to-left layout and bidirectionality for Persian and Arabic text.
-- **Vazirmatn Typography**: Injects premium Persian font rendering with a topbar toggle (`Alt+R` / `⌥R`).
-
-### 7. 🔁 Manual F5 Backend Reload & Crash Resilience
-- **Crash-Resilient F5 Reload**: Prevents jarring auto-restarts from breaking your active AI workflow. Hooks `F5` to trigger a clean webview reload on demand.
-
-### 8. ⚙️ Universal Skills, Rules (`GEMINI.md`) & MCP Sync
-- **Single Source of Truth**: Custom instructions (`GEMINI.md`), skills (`skills/`), agent rules, and MCP servers (`mcp_config.json`) are maintained in `~/.gemini` and unified across App and IDE.
-
-### 9. 🌿 Experimental Conversation Forking (`conversationForking`)
-- **Historical Branching**: Fork and branch conversations at any turn or step into the current workspace or an isolated Git worktree without affecting the original thread.
-- **IDE Native Integration**: Automatically unlocks the `Fork Conversation` action button on assistant responses and the `Fork in current workspace` context menu option across `main.js`, `workbench.desktop.main.js`, and `jetskiAgent/main.js`.
-- **Desktop App Enablement**: Activated via runtime experiment overrides (`enable-conversation-forking`, `enable-fork-in-new-worktree`, `enable-fork-at-historical-step`), backed directly by the Language Server's native `forkConversation` RPC engine.
-- **Standalone Modular Patch**: Decoupled into its own independent CLI commands (`manage-antigravity.sh fork` / `unpatch-fork`) and Control Center option (`[J]`), with unwanted developer status bar footers cleanly eliminated.
-
-### 10. 🤖 Custom Models & Multi-Provider Gateway (In-App Settings & CLI)
-- **Universal Multi-Provider Ecosystem**: Connect OpenAI, Anthropic Claude, DeepSeek, Ollama, OpenRouter, LiteLLM, vLLM, LocalAI, or any custom API gateway directly into Antigravity.
-- **Native In-App Settings UI**: Seamlessly injected "Custom Models" tab in the Desktop App settings to manage providers, gateways, base URLs, credentials, and live model testing.
-- **Zero-Downtime Dynamic Redux Sync**: Adding, editing, or deleting models updates the prompt bar model selector dropdown in under 50ms without restarting the Language Server or reloading windows.
-- **Ultra-Low CPU Architecture**: Container-scoped DOM observers (0% idle overhead), promise resolver queues, and cached Language Server credentials ensure buttery-smooth typing and streaming.
-- **Safe Multi-Patch Coexistence**: Operates in total harmony alongside RTL (`antigravity-rtl`), manual F5 reload, and prompt-bar Multi-Account Selector patches.
+- **Universal Multi-Provider Support**: Use Anthropic Claude 3.5 Sonnet, OpenAI GPT-4o, DeepSeek-V3/R1, Ollama, OpenRouter, LiteLLM, or vLLM directly inside Antigravity.
+- **In-App Settings UI**: Seamlessly adds a "Custom Models" tab into Antigravity App Settings to manage providers, API keys, endpoints, and model discovery.
+- **Wire-Format Gateway**: Automatically transforms Antigravity's internal Gemini protocol into standard OpenAI/Anthropic schemas, including function calling and tool execution.
+- **Fast Model Selector Sync**: Adding or editing models reflects in the prompt-bar dropdown within 50ms without restarting the Language Server.
 
 ---
 
-## 📖 Multi-Account Selector Guide
+### 3. 🔄 Unified App & IDE Workspace & One-Shot Chat Migrator
 
-### Applying the Selector Patch
+Starting with Antigravity IDE **v2.6.0+**, the Desktop App and IDE natively share the exact same SQLite database at `~/.gemini/antigravity/conversation_summaries.db`.
 
-The Account Selector patch is automatically applied during `./install.sh`. You can also manage or re-apply it manually at any time:
-
-```bash
-# Apply / Re-apply selector patch to both App and IDE
-~/manage-antigravity.sh selector
-
-# Re-apply with force overwrite (useful after Antigravity updates)
-FORCE_INSTALL=true ~/manage-antigravity.sh selector
-
-# Revert the selector patch (restores clean original files)
-~/manage-antigravity.sh unpatch-selector
-```
-
-### Adding and Managing Accounts
-
-#### Via the GUI (Recommended):
-1. Open Antigravity App or Antigravity IDE.
-2. In any chat window, locate the account pill button next to the model trigger (e.g. `user1 ▼`).
-3. Click the pill button to open the dropdown menu.
-4. Click **`+ Add Account`**.
-5. Your default web browser will open to Google's sign-in page.
-6. Sign in with your secondary Google account.
-7. Upon successful login, you'll see a green **Connected!** page. The new account will immediately appear in your selector list with full quota telemetry!
-
-#### Via CLI:
-```bash
-# Add a new Google account via CLI loopback
-~/manage-antigravity.sh multi-account login
-
-# List all registered vault accounts, primary status, and real-time quotas
-~/manage-antigravity.sh multi-account list
-
-# Remove an account from vault
-~/manage-antigravity.sh multi-account logout user@gmail.com
-
-# Bind a specific conversation to an account
-~/manage-antigravity.sh multi-account bind <cascadeId> user@gmail.com
-
-# Output complete multi-account state as JSON
-~/manage-antigravity.sh multi-account json
-```
-
-### Live Traffic & Token Swapping Monitor
-
-You can monitor real-time request routing, conversation detection, and Bearer token swapping as you chat:
-
-```bash
-~/manage-antigravity.sh trace
-```
-
-Sample live output:
-```text
-[2026-10-22T08:15:20Z] ChatGen: [bf1cc9dc-...] -> Account: [user1@gmail.com] | token: ...kQuA02 | Path: /v1internal:streamGenerateContent?alt=sse
-[2026-10-22T08:15:21Z] ChatGen: [bf1cc9dc-...] <- Upstream Response: 200
-[2026-10-22T08:15:45Z] [QUOTA] [user1@gmail.com] HTTP 200 | Buckets: 4
-[2026-10-22T08:16:10Z] ChatGen: [e0e1533f-...] -> Account: [work@gmail.com]  | token: ...7hBGki | Path: /v1internal:streamGenerateContent?alt=sse
-[2026-10-22T08:16:11Z] ChatGen: [e0e1533f-...] <- Upstream Response: 200
-```
-
-### 🌿 Experimental Conversation Forking Guide
-
-With conversation forking enabled, you can branch an existing chat at any point in its history to explore alternate directions or test code changes without losing the original conversation.
-
-```
-                    ┌── Turn 1 ── Turn 2 ── Turn 3 (Original Conversation continues)
-Main Conversation ──┤
-                    └── [Fork Button] ── Turn 3b (Alternate Fork in Current Workspace)
-```
-
-#### Dedicated Standalone Patch Commands:
-Forking is decoupled into its own independent, toggleable patch module:
-```bash
-# Apply conversation forking patch to both App & IDE
-./bin/manage-antigravity.sh fork
-
-# Apply selectively to App or IDE
-./bin/manage-antigravity.sh fork app
-./bin/manage-antigravity.sh fork ide
-
-# Revert / Unpatch conversation forking
-./bin/manage-antigravity.sh unpatch-fork
-./bin/manage-antigravity.sh unpatch-fork app
-./bin/manage-antigravity.sh unpatch-fork ide
-
-# Or manage interactively via Control Center:
-./bin/manage-antigravity.sh center    # Select [J] Conversation Forking
-```
-
-#### Where the Fork Controls Appear:
-1. **Turn Response Action Bar**: Next to the standard *Copy* and *Thumbs Up/Down* feedback buttons on assistant responses, a **Fork Conversation** icon button (`aria-label: Fork Conversation`) will appear.
-2. **Conversation Context Menu**: Right-clicking a conversation in the history or sidebar exposes **"Fork in current workspace"**.
-
-#### Architecture & Activation Details:
-- **Standalone Patcher**: Decoupled into `bin/lib/sh/patch_fork.sh`, `bin/antigravity-fork-patch.js`, and `bin/lib/patch/patch_conversation_forking.js`.
-- **IDE Activation**: Unlocks the React gating conditions (`conversationForking.enabled`) in `main.js`, `vs/workbench/workbench.desktop.main.js`, and `jetskiAgent/main.js`, automatically maintaining `product.json` integrity and checksums.
-- **Desktop App Activation**: Configures early main-world flags via Electron `webFrame` in `preload.js` and seeds `jetski.developer.customFlagOverrides` (`enable-conversation-forking`, `enable-fork-in-new-worktree`, `enable-fork-at-historical-step`).
-- **Clean UI (No Developer Status Bar)**: Prevents and suppresses the unwanted bottom developer status bar ("Reset State") using multi-tier styling and DOM lifecycle guards (`preload.js` isolated style injection, `styles.css`, and `mount.js`).
-- **Language Server Backend**: The underlying language server binary handles `forkConversation` natively, cloning the trajectory metadata, step sequence, and workspace context cleanly.
-
----
-
-## 🤖 Custom Models & Multi-Provider Gateway Guide
-
-The **Custom Models & Multi-Provider Gateway subsystem** extends Antigravity beyond Google's default model ecosystem, allowing you to run external models (GPT-4o, Claude 3.5 Sonnet, DeepSeek V3/R1, Llama 3, Qwen, etc.) alongside Gemini directly within the native chat prompt bar.
-
-```
-+-----------------------------------------------------------------------------------+
-|               Antigravity Desktop App (In-App Settings & Prompt Bar)              |
-|                                                                                   |
-|  +-----------------------------------------------------------------------------+  |
-|  | Settings > Custom Models                                                    |  |
-|  | Gateway Base URL: [ https://api.example.com/v1/          ] [ Test Gateway ] |  |
-|  | API Key:          [ ••••••••••••••••••••••••••••••••••• ] [ Auto-Import ]  |  |
-|  | Models Configured: [ 19 models active ]                   [ + Add Model ]  |  |
-|  +-----------------------------------------------------------------------------+  |
-|                                                                                   |
-|  +-----------------------------------------------------------------------------+  |
-|  | Chat Input Prompt Bar                                                       |  |
-|  | [Model: DeepSeek R1 (Custom) ▼]  [@ Account: user1@gmail.com ▼]  [ Send ➤ ] |  |
-|  +-----------------------------------------------------------------------------+  |
-+-----------------------------------------------------------------------------------+
-```
-
-### 1. In-App Settings UI Injection
-Inject the Custom Models UI directly into the Antigravity Desktop App's native settings modal:
-
-```bash
-# Apply / Inject Custom Models UI into Antigravity Desktop App
-~/manage-antigravity.sh patch-models
-
-# Force re-apply (recommended after Antigravity updates)
-FORCE_INSTALL=true ~/manage-antigravity.sh patch-models --force
-
-# Revert / Unpatch Custom Models UI (restores clean original files)
-~/manage-antigravity.sh unpatch-models
-```
-
-You can also manage the patch interactively from the Control Center:
-```bash
-~/manage-antigravity.sh center    # Select [CM] Custom Models UI Patch
-```
-
-### 2. Multi-Provider Compatibility
-The built-in proxy bridge translates Antigravity's internal Protobuf and ConnectRPC stream protocol into industry-standard formats:
-- **OpenAI Compatible**: OpenAI (`gpt-4o`, `o1`), DeepSeek (`deepseek-chat`, `deepseek-reasoner`), Groq, Together AI, Mistral.
-- **Anthropic Claude**: Anthropic Messages API (`claude-3-5-sonnet-20241022`, `claude-3-opus`).
-- **Local & Self-Hosted**: Ollama (`ollama/llama3`), vLLM, LocalAI, LM Studio, Open WebUI.
-- **Aggregators & Gateways**: OpenRouter, LiteLLM, Cloudflare AI Gateway, Portkey, or any custom API gateway with automatic Base URL normalization (`https://api.example.com/v1/`).
-
-### 3. CLI Custom Models Manager
-Manage providers, API keys, models, and run live diagnostic tests directly from the command line:
-
-```bash
-# List all configured models, providers, and gateway status
-~/manage-antigravity.sh custom-models list
-
-# Add or configure a provider or gateway
-~/manage-antigravity.sh custom-models add-provider
-
-# Fetch and auto-discover available models from a provider
-~/manage-antigravity.sh custom-models fetch
-
-# Select active models to expose in Antigravity's model dropdown
-~/manage-antigravity.sh custom-models select
-
-# Test connectivity and token generation for a specific model
-~/manage-antigravity.sh custom-models test <model-name>
-
-# Inspect proxy bridge status and active port
-~/manage-antigravity.sh custom-models proxy-status
-```
-
-### 4. Zero-Downtime Dynamic Synchronization
-- **Instant In-Memory Updates**: Adding, updating, or deleting a model in the UI instantly dispatches fresh user status directly into React Redux and notifies the Go Language Server. Changes reflect in under 50ms.
-- **No Disruptions**: Never restarts the Language Server process, never reloads the browser window, and never drops in-flight chat streams, background subagents, or terminal sessions.
-- **Safe Multi-Patch Architecture**: Fully compatible with the Arabic/Persian RTL patch (`antigravity-rtl`), F5 reload patch, and Per-Chat Multi-Account Selector.
-
----
-
-## 👥 Multi-Instance Cloning & Cross-Clone Synchronization
-
-Beyond per-chat account switching, Antigravity Suite Manager features an **Unlimited Multi-Instance Cloning Engine** that lets you run multiple independent Antigravity App and IDE windows side-by-side with independent system tray icons, distinct taskbar entries, and automated real-time history synchronization.
-
-```
-+-----------------------------------------------------------------------------------+
-|                        Multi-Instance & Clone Topology                            |
-|                                                                                   |
-|  +--------------------+   +--------------------+   +---------------------------+  |
-|  | Antigravity App 1  |   | Antigravity App 2  |   | Antigravity IDE (VS Code) |  |
-|  | (Primary Profile)  |   | (Custom Violet Glow)|   | (Code Edition)            |  |
-|  | WM_CLASS:          |   | WM_CLASS:          |   | WM_CLASS:                 |  |
-|  | antigravity-1      |   | antigravity-2      |   | antigravity-ide           |  |
-|  +---------+----------+   +---------+----------+   +-------------+-------------+  |
-|            |                        |                            |                |
-|            |                        v                            |                |
-|            |              +--------------------+                 |                |
-|            |              | App Clone 3 / Work |                 |                |
-|            |              | (Amber Orange Glow)|                 |                |
-|            |              +---------+----------+                 |                |
-|            |                        |                            |                |
-|            +-------------------+----+----------------------------+                |
-|                                |                                                  |
-|                                v                                                  |
-|  +-----------------------------------------------------------------------------+  |
-|  | Unified Conversation Storage Mesh & One-Shot Chat Migrator (v2.5.5 -> v2.6.0)|  |
-|  | - SQLite WAL Mode (.db-wal) Multi-Process Concurrency                       |  |
-|  | - Direct Database Sharing in v2.6.0+ (No Background Daemon Overhead)          |  |
-|  | - Unified Conversation Summaries DB & Brain Artifacts Topology              |  |
-|  | - Step 23 Checkpoint Synchronization & Fallback Title Guard                 |  |
-|  +-----------------------------------------------------------------------------+  |
-+-----------------------------------------------------------------------------------+
-```
-
-### 1. Creating and Cloning Instances
-
-Clone any App or IDE instance with an interactive wizard or a single command:
-
-```bash
-# Launch the interactive instance creation wizard:
-~/manage-antigravity.sh create-instance
-# Alias: ~/manage-antigravity.sh add
-
-# Or via the Control Center dashboard:
-~/manage-antigravity.sh center    # Select [C] Clone / Add New Instance
-```
-
-#### What the Cloning Engine Configures:
-1. **Target Type**: Choose between **Antigravity App** (Desktop Electron app) or **Antigravity IDE** (VS Code fork).
-2. **Auto-Incrementing ID or Custom Name**: Automatically suggests the next numeric counter (e.g., `3`, `4`) or accepts custom named profiles (e.g., `work`, `client-a`).
-3. **History Synchronization Mode**:
-   - **Shared Mode (`--shared`, Default)**: Connects the clone to the universal conversation mesh. Any conversation created or updated in Clone 1, Clone 2, or IDE is instantly mirrored and queryable across all instances!
-   - **Isolated Mode (`--isolated`)**: Gives the clone a private, quarantined conversation database and brain directory (ideal for confidential client work).
-4. **Visual Accent Themes & Glows**: Choose custom Catmull-Rom resampled icon glows so you instantly identify running windows on your dock:
-   - Violet / Magenta (0.52)
-   - Emerald Green (0.33)
-   - Amber Orange (0.12)
-   - Royal Sapphire Blue (0.60)
-   - Ruby Rose (0.85)
-   - Cyan / Teal (0.45)
-5. **Taskbar De-Grouping (`WM_CLASS`)**: Generates custom `.desktop` launchers and assigns unique window classes (`antigravity-app-<id>`, `antigravity-ide-<id>`) so GNOME and Ubuntu Dock never collapse distinct clones into one group.
-
-### 2. Managing Clones and Profiles
-
-```bash
-# List all active App and IDE instances, history modes, and profiles:
-~/manage-antigravity.sh list-instances
-
-# Toggle an instance's history mode between shared and isolated:
-~/manage-antigravity.sh set-history <instance-id> [shared|isolated]
-
-# Delete an instance and cleanly archive its profile:
-~/manage-antigravity.sh remove-instance <instance-id>
-```
-
-### 3. One-Shot Chat Migrator: v2.5.5 → v2.6.0 (`antigravity-migrate-chats.py`)
-
-Starting with Antigravity IDE **v2.6.0+**, the IDE embeds the native `google-antigravity` extension and executes `~/.gemini/bin/agy --hub --app_data_dir=antigravity`. Both the Desktop App and IDE now read and write directly to the unified database at `~/.gemini/antigravity/conversation_summaries.db`.
-
-Consequently, background synchronization daemons (`--watch`, `antigravity-sync.service`) are completely retired, freeing system memory and CPU. The legacy merger is repurposed into a **One-Shot Chat Migrator**:
-- **Pre-Migration Inspection**: Detects installed IDE version (verifying $\ge$ v2.6.0) and inspects legacy `state.vscdb` storage.
-- **Accurate Chat Counting**: Reports total legacy chats, count already present in v2.6.0, and exact number queued for migration.
-- **One-Shot Execution**: Runs once without polling or background daemon overhead:
+- **Zero-Daemon Architecture**: Heavy background synchronization daemons have been retired, saving over 560MB of RAM and eliminating idle CPU wakeups.
+- **One-Shot Chat Migrator (`migrate-chats`)**: Seamlessly transfers legacy chat histories stored in older v2.5.5 `state.vscdb` format into the modern unified v2.6.0+ database:
   ```bash
-  ~/manage-antigravity.sh migrate-chats
-  # Dry run to inspect without writing:
+  # Check versions and inspect legacy chats without modifying anything:
   ~/manage-antigravity.sh migrate-chats --dry-run
+
+  # Run one-shot migration:
+  ~/manage-antigravity.sh migrate-chats
   ```
 
 ---
 
-## 🔬 Diagnostics, Benchmarking & Disaster Recovery
+### 4. 🪟 Native "Open in IDE" Titlebar Button
 
-### 1. AI Latency & Context Bloat Benchmark
+Restores the official native titlebar button in the Antigravity Desktop App:
 
-Diagnose network latency, proxy overhead, and per-step response intervals across your Antigravity setup:
-
-```bash
-# Run standard latency benchmark:
-~/manage-antigravity.sh benchmark
-
-# View per-message step intervals and token throughput:
-~/manage-antigravity.sh benchmark --all-steps
-
-# Output benchmark results as structured JSON:
-~/manage-antigravity.sh benchmark --json
-```
-
-Measures:
-- IPv4/IPv6 and HTTP/HTTPS proxy latency against Google Cloud Code endpoints.
-- Message input character volume vs output token generation throughput.
-- Per-message turnaround speed and step latency breakdown.
-
-### 2. Leaked Session Splicer & Conversation Restoration
-
-In the rare event of a sudden machine crash or concurrent session leakage across conversation boundaries, use the **Leaked Session Splicer** to surgically rescue and transplant conversation steps:
-
-```bash
-# Dry-run inspection (simulates step migration without modifying files):
-python3 scripts/splice_leaked_session.py
-
-# Live execution with automated pre-flight snapshot backup:
-python3 scripts/splice_leaked_session.py --execute
-```
-
-This tool:
-- Surgically migrates SQLite rows from `<source_cid>.db` into `<target_cid>.db`.
-- Re-indexes step ordering to guarantee contiguous `step_index` sequences.
-- Transplants transcript logs (`transcript.jsonl` and `transcript_full.jsonl`) with proper offset shifting.
-- Migrates associated background task logs (`.system_generated/tasks/`).
-- Atomically updates master step counts in `conversation_summaries.db`.
-
-### 3. Oversized Conversation Compactor
-
-When deep conversations grow beyond tens of thousands of steps, UI rendering and model serialization can suffer latency. The **Conversation Compactor** (`scripts/compact_conversation.py`) archives older historical turns into timestamped safety backups while promoting an authentic compaction checkpoint into the active conversation base:
-
-```bash
-# Dry-run inspection of compaction boundaries:
-python3 scripts/compact_conversation.py --cid <conversation-id> --base-step <start-step>
-
-# Live execution with automated pre-compact backup:
-python3 scripts/compact_conversation.py --cid <conversation-id> --base-step <start-step> --execute
-```
-
+- **One-Click Hand-off**: Click the IDE icon in the App titlebar to instantly open the current workspace, active trajectory, and recent files directly in Antigravity IDE.
+- **Zero Config**: Automatically discovers your Antigravity IDE installation and sets up IPC protocol bridges.
 
 ---
 
-## 🛠️ Suite Management CLI Reference
+### 5. 🌿 Conversation Forking (`conversationForking`)
 
-```bash
-~/manage-antigravity.sh [command] [options]
-```
+Branch conversations at any historical turn into the current workspace or an isolated Git worktree:
+
+- Unlocks the `Fork Conversation` action button on assistant responses.
+- Allows exploring alternative implementation paths without losing the context of your original session.
+
+---
+
+### 6. ✍️ First-Class Persian & Arabic RTL Typography
+
+Integrated right-to-left typography patch from [antigravity-rtl](https://github.com/mmnaderi/antigravity-rtl):
+
+- **Clean Bidirectional Layout**: Formats Persian and Arabic text correctly across message cards, prompts, and code blocks.
+- **Vazirmatn Font**: Crisp, modern Persian typography with instant toggle via `Alt+R` (or `⌥R`).
+
+---
+
+## 🛠️ CLI Command Reference
+
+Manage your Antigravity Suite with `~/manage-antigravity.sh <command>`:
 
 | Command | Alias | Description |
 | :--- | :--- | :--- |
-| `center` | `menu`, `--menu` | Open the interactive Antigravity Control Center dashboard |
-| `selector` | `patch-selector` | Apply the prompt-bar Account Selector patch to App & IDE |
-| `unpatch-selector` | | Revert Account Selector patch |
+| `center` | `menu`, `--menu` | Open the interactive Control Center dashboard |
+| `status` | | Inspect installed versions, active patches, and cache |
+| `detect` | `scan`, `find` | Scan system and discover all Antigravity installations |
+| `update` | | Smart update all components and re-apply active patches |
+| `migrate-chats` | `migrate` | One-shot migrate legacy chats (v2.5.5 $\to$ v2.6.0) |
 | `multi-account` | `accounts` | Manage connected Google accounts, quotas & chat bindings |
 | `trace` | `traffic` | Stream live multi-account request routing and token swaps |
-| `detect` | `scan`, `find` | Scan filesystem and discover all installed Antigravity instances |
-| `paths` | `engines` | Interactive installation path selector and engine target switcher |
-| `install [all\|app\|ide]` | | Download and cleanly install Antigravity binaries |
-| `update` | | Smart update all components (preserves user data & re-applies patches) |
-| `migrate-chats` | `migrate`, `migrator` | One-shot migrate legacy chats (v2.5.5 -> v2.6.0) into unified storage |
-| `keyring` | `creds` | Configure & switch credential storage (GNOME Keyring vs Normal File Storage) |
-| `set-icons` | `icons` | Configure or re-apply icons (Black/White and Acc 2 Recolor) |
-| `f5` | | Apply manual F5 reload sync patch |
-| `unpatch-f5` | | Revert F5 reload sync patch |
-| `rtl` | | Apply / re-apply Persian & Arabic RTL patch |
-| `unpatch-rtl` | | Revert Persian & Arabic RTL patch |
-| `patch-models` | `models-patch` | Apply Custom Models UI patch to Antigravity Desktop App |
-| `unpatch-models` | | Revert Custom Models UI patch |
-| `custom-models` | `models` | Manage custom models, gateways, API keys, discovery & proxy bridge |
-| `fork` | `patch-fork` | Apply conversation forking patch to App & IDE |
-| `unpatch-fork` | | Revert conversation forking patch |
-| `create-instance` | `add` | Create arbitrary App or IDE instances with shared/isolated history |
-| `list-instances` | `list` | Show all created App and IDE instances and their status |
-| `remove-instance` | `remove` | Delete an instance and cleanly archive its profile |
-| `benchmark` | `bench` | Benchmark AI response latency, IPv6/proxy ping, and context bloat |
-| `backups` | | Manage safety backups (list, create [app\|ide\|history\|all], restore) |
-| `clean-data` | `delete-data` | Delete/clean app, IDE, history, or all data |
-| `uninstall [all\|app\|ide]` | | Cleanly uninstall Antigravity apps (with `--with-data` or `--keep-data`) |
+| `subagents` | `sa` | Apply Subagent Dynamic Multi-Account & Swarm patch |
+| `selector` | `patch-selector` | Apply the prompt-bar Account Selector patch to App & IDE |
+| `patch-models` | `models-patch` | Inject Custom Models Settings UI into Desktop App |
+| `open-ide` | `patch-open-ide` | Enable native "Open in IDE" titlebar button in Desktop App |
+| `fork` | `patch-fork` | Enable conversation forking in App & IDE |
+| `rtl` | `patch-rtl` | Apply Persian & Arabic RTL typography patch |
+| `patch-all` | | Apply all active patches in verified dependency order |
+| `unpatch` | `restore` | Revert all patches and restore pristine original binaries |
 
 ---
 
-## 🏗️ Architecture & Data Flow
+## 🎛️ Interactive Control Center
 
-```mermaid
-graph TD
-    subgraph "Frontend Layer (Electron Renderer & IDE Workbench)"
-        UI["Chat Input Prompt Bar"]
-        PILL["#antigravity-account-pill<br/>(Account Selector Button)"]
-        DD["Dropdown Menu<br/>(Google Accounts List)"]
-        FLY["Usage Flyout Panel<br/>(Live Quota Telemetry Bars)"]
-        UI --- PILL
-        PILL --- DD
-        DD --- FLY
-    end
+Launch the dashboard anytime by running:
 
-    subgraph "In-Process Loopback Proxy Router (Port 41999)"
-        ROUTER["router/server.js<br/>(Reverse Proxy & Gateway)"]
-        INTERCEPT["Request Inspector<br/>• streamGenerateContent<br/>• Slash Commands (/whoami, /switch)"]
-        VAULT["Account Vault & Bindings<br/>~/.config/antigravity/accounts/"]
-        SWAP["Header & Bearer Token Rewriter<br/>(Injects Target Account Token)"]
-        TELEM["Telemetry Engine<br/>(RetrieveUserQuotaSummary)"]
-    end
-
-    subgraph "Language Server & Upstream Google API"
-        LS["Google Language Server (Go)<br/>--cloud_code_endpoint=http://127.0.0.1:41999"]
-        UPSTREAM["Google Cloud Code Endpoint<br/>daily-cloudcode-pa.googleapis.com"]
-    end
-
-    UI -->|ConnectRPC / HTTP| ROUTER
-    LS -->|CCPA Traffic| ROUTER
-    ROUTER --> INTERCEPT
-    INTERCEPT --> VAULT
-    VAULT --> SWAP
-    SWAP --> UPSTREAM
-    TELEM -->|Fetch Limits| UPSTREAM
+```bash
+~/manage-antigravity.sh center
 ```
 
-### Profile & History Storage Topology
-
-| Storage Area | Antigravity App (Primary) | Antigravity App (Profile 2) | Antigravity IDE (VS Code) | Shared Strategy |
-| :--- | :--- | :--- | :--- | :--- |
-| **Conversations** | `~/.gemini/antigravity/conversations` | `~/.antigravity-profile2/.../conversations` | `~/.gemini/antigravity-ide/conversations` | Symlinked (Shared 3-Way) |
-| **Summaries Index** | `~/.gemini/antigravity/conversation_summaries.db` | `~/.antigravity-profile2/.../conversation_summaries.db` | `~/.gemini/antigravity-ide/conversation_summaries.db` | Symlinked (Shared 3-Way) |
-| **Brain Artifacts** | `~/.gemini/antigravity/brain` | `~/.antigravity-profile2/.../brain` | `~/.gemini/antigravity-ide/brain` | Symlinked (Shared 3-Way) |
-| **Custom Skills** | `~/.gemini/config/skills` | `~/.antigravity-profile2/.../skills` | `~/.gemide/config/skills` | Unified Symlinks |
-| **Account Vault** | `~/.config/antigravity/accounts` | `~/.config/antigravity/accounts` | `~/.config/antigravity/accounts` | Shared Vault Root |
-| **Active Session** | `~/.config/Antigravity` | `~/.antigravity-profile2/.config/Antigravity` | `~/.config/Antigravity IDE` | Quarantined / Isolated |
+From the Control Center, you can manage installations, trigger updates, toggle patches, migrate legacy history, and monitor quotas with single-keystroke hotkeys.
 
 ---
 
-## 📚 Technical Documentation Catalog
+## 📄 License
 
-For deep engineering specifications, wire protocols, database schemas, and forensics investigations:
-
-* **[Forensics & Debugging Guide](docs/forensics/README.md)** (`docs/forensics/`):
-  45 detailed incident investigations covering Protobuf tag parsing, ConnectRPC loopbacks, 2027y timestamp fixes, OAuth client collision resolutions, cross-conversation session splicing, Language Server checkpoint hooks, and custom models multi-provider proxy integration.
-* **[Storage Architecture & Specifications](docs/architecture/README.md)** (`docs/architecture/`):
-  13 architectural specifications covering process mapping, directory taxonomies, SQLite wire protocols, Protobuf reflection, and multi-account selector internals ([Chapter 12](docs/architecture/12_multi_account_selector_architecture.md)).
-
----
-
-## Platform Compatibility & Requirements
-
-- **Supported OS**: Ubuntu Linux (strictly validated on **Ubuntu 24.04 LTS**, Debian 12+)
-- **Desktop Environments**: GNOME Shell, KDE Plasma, XFCE, Cinnamon, MATE, Dash to Panel, etc.
-- **Display Server**: X11 or Wayland (with XWayland)
-- **Architecture**: `x86_64` (amd64)
-- **Prerequisites**: `bash` (4.0+), `python3`, `node` (18+), `gcc`, `make`, `curl`
-
----
-
-## License
-
-This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the [MIT License](LICENSE).

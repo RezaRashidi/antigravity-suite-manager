@@ -33,12 +33,6 @@ def handle_unified_patches_and_reinstall(choice: str, u_item: Dict[str, Any], en
     elif up in ["UNPATCH-RTL", "UR"]:
         print(f"\n{CYAN}Reverting RTL patch from {u_item['type']} at {eng_p}...{NC}")
         subprocess.run(["bash", manage_sh, "unpatch-rtl", c_type, flag, eng_p], check=False)
-    elif up == "F" and "IDE" not in u_item.get("type", ""):
-        print(f"\n{CYAN}Applying F5 reload & isolation patch to {eng_p}...{NC}")
-        subprocess.run(["bash", manage_sh, "f5", "--app-dir", eng_p, "--force"], check=False)
-    elif up in ["UNPATCH-F5", "UF"] and "IDE" not in u_item.get("type", ""):
-        print(f"\n{CYAN}Reverting F5 reload patch from {eng_p}...{NC}")
-        subprocess.run(["bash", manage_sh, "unpatch-f5", "--app-dir", eng_p], check=False)
     elif up == "J":
         handle_unified_patch_fork(c_type, flag, u_item, eng_p, manage_sh)
     elif up == "T":

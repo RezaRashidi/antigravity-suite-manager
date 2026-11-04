@@ -6,7 +6,7 @@ update_app() {
     resolve_dynamic_urls
     log_info "Updating Antigravity App at ${APP_INSTALL_DIR}..."
     detect_active_app_patches
-    log_info "Pre-update active App patches: Selector=${HAD_APP_SELECTOR}, RTL=${HAD_APP_RTL}, F5=${HAD_APP_F5}, Fork=${HAD_APP_FORK}, OpenIDE=${HAD_APP_OPEN_IDE}, Models=${HAD_APP_MODELS}"
+    log_info "Pre-update active App patches: Selector=${HAD_APP_SELECTOR}, RTL=${HAD_APP_RTL}, Fork=${HAD_APP_FORK}, OpenIDE=${HAD_APP_OPEN_IDE}, Models=${HAD_APP_MODELS}"
 
     terminate_running_app
     install_binary "Antigravity-App" "$APP_URL" "$TARGET_APP_VER" "$APP_INSTALL_DIR"
@@ -18,7 +18,6 @@ update_app() {
     log_info "Re-applying previously applied App patches..."
     [ "$HAD_APP_MODELS" = true ] && { FORCE_INSTALL=true patch_models_app; }
     [ "$HAD_APP_RTL" = true ] && [ "$SKIP_RTL" != true ] && { FORCE_INSTALL=true patch_rtl_app --force; }
-    [ "$HAD_APP_F5" = true ] && [ "$SKIP_F5" != true ] && { FORCE_INSTALL=true patch_f5_reload --force; }
     [ "$HAD_APP_SELECTOR" = true ] && { FORCE_INSTALL=true patch_selector_app; }
     [ "$HAD_APP_FORK" = true ] && { FORCE_INSTALL=true patch_fork_app; }
     [ "$HAD_APP_OPEN_IDE" = true ] && { FORCE_INSTALL=true patch_open_ide_app; }

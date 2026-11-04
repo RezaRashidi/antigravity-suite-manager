@@ -24,7 +24,7 @@ patch_models_app() {
     fix_permissions "$APP_INSTALL_DIR"
     local orig="${asar}.orig"
     restore_pristine_models_base "$asar" "$orig"
-    local had_f5="$ACTIVE_PATCH_F5" had_rtl="$ACTIVE_PATCH_RTL" had_sel="$ACTIVE_PATCH_SELECTOR"
+    local had_rtl="$ACTIVE_PATCH_RTL" had_sel="$ACTIVE_PATCH_SELECTOR"
     local had_fork="$ACTIVE_PATCH_FORK" had_open_ide="$ACTIVE_PATCH_OPEN_IDE"
     local script; script="$(get_models_deploy_script)"
     local sdir; sdir="$(dirname "$(dirname "$script")")"
@@ -36,7 +36,7 @@ patch_models_app() {
         [ -f "$orig" ] && cp -f "$orig" "$asar"
         return 1
     fi
-    reapply_post_model_patches "$had_f5" "$had_rtl" "$had_sel" "$had_fork" "$had_open_ide"
+    reapply_post_model_patches "$had_rtl" "$had_sel" "$had_fork" "$had_open_ide"
     if grep -qa "antigravity-model-patch" "$asar" 2>/dev/null; then
         log_success "Custom Models UI injected into Antigravity Settings successfully!"
     else
@@ -64,7 +64,7 @@ unpatch_models_app() {
         return 0
     fi
     detect_active_patches "$asar"
-    local had_f5="$ACTIVE_PATCH_F5" had_rtl="$ACTIVE_PATCH_RTL" had_sel="$ACTIVE_PATCH_SELECTOR"
+    local had_rtl="$ACTIVE_PATCH_RTL" had_sel="$ACTIVE_PATCH_SELECTOR"
     local had_fork="$ACTIVE_PATCH_FORK" had_open_ide="$ACTIVE_PATCH_OPEN_IDE"
     local script; script="$(get_models_deploy_script)"
     local sdir; sdir="$(dirname "$(dirname "$script")")"
@@ -81,6 +81,6 @@ unpatch_models_app() {
             return 1
         fi
     fi
-    reapply_post_model_patches "$had_f5" "$had_rtl" "$had_sel" "$had_fork" "$had_open_ide"
+    reapply_post_model_patches "$had_rtl" "$had_sel" "$had_fork" "$had_open_ide"
     log_success "In-app Custom Models patch reverted successfully."
 }

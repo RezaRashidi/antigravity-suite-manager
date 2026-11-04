@@ -29,16 +29,12 @@ ensure_models_patch_runtime() {
 
 detect_active_patches() {
     local asar="$1"
-    ACTIVE_PATCH_F5=false
     ACTIVE_PATCH_RTL=false
     ACTIVE_PATCH_SELECTOR=false
     ACTIVE_PATCH_FORK=false
     ACTIVE_PATCH_OPEN_IDE=false
     [ ! -f "$asar" ] && return 0
 
-    if grep -qa "restartLanguageServer" "$asar" 2>/dev/null || grep -qa "ANTIGRAVITY_SUITE_F5_PATCH" "$asar" 2>/dev/null; then
-        ACTIVE_PATCH_F5=true
-    fi
     if grep -qa "ANTIGRAVITY RTL PATCH" "$asar" 2>/dev/null; then
         ACTIVE_PATCH_RTL=true
     fi
@@ -57,7 +53,7 @@ restore_pristine_models_base() {
     local asar="$1" orig="$2"
     detect_active_patches "$asar"
     local has_active=false
-    if [ "$ACTIVE_PATCH_F5" = "true" ] || [ "$ACTIVE_PATCH_RTL" = "true" ] || \
+    if [ "$ACTIVE_PATCH_RTL" = "true" ] || \
        [ "$ACTIVE_PATCH_SELECTOR" = "true" ] || [ "$ACTIVE_PATCH_FORK" = "true" ] || \
        [ "$ACTIVE_PATCH_OPEN_IDE" = "true" ]; then
         has_active=true
@@ -72,16 +68,12 @@ restore_pristine_models_base() {
 }
 
 reapply_post_model_patches() {
-    local f5="$1" rtl="$2" sel="$3" fork="$4" open_ide="$5"
+    local rtl="$1" sel="$2" fork="$3" open_ide="$4"
     local asar="${APP_INSTALL_DIR}/resources/app.asar"
     if [ "$rtl" = "true" ]; then
         log_info "Re-applying RTL patch on top of custom models patch..."
         rm -f "${asar}.bak" 2>/dev/null || true
         FORCE_INSTALL=false patch_rtl_app >/dev/null 2>&1 || patch_rtl_app
-    fi
-    if [ "$f5" = "true" ]; then
-        log_info "Re-applying F5 reload patch on top of custom models patch..."
-        FORCE_INSTALL=true patch_f5_reload >/dev/null 2>&1 || patch_f5_reload
     fi
     if [ "$sel" = "true" ]; then
         log_info "Re-applying multi-account selector on top of custom models patch..."

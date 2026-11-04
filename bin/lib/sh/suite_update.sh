@@ -11,10 +11,6 @@ reapply_detected_patches() {
         log_info "Re-applying RTL patch to App..."
         FORCE_INSTALL=true patch_rtl_app --force
     fi
-    if [ "$HAD_APP_F5" = true ] && [ "$SKIP_F5" != true ]; then
-        log_info "Re-applying F5 reload patch to App..."
-        FORCE_INSTALL=true patch_f5_reload --force
-    fi
     if [ "$HAD_APP_SELECTOR" = true ]; then
         log_info "Re-applying Multi-Account Selector to App..."
         FORCE_INSTALL=true patch_selector_app
@@ -53,7 +49,7 @@ update_all() {
     detect_active_app_patches
     detect_active_ide_patches
     log_info "Pre-update active patch detection:"
-    log_info "  • App: Selector=${HAD_APP_SELECTOR}, RTL=${HAD_APP_RTL}, F5=${HAD_APP_F5}, Fork=${HAD_APP_FORK}, OpenIDE=${HAD_APP_OPEN_IDE}, Models=${HAD_APP_MODELS}"
+    log_info "  • App: Selector=${HAD_APP_SELECTOR}, RTL=${HAD_APP_RTL}, Fork=${HAD_APP_FORK}, OpenIDE=${HAD_APP_OPEN_IDE}, Models=${HAD_APP_MODELS}"
     log_info "  • IDE: Selector=${HAD_IDE_SELECTOR}, RTL=${HAD_IDE_RTL}, Fork=${HAD_IDE_FORK}"
 
     log_info "Starting full suite update..."

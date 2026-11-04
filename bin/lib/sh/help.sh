@@ -20,8 +20,8 @@ Commands:
   status        Check installed vs target versions, patch statuses, and cache
   detect        Scan and identify all installed Antigravity instances on system (aliases: scan, find)
   install       Install Antigravity suite [all|app|ide] (default: all)
-  all           Install / update Antigravity Suite (App, IDE, F5 patch, and RTL)
-  app           Install / update Antigravity App (RTL and F5 patches)
+  all           Install / update Antigravity Suite (App, IDE, and RTL)
+  app           Install / update Antigravity App (RTL patch)
   ide           Install / update Antigravity IDE and RTL patch
   app1          Configure Primary App launcher and desktop shortcut
   app2          Configure Account 2 isolated profile, shared history, and shortcuts (optional)
@@ -36,10 +36,8 @@ Commands:
   list-instances  Show all created App and IDE instances and their history status (alias: list)
   set-history     Toggle instance history between 'shared' and 'isolated'
   remove-instance Delete an App or IDE instance and archive its profile (alias: remove)
-  f5            Apply manual F5 backend reload sync patch (isolated)
-  unpatch-f5    Revert F5 backend reload sync patch
   selector      Apply prompt-bar account selector & multi-account patch (alias: patch-selector)
-  unpatch-selector Revert prompt-bar account selector patch (preserves F5)
+  unpatch-selector Revert prompt-bar account selector patch
   fork          Apply experimental conversation forking patch to App and IDE (alias: patch-fork)
   unpatch-fork  Revert conversation forking patch
   open-ide      Enable native 'Open in IDE' titlebar button in App (alias: patch-open-ide)
@@ -55,7 +53,7 @@ Commands:
   unpatch-rtl   Revert RTL typography patch from App and IDE
   clean-data    Clean or purge user data and caches [app|ide|history|all]
   uninstall     Uninstall Antigravity binaries and shortcuts [all|app|ide] [--with-data|--keep-data]
-  update        Smart update components [all|app|ide|rtl|f5|checksums|repo|services] (preserves user data & active patches)
+  update        Smart update components [all|app|ide|rtl|checksums|repo|services] (preserves user data & active patches)
   update-repo   Update Antigravity Suite Manager repository, recompile, and redeploy
   restart-services Restart systemd history sync and X11 icon injector daemons
   benchmark     Benchmark AI response speed, IPv6/proxy latency, and context bloat (alias: bench)
