@@ -62,10 +62,12 @@
             body = `<div style="font-size:11px;color:var(--agy-dropdown-subtext);padding:8px 0;">Loading usage telemetry...</div>`;
         }
 
-        let badgeText = 'PRO';
+        const hasClaude = Array.isArray(acc.quotas) && acc.quotas.some(b => b.family === 'claude');
+        let badgeText = hasClaude ? 'PRO' : 'FREE';
         if (acc.tier) {
             if (acc.tier === 'No License' || acc.license_status === 'no_license') badgeText = 'NO LICENSE';
             else if (acc.tier === 'Resource Exhausted' || acc.license_status === 'exhausted') badgeText = 'EXHAUSTED';
+            else if (hasClaude || acc.tier === 'PRO' || acc.tier === 'TEAMS_TIER_PRO') badgeText = 'PRO';
             else if (acc.tier.toLowerCase().includes('free') || acc.tier === 'UNKNOWN_TIER') badgeText = 'FREE';
             else badgeText = acc.tier.split(' ')[0].toUpperCase();
         }

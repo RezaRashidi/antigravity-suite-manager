@@ -57,6 +57,9 @@ def fetch_account_quotas(account: AccountRecord) -> List[QuotaBucket]:
 
 
 def fetch_account_tier(account: AccountRecord) -> str:
+    if any(q.family == "claude" for q in account.quotas):
+        account.tier = "PRO"
+        return "PRO"
     if not account.token or not account.token.access_token:
         return account.tier
     url = "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"

@@ -36,12 +36,14 @@ async function refreshQuotasAsync() {
                 ]);
                 if (direct && direct.status === 'ok' && direct.buckets?.length > 0) {
                     acc.quotas = direct.buckets; acc.license_status = 'ok';
-                    if (!acc.tier || acc.tier === 'UNKNOWN_TIER' || acc.tier === 'No License') acc.tier = 'FREE';
+                    const isPro = direct.buckets.some(b => b.family === 'claude');
+                    acc.tier = isPro ? 'PRO' : 'FREE';
                     return;
                 }
                 if (acc.is_primary && lsTelemetry?.buckets?.length > 0) {
                     acc.quotas = lsTelemetry.buckets; acc.license_status = 'ok';
-                    if (!acc.tier || acc.tier === 'UNKNOWN_TIER' || acc.tier === 'No License') acc.tier = 'TEAMS_TIER_PRO';
+                    const isPro = lsTelemetry.buckets.some(b => b.family === 'claude');
+                    acc.tier = isPro ? 'PRO' : (acc.tier || 'PRO');
                     return;
                 }
                 const prev = _quotaCache.accounts?.find(a => a.email?.toLowerCase() === acc.email?.toLowerCase());
@@ -53,7 +55,10 @@ async function refreshQuotasAsync() {
                     acc.quotas = direct?.buckets || [];
                     if (direct?.status === 'no_license') acc.tier = 'No License';
                     else if (direct?.status === 'exhausted') acc.tier = 'Resource Exhausted';
-                    else if (!acc.tier || acc.tier === 'UNKNOWN_TIER') acc.tier = 'FREE';
+                    else {
+                        const isPro = acc.quotas?.some(b => b.family === 'claude');
+                        acc.tier = isPro ? 'PRO' : 'FREE';
+                    }
                 }
             } catch (_) {}
         }));
