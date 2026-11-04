@@ -47,11 +47,17 @@ function setActiveAccount(email) {
 }
 
 function getActiveAccountEmail(accountsMap = {}) {
-    if (_activeAccountEmail) return _activeAccountEmail;
+    if (_activeAccountEmail && _activeAccountEmail !== 'Primary (Native)') {
+        const acc = accountsMap[_activeAccountEmail.toLowerCase()];
+        if (acc && !acc.is_primary) return _activeAccountEmail;
+    }
     const b = getBindings();
-    if (b.__active_account) {
-        _activeAccountEmail = b.__active_account;
-        return _activeAccountEmail;
+    if (b.__active_account && b.__active_account !== 'Primary (Native)') {
+        const acc = accountsMap[b.__active_account.toLowerCase()];
+        if (acc && !acc.is_primary) {
+            _activeAccountEmail = b.__active_account;
+            return _activeAccountEmail;
+        }
     }
     for (const [em, acc] of Object.entries(accountsMap)) {
         if (acc && acc.is_primary) {
@@ -59,8 +65,7 @@ function getActiveAccountEmail(accountsMap = {}) {
             return _activeAccountEmail;
         }
     }
-    const accounts = Object.keys(accountsMap);
-    return accounts[0] || null;
+    return 'Primary (Native)';
 }
 
 function setBinding(cascadeId, email, model = '') {

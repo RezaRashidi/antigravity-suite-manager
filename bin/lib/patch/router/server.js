@@ -13,9 +13,9 @@ const UPSTREAM_HOST = 'daily-cloudcode-pa.googleapis.com';
 let _server = null, _lastCascadeId = null, _lastCascadeTs = 0;
 
 async function resolveTokenForAccount(email) {
-    if (!email) return null;
+    if (!email || email === 'Primary (Native)') return null;
     const accounts = loadAllAccounts();
-    const target = accounts[email];
+    const target = accounts[email.toLowerCase()];
     if (!target || target.is_primary || !target.token) return null;
     const expiryMs = target.token.expiry ? new Date(target.token.expiry).getTime() : 0;
     if (!expiryMs || expiryMs - Date.now() < 300000) return await refreshGoogleToken(target);
@@ -60,7 +60,6 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
             const bindings = getBindings();
             if (!cascadeId) { for (const bid of Object.keys(bindings)) if (!bid.startsWith('__') && bid !== 'default' && bid.length >= 8 && bodyStr.includes(bid)) { cascadeId = bid; break; } }
             if (!cascadeId) { const m = bodyStr.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i); if (m) cascadeId = m[1]; }
-            if (!cascadeId && _lastCascadeId && (Date.now() - _lastCascadeTs < 3600000)) cascadeId = _lastCascadeId;
             if (cascadeId) { _lastCascadeId = cascadeId; _lastCascadeTs = Date.now(); }
 
             if (tryInterceptCommand(req, res, bodyStr, cascadeId)) return;
@@ -68,8 +67,7 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
             const isGen = req.url && (req.url.includes('streamGenerateContent') || req.url.includes('generateContent'));
             const isAccountRpc = req.url && (
                 isGen ||
-                req.url.includes('retrieveUserQuota') ||
-                req.url.includes('fetchAvailableModels')
+                req.url.includes('retrieveUserQuota')
             );
             let token = null, boundEmail = 'Primary (Native)', isSub = false;
             if (isAccountRpc) {
@@ -84,11 +82,6 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
                     boundEmail = allocated || activeDefault || 'Primary (Native)';
                 } else {
                     boundEmail = (cascadeId && bindings[cascadeId]?.email) || activeDefault || 'Primary (Native)';
-                    if (isGen && cascadeId && !bindings[cascadeId] && boundEmail && boundEmail !== 'Primary (Native)') {
-                        setBinding(cascadeId, boundEmail);
-                        bindings[cascadeId] = { cascade_id: cascadeId, email: boundEmail, updated_at: new Date().toISOString() };
-                        logTraffic(`[AUTO_PIN] Chat: [${cascadeId}] permanently bound to: [${boundEmail}]`);
-                    }
                 }
                 token = await resolveTokenForAccount(boundEmail);
                 const tokenFp = token ? `token: ...${token.slice(-6)}` : 'token: [Native LS Session]';

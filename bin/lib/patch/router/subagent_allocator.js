@@ -97,6 +97,14 @@ function allocateAccountForSubagent(subagentId, parentId, accountsMap = {}, bind
     let candidates = emails.filter(em => em !== parentEmail);
     if (!candidates.length) candidates = emails;
 
+    if (quotas && quotas.length > 0) {
+        const withQuota = candidates.filter(em => {
+            const q = quotas.find(item => item.email?.toLowerCase() === em.toLowerCase());
+            return !q || q.remainingFraction > 0.05;
+        });
+        if (withQuota.length > 0) candidates = withQuota;
+    }
+
     const idleCandidates = candidates.filter(em => (_inFlightCounts.get(em) || 0) === 0);
     const pool = idleCandidates.length ? idleCandidates : candidates;
 
