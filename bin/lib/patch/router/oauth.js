@@ -6,8 +6,8 @@ const https = require('https');
 const { ACCOUNTS_DIR } = require('./bindings.js');
 const { getProxyAgent } = require('./proxy_agent.js');
 
-const _CID_BYTES = [107, 106, 109, 107, 106, 106, 108, 106, 108, 106, 111, 99, 107, 119, 46, 55, 50, 41, 41, 51, 52, 104, 50, 104, 107, 54, 57, 40, 63, 104, 105, 111, 44, 46, 53, 54, 53, 48, 50, 110, 61, 110, 106, 105, 63, 42, 116, 59, 42, 42, 41, 116, 61, 53, 53, 61, 54, 63, 47, 41, 63, 40, 57, 53, 52, 46, 63, 52, 46, 116, 57, 53, 55];
-const _SEC_BYTES = [29, 21, 25, 9, 10, 2, 119, 17, 111, 98, 28, 13, 8, 110, 98, 108, 22, 62, 22, 16, 107, 55, 22, 24, 98, 41, 2, 25, 110, 32, 108, 43, 30, 27, 60];
+const _CID_BYTES = [98, 98, 110, 105, 111, 110, 99, 107, 99, 106, 111, 104, 119, 105, 108, 46, 40, 57, 107, 48, 48, 56, 105, 46, 61, 47, 51, 59, 57, 105, 104, 53, 44, 108, 57, 53, 62, 104, 108, 98, 57, 111, 56, 54, 50, 116, 59, 42, 42, 41, 116, 61, 53, 53, 61, 54, 63, 47, 41, 63, 40, 57, 53, 52, 46, 63, 52, 46, 116, 57, 53, 55];
+const _SEC_BYTES = [29, 21, 25, 9, 10, 2, 119, 99, 3, 11, 13, 42, 28, 109, 8, 13, 30, 25, 106, 11, 14, 62, 48, 119, 3, 34, 17, 23, 45, 8, 106, 0, 46, 41, 2];
 
 function getDefaultCreds() {
     return {
@@ -70,10 +70,13 @@ function getOAuthClientCredentials() {
             const mSecs = raw.match(/GOCSPX-[a-zA-Z0-9_\-]{28}/g) || [];
             const mCids = raw.match(/\d+-[a-z0-9]+\.apps\.googleusercontent\.com/g) || [];
             for (let i = 0; i < Math.min(mCids.length, mSecs.length); i++) {
-                if (mCids[i].includes('1071006060591')) return { clientId: mCids[i], clientSecret: mSecs[i] };
+                if (mCids[i].includes('884354919052')) return { clientId: mCids[i], clientSecret: mSecs[i] };
             }
             for (let i = 0; i < Math.min(mCids.length, mSecs.length); i++) {
-                if (!mCids[i].includes('884354919052')) return { clientId: mCids[i], clientSecret: mSecs[i] };
+                if (mCids[i].includes('1098991175725')) return { clientId: mCids[i], clientSecret: mSecs[i] };
+            }
+            for (let i = 0; i < Math.min(mCids.length, mSecs.length); i++) {
+                if (mCids[i].includes('1071006060591')) return { clientId: mCids[i], clientSecret: mSecs[i] };
             }
         } catch (_) {}
     }

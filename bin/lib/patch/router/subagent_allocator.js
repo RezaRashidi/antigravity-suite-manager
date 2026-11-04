@@ -42,7 +42,8 @@ function isSubagent(cascadeId) {
     if (!cascadeId || typeof cascadeId !== 'string' || cascadeId.length < 8) return { isSubagent: false };
     if (_subagentCache.has(cascadeId)) {
         const entry = _subagentCache.get(cascadeId);
-        if (Date.now() - entry.cachedAt < 300000) return entry;
+        const ttl = entry.isSubagent ? 300000 : 2000;
+        if (Date.now() - entry.cachedAt < ttl) return entry;
     }
 
     for (const root of getBrainRoots()) {

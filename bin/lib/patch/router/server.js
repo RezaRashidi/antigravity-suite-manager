@@ -60,6 +60,7 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
             const bindings = getBindings();
             if (!cascadeId) { for (const bid of Object.keys(bindings)) if (!bid.startsWith('__') && bid !== 'default' && bid.length >= 8 && bodyStr.includes(bid)) { cascadeId = bid; break; } }
             if (!cascadeId) { const m = bodyStr.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i); if (m) cascadeId = m[1]; }
+            if (!cascadeId && _lastCascadeId && (Date.now() - _lastCascadeTs < 3600000)) cascadeId = _lastCascadeId;
             if (cascadeId) { _lastCascadeId = cascadeId; _lastCascadeTs = Date.now(); }
 
             if (tryInterceptCommand(req, res, bodyStr, cascadeId)) return;
@@ -67,7 +68,8 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
             const isGen = req.url && (req.url.includes('streamGenerateContent') || req.url.includes('generateContent'));
             const isAccountRpc = req.url && (
                 isGen ||
-                req.url.includes('retrieveUserQuota')
+                req.url.includes('retrieveUserQuota') ||
+                req.url.includes('fetchAvailableModels')
             );
             let token = null, boundEmail = 'Primary (Native)', isSub = false;
             if (isAccountRpc) {

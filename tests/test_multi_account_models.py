@@ -43,11 +43,10 @@ class TestMultiAccountModels(unittest.TestCase):
         self.assertEqual(len(buckets), 2)
         self.assertEqual(buckets[0].percent(), 85.0)
 
-    def test_get_oauth_credentials_prioritizes_consumer_client(self):
+    def test_get_oauth_credentials_prioritizes_antigravity_client(self):
         from antigravity_suite.multi_account.tokens import get_oauth_credentials
         cid, sec = get_oauth_credentials()
-        self.assertIn("1071006060591", cid)
-        self.assertNotIn("884354919052", cid)
+        self.assertIn("884354919052", cid)
         self.assertTrue(sec.startswith("GOCSPX-"))
         self.assertEqual(len(sec), 35)
 
