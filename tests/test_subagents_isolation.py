@@ -77,3 +77,21 @@ def test_purge_subagents_from_store(tmp_path: Path):
     rows = con.cursor().execute("SELECT count(*) FROM conversation_summaries WHERE conversation_id = ?;", (sub_uuid,)).fetchone()
     assert rows[0] == 0
     con.close()
+
+
+def test_subagent_never_purged_by_deletion_sync(tmp_path: Path):
+    from antigravity_suite.history.deletion_manifest import load_manifest, save_manifest
+    from antigravity_suite.history.deletion_sync import detect_and_sync_deletions
+    from antigravity_suite.history.models import SyncStats
+    brain, sub_id = tmp_path / "brain", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    tr = brain / sub_id / ".system_generated" / "logs" / "transcript.jsonl"
+    tr.parent.mkdir(parents=True); tr.write_text('{"step": 1}\n')
+    con = sqlite3.connect(str(tmp_path / "conversation_summaries.db"))
+    ensure_summaries_schema(con)
+    m = load_manifest(tmp_path); m["known_app_ids"] = [sub_id]; save_manifest(tmp_path, m)
+    stats = SyncStats()
+    assert detect_and_sync_deletions(tmp_path, [], [], [str(brain)], {}, stats, con, subagents={sub_id}) == 0
+    assert tr.is_file()
+    m2 = load_manifest(tmp_path)
+    assert sub_id not in m2.get("tombstones", {}) and sub_id not in m2.get("known_app_ids", [])
+    con.close()

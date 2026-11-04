@@ -6,6 +6,7 @@ const { loadAllAccounts } = require('./accounts.js');
 const { refreshGoogleToken } = require('./oauth.js');
 const { handleApiRequest, tryInterceptCommand } = require('./api.js');
 const { getProxyAgent } = require('./proxy_agent.js');
+const { getSubagentPolicy, isSubagent, trackInFlight, allocateAccountForSubagent } = require('./subagent_allocator.js');
 
 const DEFAULT_PORT = 41999;
 const UPSTREAM_HOST = 'daily-cloudcode-pa.googleapis.com';
@@ -70,19 +71,28 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
                 req.url.includes('retrieveUserQuota') ||
                 req.url.includes('fetchAvailableModels')
             );
-            let token = null, boundEmail = 'Primary (Native)';
+            let token = null, boundEmail = 'Primary (Native)', isSub = false;
             if (isAccountRpc) {
                 const accounts = loadAllAccounts();
                 const activeDefault = getActiveAccountEmail(accounts);
-                boundEmail = (cascadeId && bindings[cascadeId]?.email) || activeDefault || 'Primary (Native)';
-                if (isGen && cascadeId && !bindings[cascadeId] && boundEmail && boundEmail !== 'Primary (Native)') {
-                    setBinding(cascadeId, boundEmail);
-                    bindings[cascadeId] = { cascade_id: cascadeId, email: boundEmail, updated_at: new Date().toISOString() };
-                    logTraffic(`[AUTO_PIN] Chat: [${cascadeId}] permanently bound to: [${boundEmail}]`);
+                const subPolicy = getSubagentPolicy();
+                const subInfo = subPolicy.enabled && cascadeId ? isSubagent(cascadeId) : { isSubagent: false };
+                isSub = !!subInfo.isSubagent;
+
+                if (isSub) {
+                    const allocated = allocateAccountForSubagent(cascadeId, subInfo.parentId, accounts, bindings);
+                    boundEmail = allocated || activeDefault || 'Primary (Native)';
+                } else {
+                    boundEmail = (cascadeId && bindings[cascadeId]?.email) || activeDefault || 'Primary (Native)';
+                    if (isGen && cascadeId && !bindings[cascadeId] && boundEmail && boundEmail !== 'Primary (Native)') {
+                        setBinding(cascadeId, boundEmail);
+                        bindings[cascadeId] = { cascade_id: cascadeId, email: boundEmail, updated_at: new Date().toISOString() };
+                        logTraffic(`[AUTO_PIN] Chat: [${cascadeId}] permanently bound to: [${boundEmail}]`);
+                    }
                 }
                 token = await resolveTokenForAccount(boundEmail);
                 const tokenFp = token ? `token: ...${token.slice(-6)}` : 'token: [Native LS Session]';
-                logTraffic(`${isGen ? 'ChatGen' : 'AccountRpc'}: [${cascadeId || 'general'}] -> Account: [${boundEmail}] | ${tokenFp} | Path: ${req.url}`);
+                logTraffic(`${isGen ? (isSub ? 'SubagentGen' : 'ChatGen') : 'AccountRpc'}: [${cascadeId || 'general'}] -> Account: [${boundEmail}] | ${tokenFp} | Path: ${req.url}`);
             } else {
                 logTraffic(`ControlPlane: [${cascadeId || 'system'}] -> Native LS Session | Path: ${req.url}`);
             }
@@ -98,16 +108,30 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
             };
             if (agent) upOpts.agent = agent;
 
+            let inFlightTracked = isGen && boundEmail && boundEmail !== 'Primary (Native)';
+            if (inFlightTracked) trackInFlight(boundEmail, 1);
+            const finishInFlight = () => {
+                if (inFlightTracked) {
+                    inFlightTracked = false;
+                    trackInFlight(boundEmail, -1);
+                }
+            };
+
             const upReq = https.request(upOpts, (upRes) => {
-                logTraffic(`${isAccountRpc ? (isGen ? 'ChatGen' : 'AccountRpc') : 'ControlPlane'}: [${cascadeId || 'general'}] <- Upstream Response: ${upRes.statusCode}`);
+                logTraffic(`${isAccountRpc ? (isGen ? (isSub ? 'SubagentGen' : 'ChatGen') : 'AccountRpc') : 'ControlPlane'}: [${cascadeId || 'general'}] <- Upstream Response: ${upRes.statusCode}`);
                 res.writeHead(upRes.statusCode, upRes.headers);
                 upRes.pipe(res);
+                upRes.on('end', finishInFlight);
+                upRes.on('close', finishInFlight);
             });
 
-            req.on('aborted', () => upReq.destroy());
-            req.on('error', () => upReq.destroy());
-            res.on('error', () => upReq.destroy());
+            req.on('aborted', () => { finishInFlight(); upReq.destroy(); });
+            req.on('error', () => { finishInFlight(); upReq.destroy(); });
+            res.on('error', () => { finishInFlight(); upReq.destroy(); });
+            res.on('close', finishInFlight);
+            res.on('finish', finishInFlight);
             upReq.on('error', (err) => {
+                finishInFlight();
                 logTraffic(`Chat: [${cascadeId || 'general'}] !! Upstream Error: ${err.message}`);
                 if (!res.headersSent) { res.writeHead(502, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: err.message })); }
             });
