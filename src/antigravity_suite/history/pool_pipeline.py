@@ -46,6 +46,7 @@ def prepare_and_merge_pools(
         if backup_entry:
             stats.backup_id = backup_entry.backup_id
 
+    subagents = discover_subagent_uuids(brain_pools + [str(master_brain_dir)])
     stats.conversations_deleted = detect_and_sync_deletions(
         effective_master=effective_master,
         candidate_vscdbs=candidate_vscdbs,
@@ -54,9 +55,9 @@ def prepare_and_merge_pools(
         all_summaries={},
         stats=stats,
         user_home=home,
+        subagents=subagents,
     )
     tombstones = get_tombstones(effective_master)
-    subagents = discover_subagent_uuids(brain_pools + [str(master_brain_dir)])
 
     stats.db_files_merged = merge_raw_db_pools(conv_pools, master_conv_dir, tombstones=tombstones)
     stats.brain_folders_merged = merge_brain_folders(brain_pools, master_brain_dir, tombstones=tombstones, subagents=subagents)

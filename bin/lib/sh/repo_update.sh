@@ -59,12 +59,12 @@ update_suite_repo() {
         mkdir -p "${LOCAL_BIN}"
         for f in "${repo_dir}/bin"/*; do
             [ -f "$f" ] || continue
-            cp -f "$f" "${LOCAL_BIN}/" 2>/dev/null || true
+            ln -sfn "$f" "${LOCAL_BIN}/$(basename "$f")" 2>/dev/null || cp -f "$f" "${LOCAL_BIN}/" 2>/dev/null || true
             chmod +x "${LOCAL_BIN}/$(basename "$f")" 2>/dev/null || true
         done
         if [ -d "${repo_dir}/bin/lib" ]; then
-            mkdir -p "${LOCAL_BIN}/lib"
-            cp -rf "${repo_dir}/bin/lib/"* "${LOCAL_BIN}/lib/" 2>/dev/null || true
+            [ ! -L "${LOCAL_BIN}/lib" ] && rm -rf "${LOCAL_BIN}/lib" 2>/dev/null || true
+            ln -sfn "${repo_dir}/bin/lib" "${LOCAL_BIN}/lib" 2>/dev/null || true
         fi
     fi
     if [ -f "${repo_dir}/install.sh" ]; then

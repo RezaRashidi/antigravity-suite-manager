@@ -45,7 +45,7 @@ def synchronize_master_summaries(
         try: cur.executemany("DELETE FROM conversations_fts WHERE conversation_id = ?;", [(t,) for t in tombstones])
         except Exception: pass
     from antigravity_suite.history.subagents import purge_subagents_from_store
-    purge_subagents_from_store(master_conv_dir, con, subagents)
+    purge_subagents_from_store(master_conv_dir, con, subagents, effective_master=effective_master)
     cur.execute("CREATE TABLE IF NOT EXISTS sync_file_stats (conv_id TEXT PRIMARY KEY, db_mtime REAL, db_size INTEGER, tr_mtime REAL, tr_size INTEGER);")
     cached_stats = {r[0]: (r[1], r[2], r[3], r[4]) for r in cur.execute("SELECT conv_id, db_mtime, db_size, tr_mtime, tr_size FROM sync_file_stats;").fetchall()}
     con.commit()

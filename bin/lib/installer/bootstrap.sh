@@ -29,8 +29,15 @@ check_auto_bootstrap() {
 
         mkdir -p "${REAL_HOME}/.local/bin" "${REAL_HOME}/.local/share/icons" "${REAL_HOME}/.config/antigravity"
         if [ -d "${INSTALL_REPO_DIR}/bin" ]; then
-            cp -rf "${INSTALL_REPO_DIR}/bin/"* "${REAL_HOME}/.local/bin/" 2>/dev/null || sudo -n cp -rf "${INSTALL_REPO_DIR}/bin/"* "${REAL_HOME}/.local/bin/" 2>/dev/null || true
-            chmod +x "${REAL_HOME}/.local/bin/"* 2>/dev/null || true
+            for f in "${INSTALL_REPO_DIR}/bin"/*; do
+                [ -f "$f" ] || continue
+                ln -sfn "$f" "${REAL_HOME}/.local/bin/$(basename "$f")" 2>/dev/null || cp -f "$f" "${REAL_HOME}/.local/bin/" 2>/dev/null || true
+                chmod +x "${REAL_HOME}/.local/bin/$(basename "$f")" 2>/dev/null || true
+            done
+            if [ -d "${INSTALL_REPO_DIR}/bin/lib" ]; then
+                [ ! -L "${REAL_HOME}/.local/bin/lib" ] && rm -rf "${REAL_HOME}/.local/bin/lib" 2>/dev/null || true
+                ln -sfn "${INSTALL_REPO_DIR}/bin/lib" "${REAL_HOME}/.local/bin/lib" 2>/dev/null || true
+            fi
         fi
         if [ -d "${INSTALL_REPO_DIR}/assets" ]; then
             cp -f "${INSTALL_REPO_DIR}/assets"/antigravity-master-*.png "${REAL_HOME}/.local/share/icons/" 2>/dev/null || true

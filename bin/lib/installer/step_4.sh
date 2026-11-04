@@ -6,15 +6,17 @@ step_4_deploy_scripts() {
     mkdir -p "$TARGET_BIN" "$TARGET_ICONS" "$TARGET_CONF"
 
     # Deploy all bin scripts and libraries
-    if [ -d "${SCRIPT_DIR}/bin" ]; then
-        for f in "${SCRIPT_DIR}/bin"/*; do
+    local src_bin="${SCRIPT_DIR}/bin"
+    [ ! -d "$src_bin" ] && [ -n "${ANTIGRAVITY_SUITE_DIR:-}" ] && src_bin="${ANTIGRAVITY_SUITE_DIR}/bin"
+    if [ -d "$src_bin" ]; then
+        for f in "${src_bin}"/*; do
             [ -f "$f" ] || continue
-            cp -f "$f" "${TARGET_BIN}/" 2>/dev/null || sudo -n cp -f "$f" "${TARGET_BIN}/" 2>/dev/null || true
+            ln -sfn "$f" "${TARGET_BIN}/$(basename "$f")" 2>/dev/null || cp -f "$f" "${TARGET_BIN}/" 2>/dev/null || true
             chmod +x "${TARGET_BIN}/$(basename "$f")" 2>/dev/null || true
         done
-        if [ -d "${SCRIPT_DIR}/bin/lib" ]; then
-            mkdir -p "${TARGET_BIN}/lib"
-            cp -rf "${SCRIPT_DIR}/bin/lib/"* "${TARGET_BIN}/lib/" 2>/dev/null || sudo -n cp -rf "${SCRIPT_DIR}/bin/lib/"* "${TARGET_BIN}/lib/" 2>/dev/null || true
+        if [ -d "${src_bin}/lib" ]; then
+            [ ! -L "${TARGET_BIN}/lib" ] && rm -rf "${TARGET_BIN}/lib" 2>/dev/null || true
+            ln -sfn "${src_bin}/lib" "${TARGET_BIN}/lib" 2>/dev/null || true
         fi
     fi
 

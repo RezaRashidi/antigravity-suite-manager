@@ -46,6 +46,7 @@ dispatch_command() {
             else configure_icons_interactive "$SUB_COMMAND"; fi ;;
         cloud-sync) dispatch_cloud_sync "${CMD_ARGS[@]}" ;;
         custom-models|models) dispatch_custom_models "${CMD_ARGS[@]}" ;;
+        merger) dispatch_merger "${CMD_ARGS[@]}" ;;
         merge-history) merge_history ;;
         export-history|export-chats) export_history "${CMD_ARGS[@]}" ;;
         import-history|import-chats) import_history "${CMD_ARGS[@]}" ;;
@@ -76,6 +77,8 @@ dispatch_command() {
         unpatch-open-ide) dispatch_unpatch_open_ide "${CMD_ARGS[@]}" ;;
         patch-models|models-patch) dispatch_patch_models "${CMD_ARGS[@]}" ;;
         unpatch-models) dispatch_unpatch_models "${CMD_ARGS[@]}" ;;
+        subagents|patch-subagents|sa) dispatch_subagents "${CMD_ARGS[@]}" ;;
+        unpatch-subagents) dispatch_unpatch_subagents "${CMD_ARGS[@]}" ;;
         patch-all|apply-all|patch-everything) FORCE_INSTALL=true dispatch_patch_all "${CMD_ARGS[@]}" ;;
         unpatch|restore|revert-patch|unpatch-all) auto_detect_installations; unpatch_antigravity ;;
         traffic|trace|monitor) dispatch_traffic ;;

@@ -16,7 +16,7 @@ execute_menu_choice() {
         10) FORCE_INSTALL=true patch_f5_reload ;;
         11) unpatch_f5 ;;
         12) configure_icons_interactive ;;
-        13) merge_history ;;
+        13) dispatch_merger ;;
         14) create_instance ;;
         15) list_instances ;;
         16) menu_action_history_mode ;;
@@ -46,6 +46,8 @@ execute_menu_choice() {
         40) FORCE_INSTALL=true patch_models_app ;;
         41) unpatch_models_app ;;
         42) FORCE_INSTALL=true patch_all all ;;
+        43) FORCE_INSTALL=true patch_subagents ;;
+        44) unpatch_subagents ;;
         0) exit 0 ;;
         *) log_err "Invalid selection."; exit 1 ;;
     esac

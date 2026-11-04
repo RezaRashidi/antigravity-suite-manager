@@ -75,7 +75,8 @@ def ingest_vscdb_summaries(
                             break
 
                     if u_id in all_summaries and curr_parsed is not None:
-                        if update_existing_from_ide(u_id, ide_title, curr_t, curr_parsed, conv_prompts, all_summaries, db_p, cur, master_conv_dir, pinned_set):
+                        vsc_mtime = vscdb_p.stat().st_mtime if vscdb_p.is_file() else 0.0
+                        if update_existing_from_ide(u_id, ide_title, curr_t, curr_parsed, conv_prompts, all_summaries, db_p, cur, master_conv_dir, pinned_set, vscdb_mtime=vsc_mtime):
                             ide_ingested_total += 1
                     else:
                         clean_cands = [c for c in [ide_sum, ide_annot] if c and is_clean_title(c) and not is_workspace_fallback_title(c)]

@@ -12,6 +12,7 @@ parse_cli_args() {
         case "$1" in
             custom-models|models) COMMAND="models"; shift; CMD_ARGS=("$@"); break ;;
             cloud-sync|cloud) COMMAND="cloud-sync"; shift; CMD_ARGS=("$@"); break ;;
+            merger|history-merger) COMMAND="merger"; shift; CMD_ARGS=("$@"); break ;;
             merge-history|merge) COMMAND="merge-history"; shift ;;
             export-history|export-chats) COMMAND="export-history"; shift; CMD_ARGS=("$@"); break ;;
             import-history|import-chats) COMMAND="import-history"; shift; CMD_ARGS=("$@"); break ;;
@@ -44,6 +45,8 @@ parse_cli_args() {
             unpatch-open-ide) COMMAND="unpatch-open-ide"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
             patch-models|models-patch) COMMAND="patch-models"; shift; CMD_ARGS=("$@"); break ;;
             unpatch-models) COMMAND="unpatch-models"; shift; CMD_ARGS=("$@"); break ;;
+            subagents|patch-subagents|sa) COMMAND="subagents"; shift; CMD_ARGS=("$@"); break ;;
+            unpatch-subagents) COMMAND="unpatch-subagents"; shift; CMD_ARGS=("$@"); break ;;
             patch-all|apply-all|patch-everything) COMMAND="patch-all"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi; CMD_ARGS=("$@"); break ;;
             clean-data|delete-data|purge-data) COMMAND="clean-data"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi; CMD_ARGS=("$@"); break ;;
             uninstall) COMMAND="uninstall"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi; CMD_ARGS=("$@"); break ;;

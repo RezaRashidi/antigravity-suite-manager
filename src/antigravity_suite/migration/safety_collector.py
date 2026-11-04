@@ -44,7 +44,8 @@ def populate_safety_tar(tar: tarfile.TarFile, category: str) -> None:
             p = os.path.join(real_home, f".{item}")
             if os.path.isdir(p):
                 tar.add(p, arcname=f"ide/{item.replace('-', '_')}", recursive=True)
-        ide_conv = os.path.join(GEMINI_DIR, "antigravity-ide")
+        gem_dir = os.path.join(real_home, ".gemini")
+        ide_conv = os.path.join(gem_dir, "antigravity-ide")
         if os.path.isdir(ide_conv):
             tar.add(ide_conv, arcname="ide/antigravity_ide_conv", recursive=True)
         for d in glob.glob(os.path.join(real_home, ".antigravity-ide-profile-*")):

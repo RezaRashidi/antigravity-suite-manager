@@ -17,16 +17,14 @@ from antigravity_suite.history.deletion_vscdb import purge_conversation_from_vsc
 
 
 def purge_conversation(
-    conv_id: str,
-    effective_master: Path,
-    con: sqlite3.Connection,
-    candidate_vscdbs: List[Path],
-    conv_pools: List[str],
-    brain_pools: List[str],
-    all_summaries: Dict[str, bytes],
-    user_home: Optional[Path] = None,
+    conv_id: str, effective_master: Path, con: sqlite3.Connection, candidate_vscdbs: List[Path],
+    conv_pools: List[str], brain_pools: List[str], all_summaries: Dict[str, bytes],
+    user_home: Optional[Path] = None, subagents: Optional[Set[str]] = None,
 ) -> None:
     """Completely purges conversation across all persistence layers."""
+    if subagents and conv_id in subagents: return
+    for bp in [effective_master / "brain"] + [Path(p) for p in brain_pools]:
+        if list(bp.glob(f"*/.system_generated/subagents/{conv_id}.json")): return
     archive_deleted_conversation(conv_id, effective_master, user_home, con=con)
     notify_language_servers_deletion(conv_id, effective_master=effective_master)
 

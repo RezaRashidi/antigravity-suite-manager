@@ -54,5 +54,7 @@ This document records the end-to-end diagnostic methodology, reverse-engineering
 - [46. Issue 44: Quota Selector Proxy Chaining & ConnectRPC Cache Invalidation](46_quota_selector_proxy_chaining_and_connectrpc_cache_invalidation.md)
 - [47. Issue 45: Manual Chat Title Reversion & Workspace Fallback Collision](47_manual_chat_title_reversion_and_workspace_fallback_collision.md)
 - [48. Issue 46: OAuth Location Block & ContextBridge Property Collision](48_oauth_location_block_and_contextbridge_property_collision.md)
-- [49. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
+- [49. Issue 47: Standalone Curl Bootstrap & System PATH Symlinks Resolution](49_module_not_found_antigravity_suite_and_path_symlinks_resolution.md)
+- [50. Issue 48: Manual Chat Title Reversion via Stale VSCDB Overwrite and On-Demand Merger Mode Control](50_manual_chat_title_reversion_and_merger_control_mode.md)
+- [51. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
 

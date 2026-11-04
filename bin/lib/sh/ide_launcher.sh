@@ -8,7 +8,7 @@ write_ide_launcher_and_desktop() {
 #!/usr/bin/env bash
 export ELECTRON_OZONE_PLATFORM_HINT="x11"
 ! pgrep -f "antigravity-apply-icon.py --daemon" >/dev/null 2>&1 && python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
-! systemctl --user is-active antigravity-sync.service >/dev/null 2>&1 && ! pgrep -f "antigravity-merge-history.py" >/dev/null 2>&1 && python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
+[ ! -f "${REAL_HOME}/.config/antigravity/merger_disabled" ] && ! systemctl --user is-active antigravity-sync.service >/dev/null 2>&1 && ! pgrep -f "antigravity-merge-history.py" >/dev/null 2>&1 && python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
 disown -a 2>/dev/null || true
 [ -n "${ide_pass_store}" ] && { mkdir -p "${REAL_HOME}/.gemide/cache" "${REAL_HOME}/.gemini/antigravity-ide/cache"; touch "${REAL_HOME}/.gemide/cache/antigravity-keyring-unavailable" "${REAL_HOME}/.gemini/antigravity-ide/cache/antigravity-keyring-unavailable"; }
 

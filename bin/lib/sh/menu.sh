@@ -43,7 +43,7 @@ show_classic_menu() {
     echo "10) Re-apply F5 Manual Sync Backend Reload Patch"
     echo "11) Revert / Unpatch F5 Manual Sync Backend Reload Patch"
     echo "12) Configure Icons & Appearance Themes"
-    echo "13) Merge & Sync Conversation History (All Profiles & IDEs)"
+    echo "13) Conversation History Merger & Mode (Auto Daemon / Manual Sync)"
     echo "14) Create New Instance (App or IDE with Shared/Isolated History)"
     echo "15) List All Instances & History Statuses"
     echo "16) Set / Toggle Instance History Mode (Shared vs Isolated)"
@@ -73,8 +73,10 @@ show_classic_menu() {
     echo "40) Inject In-App Custom Models Settings UI (Antigravity App Patch)"
     echo "41) Revert / Unpatch In-App Custom Models Settings UI"
     echo "42) Apply All Patches (Models, RTL, F5, Selector, Fork, Open IDE)"
+    echo "43) Apply Subagent Dynamic Multi-Account & Swarm Patch"
+    echo "44) Revert Subagent Dynamic Multi-Account & Swarm Patch"
     echo "0) Exit"
     echo -e "${CYAN}-----------------------------------------------------${NC}"
-    read -rp "Select an option [0-42]: " choice
+    read -rp "Select an option [0-44]: " choice
     execute_menu_choice "$choice"
 }

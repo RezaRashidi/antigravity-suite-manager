@@ -55,18 +55,20 @@ def ensure_db_checkpoint_title(
             cur.execute("SELECT idx, step_payload FROM steps WHERE step_type = 23;")
             existing_s23 = cur.fetchall()
             if existing_s23:
-                last_idx, last_payload = existing_s23[-1]
-                old_t = parse_step23_checkpoint_title(last_payload)
-                if old_t == title:
-                    return False
-                if old_t and (is_workspace_fallback_title(title, workspace_uri) or not is_clean_title(title)):
-                    return False
-                cur.execute("SELECT metadata FROM steps WHERE idx = ?;", (last_idx,))
-                meta_row = cur.fetchone()
-                s_meta = meta_row[0] if meta_row and meta_row[0] else b""
-                cur.execute("UPDATE steps SET step_payload = ? WHERE idx = ?;", (build_step23_payload(s_meta, title, last_idx, prompt), last_idx))
-                conn.commit()
-                return True
+                updated = False
+                for s_idx, s_payload in existing_s23:
+                    old_t = parse_step23_checkpoint_title(s_payload)
+                    if old_t != title:
+                        if old_t and (is_workspace_fallback_title(title, workspace_uri) or not is_clean_title(title)):
+                            continue
+                        cur.execute("SELECT metadata FROM steps WHERE idx = ?;", (s_idx,))
+                        meta_row = cur.fetchone()
+                        s_meta = meta_row[0] if meta_row and meta_row[0] else b""
+                        cur.execute("UPDATE steps SET step_payload = ? WHERE idx = ?;", (build_step23_payload(s_meta, title, s_idx, prompt), s_idx))
+                        updated = True
+                if updated:
+                    conn.commit()
+                return updated
 
             cur.execute("SELECT max(idx) FROM steps;")
             max_r = cur.fetchone()

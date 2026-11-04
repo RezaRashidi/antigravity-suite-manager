@@ -2246,6 +2246,62 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
         self.assertIn(".local/bin", content)
 
 
+    def test_ensure_db_checkpoint_title_updates_all_step23_entries(self):
+        """Case 50: Verifies that ensure_db_checkpoint_title updates all existing step 23 checkpoints."""
+        from antigravity_suite.history.checkpoint_sync import ensure_db_checkpoint_title, build_step23_payload
+        from antigravity_suite.history.extractor_checkpoint import parse_step23_checkpoint_title
+        import tempfile, sqlite3
+
+        with tempfile.TemporaryDirectory() as td:
+            db_p = Path(td) / "conv.db"
+            with sqlite3.connect(str(db_p)) as conn:
+                conn.execute("CREATE TABLE steps (idx INT, step_type INT, status INT, metadata BLOB, step_payload BLOB);")
+                conn.execute("INSERT INTO steps VALUES (10, 23, 3, x'01', ?);", (build_step23_payload(b"", "Old Title A", 10),))
+                conn.execute("INSERT INTO steps VALUES (20, 23, 3, x'01', ?);", (build_step23_payload(b"", "Old Title B", 20),))
+                conn.commit()
+
+            res = ensure_db_checkpoint_title(db_p, "cid", "Brand New Title")
+            self.assertTrue(res)
+
+            with sqlite3.connect(str(db_p)) as conn:
+                rows = conn.execute("SELECT idx, step_payload FROM steps WHERE step_type = 23 ORDER BY idx ASC;").fetchall()
+                self.assertEqual(len(rows), 2)
+                self.assertEqual(parse_step23_checkpoint_title(rows[0][1]), "Brand New Title")
+                self.assertEqual(parse_step23_checkpoint_title(rows[1][1]), "Brand New Title")
+
+    def test_update_existing_from_ide_respects_newer_annotation_mtime(self):
+        """Case 50: Verifies that stale state.vscdb does not overwrite newer manual annotation title."""
+        from antigravity_suite.history.vscdb_ingest_update import update_existing_from_ide
+        import tempfile, sqlite3, time
+
+        with tempfile.TemporaryDirectory() as td:
+            master = Path(td)
+            conv_dir = master / "conversations"
+            anno_dir = master / "annotations"
+            conv_dir.mkdir(parents=True)
+            anno_dir.mkdir(parents=True)
+
+            cid = "test-rename-cid"
+            anno_file = anno_dir / f"{cid}.pbtxt"
+            anno_file.write_text('title: "User New App Title"\npinned: true\n', encoding="utf-8")
+            os.utime(str(anno_file), (time.time() + 100, time.time() + 100))
+
+            cur = sqlite3.connect(":memory:").cursor()
+            res = update_existing_from_ide(
+                u_id=cid,
+                ide_title="Stale IDE Title",
+                curr_t="User New App Title",
+                curr_parsed={"workspace_uri": "file:///workspace"},
+                conv_prompts=set(),
+                all_summaries={},
+                db_p=conv_dir / f"{cid}.db",
+                cur=cur,
+                master_conv_dir=conv_dir,
+                vscdb_mtime=time.time(),
+            )
+            self.assertFalse(res)
+
+
 if __name__ == "__main__":
     unittest.main()
 

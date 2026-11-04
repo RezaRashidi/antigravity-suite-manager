@@ -30,30 +30,30 @@ def _find_ghost_ids(current_app_ids: Set[str], tombstones: Set[str], effective_m
 def detect_and_sync_deletions(
     effective_master: Path, candidate_vscdbs: List[Path], conv_pools: List[str], brain_pools: List[str],
     all_summaries: Dict[str, bytes], stats: SyncStats, con: Optional[sqlite3.Connection] = None,
-    user_home: Optional[Path] = None,
+    user_home: Optional[Path] = None, subagents: Optional[Set[str]] = None,
 ) -> int:
     """Detects asymmetric deletions between Desktop App and IDE, purging deleted chats."""
     own_conn = False
     if con is None:
         db_path = effective_master / "conversation_summaries.db"
-        if not db_path.is_file():
-            return 0
+        if not db_path.is_file(): return 0
         con, own_conn = sqlite3.connect(str(db_path), timeout=15.0), True
 
     try:
-        cur = con.cursor()
+        cur, sub_set = con.cursor(), set(subagents or ())
         app_rows = cur.execute("SELECT conversation_id FROM conversation_summaries WHERE killed = 0;").fetchall()
-        cur_app = set(r[0] for r in app_rows if r[0])
-        cur_ide = get_active_ide_ids(candidate_vscdbs)
+        cur_app = set(r[0] for r in app_rows if r[0]) - sub_set
+        cur_ide = get_active_ide_ids(candidate_vscdbs) - sub_set
         manifest = load_manifest(effective_master)
-        prev_app = set(manifest.get("known_app_ids", manifest.get("known_ids", [])))
-        prev_ide = set(manifest.get("known_ide_ids", manifest.get("known_ids", [])))
+        for sid in sub_set: manifest.get("tombstones", {}).pop(sid, None)
+        prev_app = set(manifest.get("known_app_ids", manifest.get("known_ids", []))) - sub_set
+        prev_ide = set(manifest.get("known_ide_ids", manifest.get("known_ids", []))) - sub_set
         tombstones = set(manifest.get("tombstones", {}).keys())
 
         if not prev_app and not prev_ide:
-            manifest["known_app_ids"] = sorted(list(cur_app - tombstones))
-            manifest["known_ide_ids"] = sorted(list(cur_ide - tombstones))
-            manifest["known_ids"] = sorted(list((cur_app | cur_ide) - tombstones))
+            manifest["known_app_ids"] = sorted(list((cur_app - tombstones) - sub_set))
+            manifest["known_ide_ids"] = sorted(list((cur_ide - tombstones) - sub_set))
+            manifest["known_ids"] = sorted(list(((cur_app | cur_ide) - tombstones) - sub_set))
             save_manifest(effective_master, manifest)
             return 0
 
@@ -62,25 +62,27 @@ def detect_and_sync_deletions(
         all_conv = [effective_master / "conversations"] + [Path(p) for p in conv_pools]
         del_ide = {c for c in del_ide if not any((d / f"{c}.db").is_file() and (d / f"{c}.db").stat().st_size > 100 for d in all_conv)}
         ghost_ids = _find_ghost_ids(cur_app, tombstones, effective_master, conv_pools, brain_pools)
-        to_purge = del_app | del_ide | ghost_ids
+        to_purge = (del_app | del_ide | ghost_ids) - sub_set
 
         if not to_purge:
-            manifest["known_app_ids"], manifest["known_ide_ids"] = sorted(list(cur_app - tombstones)), sorted(list(cur_ide - tombstones))
-            manifest["known_ids"] = sorted(list((cur_app | cur_ide) - tombstones))
+            manifest["known_app_ids"] = sorted(list((cur_app - tombstones) - sub_set))
+            manifest["known_ide_ids"] = sorted(list((cur_ide - tombstones) - sub_set))
+            manifest["known_ids"] = sorted(list(((cur_app | cur_ide) - tombstones) - sub_set))
             save_manifest(effective_master, manifest)
             return 0
 
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         for c_id in sorted(to_purge):
+            if c_id in sub_set: continue
             src = "app" if c_id in del_app else ("ide" if c_id in del_ide else "ghost")
-            purge_conversation(c_id, effective_master, con, candidate_vscdbs, conv_pools, brain_pools, all_summaries, user_home=user_home)
+            purge_conversation(c_id, effective_master, con, candidate_vscdbs, conv_pools, brain_pools, all_summaries, user_home=user_home, subagents=sub_set)
             manifest.setdefault("tombstones", {})[c_id] = {"deleted_at": now_iso, "source": src}
             stats.conversations_deleted += 1
             stats.dirty_conv_ids.add(c_id)
 
-        manifest["known_app_ids"] = sorted(list((cur_app - to_purge) - tombstones))
-        manifest["known_ide_ids"] = sorted(list((cur_ide - to_purge) - tombstones))
-        manifest["known_ids"] = sorted(list(((cur_app | cur_ide) - to_purge) - tombstones))
+        manifest["known_app_ids"] = sorted(list(((cur_app - to_purge) - tombstones) - sub_set))
+        manifest["known_ide_ids"] = sorted(list(((cur_ide - to_purge) - tombstones) - sub_set))
+        manifest["known_ids"] = sorted(list((((cur_app | cur_ide) - to_purge) - tombstones) - sub_set))
         save_manifest(effective_master, manifest)
         return len(to_purge)
     finally:

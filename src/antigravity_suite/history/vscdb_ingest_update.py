@@ -27,9 +27,14 @@ def update_existing_from_ide(
     cur: sqlite3.Cursor,
     master_conv_dir: Path,
     pinned_set: Optional[Set[str]] = None,
+    vscdb_mtime: float = 0.0,
 ) -> bool:
     """Updates an existing conversation summary if IDE has an authentic title."""
     is_fb = is_workspace_fallback_title(curr_t)
+    anno_file = master_conv_dir.parent / "annotations" / f"{u_id}.pbtxt"
+    anno_mtime = anno_file.stat().st_mtime if anno_file.is_file() else 0.0
+    if anno_mtime > vscdb_mtime and anno_mtime > 0 and curr_t and is_clean_title(curr_t) and not is_fb:
+        return False
     is_diff = bool(ide_title and ide_title != curr_t and is_clean_title(ide_title) and not is_prompt_text(ide_title, conv_prompts))
     if not (ide_title and (not curr_t or not is_clean_title(curr_t) or is_prompt_text(curr_t, conv_prompts) or is_fb or is_diff)):
         return False

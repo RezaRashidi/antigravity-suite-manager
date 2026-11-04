@@ -23,9 +23,20 @@ if [ -n "$ANTIGRAVITY_SUITE_DIR" ] && [ -d "${ANTIGRAVITY_SUITE_DIR}/src" ]; the
     export PYTHONPATH="${ANTIGRAVITY_SUITE_DIR}/src:${PYTHONPATH:-}"
 fi
 
+# Self-heal symlinks to repository so PATH commands are always live
+if [ -n "$ANTIGRAVITY_SUITE_DIR" ] && [ -d "${ANTIGRAVITY_SUITE_DIR}/bin" ]; then
+    mkdir -p "${HOME}/.local/bin" 2>/dev/null || true
+    [ "$(readlink "${HOME}/.local/bin/manage-antigravity.sh" 2>/dev/null)" = "${ANTIGRAVITY_SUITE_DIR}/bin/manage-antigravity.sh" ] || \
+        ln -sfn "${ANTIGRAVITY_SUITE_DIR}/bin/manage-antigravity.sh" "${HOME}/.local/bin/manage-antigravity.sh" 2>/dev/null || true
+    if [ "$(readlink "${HOME}/.local/bin/lib" 2>/dev/null)" != "${ANTIGRAVITY_SUITE_DIR}/bin/lib" ]; then
+        [ ! -L "${HOME}/.local/bin/lib" ] && rm -rf "${HOME}/.local/bin/lib" 2>/dev/null || true
+        ln -sfn "${ANTIGRAVITY_SUITE_DIR}/bin/lib" "${HOME}/.local/bin/lib" 2>/dev/null || true
+    fi
+fi
+
 LIB_SH_DIR=""
-for cand in "${SCRIPT_DIR}/lib/sh" "/usr/local/bin/lib/sh" "${HOME}/.local/bin/lib/sh"; do
-    if [ -d "$cand" ]; then
+for cand in "${ANTIGRAVITY_SUITE_DIR}/bin/lib/sh" "${SCRIPT_DIR}/lib/sh" "/usr/local/bin/lib/sh" "${HOME}/.local/bin/lib/sh"; do
+    if [ -n "$cand" ] && [ -d "$cand" ]; then
         LIB_SH_DIR="$cand"
         break
     fi
@@ -37,8 +48,8 @@ if [ -z "$LIB_SH_DIR" ]; then
 fi
 
 LIB_INSTALLER_DIR=""
-for cand in "${SCRIPT_DIR}/lib/installer" "/usr/local/bin/lib/installer" "${HOME}/.local/bin/lib/installer"; do
-    if [ -d "$cand" ]; then
+for cand in "${ANTIGRAVITY_SUITE_DIR}/bin/lib/installer" "${SCRIPT_DIR}/lib/installer" "/usr/local/bin/lib/installer" "${HOME}/.local/bin/lib/installer"; do
+    if [ -n "$cand" ] && [ -d "$cand" ]; then
         LIB_INSTALLER_DIR="$cand"
         break
     fi

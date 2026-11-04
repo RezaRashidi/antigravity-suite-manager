@@ -28,6 +28,7 @@ Commands:
   ide-shortcuts Configure Antigravity IDE launcher and desktop shortcut
   set-icons     Configure or re-apply icons (Black/White and Acc 2 Recolor)
   cloud         Encrypted cloud sync for cross-system chat continuation (push/pull/status)
+  merger        Configure history merger mode [auto|manual|status|run]
   merge-history Sync & backfill conversation history across all profiles/IDEs (alias: merge)
   keyring       Configure & switch credential storage (GNOME Keyring vs Normal File Storage)
   paths         Configure & switch Antigravity installation paths (interactive or CLI)
@@ -47,6 +48,8 @@ Commands:
   models        Custom models & multi-provider discovery/selection (alias: custom-models)
   patch-models  Inject custom models settings UI into Antigravity App (in-app patch)
   unpatch-models Revert in-app custom models settings UI patch
+  subagents     Apply Subagent Dynamic Multi-Account & Swarm patch (alias: sa, patch-subagents)
+  unpatch-subagents Revert Subagent Dynamic Multi-Account & Swarm patch
   patch-all     Apply all available patches in dependency order [all|app|ide]
   unpatch       Restore clean unmodified original app.asar (revert all patches)
   rtl           Apply / re-apply antigravity-rtl to App and IDE

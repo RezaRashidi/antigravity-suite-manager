@@ -47,6 +47,9 @@ def handle_unified_patches_and_reinstall(choice: str, u_item: Dict[str, Any], en
         handle_unified_patch_models(u_item, eng_p, manage_sh)
     elif up == "Y":
         handle_unified_patch_open_ide(u_item, eng_p, manage_sh)
+    elif up in ["SA", "SUBAGENTS", "SUBAGENT", "SWARM"]:
+        print(f"\n{CYAN}Configuring Subagent Dynamic Multi-Account & Swarm for {eng_p}...{NC}")
+        subprocess.run(["bash", manage_sh, "subagents"], check=False)
     elif up in ["AP", "ALL", "PATCH-ALL"]:
         print(f"\n{CYAN}Applying all available patches to {u_item['type']} at {eng_p}...{NC}")
         subprocess.run(["bash", manage_sh, "patch-all", c_type, flag, eng_p, "--force"], check=False)

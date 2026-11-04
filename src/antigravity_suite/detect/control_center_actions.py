@@ -26,6 +26,9 @@ from antigravity_suite.detect.control_center_ops import (
     handle_control_center_status,
     handle_control_center_traffic,
 )
+from antigravity_suite.detect.control_center_subagents import (
+    handle_control_center_subagents_patch,
+)
 from antigravity_suite.detect.control_center_patches import (
     handle_control_center_f5_patch,
     handle_control_center_fork_patch,
@@ -57,6 +60,7 @@ __all__ = [
     "handle_control_center_selector_patch",
     "handle_control_center_status",
     "handle_control_center_steps",
+    "handle_control_center_subagents_patch",
     "handle_control_center_traffic",
     "handle_control_center_uninstall",
     "handle_control_center_update",
