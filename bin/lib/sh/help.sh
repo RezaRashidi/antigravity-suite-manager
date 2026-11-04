@@ -28,8 +28,7 @@ Commands:
   ide-shortcuts Configure Antigravity IDE launcher and desktop shortcut
   set-icons     Configure or re-apply icons (Black/White and Acc 2 Recolor)
   cloud         Encrypted cloud sync for cross-system chat continuation (push/pull/status)
-  merger        Configure history merger mode [auto|manual|status|run]
-  merge-history Sync & backfill conversation history across all profiles/IDEs (alias: merge)
+  migrate-chats Migrate legacy chats (v2.5.5 -> v2.6.0) into unified storage (alias: migrate)
   keyring       Configure & switch credential storage (GNOME Keyring vs Normal File Storage)
   paths         Configure & switch Antigravity installation paths (interactive or CLI)
   wizard        Launch the interactive step-by-step setup wizard (alias: setup)

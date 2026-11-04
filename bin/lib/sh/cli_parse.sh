@@ -12,8 +12,7 @@ parse_cli_args() {
         case "$1" in
             custom-models|models) COMMAND="models"; shift; CMD_ARGS=("$@"); break ;;
             cloud-sync|cloud) COMMAND="cloud-sync"; shift; CMD_ARGS=("$@"); break ;;
-            merger|history-merger) COMMAND="merger"; shift; CMD_ARGS=("$@"); break ;;
-            merge-history|merge) COMMAND="merge-history"; shift ;;
+            migrate-chats|migrate|migrator|merge-history|merge|merger) COMMAND="migrate-chats"; shift; CMD_ARGS=("$@"); break ;;
             export-history|export-chats) COMMAND="export-history"; shift; CMD_ARGS=("$@"); break ;;
             import-history|import-chats) COMMAND="import-history"; shift; CMD_ARGS=("$@"); break ;;
             export-suite|export-config) COMMAND="export-suite"; shift; CMD_ARGS=("$@"); break ;;

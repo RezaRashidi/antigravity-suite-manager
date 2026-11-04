@@ -43,7 +43,7 @@ show_classic_menu() {
     echo "10) Re-apply F5 Manual Sync Backend Reload Patch"
     echo "11) Revert / Unpatch F5 Manual Sync Backend Reload Patch"
     echo "12) Configure Icons & Appearance Themes"
-    echo "13) Conversation History Merger & Mode (Auto Daemon / Manual Sync)"
+    echo "13) Migrate Legacy Chats (v2.5.5 -> v2.6.0 Unified Storage)"
     echo "14) Create New Instance (App or IDE with Shared/Isolated History)"
     echo "15) List All Instances & History Statuses"
     echo "16) Set / Toggle Instance History Mode (Shared vs Isolated)"

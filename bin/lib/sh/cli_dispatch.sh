@@ -46,8 +46,7 @@ dispatch_command() {
             else configure_icons_interactive "$SUB_COMMAND"; fi ;;
         cloud-sync) dispatch_cloud_sync "${CMD_ARGS[@]}" ;;
         custom-models|models) dispatch_custom_models "${CMD_ARGS[@]}" ;;
-        merger) dispatch_merger "${CMD_ARGS[@]}" ;;
-        merge-history) merge_history ;;
+        migrate-chats) dispatch_migrate_chats "${CMD_ARGS[@]}" ;;
         export-history|export-chats) export_history "${CMD_ARGS[@]}" ;;
         import-history|import-chats) import_history "${CMD_ARGS[@]}" ;;
         export-suite|export-config) export_suite "${CMD_ARGS[@]}" ;;

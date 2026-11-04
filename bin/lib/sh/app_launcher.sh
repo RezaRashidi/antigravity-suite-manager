@@ -49,7 +49,6 @@ fi
 
 cd "\${REAL_HOME}" || cd /tmp
 ! pgrep -f "antigravity-apply-icon.py --daemon" >/dev/null 2>&1 && python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
-[ ! -f "\${REAL_HOME}/.config/antigravity/merger_disabled" ] && ! systemctl --user is-active antigravity-sync.service >/dev/null 2>&1 && ! pgrep -f "antigravity-merge-history.py" >/dev/null 2>&1 && python3 "${LOCAL_BIN}/antigravity-merge-history.py" --quiet >/dev/null 2>&1 &
 disown -a 2>/dev/null || true
 [ -n "${pstore}" ] && { mkdir -p "\${PROFILE}/.gemini/cache"; touch "\${PROFILE}/.gemini/cache/antigravity-keyring-unavailable"; }
 

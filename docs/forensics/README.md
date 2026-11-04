@@ -56,5 +56,6 @@ This document records the end-to-end diagnostic methodology, reverse-engineering
 - [48. Issue 46: OAuth Location Block & ContextBridge Property Collision](48_oauth_location_block_and_contextbridge_property_collision.md)
 - [49. Issue 47: Standalone Curl Bootstrap & System PATH Symlinks Resolution](49_module_not_found_antigravity_suite_and_path_symlinks_resolution.md)
 - [50. Issue 48: Manual Chat Title Reversion via Stale VSCDB Overwrite and On-Demand Merger Mode Control](50_manual_chat_title_reversion_and_merger_control_mode.md)
-- [51. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
+- [51. Issue 49: Retirement of Continuous History Merger Daemon and Repurposing into One-Shot Legacy Chat Migrator (v2.5.5 -> v2.6.0)](51_merger_repurposed_to_v255_v260_chat_migrator_and_daemon_retirement.md)
+- [52. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
 

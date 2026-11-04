@@ -25,7 +25,7 @@ def render_control_center_overview(unified: List[Dict[str, Any]]) -> None:
     print("----------------------------------------------------------------------------------------")
     print(f"{BOLD}Select an installation or clone [1-{len(unified)}] to EDIT its settings.{NC}\n")
     print(f"{BOLD}{CYAN}[ INSTANCES & PROFILES ]{NC}")
-    print("  [C] Create Clone Profile     [L] Launch Instance          [H] Merge & Sync History")
+    print("  [C] Create Clone Profile     [L] Launch Instance          [H] Migrate Chats (v2.5->v2.6)")
     print("  [B] History Backups          [E] Export Archive           [I] Import Archive\n")
     print(f"{BOLD}{CYAN}[ INSTALLATION & UPDATES ]{NC}")
     print("  [N] Install New Binary       [U] Smart Update All         [W] Step-by-Step Wizard")

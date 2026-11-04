@@ -393,9 +393,9 @@ Beyond per-chat account switching, Antigravity Suite Manager features an **Unlim
 |                                |                                                  |
 |                                v                                                  |
 |  +-----------------------------------------------------------------------------+  |
-|  | Real-Time Cross-Instance History Synchronization Engine                    |  |
+|  | Unified Conversation Storage Mesh & One-Shot Chat Migrator (v2.5.5 -> v2.6.0)|  |
 |  | - SQLite WAL Mode (.db-wal) Multi-Process Concurrency                       |  |
-|  | - Quad-Phase History Merger Daemon (antigravity-merge-history.py --watch)  |  |
+|  | - Direct Database Sharing in v2.6.0+ (No Background Daemon Overhead)          |  |
 |  | - Unified Conversation Summaries DB & Brain Artifacts Topology              |  |
 |  | - Step 23 Checkpoint Synchronization & Fallback Title Guard                 |  |
 |  +-----------------------------------------------------------------------------+  |
@@ -443,13 +443,19 @@ Clone any App or IDE instance with an interactive wizard or a single command:
 ~/manage-antigravity.sh remove-instance <instance-id>
 ```
 
-### 3. Background Synchronization Engine (`antigravity-merge-history.py`)
+### 3. One-Shot Chat Migrator: v2.5.5 → v2.6.0 (`antigravity-migrate-chats.py`)
 
-When running in **Shared Mode**, cross-instance synchronization is handled by the **Quad-Phase History Merger Daemon**:
-- **SQLite WAL Concurrency**: All SQLite reads and writes use Write-Ahead Logging (`.db-wal`), completely eliminating locked database errors.
-- **Background Daemon (`--watch`)**: Runs silently via systemd user service (`antigravity-history-sync.service`), monitoring changes across all instance roots.
-- **Step 23 Checkpoint Sync**: Prevents authentic IDE chat titles from being polluted by generic fallback titles when switching between App and IDE.
-- **Singleton Lock Protection**: Uses `/tmp/antigravity_history_merger.lock` to prevent CPU-intensive daemon races.
+Starting with Antigravity IDE **v2.6.0+**, the IDE embeds the native `google-antigravity` extension and executes `~/.gemini/bin/agy --hub --app_data_dir=antigravity`. Both the Desktop App and IDE now read and write directly to the unified database at `~/.gemini/antigravity/conversation_summaries.db`.
+
+Consequently, background synchronization daemons (`--watch`, `antigravity-sync.service`) are completely retired, freeing system memory and CPU. The legacy merger is repurposed into a **One-Shot Chat Migrator**:
+- **Pre-Migration Inspection**: Detects installed IDE version (verifying $\ge$ v2.6.0) and inspects legacy `state.vscdb` storage.
+- **Accurate Chat Counting**: Reports total legacy chats, count already present in v2.6.0, and exact number queued for migration.
+- **One-Shot Execution**: Runs once without polling or background daemon overhead:
+  ```bash
+  ~/manage-antigravity.sh migrate-chats
+  # Dry run to inspect without writing:
+  ~/manage-antigravity.sh migrate-chats --dry-run
+  ```
 
 ---
 
@@ -526,7 +532,7 @@ python3 scripts/compact_conversation.py --cid <conversation-id> --base-step <sta
 | `paths` | `engines` | Interactive installation path selector and engine target switcher |
 | `install [all\|app\|ide]` | | Download and cleanly install Antigravity binaries |
 | `update` | | Smart update all components (preserves user data & re-applies patches) |
-| `merge-history` | `merge` | Sync & backfill conversation history across all profiles/IDEs |
+| `migrate-chats` | `migrate`, `migrator` | One-shot migrate legacy chats (v2.5.5 -> v2.6.0) into unified storage |
 | `keyring` | `creds` | Configure & switch credential storage (GNOME Keyring vs Normal File Storage) |
 | `set-icons` | `icons` | Configure or re-apply icons (Black/White and Acc 2 Recolor) |
 | `f5` | | Apply manual F5 reload sync patch |

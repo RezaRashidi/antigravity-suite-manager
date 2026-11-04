@@ -16,7 +16,7 @@ execute_menu_choice() {
         10) FORCE_INSTALL=true patch_f5_reload ;;
         11) unpatch_f5 ;;
         12) configure_icons_interactive ;;
-        13) dispatch_merger ;;
+        13) dispatch_migrate_chats ;;
         14) create_instance ;;
         15) list_instances ;;
         16) menu_action_history_mode ;;
