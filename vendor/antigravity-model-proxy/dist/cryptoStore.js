@@ -39,13 +39,25 @@ exports.encryptString = encryptString;
 exports.decryptString = decryptString;
 exports.encryptModels = encryptModels;
 exports.decryptModels = decryptModels;
+let customCredentialDirectory = null;
+function configureCredentialDirectory(dir) {
+    customCredentialDirectory = dir;
+}
+exports.configureCredentialDirectory = configureCredentialDirectory;
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { safeStorage, app } = require('electron');
+let safeStorage, app;
+try {
+    const el = require('electron');
+    safeStorage = el.safeStorage;
+    app = el.app;
+} catch (_) {
+    app = { getPath: () => process.env.REAL_HOME || require('os').homedir() };
+}
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const crypto_1 = require("crypto");
 function localKey(create) {
-    const directory = path.join(app.getPath('home'), '.gemini', 'antigravity');
+    const directory = customCredentialDirectory || path.join(app.getPath('home'), '.gemini', 'antigravity');
     const filename = path.join(directory, '.model-credentials-key');
     if (create && !fs.existsSync(filename)) {
         fs.mkdirSync(directory, { recursive: true, mode: 0o700 });

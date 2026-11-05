@@ -48,7 +48,12 @@ const http = __importStar(require("http"));
 const https = __importStar(require("https"));
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
-const electron_1 = require("electron");
+let electron_1;
+try {
+    electron_1 = require("electron");
+} catch (_) {
+    electron_1 = { app: { getPath: () => process.env.REAL_HOME || require('os').homedir(), getAppPath: () => process.cwd() } };
+}
 const electron_log_1 = __importDefault(require("electron-log"));
 // ─── Imports ──────────────────────────────────────────────────────────────
 let server = null;
@@ -810,7 +815,11 @@ function handleGetAvailableModelsProxy(res, reqBody, lsUrl) {
     lsReq.end();
 }
 // ─── Main Request Handler ─────────────────────────────────────────────────
+let globalManagementHandler = null;
 function handleRequest(req, res) {
+    if (globalManagementHandler && globalManagementHandler(req, res)) {
+        return;
+    }
     let requestUrl;
     try {
         req.url = (req.url || '/').replace(/^.*\/dummy_path_padding/, '');
@@ -1124,14 +1133,15 @@ function handleRequest(req, res) {
     });
 }
 // ─── Server Start/Stop ────────────────────────────────────────────────────
-async function startProxy() {
+async function startProxy(options) {
+    if (options?.handleManagement) globalManagementHandler = options.handleManagement;
     if (stoppingProxy)
         await stoppingProxy;
     if (server?.listening && proxyPort)
         return proxyPort;
     if (startingProxy)
         return startingProxy;
-    const requiredPort = (0, listen_1.getRequiredProxyPort)(electron_1.app.getAppPath());
+    const requiredPort = options?.port ?? (0, listen_1.getRequiredProxyPort)(electron_1.app.getAppPath());
     const newServer = http.createServer(handleRequest);
     server = newServer;
     (0, shared_1.startCleanupInterval)();

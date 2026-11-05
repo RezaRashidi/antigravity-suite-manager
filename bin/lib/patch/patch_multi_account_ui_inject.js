@@ -15,12 +15,26 @@ function copyFolderRecursiveSync(source, target) {
 
 function copySubsystemFiles(distDir) {
     const patchDir = path.dirname(__filename);
+    const isEsm = (() => {
+        try {
+            const pkgPath = path.join(distDir, '..', 'package.json');
+            return fs.existsSync(pkgPath) && JSON.parse(fs.readFileSync(pkgPath, 'utf8')).type === 'module';
+        } catch (_) { return false; }
+    })();
+
     for (const f of ['multi_account_router.js', 'multi_account_ui.js']) {
         const src = path.join(patchDir, f);
         if (fs.existsSync(src)) {
-            fs.copyFileSync(src, path.join(distDir, f));
             if (f === 'multi_account_router.js') {
                 fs.copyFileSync(src, path.join(distDir, 'multi_account_router.cjs'));
+                if (isEsm) {
+                    const esmFacade = `import { createRequire } from 'module';\nconst require = createRequire(import.meta.url);\nconst router = require('./multi_account_router.cjs');\nexport default router;\nexport const {\n    startMultiAccountRouter,\n    loadAllAccounts,\n    loadAllAccountsWithQuotas,\n    loadAllAccountsWithQuotasSync,\n    refreshQuotasAsync,\n    removeAccount,\n    getBindings,\n    setBinding,\n    setActiveAccount,\n    setLastCascadeId,\n    getActiveAccountEmail\n} = router;\n`;
+                    fs.writeFileSync(path.join(distDir, 'multi_account_router.js'), esmFacade, 'utf8');
+                } else {
+                    fs.copyFileSync(src, path.join(distDir, f));
+                }
+            } else {
+                fs.copyFileSync(src, path.join(distDir, f));
             }
         }
     }
