@@ -10,9 +10,10 @@ import urllib.parse
 import urllib.request
 from typing import Optional, Tuple
 
-from antigravity_suite.multi_account.credentials import get_oauth_credentials
+from antigravity_suite.multi_account.credentials import get_all_oauth_credentials, get_oauth_credentials
 
 __all__ = [
+    "get_all_oauth_credentials",
     "get_oauth_credentials",
     "is_token_expired",
     "parse_jwt_claims",
@@ -44,16 +45,17 @@ def refresh_access_token(
     refresh_token: str, client_id: Optional[str] = None, client_secret: Optional[str] = None
 ) -> Optional[Tuple[str, str, int]]:
     if not refresh_token: return None
-    cid, sec = (client_id, client_secret) if (client_id and client_secret) else get_oauth_credentials()
-    if not cid or not sec: return None
-    payload = {"client_id": cid, "client_secret": sec, "refresh_token": refresh_token, "grant_type": "refresh_token"}
-    req = urllib.request.Request("https://oauth2.googleapis.com/token", data=urllib.parse.urlencode(payload).encode("utf-8"), method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            new_acc, exp_in = data.get("access_token"), data.get("expires_in", 3600)
-            if new_acc:
-                new_exp = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=exp_in)).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
-                return new_acc, new_exp, exp_in
-    except Exception: pass
+    candidates = [(client_id, client_secret)] if (client_id and client_secret) else get_all_oauth_credentials()
+    for cid, sec in candidates:
+        if not cid or not sec: continue
+        payload = {"client_id": cid, "client_secret": sec, "refresh_token": refresh_token, "grant_type": "refresh_token"}
+        req = urllib.request.Request("https://oauth2.googleapis.com/token", data=urllib.parse.urlencode(payload).encode("utf-8"), method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                new_acc, exp_in = data.get("access_token"), data.get("expires_in", 3600)
+                if new_acc:
+                    new_exp = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=exp_in)).strftime("%Y-%m-%dT%H:%M:%S.000000+00:00")
+                    return new_acc, new_exp, exp_in
+        except Exception: pass
     return None

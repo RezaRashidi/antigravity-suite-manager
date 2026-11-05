@@ -92,8 +92,16 @@ function loadAllAccounts() {
             if (em) {
                 const k = em.toLowerCase(), isPrim = (f === primary);
                 d.email = em; d.is_primary = isPrim;
-                if (!accounts[k]) accounts[k] = d;
-                else if (isPrim) accounts[k].is_primary = true;
+                if (!accounts[k]) {
+                    accounts[k] = d;
+                } else if (isPrim) {
+                    accounts[k].is_primary = true;
+                    if (d.token) accounts[k].token = d.token;
+                    if (d.auth_method) accounts[k].auth_method = d.auth_method;
+                    try {
+                        fs.writeFileSync(path.join(ACCOUNTS_DIR, `${em}.json`), JSON.stringify(accounts[k], null, 2), 'utf8');
+                    } catch (_) {}
+                }
             }
         } catch (_) {}
     }
