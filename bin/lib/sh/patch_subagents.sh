@@ -37,6 +37,10 @@ patch_subagents() {
     if [ -f "${APP_INSTALL_DIR}/resources/app.asar" ] && declare -f patch_selector_app >/dev/null 2>&1; then
         FORCE_INSTALL=true patch_selector_app >/dev/null 2>&1 || true
     fi
+    # If IDE is installed and patch_selector_ide is available, refresh router in IDE out
+    if [ -d "${IDE_INSTALL_DIR}/resources/app/out" ] && declare -f patch_selector_ide >/dev/null 2>&1; then
+        FORCE_INSTALL=true patch_selector_ide >/dev/null 2>&1 || true
+    fi
 
     log_success "Subagent Dynamic Multi-Account & Swarm patch active."
     log_info "Idle accounts will be dynamically assigned to subagents; proactive swarm enabled."

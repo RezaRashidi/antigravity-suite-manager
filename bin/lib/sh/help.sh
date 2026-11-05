@@ -43,8 +43,8 @@ Commands:
   open-ide      Enable native 'Open in IDE' titlebar button in App (alias: patch-open-ide)
   unpatch-open-ide Revert native 'Open in IDE' button patch
   models        Custom models & multi-provider discovery/selection (alias: custom-models)
-  patch-models  Inject custom models settings UI into Antigravity App (in-app patch)
-  unpatch-models Revert in-app custom models settings UI patch
+  patch-models  Connect custom models proxy & UI [all|app|ide] (alias: models-patch)
+  unpatch-models Revert custom models patch [all|app|ide]
   subagents     Apply Subagent Dynamic Multi-Account & Swarm patch (alias: sa, patch-subagents)
   unpatch-subagents Revert Subagent Dynamic Multi-Account & Swarm patch
   patch-all     Apply all available patches in dependency order [all|app|ide]

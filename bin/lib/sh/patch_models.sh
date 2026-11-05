@@ -84,3 +84,4 @@ unpatch_models_app() {
     reapply_post_model_patches "$had_rtl" "$had_sel" "$had_fork" "$had_open_ide"
     log_success "In-app Custom Models patch reverted successfully."
 }
+
