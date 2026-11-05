@@ -26,7 +26,7 @@ uninstall_app() {
 
     log_info "Stopping active Antigravity App processes..."
     pkill -f "${APP_INSTALL_DIR}/antigravity" 2>/dev/null || true
-    pkill -f "class=antigravity" 2>/dev/null || true
+    pkill -f "class=antigravity([\"' ]|$)" 2>/dev/null || true
     pkill -f "class=antigravity-1" 2>/dev/null || true
     pkill -f "class=antigravity-2" 2>/dev/null || true
     pkill -f "class=antigravity-app-" 2>/dev/null || true

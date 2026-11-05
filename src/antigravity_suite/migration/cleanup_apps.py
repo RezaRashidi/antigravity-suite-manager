@@ -25,8 +25,8 @@ def delete_app_data(backup: bool = True) -> bool:
         create_safety_backup(category="app", label="pre_delete_app_data")
 
     try:
-        subprocess.run(["pkill", "-f", "Antigravity.*user-data-dir"], check=False)
-        subprocess.run(["pkill", "-f", "class=antigravity"], check=False)
+        subprocess.run(["pkill", "-f", "/opt/Antigravity.*/antigravity"], check=False)
+        subprocess.run(["pkill", "-f", "class=antigravity([\"' ]|$)"], check=False)
     except Exception:
         pass
 

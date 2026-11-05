@@ -30,7 +30,6 @@ setup_ide_shortcuts() {
     setup_ide_sharing
 
     merge_history
-    enable_sync_service
 
     log_success "Antigravity IDE shortcuts & 3-way shared history configured."
 }

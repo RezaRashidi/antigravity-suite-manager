@@ -21,7 +21,17 @@ export ELECTRON_OZONE_PLATFORM_HINT="x11"
 if [ "\$1" = "--restart" ] || [ "\$1" = "-r" ]; then
     shift
     echo "[INFO] Terminating active instance (${wm})..."
-    pkill -f "user-data-dir=.*${udata##*/}" 2>/dev/null || pkill -f "class=${wm}" 2>/dev/null || true
+    for p in \$(pgrep -f "${APP_INSTALL_DIR}/antigravity" 2>/dev/null || true); do
+        [ "\$p" = "\$\$" ] && continue
+        if [ -r "/proc/\$p/cmdline" ]; then
+            cmd=\$(tr '\0' ' ' < "/proc/\$p/cmdline" 2>/dev/null || true)
+            [[ "\$cmd" == *"antigravity-ide"* ]] && continue
+            if [[ "\$cmd" == *" --class=\"${wm}\""* ]] || [[ "\$cmd" == *" --class=${wm} "* ]] || [[ "\$cmd" == *" --class=${wm}" ]] || \
+               [[ "\$cmd" == *" --user-data-dir=\"${udata}\""* ]] || [[ "\$cmd" == *" --user-data-dir=${udata} "* ]] || [[ "\$cmd" == *" --user-data-dir=${udata}" ]]; then
+                kill -TERM "\$p" 2>/dev/null || kill -9 "\$p" 2>/dev/null || true
+            fi
+        fi
+    done
     sleep 1.2
 fi
 
@@ -39,10 +49,22 @@ for p in \$(pgrep -f "${APP_INSTALL_DIR}/antigravity" || true); do
 done
 
 if [ \$# -eq 0 ]; then
-    running_pid=\$(pgrep -f "user-data-dir=.*${udata##*/}" | head -n 1 || pgrep -f "class=${wm}" | head -n 1 || true)
+    running_pid=""
+    for p in \$(pgrep -f "${APP_INSTALL_DIR}/antigravity" 2>/dev/null || true); do
+        [ "\$p" = "\$\$" ] && continue
+        if [ -r "/proc/\$p/cmdline" ]; then
+            cmd=\$(tr '\0' ' ' < "/proc/\$p/cmdline" 2>/dev/null || true)
+            [[ "\$cmd" == *"antigravity-ide"* ]] && continue
+            if [[ "\$cmd" == *" --class=\"${wm}\""* ]] || [[ "\$cmd" == *" --class=${wm} "* ]] || [[ "\$cmd" == *" --class=${wm}" ]] || \
+               [[ "\$cmd" == *" --user-data-dir=\"${udata}\""* ]] || [[ "\$cmd" == *" --user-data-dir=${udata} "* ]] || [[ "\$cmd" == *" --user-data-dir=${udata}" ]]; then
+                running_pid="\$p"
+                break
+            fi
+        fi
+    done
     if [ -n "\$running_pid" ] && [ "\$running_pid" != "\$\$" ]; then
         echo "[INFO] ${wm} is already running (PID: \${running_pid}). Bringing to front..."
-        python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --focus 2>/dev/null || true
+        python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --focus "${wm}" 2>/dev/null || true
         exit 0
     fi
 fi

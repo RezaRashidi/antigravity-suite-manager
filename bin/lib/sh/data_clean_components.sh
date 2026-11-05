@@ -25,7 +25,7 @@ clean_app_data() {
         [ "$no_backup" = true ] && b_flag="--no-backup"
         python3 "$m_script" clean-data app -y $b_flag
     else
-        pkill -f "class=antigravity" 2>/dev/null || true
+        pkill -f "${APP_INSTALL_DIR}/antigravity" 2>/dev/null || pkill -f "class=antigravity([\"' ]|$)" 2>/dev/null || true
         rm -rf "${REAL_HOME}/.config/Antigravity" "${PROFILE2_DIR}"
         for d in "${REAL_HOME}"/.antigravity-profile-app-*; do [ -d "$d" ] && rm -rf "$d"; done
         log_success "Antigravity App data cleaned."

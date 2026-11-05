@@ -23,15 +23,24 @@ def main() -> None:
     print(f"----------------------------------------------------------------------------------------")
 
     instances = []
-    p1_running = subprocess.run(["pgrep", "-f", f"user-data-dir={real_home}/.config/Antigravity"], capture_output=True).returncode == 0
-    if not p1_running:
+    p1_running = False
+    try:
+        from antigravity_suite.detect.process import is_acc1_running
+        p1_running = is_acc1_running(real_home)
+    except Exception:
+        target_udd = os.path.realpath(f"{real_home}/.config/Antigravity")
         try:
             for pid in subprocess.run(["pgrep", "-f", "Antigravity"], capture_output=True, text=True).stdout.strip().split():
                 try:
                     with open(f"/proc/{pid}/cmdline", "r", errors="ignore") as f:
                         cmd = f.read()
-                        if "user-data-dir=" in cmd and "/.config/Antigravity" in cmd and ".antigravity-profile" not in cmd:
-                            p1_running = True; break
+                        if "antigravity-ide" in cmd.lower() or "antigravity ide" in cmd or "crashpad" in cmd.lower():
+                            continue
+                        cmd_parts = [p for p in cmd.split("\x00") if p]
+                        udd = next((p.split("=", 1)[1] for p in cmd_parts if p.startswith("--user-data-dir=")), None)
+                        if udd and os.path.realpath(os.path.expanduser(udd)) == target_udd:
+                            p1_running = True
+                            break
                 except Exception: pass
         except Exception: pass
     acc2_lnch = os.path.join(real_home, ".local", "bin", "antigravity-acc2")

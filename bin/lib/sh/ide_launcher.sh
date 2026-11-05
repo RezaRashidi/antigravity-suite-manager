@@ -7,6 +7,17 @@ write_ide_launcher_and_desktop() {
     cat <<EOF > "${LOCAL_BIN}/antigravity-ide"
 #!/usr/bin/env bash
 export ELECTRON_OZONE_PLATFORM_HINT="x11"
+
+if [ "\$1" = "--restart" ] || [ "\$1" = "-r" ]; then
+    shift
+    echo "[INFO] Terminating active IDE instance..."
+    for p in \$(pgrep -f "${IDE_INSTALL_DIR}/antigravity-ide" 2>/dev/null || true); do
+        [ "\$p" = "\$\$" ] && continue
+        kill -TERM "\$p" 2>/dev/null || kill -9 "\$p" 2>/dev/null || true
+    done
+    sleep 1.2
+fi
+
 ! pgrep -f "antigravity-apply-icon.py --daemon" >/dev/null 2>&1 && python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
 disown -a 2>/dev/null || true
 [ -n "${ide_pass_store}" ] && { mkdir -p "${REAL_HOME}/.gemide/cache" "${REAL_HOME}/.gemini/antigravity-ide/cache"; touch "${REAL_HOME}/.gemide/cache/antigravity-keyring-unavailable" "${REAL_HOME}/.gemini/antigravity-ide/cache/antigravity-keyring-unavailable"; }
@@ -31,7 +42,7 @@ for arg in "\$@"; do
     fi
 done
 
-exec "${IDE_INSTALL_DIR}/antigravity-ide" \${SANDBOX_FLAG}${ide_pass_store}--ozone-platform=x11 --class="antigravity-ide" --name="antigravity-ide" "\${IDE_ARGS[@]}"
+exec "${IDE_INSTALL_DIR}/antigravity-ide" \${SANDBOX_FLAG}${ide_pass_store}--ozone-platform=x11 --user-data-dir="${REAL_HOME}/.config/Antigravity IDE" --class="antigravity-ide" --name="antigravity-ide" "\${IDE_ARGS[@]}"
 EOF
     chmod +x "${LOCAL_BIN}/antigravity-ide"
 

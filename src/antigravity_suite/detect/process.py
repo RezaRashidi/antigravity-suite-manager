@@ -20,19 +20,29 @@ def is_acc1_running(real_home: str | None = None) -> bool:
         pids = subprocess.run(cmd, capture_output=True, text=True).stdout.strip().split()
         for pid in pids:
             try:
+                exe = ""
+                try:
+                    exe = os.path.realpath(f"/proc/{pid}/exe")
+                except Exception:
+                    pass
+                if "antigravity-ide" in exe.lower():
+                    continue
                 with open(f"/proc/{pid}/cmdline", "r", errors="ignore") as f:
                     cmd_parts = [p for p in f.read().split("\x00") if p]
                     if not cmd_parts:
+                        continue
+                    cmd_line = " ".join(cmd_parts)
+                    if "antigravity-ide" in cmd_line.lower() or "antigravity ide" in cmd_line or "crashpad" in cmd_line.lower():
                         continue
                     udd = next((p.split("=", 1)[1] for p in cmd_parts if p.startswith("--user-data-dir=")), None)
                     if udd:
                         if os.path.realpath(os.path.expanduser(udd)) == target_udd:
                             return True
                     else:
-                        cmd_line = " ".join(cmd_parts)
                         if "antigravity-profile" not in cmd_line and "Antigravity" in cmd_line:
                             if not any(arg.startswith("--user-data-dir=") for arg in cmd_parts):
-                                return True
+                                if exe.endswith("/antigravity") or not exe:
+                                    return True
             except Exception:
                 continue
     except Exception:
