@@ -10,6 +10,7 @@ patch_models_ide() {
         esac
     done
     ensure_rtl_dirs 2>/dev/null || auto_detect_installations 2>/dev/null || true
+    check_ide_min_version "${IDE_INSTALL_DIR}" || return 1
     if [ -z "$IDE_INSTALL_DIR" ] || [ ! -d "${IDE_INSTALL_DIR}" ]; then
         log_warn "IDE directory not found at ${IDE_INSTALL_DIR:-'<undefined>'}. Skipping IDE models patch."
         return 1

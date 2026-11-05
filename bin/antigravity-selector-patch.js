@@ -62,6 +62,20 @@ if (targetIsIde) {
         unpatchIdeMultiAccount(dir);
         console.log('[Patch] IDE Multi-Account selector unpatched successfully.');
     } else {
+        const prodPath = path.join(dir, 'resources', 'app', 'product.json');
+        let ideVer = null;
+        if (fs.existsSync(prodPath)) {
+            try {
+                const prod = JSON.parse(fs.readFileSync(prodPath, 'utf8'));
+                ideVer = prod.ideVersion || prod.version || null;
+            } catch (_) {}
+        }
+        const nums = (String(ideVer || '').match(/\d+/g) || []).map(Number);
+        while (nums.length < 3) nums.push(0);
+        if (nums[0] < 2 || (nums[0] === 2 && nums[1] < 6)) {
+            console.error(`[Error] Antigravity IDE v2.6.0+ is required for selector patch (detected: v${ideVer || 'Unknown'}). Aborting.`);
+            process.exit(1);
+        }
         console.log('[Patch] Patching IDE Multi-Account selector in:', dir);
         patchIdeMultiAccount(dir);
         console.log('[Patch] IDE Multi-Account selector patched successfully.');

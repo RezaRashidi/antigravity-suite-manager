@@ -17,7 +17,6 @@ patch_all_app() {
         log_info "[1/5] In-App Custom Models UI patch..."
         FORCE_INSTALL=true patch_models_app || log_warn "Custom Models patch skipped or failed."
     fi
-
     # 2. RTL Typography
     log_info "[2/5] RTL Typography patch..."
     FORCE_INSTALL=true patch_rtl_app || log_warn "RTL patch skipped or failed."
@@ -46,6 +45,7 @@ patch_all_ide() {
         esac
     done
     ensure_rtl_dirs 2>/dev/null || auto_detect_installations 2>/dev/null || true
+    check_ide_min_version "${IDE_INSTALL_DIR}" || return 1
     log_info "Applying all patches to Antigravity IDE (${IDE_INSTALL_DIR})..."
 
     # 1. Custom Models Proxy Bridge

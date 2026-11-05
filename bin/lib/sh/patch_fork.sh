@@ -51,6 +51,7 @@ patch_fork_app() {
 
 patch_fork_ide() {
     ensure_fork_dirs
+    check_ide_min_version "${IDE_INSTALL_DIR}" || return 1
     local p_js; p_js="$(get_fork_patch_js)"
     if [ -z "$IDE_INSTALL_DIR" ] || [ ! -d "${IDE_INSTALL_DIR}/resources/app/out" ]; then
         log_warn "IDE out directory not found at ${IDE_INSTALL_DIR:-'<undefined>'}. Skipping IDE fork patch."

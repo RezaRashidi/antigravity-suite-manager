@@ -5,6 +5,7 @@ patch_selector_ide() {
     ensure_selector_dirs
     ensure_keyring_decoupled
     local ide="${IDE_INSTALL_DIR}"
+    check_ide_min_version "$ide" || return 1
     local p_js; p_js="$(get_selector_patch_js)"
 
     if [ ! -d "$ide" ]; then

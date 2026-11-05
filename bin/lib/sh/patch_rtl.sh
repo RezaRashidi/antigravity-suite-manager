@@ -34,6 +34,7 @@ patch_rtl_app() {
 patch_rtl_ide() {
     for arg in "$@"; do [ "$arg" = "--force" ] || [ "$arg" = "-f" ] && FORCE_INSTALL=true; done
     ensure_rtl_dirs
+    check_ide_min_version "${IDE_INSTALL_DIR}" || return 1
     [ ! -d "${IDE_INSTALL_DIR}" ] && { log_warn "IDE dir not found at ${IDE_INSTALL_DIR}. Skipping RTL IDE patch."; return 0; }
 
     local main_js="${IDE_INSTALL_DIR}/resources/app/out/main.js"
