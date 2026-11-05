@@ -13,13 +13,17 @@ const electron = electronModule.default || electronModule;
 let app = electronModule.app || electron.app;
 let ipcMain = electronModule.ipcMain || electron.ipcMain;
 let BrowserWindow = electronModule.BrowserWindow || electron.BrowserWindow;
+let webContents = electronModule.webContents || electron.webContents;
+let webFrameMain = electronModule.webFrameMain || electron.webFrameMain;
 
-if (!app) {
+if (!app || !webContents) {
     try {
         const el = require('electron');
-        app = el.app || el.default?.app;
-        ipcMain = el.ipcMain || el.default?.ipcMain;
-        BrowserWindow = el.BrowserWindow || el.default?.BrowserWindow;
+        app = app || el.app || el.default?.app;
+        ipcMain = ipcMain || el.ipcMain || el.default?.ipcMain;
+        BrowserWindow = BrowserWindow || el.BrowserWindow || el.default?.BrowserWindow;
+        webContents = webContents || el.webContents || el.default?.webContents;
+        webFrameMain = webFrameMain || el.webFrameMain || el.default?.webFrameMain;
     } catch (_) {}
 }
 
@@ -78,40 +82,146 @@ function registerIpc() {
 }
 registerIpc();
 
-function injectToWebContents(wc) {
-    try {
-        const url = wc.getURL() || '';
-        if (!url.includes('workbench') && !url.includes('jetski') && !url.endsWith('.html') && url !== '') return;
-        const cssPath = path.join(__dirname, 'ui', 'styles.css');
-        if (fs.existsSync(cssPath)) void wc.insertCSS(fs.readFileSync(cssPath, 'utf8'));
-        const bridge = `if (!window.antigravityMultiAccount) {
-            window.antigravityMultiAccount = {
-                getState: () => fetch('http://127.0.0.1:41999/api/multi-account/state').then(r => r.json()),
-                bindCascade: (c, e, m) => fetch('http://127.0.0.1:41999/api/multi-account/bind', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cascadeId:c,email:e,model:m})}).then(r => r.json()),
-                setActiveAccount: (e) => fetch('http://127.0.0.1:41999/api/multi-account/bind', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cascadeId:'__default__',email:e,active:true})}).then(r => r.json()),
-                removeAccount: (e) => fetch('http://127.0.0.1:41999/api/multi-account/remove', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e})}).then(r => r.json()),
-                startLogin: () => fetch('http://127.0.0.1:41999/api/multi-account/login', {method:'POST'}).then(r => r.json())
-            };
-        };`;
-        const scripts = [bridge];
-        for (const s of ['ui/flyout.js', 'ui/mount.js', 'multi_account_ui.js']) {
-            const sp = path.join(__dirname, s);
-            if (fs.existsSync(sp)) scripts.push(fs.readFileSync(sp, 'utf8'));
+function getInjectionScripts() {
+    const cssPath = path.join(__dirname, 'ui', 'styles.css');
+    let cssCode = '';
+    if (fs.existsSync(cssPath)) {
+        try { cssCode = fs.readFileSync(cssPath, 'utf8'); } catch (_) {}
+    }
+    const bridge = `if (!window.antigravityMultiAccount) {
+        window.antigravityMultiAccount = {
+            getState: () => fetch('http://127.0.0.1:41999/api/multi-account/state').then(r => r.json()),
+            bindCascade: (c, e, m) => fetch('http://127.0.0.1:41999/api/multi-account/bind', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cascadeId:c,email:e,model:m})}).then(r => r.json()),
+            setActiveAccount: (e) => fetch('http://127.0.0.1:41999/api/multi-account/bind', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cascadeId:'__default__',email:e,active:true})}).then(r => r.json()),
+            removeAccount: (e) => fetch('http://127.0.0.1:41999/api/multi-account/remove', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e})}).then(r => r.json()),
+            startLogin: () => fetch('http://127.0.0.1:41999/api/multi-account/login', {method:'POST'}).then(r => r.json())
+        };
+    };`;
+    const scripts = [];
+    if (cssCode) {
+        scripts.push(`(function(){
+            if (!document.getElementById('antigravity-suite-styles')) {
+                const s = document.createElement('style');
+                s.id = 'antigravity-suite-styles';
+                s.textContent = ${JSON.stringify(cssCode)};
+                (document.head || document.documentElement).appendChild(s);
+            }
+        })();`);
+    }
+    scripts.push(bridge);
+
+    const rtlClientPath = path.join(__dirname, 'antigravity-rtl-client.js');
+    if (fs.existsSync(rtlClientPath)) {
+        try {
+            const fontPath = path.join(__dirname, 'Vazirmatn-Variable.woff2');
+            const fontBase64 = fs.existsSync(fontPath) ? fs.readFileSync(fontPath).toString('base64') : '';
+            const rtlCode = fs.readFileSync(rtlClientPath, 'utf8')
+                .replaceAll('__FONT_BASE64__', fontBase64)
+                .replaceAll('__RTL_CONFIG__', '{"isRTL":true,"forceRTL":false,"fixAtSign":true,"lh":"1.6","fs":"16"}');
+            scripts.push(rtlCode);
+        } catch (_) {}
+    }
+
+    for (const s of ['ui/flyout.js', 'ui/mount.js', 'multi_account_ui.js']) {
+        const sp = path.join(__dirname, s);
+        if (fs.existsSync(sp)) {
+            try { scripts.push(fs.readFileSync(sp, 'utf8')); } catch (_) {}
         }
-        void wc.executeJavaScript(scripts.join('\n;\n')).catch(e => console.error('[MultiAccount IDE] eval error:', e.message));
+    }
+    return scripts.join('\n;\n');
+}
+
+function tryInjectTarget(target) {
+    if (!target) return;
+    try {
+        const url = (typeof target.getURL === 'function' ? target.getURL() : target.url) || '';
+        const isTarget = url.includes('127.0.0.1') || url.includes('localhost') || url.includes('workbench') || url.includes('vscode-app') || url.includes('vscode-webview') || url === '';
+        if (!isTarget) return;
+
+        const checkScript = `(function() {
+            if (window.__antigravityUiActive && document.getElementById('antigravity-account-pill')) return 'active';
+            const tb = document.querySelector('[data-testid="input-box-bottom-toolbar"], [data-testid="agent-input-box"], [data-testid="conversation-view"], [data-testid="model-selector-trigger"]');
+            if (tb) {
+                window.__antigravityUiActive = true;
+                return 'inject';
+            }
+            return 'none';
+        })()`;
+
+        if (typeof target.executeJavaScript === 'function') {
+            target.executeJavaScript(checkScript).then(status => {
+                if (status === 'inject') {
+                    const payload = getInjectionScripts();
+                    target.executeJavaScript(payload).catch(() => {});
+                }
+            }).catch(() => {});
+        }
+    } catch (_) {}
+}
+
+function collectAllFramesFromWc(wc) {
+    if (!wc || wc.isDestroyed?.()) return [];
+    const frames = [];
+    try {
+        const root = wc.mainFrame;
+        if (root) {
+            if (root.framesInSubtree) {
+                return root.framesInSubtree;
+            }
+            const queue = [root];
+            while (queue.length > 0) {
+                const current = queue.shift();
+                frames.push(current);
+                if (current.frames && Array.isArray(current.frames)) {
+                    queue.push(...current.frames);
+                }
+            }
+        }
+    } catch (_) {}
+    return frames;
+}
+
+function processWebContents(wc) {
+    if (!wc || wc.isDestroyed?.()) return;
+    tryInjectTarget(wc);
+    const frames = collectAllFramesFromWc(wc);
+    for (const f of frames) {
+        tryInjectTarget(f);
+    }
+}
+
+function scanAllTargets() {
+    try {
+        let list = [];
+        if (webContents?.getAllWebContents) {
+            list = webContents.getAllWebContents();
+        } else if (BrowserWindow?.getAllWindows) {
+            list = BrowserWindow.getAllWindows().map(w => w.webContents).filter(Boolean);
+        }
+        for (const wc of list) {
+            processWebContents(wc);
+        }
     } catch (_) {}
 }
 
 if (app) {
     app.on('browser-window-created', (_event, win) => {
-        win.webContents.on('dom-ready', () => injectToWebContents(win.webContents));
-        win.webContents.on('did-finish-load', () => injectToWebContents(win.webContents));
+        const wc = win.webContents;
+        if (!wc) return;
+        wc.on('dom-ready', () => processWebContents(wc));
+        wc.on('did-finish-load', () => processWebContents(wc));
+        wc.on('did-frame-finish-load', () => processWebContents(wc));
     });
-    app.on('web-contents-created', (_event, contents) => {
-        contents.on('dom-ready', () => injectToWebContents(contents));
-        contents.on('did-finish-load', () => injectToWebContents(contents));
+
+    app.on('web-contents-created', (_event, wc) => {
+        if (!wc) return;
+        wc.on('dom-ready', () => processWebContents(wc));
+        wc.on('did-finish-load', () => processWebContents(wc));
+        wc.on('did-frame-finish-load', () => processWebContents(wc));
     });
+
     app.whenReady().then(() => {
-        try { for (const win of BrowserWindow?.getAllWindows?.() || []) injectToWebContents(win.webContents); } catch (_) {}
+        scanAllTargets();
+        setInterval(scanAllTargets, 1200);
     });
 }
