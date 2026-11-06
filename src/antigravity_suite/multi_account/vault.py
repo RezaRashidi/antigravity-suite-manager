@@ -117,9 +117,15 @@ def set_primary_account(email: str) -> bool:
         "auth_method": target.auth_method,
     }
 
-    homes = [Path.home()]
-    if "REAL_HOME" in os.environ and Path(os.environ["REAL_HOME"]).is_dir():
-        homes.append(Path(os.environ["REAL_HOME"]))
+    real_h = Path(os.environ["REAL_HOME"]) if "REAL_HOME" in os.environ and Path(os.environ["REAL_HOME"]).is_dir() else None
+    if "ANTIGRAVITY_TEST" in os.environ:
+        homes = [real_h] if real_h else []
+    elif real_h and real_h != Path.home():
+        homes = [real_h]
+    else:
+        homes = [Path.home()]
+        if real_h and real_h not in homes:
+            homes.append(real_h)
     for h in homes:
         for d_name in [".gemini", ".gemide"]:
             tok_dir = h / d_name

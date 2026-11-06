@@ -72,25 +72,43 @@ class TestMultiAccountModels(unittest.TestCase):
     def test_set_primary_account_lifecycle(self):
         import os
         from antigravity_suite.multi_account.vault import set_primary_account, list_vault_accounts, save_account_to_vault
+        orig_accounts_dir = os.environ.get("ANTIGRAVITY_ACCOUNTS_DIR")
+        orig_real_home = os.environ.get("REAL_HOME")
+        orig_test = os.environ.get("ANTIGRAVITY_TEST")
         with tempfile.TemporaryDirectory() as td:
-            os.environ["ANTIGRAVITY_ACCOUNTS_DIR"] = td
-            os.environ["REAL_HOME"] = td
-            acc1 = AccountRecord(email="acc1@test.com", token=AccountToken("tok1"), is_primary=True)
-            acc2 = AccountRecord(email="acc2@test.com", token=AccountToken("tok2"), is_primary=False)
-            save_account_to_vault(acc1)
-            save_account_to_vault(acc2)
+            try:
+                os.environ["ANTIGRAVITY_ACCOUNTS_DIR"] = td
+                os.environ["REAL_HOME"] = td
+                os.environ["ANTIGRAVITY_TEST"] = "1"
+                acc1 = AccountRecord(email="acc1@test.com", token=AccountToken("tok1"), is_primary=True)
+                acc2 = AccountRecord(email="acc2@test.com", token=AccountToken("tok2"), is_primary=False)
+                save_account_to_vault(acc1)
+                save_account_to_vault(acc2)
 
-            # Ensure gemini dir exists
-            (Path(td) / ".gemini").mkdir(parents=True, exist_ok=True)
+                # Ensure gemini dir exists
+                (Path(td) / ".gemini").mkdir(parents=True, exist_ok=True)
 
-            self.assertTrue(set_primary_account("acc2@test.com"))
-            vault_accs = {a.email: a for a in list_vault_accounts()}
-            self.assertTrue(vault_accs["acc2@test.com"].is_primary)
-            self.assertFalse(vault_accs["acc1@test.com"].is_primary)
+                self.assertTrue(set_primary_account("acc2@test.com"))
+                vault_accs = {a.email: a for a in list_vault_accounts()}
+                self.assertTrue(vault_accs["acc2@test.com"].is_primary)
+                self.assertFalse(vault_accs["acc1@test.com"].is_primary)
 
-            # Check jetski-standalone-oauth-token
-            tok_f = Path(td) / ".gemini" / "jetski-standalone-oauth-token"
-            self.assertTrue(tok_f.exists())
-            import json
-            tok_data = json.loads(tok_f.read_text())
-            self.assertEqual(tok_data["email"], "acc2@test.com")
+                # Check jetski-standalone-oauth-token
+                tok_f = Path(td) / ".gemini" / "jetski-standalone-oauth-token"
+                self.assertTrue(tok_f.exists())
+                import json
+                tok_data = json.loads(tok_f.read_text())
+                self.assertEqual(tok_data["email"], "acc2@test.com")
+            finally:
+                if orig_accounts_dir is not None:
+                    os.environ["ANTIGRAVITY_ACCOUNTS_DIR"] = orig_accounts_dir
+                else:
+                    os.environ.pop("ANTIGRAVITY_ACCOUNTS_DIR", None)
+                if orig_real_home is not None:
+                    os.environ["REAL_HOME"] = orig_real_home
+                else:
+                    os.environ.pop("REAL_HOME", None)
+                if orig_test is not None:
+                    os.environ["ANTIGRAVITY_TEST"] = orig_test
+                else:
+                    os.environ.pop("ANTIGRAVITY_TEST", None)
