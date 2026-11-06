@@ -74,9 +74,9 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
             const isAccountRpc = req.url && (
                 isGen ||
                 req.url.includes('retrieveUserQuota') ||
-                req.url.includes('fetchAvailableModels') ||
-                req.url.includes('loadCodeAssist')
+                req.url.includes('fetchAvailableModels')
             );
+            // loadCodeAssist stays native: hijacking it breaks login onboarding (401).
             let token = null, boundEmail = 'Primary (Native)', isSub = false;
             if (isAccountRpc) {
                 const accounts = loadAllAccounts();
