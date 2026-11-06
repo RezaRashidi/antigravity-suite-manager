@@ -5,6 +5,8 @@ const os = require('os');
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agy_router_test_'));
 process.env.ANTIGRAVITY_ACCOUNTS_DIR = tmpDir;
+process.env.REAL_HOME = tmpDir;
+process.env.ANTIGRAVITY_TEST = '1';
 
 const { startMultiAccountRouter, setLastCascadeId } = require('../bin/lib/patch/router/server.js');
 const { handleApiRequest } = require('../bin/lib/patch/router/api.js');

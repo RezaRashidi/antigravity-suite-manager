@@ -155,12 +155,34 @@ function setPrimaryAccount(email) {
         name: target.name || target.email.split('@')[0],
         auth_method: target.auth_method || 'consumer'
     };
-    for (const dName of ['.gemini', '.gemide']) {
-        const pDir = path.join(os.homedir(), dName);
-        if (fs.existsSync(pDir)) {
+    if (process.env.ANTIGRAVITY_TEST) {
+        const testHome = process.env.REAL_HOME || os.homedir();
+        for (const dName of ['.gemini', '.gemide']) {
+            const pDir = path.join(testHome, dName);
             try {
+                fs.mkdirSync(pDir, { recursive: true });
                 fs.writeFileSync(path.join(pDir, 'jetski-standalone-oauth-token'), JSON.stringify(tokenData, null, 2), 'utf8');
             } catch (_) {}
+        }
+    } else {
+        const rh = process.env.REAL_HOME || os.homedir();
+        const pDirs = [
+            path.join(rh, '.gemini'),
+            path.join(rh, '.gemide'),
+            path.join(rh, '.gemini', 'antigravity-ide'),
+            path.join(rh, '.config', 'antigravity'),
+            path.join(rh, '.config', 'Antigravity')
+        ];
+        if (process.env.REAL_HOME && process.env.REAL_HOME !== os.homedir()) {
+            pDirs.push(path.join(os.homedir(), '.gemini'));
+            pDirs.push(path.join(os.homedir(), '.gemide'));
+        }
+        for (const pDir of pDirs) {
+            if (fs.existsSync(pDir)) {
+                try {
+                    fs.writeFileSync(path.join(pDir, 'jetski-standalone-oauth-token'), JSON.stringify(tokenData, null, 2), 'utf8');
+                } catch (_) {}
+            }
         }
     }
 

@@ -15,6 +15,7 @@ let ipcMain = electronModule.ipcMain || electron.ipcMain;
 let BrowserWindow = electronModule.BrowserWindow || electron.BrowserWindow;
 let webContents = electronModule.webContents || electron.webContents;
 let webFrameMain = electronModule.webFrameMain || electron.webFrameMain;
+let sessionModule = electronModule.session || electron.session;
 
 if (!app || !webContents) {
     try {
@@ -24,7 +25,35 @@ if (!app || !webContents) {
         BrowserWindow = BrowserWindow || el.BrowserWindow || el.default?.BrowserWindow;
         webContents = webContents || el.webContents || el.default?.webContents;
         webFrameMain = webFrameMain || el.webFrameMain || el.default?.webFrameMain;
+        sessionModule = sessionModule || el.session || el.default?.session;
     } catch (_) {}
+}
+
+function relaxCsp(ses) {
+    if (!ses?.webRequest?.onHeadersReceived || ses._agyCspRelaxed) return;
+    ses._agyCspRelaxed = true;
+    try {
+        ses.webRequest.onHeadersReceived((details, callback) => {
+            const responseHeaders = { ...details.responseHeaders };
+            for (const key of Object.keys(responseHeaders)) {
+                if (key.toLowerCase() === 'content-security-policy') {
+                    const cspList = responseHeaders[key];
+                    const arr = Array.isArray(cspList) ? cspList : [cspList];
+                    responseHeaders[key] = arr.map(csp => {
+                        if (/connect-src/i.test(csp)) {
+                            return csp.replace(/connect-src\s+/i, "connect-src http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ");
+                        }
+                        return csp;
+                    });
+                }
+            }
+            callback({ responseHeaders });
+        });
+    } catch (_) {}
+}
+if (sessionModule?.defaultSession) relaxCsp(sessionModule.defaultSession);
+if (app?.on) {
+    app.on('session-created', (ses) => relaxCsp(ses));
 }
 
 function getRouter() {
@@ -87,11 +116,21 @@ function registerIpc() {
 registerIpc();
 
 function getInjectionScripts() {
+    const router = getRouter();
+    let initialData = { accounts: [], bindings: {}, active_default: null };
+    try {
+        if (router) {
+            const accounts = router.loadAllAccountsWithQuotasSync ? router.loadAllAccountsWithQuotasSync() : Object.values(router.loadAllAccounts());
+            initialData = { accounts, bindings: router.getBindings(), active_default: router.getActiveAccountEmail?.() };
+        }
+    } catch (_) {}
+
     const cssPath = path.join(__dirname, 'ui', 'styles.css');
     let cssCode = '';
     if (fs.existsSync(cssPath)) {
         try { cssCode = fs.readFileSync(cssPath, 'utf8'); } catch (_) {}
     }
+    const initStateScript = `window.__AGY_INITIAL_STATE__ = ${JSON.stringify(initialData)};`;
     const bridge = `if (!window.antigravityMultiAccount) {
         window.antigravityMultiAccount = {
             getState: () => fetch('http://127.0.0.1:41999/api/multi-account/state').then(r => r.json()),
@@ -113,6 +152,7 @@ function getInjectionScripts() {
             }
         })();`);
     }
+    scripts.push(initStateScript);
     scripts.push(bridge);
 
     const rtlClientPath = path.join(__dirname, 'antigravity-rtl-client.js');
