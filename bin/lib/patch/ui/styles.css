@@ -11,6 +11,7 @@
     --agy-dropdown-header: #4b5563;
     --agy-dropdown-selected: rgba(59, 130, 246, 0.08);
     --agy-quota-track: #e5e7eb;
+    --agy-foreground: #1f2937;
     --agy-btn-action-bg: transparent;
     --agy-btn-action-border: transparent;
     --agy-btn-action-hover: rgba(0, 0, 0, 0.05);
@@ -29,6 +30,7 @@ html.dark, body.dark, [data-theme="dark"], .dark, body.vs-dark, .vs-dark, body.h
     --agy-dropdown-header: #9ca3af;
     --agy-dropdown-selected: rgba(59, 130, 246, 0.18);
     --agy-quota-track: rgba(255, 255, 255, 0.12);
+    --agy-foreground: #f3f4f6;
     --agy-btn-action-bg: transparent;
     --agy-btn-action-border: transparent;
     --agy-btn-action-hover: rgba(255, 255, 255, 0.06);

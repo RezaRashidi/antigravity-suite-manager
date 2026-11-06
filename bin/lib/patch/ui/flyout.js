@@ -73,7 +73,8 @@
         else badgeText = 'PRO';
 
         const primBadge = acc.is_primary ? '<div style="font-size:11px;color:#eab308;font-weight:600;margin-top:2px;">★ Primary Account (Native Session)</div>' : '<div style="font-size:11px;opacity:0.6;margin-top:2px;">Secondary Account</div>';
-        const modelsSummary = (acc.available_models && acc.available_models.length) ? `<div style="font-size:11px;color:var(--agy-dropdown-subtext);background:rgba(255,255,255,0.04);padding:6px 8px;border-radius:6px;margin-bottom:8px;line-height:1.4;"><strong style="color:var(--agy-foreground,#f3f4f6);">Models (${acc.available_models.length}):</strong> ${acc.available_models.slice(0, 4).join(', ')}${acc.available_models.length > 4 ? '...' : ''}</div>` : '';
+        const modelCount = (acc.available_models && acc.available_models.length) || acc.model_count || 0;
+        const modelsSummary = modelCount ? `<div style="font-size:11px;color:var(--agy-dropdown-text);background:var(--agy-dropdown-hover);border:1px solid var(--agy-dropdown-border);padding:6px 10px;border-radius:6px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;"><strong style="color:var(--agy-dropdown-text);font-weight:600;">Models:</strong><span style="font-weight:600;color:var(--agy-dropdown-text);">${modelCount}</span></div>` : '';
 
         const footer = `<div class="agy-usage-footer" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">${!acc.is_primary ? `<button class="agy-flyout-primary-btn" data-email="${email}" style="background:#3b82f6;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;font-weight:600;">⭐ Make Primary</button>` : ''}<button class="agy-flyout-logout-btn" data-email="${email}">Log Out (${email})</button></div>`;
 
