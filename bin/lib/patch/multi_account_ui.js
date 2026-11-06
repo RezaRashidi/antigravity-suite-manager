@@ -87,6 +87,8 @@
                             if (window.antigravityMultiAccount?.setPrimary) await window.antigravityMultiAccount.setPrimary(pem);
                             else await fetch(apiH() + "/api/multi-account/set-primary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: pem }) });
                         } catch (_) {}
+                        window.dispatchEvent(new CustomEvent('antigravity:account-switched', { detail: { email: pem } }));
+                        try { if (window.__antigravityRefreshModels) void window.__antigravityRefreshModels(); } catch (_) {}
                         toast(`✓ Set ${pem.split("@")[0]} as Primary!`);
                         await fetchState(true);
                     }
@@ -109,6 +111,7 @@
                         try { await fetch(apiH() + "/api/multi-account/bind", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cascadeId, email: em, active: true }) }); } catch (_) {}
                         if (!state.bindings) state.bindings = {}; state.bindings[cascadeId] = em;
                         state.active_default = em; state.bindings.__active_account = em;
+                        window.dispatchEvent(new CustomEvent('antigravity:account-switched', { detail: { email: em } }));
                         try { if (window.__antigravityRefreshModels) void window.__antigravityRefreshModels(); } catch (_) {}
                         render(); toast(`✓ Switched chat to ${em.split("@")[0]}`);
                     }

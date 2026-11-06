@@ -110,6 +110,86 @@
     }
     window.__antigravityHideDevFooter = hideDevFooter;
     hideDevFooter();
+
+    async function triggerDynamicModelRefresh() {
+        if (typeof window.__customModelsRefreshChatSelector === 'function') {
+            try { await window.__customModelsRefreshChatSelector(); } catch (_) {}
+        }
+        const csrfToken = window.__APP_CONFIG__?.csrfToken || window.__CODEIUM_CSRF__;
+        if (csrfToken) {
+            try {
+                await fetch('/exa.language_server_pb.LanguageServerService/GetAvailableModels', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Connect-Protocol-Version': '1',
+                        'x-codeium-csrf-token': csrfToken,
+                    },
+                    body: JSON.stringify({ forceRefresh: true }),
+                });
+            } catch (_) {}
+        }
+
+        try {
+            const root = document.getElementById('root') || document.body.firstElementChild;
+            if (!root) return;
+            const keys = Object.keys(root);
+            const fiberKey = keys.find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactContainer$') || k.startsWith('__reactInternalInstance$'))
+                || (root.firstElementChild && Object.keys(root.firstElementChild).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactContainer$') || k.startsWith('__reactInternalInstance$')));
+            if (!fiberKey) return;
+            const startNode = root[fiberKey] || (root.firstElementChild && root.firstElementChild[fiberKey]);
+            if (!startNode) return;
+            const rootNode = startNode.current || startNode;
+
+            const queue = [rootNode];
+            let client = null, store = null, visited = 0;
+            while (queue.length > 0 && visited < 1000) {
+                const node = queue.shift();
+                visited++;
+                if (!node) continue;
+                if (!store) {
+                    if (node.memoizedProps?.store?.dispatch) store = node.memoizedProps.store;
+                    else if (node.stateNode?.store?.dispatch) store = node.stateNode.store;
+                }
+                if (!client) {
+                    if (node.memoizedProps?.value && typeof node.memoizedProps.value.getUserStatus === 'function') {
+                        client = node.memoizedProps.value;
+                    } else if (node.memoizedProps?.client && typeof node.memoizedProps.client.getUserStatus === 'function') {
+                        client = node.memoizedProps.client;
+                    }
+                }
+                if (store && client) break;
+                if (node.child) queue.push(node.child);
+                if (node.sibling) queue.push(node.sibling);
+            }
+
+            if (store) {
+                let statusObj = null;
+                if (client && typeof client.getUserStatus === 'function') {
+                    try {
+                        const statusRes = await client.getUserStatus();
+                        if (statusRes?.userStatus?.cascadeModelConfigData?.clientModelConfigs) {
+                            statusObj = statusRes.userStatus;
+                        }
+                    } catch (_) {}
+                }
+                if (!statusObj && typeof store.getState === 'function') {
+                    statusObj = store.getState()?.userStatus;
+                }
+                if (statusObj && statusObj.cascadeModelConfigData) {
+                    store.dispatch({ type: 'userStatus/setUserStatus', payload: { ...statusObj } });
+                }
+            }
+        } catch (err) {
+            console.warn('[MultiAccount] Dynamic model refresh error:', err);
+        }
+    }
+
+    window.__antigravityRefreshModels = triggerDynamicModelRefresh;
+    window.addEventListener('antigravity:account-switched', () => {
+        void triggerDynamicModelRefresh();
+    });
+
     if (typeof document !== 'undefined') {
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', hideDevFooter);

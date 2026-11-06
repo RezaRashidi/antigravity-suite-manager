@@ -773,6 +773,12 @@ window.addEventListener('DOMContentLoaded', () => {
             }, 60);
         });
     }
+    window.__customModelsRefreshChatSelector = refreshChatModelSelectorDynamically;
+    window.__antigravityRefreshModels = refreshChatModelSelectorDynamically;
+    window.addEventListener('antigravity:account-switched', () => {
+        customModelsCache.ts = 0;
+        void refreshChatModelSelectorDynamically();
+    });
     electron_1.ipcRenderer.on('storage:models-changed', () => {
         customModelsCache.ts = 0;
         void refreshChatModelSelectorDynamically();
