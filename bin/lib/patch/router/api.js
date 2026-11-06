@@ -35,17 +35,6 @@ function handleApiRequest(req, res, bodyStr) {
                 setActiveAccount(data.email);
                 const s = require('./server.js');
                 if (s.setLastCascadeId) s.setLastCascadeId(data.cascadeId, data.email);
-                try {
-                    const accounts = loadAllAccounts();
-                    const target = accounts[data.email.toLowerCase()];
-                    if (target) {
-                        const tokenData = { token: target.token || {}, id_token: target.id_token || '', email: target.email, name: target.name || target.email.split('@')[0], auth_method: target.auth_method || 'consumer' };
-                        for (const dName of ['.gemini', '.gemide']) {
-                            const pDir = require('path').join(require('os').homedir(), dName);
-                            if (require('fs').existsSync(pDir)) require('fs').writeFileSync(require('path').join(pDir, 'jetski-standalone-oauth-token'), JSON.stringify(tokenData, null, 2), 'utf8');
-                        }
-                    }
-                } catch (_) {}
                 try { require('./telemetry.js').forceRefreshLanguageServerQuota(); } catch (_) {}
             }
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -58,17 +47,6 @@ function handleApiRequest(req, res, bodyStr) {
             const data = JSON.parse(bodyStr);
             if (data.email) {
                 setActiveAccount(data.email);
-                try {
-                    const accounts = loadAllAccounts();
-                    const target = accounts[data.email.toLowerCase()];
-                    if (target) {
-                        const tokenData = { token: target.token || {}, id_token: target.id_token || '', email: target.email, name: target.name || target.email.split('@')[0], auth_method: target.auth_method || 'consumer' };
-                        for (const dName of ['.gemini', '.gemide']) {
-                            const pDir = require('path').join(require('os').homedir(), dName);
-                            if (require('fs').existsSync(pDir)) require('fs').writeFileSync(require('path').join(pDir, 'jetski-standalone-oauth-token'), JSON.stringify(tokenData, null, 2), 'utf8');
-                        }
-                    }
-                } catch (_) {}
             }
             if (data.cascadeId) {
                 const s = require('./server.js');

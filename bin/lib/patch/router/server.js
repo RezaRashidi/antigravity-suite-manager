@@ -120,7 +120,13 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
 
             const upReq = https.request(upOpts, (upRes) => {
                 logTraffic(`${isAccountRpc ? (isGen ? (isSub ? 'SubagentGen' : 'ChatGen') : 'AccountRpc') : 'ControlPlane'}: [${cascadeId || 'general'}] <- Upstream Response: ${upRes.statusCode}`);
-                res.writeHead(upRes.statusCode, upRes.headers);
+                const resHeaders = { ...upRes.headers };
+                if (resHeaders['content-length']) {
+                    delete resHeaders['transfer-encoding'];
+                }
+                delete resHeaders['connection'];
+                delete resHeaders['keep-alive'];
+                res.writeHead(upRes.statusCode, resHeaders);
                 upRes.pipe(res);
                 upRes.on('end', finishInFlight);
                 upRes.on('close', finishInFlight);

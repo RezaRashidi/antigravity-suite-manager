@@ -34,16 +34,6 @@ async function refreshQuotasAsync() {
                     fetchDirectAccountQuotas(acc),
                     new Promise(r => setTimeout(() => r(null), 8000))
                 ]);
-                if (direct && direct.status === 'ok' && direct.buckets?.length > 0) {
-                    acc.quotas = direct.buckets; acc.license_status = 'ok';
-                    const isPro = (acc.plan && acc.plan.toLowerCase().includes('pro')) ||
-                                  (acc.tier && acc.tier.toUpperCase() === 'PRO') ||
-                                  (direct.buckets.length >= 4) ||
-                                  direct.buckets.some(b => b.family === 'claude');
-                    acc.tier = isPro ? 'PRO' : 'FREE';
-                    acc.plan = isPro ? (acc.plan || 'Google AI Pro') : 'Free';
-                    return;
-                }
                 if (direct?.tier_type) {
                     acc.tier_type = direct.tier_type;
                     acc.available_models = direct.available_models || [];
@@ -55,6 +45,28 @@ async function refreshQuotasAsync() {
                         acc.plan = 'Google AI Free Pro';
                         acc.tier = 'Free Pro';
                     }
+                    try {
+                        const fp = require('path').join(require('./router/bindings.js').ACCOUNTS_DIR, `${acc.email}.json`);
+                        if (require('fs').existsSync(fp)) {
+                            const cur = JSON.parse(require('fs').readFileSync(fp, 'utf8'));
+                            cur.tier_type = acc.tier_type;
+                            cur.tier = acc.tier;
+                            cur.plan = acc.plan;
+                            cur.available_models = acc.available_models;
+                            require('fs').writeFileSync(fp, JSON.stringify(cur, null, 2), 'utf8');
+                        }
+                    } catch (_) {}
+                }
+                if (direct && direct.status === 'ok' && direct.buckets?.length > 0) {
+                    acc.quotas = direct.buckets; acc.license_status = 'ok';
+                    if (!acc.tier || acc.tier === 'UNKNOWN_TIER') {
+                        const isPro = (acc.plan && acc.plan.toLowerCase().includes('pro')) ||
+                                      (direct.buckets.length >= 4) ||
+                                      direct.buckets.some(b => b.family === 'claude');
+                        acc.tier = isPro ? 'PRO' : 'FREE';
+                        acc.plan = isPro ? (acc.plan || 'Google AI Pro') : 'Free';
+                    }
+                    return;
                 }
                 if (acc.is_primary && lsTelemetry?.buckets?.length > 0) {
                     acc.quotas = lsTelemetry.buckets; acc.license_status = 'ok';
