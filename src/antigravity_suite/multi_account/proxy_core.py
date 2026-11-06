@@ -37,8 +37,12 @@ def resolve_account_token(cascade_id: Optional[str]) -> Optional[str]:
     if not email:
         return None
     accounts = list_vault_accounts()
-    selected = next((a for a in accounts if a.email.lower() == email.lower()), None)
-    if not selected or selected.is_primary or not selected.token:
+    selected = None
+    if email == "Primary (Native)":
+        selected = next((a for a in accounts if a.is_primary), None)
+    else:
+        selected = next((a for a in accounts if a.email.lower() == email.lower()), None)
+    if not selected or not selected.token:
         return None
 
     tok = selected.token

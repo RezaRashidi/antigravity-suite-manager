@@ -13,10 +13,15 @@ const UPSTREAM_HOST = 'daily-cloudcode-pa.googleapis.com';
 let _server = null, _lastCascadeId = null, _lastCascadeTs = 0;
 
 async function resolveTokenForAccount(email) {
-    if (!email || email === 'Primary (Native)') return null;
+    if (!email) return null;
     const accounts = loadAllAccounts();
-    const target = accounts[email.toLowerCase()];
-    if (!target || target.is_primary || !target.token) return null;
+    let target = null;
+    if (email === 'Primary (Native)') {
+        target = Object.values(accounts).find(a => a.is_primary);
+    } else {
+        target = accounts[email.toLowerCase()];
+    }
+    if (!target || !target.token) return null;
     const expiryMs = target.token.expiry ? new Date(target.token.expiry).getTime() : 0;
     if (!expiryMs || expiryMs - Date.now() < 300000) return await refreshGoogleToken(target);
     return target.token.access_token || null;

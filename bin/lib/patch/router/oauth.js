@@ -188,6 +188,25 @@ async function refreshGoogleToken(account) {
                     fs.writeFileSync(path.join(ACCOUNTS_DIR, `${account.email}.json`), JSON.stringify(account, null, 2), 'utf8');
                 } catch (_) {}
             }
+            if (account.is_primary) {
+                try {
+                    for (const pFile of [
+                        path.join(os.homedir(), '.gemini', 'jetski-standalone-oauth-token'),
+                        path.join(os.homedir(), '.gemide', 'jetski-standalone-oauth-token'),
+                    ]) {
+                        if (fs.existsSync(pFile)) {
+                            const cur = JSON.parse(fs.readFileSync(pFile, 'utf8'));
+                            if (cur.token && typeof cur.token === 'object') {
+                                cur.token.access_token = d.access_token;
+                                if (d.expires_in) cur.token.expiry = new Date(Date.now() + d.expires_in * 1000).toISOString();
+                            } else {
+                                cur.token = d.access_token;
+                            }
+                            fs.writeFileSync(pFile, JSON.stringify(cur, null, 2), 'utf8');
+                        }
+                    }
+                } catch (_) {}
+            }
             return d.access_token;
         }
     }

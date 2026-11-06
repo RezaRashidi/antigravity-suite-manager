@@ -47,14 +47,15 @@ function setActiveAccount(email) {
 }
 
 function getActiveAccountEmail(accountsMap = {}) {
+    const hasAccounts = Object.keys(accountsMap).length > 0;
     if (_activeAccountEmail && _activeAccountEmail !== 'Primary (Native)') {
-        const acc = accountsMap[_activeAccountEmail.toLowerCase()];
-        if (acc && !acc.is_primary) return _activeAccountEmail;
+        if (!hasAccounts || accountsMap[_activeAccountEmail.toLowerCase()]) {
+            return _activeAccountEmail;
+        }
     }
     const b = getBindings();
     if (b.__active_account && b.__active_account !== 'Primary (Native)') {
-        const acc = accountsMap[b.__active_account.toLowerCase()];
-        if (acc && !acc.is_primary) {
+        if (!hasAccounts || accountsMap[b.__active_account.toLowerCase()]) {
             _activeAccountEmail = b.__active_account;
             return _activeAccountEmail;
         }
