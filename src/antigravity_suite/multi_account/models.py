@@ -49,7 +49,9 @@ class AccountRecord:
     auth_method: str = "consumer"
     plan: str = "Unknown"
     tier: str = "UNKNOWN_TIER"
+    tier_type: str = ""
     quotas: List[QuotaBucket] = field(default_factory=list)
+    available_models: List[str] = field(default_factory=list)
     is_primary: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
@@ -62,7 +64,9 @@ class AccountRecord:
             "auth_method": self.auth_method,
             "plan": self.plan,
             "tier": self.tier,
+            "tier_type": self.tier_type,
             "is_primary": self.is_primary,
+            "available_models": self.available_models,
             "quotas": [
                 {
                     "family": q.family,

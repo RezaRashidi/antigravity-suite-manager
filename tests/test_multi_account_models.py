@@ -68,3 +68,29 @@ class TestMultiAccountModels(unittest.TestCase):
             acc = load_account_from_file(p)
             self.assertIsNotNone(acc)
             self.assertEqual(acc.email, "standalone@gmail.com")
+
+    def test_set_primary_account_lifecycle(self):
+        import os
+        from antigravity_suite.multi_account.vault import set_primary_account, list_vault_accounts, save_account_to_vault
+        with tempfile.TemporaryDirectory() as td:
+            os.environ["ANTIGRAVITY_ACCOUNTS_DIR"] = td
+            os.environ["REAL_HOME"] = td
+            acc1 = AccountRecord(email="acc1@test.com", token=AccountToken("tok1"), is_primary=True)
+            acc2 = AccountRecord(email="acc2@test.com", token=AccountToken("tok2"), is_primary=False)
+            save_account_to_vault(acc1)
+            save_account_to_vault(acc2)
+
+            # Ensure gemini dir exists
+            (Path(td) / ".gemini").mkdir(parents=True, exist_ok=True)
+
+            self.assertTrue(set_primary_account("acc2@test.com"))
+            vault_accs = {a.email: a for a in list_vault_accounts()}
+            self.assertTrue(vault_accs["acc2@test.com"].is_primary)
+            self.assertFalse(vault_accs["acc1@test.com"].is_primary)
+
+            # Check jetski-standalone-oauth-token
+            tok_f = Path(td) / ".gemini" / "jetski-standalone-oauth-token"
+            self.assertTrue(tok_f.exists())
+            import json
+            tok_data = json.loads(tok_f.read_text())
+            self.assertEqual(tok_data["email"], "acc2@test.com")

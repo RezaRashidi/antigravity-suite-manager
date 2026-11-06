@@ -30,6 +30,22 @@ try {
     assert.strictEqual(bindings.__active_account, 'active@example.com');
     assert.strictEqual(getActiveAccountEmail(), 'active@example.com');
 
+    // Test 3: handleApiRequest for set-primary
+    fs.writeFileSync(path.join(tmpDir, 'active@example.com.json'), JSON.stringify({ email: 'active@example.com', token: { access_token: 'abc' } }), 'utf8');
+    const mockReqPrim = { url: '/api/multi-account/set-primary', method: 'POST', setHeader: () => {} };
+    let resHeaderPrim = 0;
+    const mockResPrim = {
+        setHeader: () => {},
+        writeHead: (code) => { resHeaderPrim = code; },
+        end: () => {}
+    };
+    const handledPrim = handleApiRequest(mockReqPrim, mockResPrim, JSON.stringify({ email: 'active@example.com' }));
+    assert.strictEqual(handledPrim, true);
+    assert.strictEqual(resHeaderPrim, 200);
+
+    const savedAcc = JSON.parse(fs.readFileSync(path.join(tmpDir, 'active@example.com.json'), 'utf8'));
+    assert.strictEqual(savedAcc.is_primary, true);
+
     console.log('✓ All router quota routing tests passed successfully');
     process.exit(0);
 } finally {

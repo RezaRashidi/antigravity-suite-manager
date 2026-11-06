@@ -37,6 +37,13 @@ function patchIpcAndPreload(distDir) {
             return true;
         } catch (_) { return false; }
     });
+    electron_1.ipcMain.handle('multi-account:set-primary', async (_event, email) => {
+        try {
+            const router = require('./multi_account_router.js');
+            if (router.setPrimaryAccount) return router.setPrimaryAccount(email);
+            return false;
+        } catch (_) { return false; }
+    });
     electron_1.ipcMain.handle('multi-account:start-login', async () => {
         try {
             const { spawn } = require('child_process');
@@ -73,7 +80,7 @@ function patchIpcAndPreload(distDir) {
     if (fs.existsSync(preloadPath)) {
         let code = fs.readFileSync(preloadPath, 'utf8');
         if (!code.includes("'antigravityMultiAccount'")) {
-            const snippet = `\nconst multiAccountAPI = { getState: () => electron_1.ipcRenderer.invoke('multi-account:get-state'), bindCascade: (c, e, m) => electron_1.ipcRenderer.invoke('multi-account:bind-cascade', c, e, m), setActiveAccount: (e) => electron_1.ipcRenderer.invoke('multi-account:set-active-account', e), removeAccount: (e) => electron_1.ipcRenderer.invoke('multi-account:remove-account', e), startLogin: () => electron_1.ipcRenderer.invoke('multi-account:start-login'), log: (m) => electron_1.ipcRenderer.invoke('multi-account:log', m) };\nelectron_1.contextBridge.exposeInMainWorld('antigravityMultiAccount', multiAccountAPI);\n`;
+            const snippet = `\nconst multiAccountAPI = { getState: () => electron_1.ipcRenderer.invoke('multi-account:get-state'), bindCascade: (c, e, m) => electron_1.ipcRenderer.invoke('multi-account:bind-cascade', c, e, m), setActiveAccount: (e) => electron_1.ipcRenderer.invoke('multi-account:set-active-account', e), setPrimary: (e) => electron_1.ipcRenderer.invoke('multi-account:set-primary', e), removeAccount: (e) => electron_1.ipcRenderer.invoke('multi-account:remove-account', e), startLogin: () => electron_1.ipcRenderer.invoke('multi-account:start-login'), log: (m) => electron_1.ipcRenderer.invoke('multi-account:log', m) };\nelectron_1.contextBridge.exposeInMainWorld('antigravityMultiAccount', multiAccountAPI);\n`;
             fs.writeFileSync(preloadPath, code + snippet, 'utf8');
         }
     }

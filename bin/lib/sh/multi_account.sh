@@ -8,6 +8,7 @@ dispatch_multi_account() {
     if [ $# -gt 0 ]; then
         local subcmd="$1"
         shift
+        if [ "$subcmd" = "primary" ]; then subcmd="set-primary"; fi
         if [ "$subcmd" = "bookmarklet" ] || [ "$subcmd" = "remote" ] || [ "$subcmd" = "remote-control" ]; then
             generate_remote_control_bookmarklet "$@"
             return 0
@@ -43,9 +44,10 @@ interactive_multi_account_menu() {
         echo "5) Remove / Sign Out an Account"
         echo "6) Check / Restart Multi-Account Proxy Service"
         echo "7) Remote Control Account Selector (Bookmarklet & Chat Commands)"
+        echo "8) Set an Account as Primary (Native & IDE)"
         echo "0) Return to Main Menu"
         echo -e "${CYAN}-----------------------------------------------------${NC}"
-        read -rp "Select an option [0-7]: " choice
+        read -rp "Select an option [0-8]: " choice
 
         case "$choice" in
             1)
@@ -92,6 +94,9 @@ interactive_multi_account_menu() {
             7)
                 generate_remote_control_bookmarklet
                 read -rp "Press Enter to continue..." _
+                ;;
+            8)
+                multi_account_menu_set_primary "${runner[@]}"
                 ;;
             0) break ;;
             *) log_err "Invalid selection." ;;

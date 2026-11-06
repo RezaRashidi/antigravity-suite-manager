@@ -118,6 +118,48 @@ html.dark, body.dark, [data-theme="dark"], .dark, body.vs-dark, .vs-dark, body.h
 .agy-acc-dropdown.open {
     display: flex;
 }
+.agy-primary-badge {
+    font-size: 9px;
+    font-weight: 700;
+    color: #eab308;
+    background: rgba(234, 179, 8, 0.15);
+    border: 1px solid rgba(234, 179, 8, 0.35);
+    padding: 1px 4px;
+    border-radius: 3px;
+    letter-spacing: 0.2px;
+}
+.agy-tier-badge-sm {
+    font-size: 9px;
+    font-weight: 600;
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+.agy-tier-badge-sm.paid {
+    color: #c084fc;
+    background: rgba(168, 85, 247, 0.15);
+    border: 1px solid rgba(168, 85, 247, 0.35);
+}
+.agy-tier-badge-sm.free {
+    color: #60a5fa;
+    background: rgba(59, 130, 246, 0.15);
+    border: 1px solid rgba(59, 130, 246, 0.35);
+}
+.agy-set-prim-btn {
+    font-size: 9px;
+    color: #94a3b8;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    padding: 1px 4px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.15s ease;
+}
+.agy-set-prim-btn:hover {
+    color: #eab308;
+    background: rgba(234, 179, 8, 0.15);
+    border-color: rgba(234, 179, 8, 0.3);
+}
 .agy-acc-dropdown.downward {}
 .agy-acc-dropdown.upward {}
 .agy-acc-header {

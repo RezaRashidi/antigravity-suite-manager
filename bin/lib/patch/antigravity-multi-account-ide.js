@@ -66,6 +66,10 @@ function registerIpc() {
             if (router.setActiveAccount) router.setActiveAccount(em);
             return true;
         });
+        ipcMain.handle('multi-account:set-primary', async (_e, em) => {
+            if (router.setPrimaryAccount) return router.setPrimaryAccount(em);
+            return false;
+        });
         ipcMain.handle('multi-account:remove-account', async (_e, em) => {
             if (router.removeAccount) router.removeAccount(em);
             return true;
@@ -93,6 +97,7 @@ function getInjectionScripts() {
             getState: () => fetch('http://127.0.0.1:41999/api/multi-account/state').then(r => r.json()),
             bindCascade: (c, e, m) => fetch('http://127.0.0.1:41999/api/multi-account/bind', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cascadeId:c,email:e,model:m})}).then(r => r.json()),
             setActiveAccount: (e) => fetch('http://127.0.0.1:41999/api/multi-account/bind', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cascadeId:'__default__',email:e,active:true})}).then(r => r.json()),
+            setPrimary: (e) => fetch('http://127.0.0.1:41999/api/multi-account/set-primary', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e})}).then(r => r.json()),
             removeAccount: (e) => fetch('http://127.0.0.1:41999/api/multi-account/remove', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e})}).then(r => r.json()),
             startLogin: () => fetch('http://127.0.0.1:41999/api/multi-account/login', {method:'POST'}).then(r => r.json())
         };

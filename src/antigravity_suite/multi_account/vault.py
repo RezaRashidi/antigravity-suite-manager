@@ -61,6 +61,8 @@ def save_account_to_vault(rec: AccountRecord) -> Path:
         "auth_method": rec.auth_method,
         "plan": rec.plan,
         "tier": rec.tier,
+        "tier_type": getattr(rec, "tier_type", ""),
+        "is_primary": rec.is_primary,
     }
     tmp = target.with_suffix(".tmp")
     with open(tmp, "w", encoding="utf-8") as f:
@@ -95,3 +97,55 @@ def remove_account_from_vault(email: str) -> bool:
         target.unlink()
         return True
     return False
+
+
+def set_primary_account(email: str) -> bool:
+    accounts = list_vault_accounts()
+    target = next((a for a in accounts if a.email.lower() == email.lower()), None)
+    if not target:
+        return False
+
+    for a in accounts:
+        a.is_primary = (a.email.lower() == email.lower())
+        save_account_to_vault(a)
+
+    token_data = {
+        "token": target.token.to_dict() if target.token else {},
+        "id_token": target.id_token,
+        "email": target.email,
+        "name": target.name,
+        "auth_method": target.auth_method,
+    }
+
+    homes = [Path.home()]
+    if "REAL_HOME" in os.environ and Path(os.environ["REAL_HOME"]).is_dir():
+        homes.append(Path(os.environ["REAL_HOME"]))
+    for h in homes:
+        for d_name in [".gemini", ".gemide"]:
+            tok_dir = h / d_name
+            if tok_dir.is_dir():
+                tok_file = tok_dir / "jetski-standalone-oauth-token"
+                try:
+                    tmp = tok_file.with_suffix(".tmp")
+                    with open(tmp, "w", encoding="utf-8") as f:
+                        json.dump(token_data, f, indent=2)
+                    tmp.replace(tok_file)
+                except Exception:
+                    pass
+
+    # Update active binding in bindings.json
+    bindings_file = get_accounts_dir() / "bindings.json"
+    try:
+        bindings = {}
+        if bindings_file.is_file():
+            with open(bindings_file, "r", encoding="utf-8") as f:
+                bindings = json.load(f)
+        bindings["__active_account"] = target.email
+        tmp_b = bindings_file.with_suffix(".tmp")
+        with open(tmp_b, "w", encoding="utf-8") as f:
+            json.dump(bindings, f, indent=2)
+        tmp_b.replace(bindings_file)
+    except Exception:
+        pass
+
+    return True

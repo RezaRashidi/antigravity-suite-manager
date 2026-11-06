@@ -59,37 +59,83 @@ def fetch_account_quotas(account: AccountRecord) -> List[QuotaBucket]:
 def fetch_account_tier(account: AccountRecord) -> str:
     if not account.token or not account.token.access_token:
         return account.tier
-    url = "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
-    req = urllib.request.Request(
-        url,
-        data=b"{}",
-        headers={
-            "Authorization": f"Bearer {account.token.access_token}",
-            "Content-Type": "application/json",
-        },
-    )
+    if is_token_expired(account.token.expiry) and account.token.refresh_token:
+        res = refresh_access_token(account.token.refresh_token)
+        if res:
+            account.token.access_token, account.token.expiry = res[0], res[1]
+
+    # 1. Fetch available models dynamically via Google API
     try:
+        url = "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels"
+        req = urllib.request.Request(
+            url,
+            data=b'{"project": "aicode-consumers"}',
+            headers={
+                "Authorization": f"Bearer {account.token.access_token}",
+                "Content-Type": "application/json",
+                "User-Agent": "Antigravity/2.23.1",
+            },
+        )
         with urllib.request.urlopen(req, timeout=5.0) as resp:
             data = json.loads(resp.read().decode("utf-8", "ignore"))
-            # Native Google AI Pro detection from paidTier / g1Tier
-            paid = data.get("paidTier") or data.get("g1Tier") or data.get("userTier")
-            if paid and (paid.get("name") or paid.get("id")):
-                name = paid.get("name") or paid.get("id") or ""
-                account.plan = paid.get("name", "Google AI Pro")
-                account.tier = "PRO" if ("pro" in name.lower() or "g1" in name.lower()) else name
+            models = data.get("models", {})
+            model_names = [m.get("displayName") or k for k, m in models.items() if m.get("displayName")]
+            account.available_models = model_names
+
+            has_paid_exclusive = any("5-5" in k or m.get("tagTitle") == "New" for k, m in models.items())
+            has_free_notice = any("paid pro" in str(m.get("tagDescription", "")).lower() for m in models.values())
+
+            if has_paid_exclusive:
+                account.tier_type = "Paid Pro"
+                account.tier = "Paid Pro"
+                account.plan = "Google AI Pro (Paid)"
                 return account.tier
-            allowed = data.get("allowedTiers", [])
-            for t in allowed:
-                tid = t.get("id", "")
-                tname = t.get("name", "")
-                if tid in ["standard-tier", "g1-pro-tier"] or "code assist" in tname.lower():
-                    account.plan = "Google AI Pro"
-                    account.tier = "PRO"
-                    return "PRO"
+            elif has_free_notice or len(models) >= 15:
+                account.tier_type = "Free Pro"
+                account.tier = "Free Pro"
+                account.plan = "Google AI Pro (Free)"
+                return account.tier
     except Exception:
         pass
+
+    # 2. Fallback to loadCodeAssist
+    try:
+        url = "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
+        req = urllib.request.Request(
+            url,
+            data=b"{}",
+            headers={
+                "Authorization": f"Bearer {account.token.access_token}",
+                "Content-Type": "application/json",
+                "User-Agent": "Antigravity/2.23.1",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=5.0) as resp:
+            data = json.loads(resp.read().decode("utf-8", "ignore"))
+            sub_type = data.get("currentTier", {}).get("upgradeSubscriptionType", "")
+            if sub_type == "GDP_HELIUM":
+                account.tier_type = "Paid Pro"
+                account.tier = "Paid Pro"
+                account.plan = "Google AI Pro (Paid)"
+                return account.tier
+            elif sub_type == "GOOGLE_ONE_HELIUM":
+                account.tier_type = "Free Pro"
+                account.tier = "Free Pro"
+                account.plan = "Google AI Pro (Free)"
+                return account.tier
+            paid = data.get("paidTier") or data.get("g1Tier") or data.get("userTier")
+            if paid and (paid.get("name") or paid.get("id")):
+                account.plan = paid.get("name", "Google AI Pro")
+                account.tier = "PRO"
+                account.tier_type = "Free Pro"
+                return account.tier
+    except Exception:
+        pass
+
     if any(q.family == "claude" for q in account.quotas) or len(account.quotas) >= 4:
+        account.tier_type = "Free Pro"
         account.plan = "Google AI Pro"
         account.tier = "PRO"
         return "PRO"
+    account.tier_type = "Free"
     return account.tier

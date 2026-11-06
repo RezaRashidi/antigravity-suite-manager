@@ -106,6 +106,46 @@ async function fetchLanguageServerTelemetry() {
     return null;
 }
 
+async function fetchAccountModels(token) {
+    return new Promise((resolve) => {
+        const agent = getProxyAgent();
+        const body = JSON.stringify({ project: "aicode-consumers" });
+        const reqOpts = {
+            hostname: 'daily-cloudcode-pa.googleapis.com',
+            port: 443,
+            method: 'POST',
+            path: '/v1internal:fetchAvailableModels',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'User-Agent': 'Antigravity/2.23.1',
+                'Content-Length': Buffer.byteLength(body)
+            },
+            timeout: 5000
+        };
+        if (agent) reqOpts.agent = agent;
+        const req = https.request(reqOpts, (res) => {
+            let data = ''; res.on('data', c => data += c);
+            res.on('end', () => {
+                try {
+                    if (res.statusCode === 200) {
+                        const parsed = JSON.parse(data);
+                        const models = parsed.models || {};
+                        const modelList = Object.keys(models).map(k => models[k].displayName || k).filter(Boolean);
+                        const hasPaidExclusive = Object.keys(models).some(k => k.includes('5-5') || models[k].tagTitle === 'New');
+                        const hasFreeNotice = Object.values(models).some(m => String(m.tagDescription || '').toLowerCase().includes('paid pro'));
+                        const tierType = hasPaidExclusive ? 'Paid Pro' : ((hasFreeNotice || Object.keys(models).length >= 15) ? 'Free Pro' : 'Free');
+                        return resolve({ tierType, models: modelList, modelCount: Object.keys(models).length });
+                    }
+                } catch (_) {}
+                resolve({ tierType: 'PRO', models: [], modelCount: 0 });
+            });
+        });
+        req.on('error', () => resolve({ tierType: 'PRO', models: [], modelCount: 0 }));
+        req.write(body); req.end();
+    });
+}
+
 async function fetchDirectAccountQuotas(account) {
     if (!account?.token) return { status: 'no_token', buckets: [] };
     const em = account.email;
@@ -115,6 +155,7 @@ async function fetchDirectAccountQuotas(account) {
         logTraffic(`[QUOTA] [${em}] Auth token resolution failed`);
         return { status: 'auth_failed', buckets: [] };
     }
+    const modelInfoPromise = fetchAccountModels(token).catch(() => ({ tierType: 'PRO', models: [], modelCount: 0 }));
     return new Promise((resolve) => {
         const agent = getProxyAgent();
         const reqOpts = {
@@ -133,7 +174,7 @@ async function fetchDirectAccountQuotas(account) {
         if (agent) reqOpts.agent = agent;
         const req = https.request(reqOpts, (res) => {
             let body = ''; res.on('data', c => body += c);
-            res.on('end', () => {
+            res.on('end', async () => {
                 let data = { status: 'unknown', buckets: [] };
                 try {
                     if (res.statusCode === 200) {
@@ -149,6 +190,12 @@ async function fetchDirectAccountQuotas(account) {
                     } else {
                         logTraffic(`[QUOTA] [${em}] HTTP ${res.statusCode} | Body: ${body.slice(0, 150)}`);
                     }
+                } catch (_) {}
+                try {
+                    const minfo = await modelInfoPromise;
+                    data.tier_type = minfo.tierType;
+                    data.available_models = minfo.models;
+                    data.model_count = minfo.modelCount;
                 } catch (_) {}
                 if (data.status === 'ok' || !_dirCache[em]?.data?.buckets?.length) {
                     _dirCache[em] = { ts: Date.now(), data };

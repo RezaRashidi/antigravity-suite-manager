@@ -66,20 +66,27 @@
         let badgeText = 'PRO';
         if (acc.tier === 'No License' || acc.license_status === 'no_license') badgeText = 'NO LICENSE';
         else if (acc.tier === 'Resource Exhausted' || acc.license_status === 'exhausted') badgeText = 'EXHAUSTED';
+        else if (acc.tier_type === 'Paid Pro' || acc.tier === 'Paid Pro') badgeText = 'PAID PRO';
+        else if (acc.tier_type === 'Free Pro' || acc.tier === 'Free Pro') badgeText = 'FREE PRO';
         else if (planName.toLowerCase().includes('pro') || acc.tier === 'PRO' || acc.tier === 'TEAMS_TIER_PRO') badgeText = 'PRO';
         else if (acc.tier && (acc.tier.toLowerCase().includes('free') || acc.tier === 'UNKNOWN_TIER')) badgeText = 'FREE';
         else badgeText = 'PRO';
 
-        const footer = `<div class="agy-usage-footer"><button class="agy-flyout-logout-btn" data-email="${email}">Log Out (${email})</button></div>`;
+        const primBadge = acc.is_primary ? '<div style="font-size:11px;color:#eab308;font-weight:600;margin-top:2px;">★ Primary Account (Native Session)</div>' : '<div style="font-size:11px;opacity:0.6;margin-top:2px;">Secondary Account</div>';
+        const modelsSummary = (acc.available_models && acc.available_models.length) ? `<div style="font-size:11px;color:var(--agy-dropdown-subtext);background:rgba(255,255,255,0.04);padding:6px 8px;border-radius:6px;margin-bottom:8px;line-height:1.4;"><strong style="color:var(--agy-foreground,#f3f4f6);">Models (${acc.available_models.length}):</strong> ${acc.available_models.slice(0, 4).join(', ')}${acc.available_models.length > 4 ? '...' : ''}</div>` : '';
+
+        const footer = `<div class="agy-usage-footer" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">${!acc.is_primary ? `<button class="agy-flyout-primary-btn" data-email="${email}" style="background:#3b82f6;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;font-weight:600;">⭐ Make Primary</button>` : ''}<button class="agy-flyout-logout-btn" data-email="${email}">Log Out (${email})</button></div>`;
 
         return `
             <div class="agy-usage-flyout-header">
                 <div>
                     <div class="agy-usage-title">Usage limits</div>
                     <div class="agy-usage-email-sub">${email} • <span style="color:var(--agy-accent,#38bdf8);font-weight:600;">${planName}</span></div>
+                    ${primBadge}
                 </div>
-                <span class="agy-tier-badge">${badgeText}</span>
+                <span class="agy-tier-badge" style="${badgeText === 'PAID PRO' ? 'background:rgba(168,85,247,0.2);color:#c084fc;border:1px solid rgba(168,85,247,0.4);' : (badgeText === 'FREE PRO' ? 'background:rgba(59,130,246,0.2);color:#60a5fa;border:1px solid rgba(59,130,246,0.4);' : '')}">${badgeText}</span>
             </div>
+            ${modelsSummary}
             ${body}
             ${footer}
         `;

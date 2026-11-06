@@ -67,3 +67,32 @@ multi_account_menu_remove() {
     fi
     read -rp "Press Enter to continue..." _
 }
+
+multi_account_menu_set_primary() {
+    local -a runner=("$@")
+    echo ""
+    log_info "Select account to set as Primary (Native & IDE):"
+    local accounts=()
+    while IFS= read -r line; do
+        [ -n "$line" ] && accounts+=("$line")
+    done < <("${runner[@]}" json | jq -r '.accounts[].email' 2>/dev/null || true)
+
+    if [ ${#accounts[@]} -eq 0 ]; then
+        log_warn "No accounts found in vault."
+        read -rp "Press Enter to continue..." _
+        return 0
+    fi
+
+    for i in "${!accounts[@]}"; do
+        echo "  $((i+1))) ${accounts[$i]}"
+    done
+    read -rp "Select account number to set as Primary [1-${#accounts[@]}]: " p_idx
+    if [[ "$p_idx" =~ ^[0-9]+$ ]] && [ "$p_idx" -ge 1 ] && [ "$p_idx" -le "${#accounts[@]}" ]; then
+        local chosen_acc="${accounts[$((p_idx-1))]}"
+        "${runner[@]}" set-primary "$chosen_acc"
+        log_success "Account '$chosen_acc' is now Primary."
+    else
+        log_err "Invalid selection."
+    fi
+    read -rp "Press Enter to continue..." _
+}

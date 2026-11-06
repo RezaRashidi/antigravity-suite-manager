@@ -127,7 +127,58 @@ function loadAllAccounts() {
     return accounts;
 }
 
+function setPrimaryAccount(email) {
+    if (!email) return false;
+    const accounts = loadAllAccounts();
+    const target = accounts[email.toLowerCase()];
+    if (!target) return false;
+
+    try {
+        for (const f of fs.readdirSync(ACCOUNTS_DIR)) {
+            if (f.endsWith('.json') && f !== 'bindings.json' && f !== 'oauth_credentials.json') {
+                try {
+                    const fp = path.join(ACCOUNTS_DIR, f);
+                    const d = JSON.parse(fs.readFileSync(fp, 'utf8'));
+                    if (d && d.email) {
+                        d.is_primary = (d.email.toLowerCase() === email.toLowerCase());
+                        fs.writeFileSync(fp, JSON.stringify(d, null, 2), 'utf8');
+                    }
+                } catch (_) {}
+            }
+        }
+    } catch (_) {}
+
+    const tokenData = {
+        token: target.token || {},
+        id_token: target.id_token || '',
+        email: target.email,
+        name: target.name || target.email.split('@')[0],
+        auth_method: target.auth_method || 'consumer'
+    };
+    for (const dName of ['.gemini', '.gemide']) {
+        const pDir = path.join(os.homedir(), dName);
+        if (fs.existsSync(pDir)) {
+            try {
+                fs.writeFileSync(path.join(pDir, 'jetski-standalone-oauth-token'), JSON.stringify(tokenData, null, 2), 'utf8');
+            } catch (_) {}
+        }
+    }
+
+    try {
+        const { setActiveAccount, setBinding } = require('./bindings.js');
+        setActiveAccount(target.email);
+        setBinding('__default__', target.email);
+    } catch (_) {}
+
+    try {
+        require('./telemetry.js').forceRefreshLanguageServerQuota();
+    } catch (_) {}
+
+    return true;
+}
+
 module.exports = {
     findPrimaryTokenFiles,
     loadAllAccounts,
+    setPrimaryAccount,
 };

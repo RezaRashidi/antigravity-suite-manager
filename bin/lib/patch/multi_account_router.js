@@ -1,6 +1,6 @@
 // Multi-Account Router: Gateway and Facade Module
 const { getBindings, setBinding, setActiveAccount, getActiveAccountEmail } = require('./router/bindings.js');
-const { loadAllAccounts } = require('./router/accounts.js');
+const { loadAllAccounts, setPrimaryAccount } = require('./router/accounts.js');
 const { fetchLanguageServerTelemetry, fetchDirectAccountQuotas, _quotaCache } = require('./router/telemetry.js');
 const { startMultiAccountRouter, setLastCascadeId } = require('./router/server.js');
 
@@ -44,11 +44,23 @@ async function refreshQuotasAsync() {
                     acc.plan = isPro ? (acc.plan || 'Google AI Pro') : 'Free';
                     return;
                 }
+                if (direct?.tier_type) {
+                    acc.tier_type = direct.tier_type;
+                    acc.available_models = direct.available_models || [];
+                    acc.model_count = direct.model_count || acc.available_models.length;
+                    if (direct.tier_type === 'Paid Pro') {
+                        acc.plan = 'Google AI Paid Pro';
+                        acc.tier = 'Paid Pro';
+                    } else if (direct.tier_type === 'Free Pro') {
+                        acc.plan = 'Google AI Free Pro';
+                        acc.tier = 'Free Pro';
+                    }
+                }
                 if (acc.is_primary && lsTelemetry?.buckets?.length > 0) {
                     acc.quotas = lsTelemetry.buckets; acc.license_status = 'ok';
                     const planName = lsTelemetry.plan || 'Google AI Pro';
-                    acc.plan = planName;
-                    acc.tier = (planName.toLowerCase().includes('pro') || lsTelemetry.tierId === 'g1-pro-tier') ? 'PRO' : 'FREE';
+                    if (!acc.plan) acc.plan = planName;
+                    if (!acc.tier) acc.tier = (planName.toLowerCase().includes('pro') || lsTelemetry.tierId === 'g1-pro-tier') ? 'PRO' : 'FREE';
                     return;
                 }
                 const prev = _quotaCache.accounts?.find(a => a.email?.toLowerCase() === acc.email?.toLowerCase());
@@ -148,6 +160,7 @@ module.exports = {
     getBindings,
     setBinding,
     setActiveAccount,
+    setPrimaryAccount,
     setLastCascadeId,
     getActiveAccountEmail: () => getActiveAccountEmail(loadAllAccounts()),
 };

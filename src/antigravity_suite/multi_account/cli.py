@@ -13,7 +13,9 @@ from antigravity_suite.multi_account.oauth import start_login_flow
 from antigravity_suite.multi_account.proxy_server import run_proxy_server
 from antigravity_suite.multi_account.quota import fetch_account_quotas, fetch_account_tier
 from antigravity_suite.multi_account.service import is_proxy_running
-from antigravity_suite.multi_account.vault import list_vault_accounts, remove_account_from_vault
+from antigravity_suite.multi_account.vault import (
+    list_vault_accounts, remove_account_from_vault, set_primary_account
+)
 
 
 def _cmd_list(args):
@@ -25,7 +27,10 @@ def _cmd_list(args):
         fetch_account_quotas(a)
         fetch_account_tier(a)
         prim = " [PRIMARY]" if a.is_primary else ""
-        print(f"* {a.email} ({a.name}) - {a.tier}{prim}")
+        tier_display = getattr(a, "tier_type", "") or a.tier
+        print(f"* {a.email} ({a.name}) - {tier_display}{prim}")
+        if getattr(a, "available_models", None):
+            print(f"    - Available Models ({len(a.available_models)}): {', '.join(a.available_models[:4])}...")
         for q in a.quotas:
             print(f"    - {q.family:8} [{q.window:6}]: {q.percent()}% remaining")
 
@@ -53,12 +58,24 @@ def _cmd_login(args):
         sys.exit(1)
 
 
+def _cmd_set_primary(args):
+    email = args.email
+    if set_primary_account(email):
+        print(f"Successfully set {email} as primary account.")
+    else:
+        print(f"Account {email} not found in vault.")
+        sys.exit(1)
+
+
 def main():
     p = argparse.ArgumentParser(description="Antigravity Multi-Account Tool")
     sub = p.add_subparsers(dest="subcommand")
     sub.add_parser("list")
     sub.add_parser("json")
     sub.add_parser("login")
+
+    p_prim = sub.add_parser("set-primary")
+    p_prim.add_argument("email", help="Account email to set as primary")
 
     p_del = sub.add_parser("logout")
     p_del.add_argument("email", help="Account email to remove")
@@ -77,6 +94,8 @@ def main():
         _cmd_json(args)
     elif args.subcommand == "login":
         _cmd_login(args)
+    elif args.subcommand == "set-primary":
+        _cmd_set_primary(args)
     elif args.subcommand == "logout":
         remove_account_from_vault(args.email)
         print(f"Removed account {args.email}")
