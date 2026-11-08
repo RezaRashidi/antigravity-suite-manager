@@ -58,5 +58,6 @@ This document records the end-to-end diagnostic methodology, reverse-engineering
 - [50. Issue 48: Manual Chat Title Reversion via Stale VSCDB Overwrite and On-Demand Merger Mode Control](50_manual_chat_title_reversion_and_merger_control_mode.md)
 - [51. Issue 49: Retirement of Continuous History Merger Daemon and Repurposing into One-Shot Legacy Chat Migrator (v2.5.5 -> v2.6.0)](51_merger_repurposed_to_v255_v260_chat_migrator_and_daemon_retirement.md)
 - [52. Issue 50: Resolution of Google HTTP 403 License Error via Official OAuth Client Migration and Subagent Dynamic Swarm Stabilization](52_google_oauth_403_client_deprecation_and_subagent_swarm_resolution.md)
-- [53. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
+- [53. Issue 51: Resolution of Account Selector "NO LICENSE" Denial via Consumer OAuth Client Restoration, Scope Alignment, and Onboarding Handshake](53_consumer_oauth_client_restoration_and_license_onboarding_handshake.md)
+- [54. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
 
