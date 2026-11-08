@@ -12,9 +12,21 @@ class TestOAuthCandidates(unittest.TestCase):
         self.assertTrue(any("884354919052" in cid for cid in cids))
 
     def test_preferred_client_id(self):
-        target = "884354919052-36trc1jjb3tguiac32ov6cod268c5blh.apps.googleusercontent.com"
+        creds_orig = get_all_oauth_credentials()
+        target = next(c[0] for c in creds_orig if "884354919052" in c[0])
         creds = get_all_oauth_credentials(preferred_client_id=target)
         self.assertEqual(creds[0][0], target)
+
+    def test_default_is_consumer_client_id(self):
+        cid, sec = get_oauth_credentials()
+        self.assertIn("1071006060591", cid)
+        self.assertNotIn("884354919052", cid)
+        self.assertTrue(sec.startswith("GOCSPX-"))
+        self.assertEqual(len(sec), 35)
+
+    def test_first_candidate_is_consumer_when_no_preference(self):
+        creds = get_all_oauth_credentials()
+        self.assertIn("1071006060591", creds[0][0])
 
 
 if __name__ == "__main__":

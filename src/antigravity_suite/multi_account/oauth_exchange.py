@@ -45,6 +45,24 @@ def exchange_auth_code(code: str, redirect_uri: str) -> Optional[AccountRecord]:
             save_account_to_vault(rec)
             print(f"[OAuth] Successfully saved account {email} to vault", file=sys.stderr)
 
+            # Warm-up / Onboarding handshake with Cloud Code to provision license
+            try:
+                onboard_req = urllib.request.Request(
+                    "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+                    data=b"{}",
+                    headers={
+                        "Authorization": f"Bearer {rec.token.access_token}",
+                        "Content-Type": "application/json",
+                        "User-Agent": "Antigravity/2.23.1",
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(onboard_req, timeout=5) as resp:
+                    if resp.status == 200:
+                        print(f"[OAuth] License onboarding handshake completed for {email}", file=sys.stderr)
+            except Exception as e:
+                print(f"[OAuth] Onboarding note: {e}", file=sys.stderr)
+
             try:
                 notify_req = urllib.request.Request("http://127.0.0.1:41999/api/multi-account/state?refresh=1", method="GET")
                 with urllib.request.urlopen(notify_req, timeout=2) as _: pass

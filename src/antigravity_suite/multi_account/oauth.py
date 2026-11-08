@@ -40,7 +40,8 @@ def start_login_flow(open_browser: bool = True, timeout: int = 180) -> Optional[
             "https://www.googleapis.com/auth/userinfo.email "
             "https://www.googleapis.com/auth/userinfo.profile "
             "https://www.googleapis.com/auth/cclog "
-            "https://www.googleapis.com/auth/experimentsandconfigs"
+            "https://www.googleapis.com/auth/experimentsandconfigs "
+            "https://www.googleapis.com/auth/aicode"
         )
         params = {
             "client_id": cid, "redirect_uri": redirect_uri, "response_type": "code",

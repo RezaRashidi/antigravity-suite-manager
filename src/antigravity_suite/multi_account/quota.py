@@ -43,6 +43,7 @@ def fetch_account_quotas(account: AccountRecord) -> List[QuotaBucket]:
         headers={
             "Authorization": f"Bearer {account.token.access_token}",
             "Content-Type": "application/json",
+            "User-Agent": "Antigravity/2.23.1",
         },
     )
     try:

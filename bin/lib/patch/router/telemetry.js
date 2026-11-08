@@ -146,6 +146,32 @@ async function fetchAccountModels(token) {
     });
 }
 
+function warmUpCodeAssist(token) {
+    return new Promise((resolve) => {
+        const agent = getProxyAgent();
+        const reqOpts = {
+            hostname: 'daily-cloudcode-pa.googleapis.com',
+            port: 443,
+            method: 'POST',
+            path: '/v1internal:loadCodeAssist',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'User-Agent': 'Antigravity/2.23.1',
+                'Content-Length': 2
+            },
+            timeout: 5000
+        };
+        if (agent) reqOpts.agent = agent;
+        const req = https.request(reqOpts, (res) => {
+            let d = ''; res.on('data', c => d += c);
+            res.on('end', () => resolve(res.statusCode === 200));
+        });
+        req.on('error', () => resolve(false));
+        req.write('{}'); req.end();
+    });
+}
+
 async function fetchDirectAccountQuotas(account) {
     if (!account?.token) return { status: 'no_token', buckets: [] };
     const em = account.email;
@@ -181,8 +207,32 @@ async function fetchDirectAccountQuotas(account) {
                         data = { status: 'ok', buckets: parseGroupsToBuckets(JSON.parse(body).groups || []) };
                         logTraffic(`[QUOTA] [${em}] HTTP 200 | Buckets: ${data.buckets.length}`);
                     } else if (res.statusCode === 403) {
-                        data = { status: 'no_license', message: 'Subscription Required', buckets: [] };
-                        logTraffic(`[QUOTA] [${em}] HTTP 403 (No License) | Body: ${body.slice(0, 150)}`);
+                        const warmed = await warmUpCodeAssist(token);
+                        if (warmed) {
+                            try {
+                                const retryRes = await new Promise((resRetry) => {
+                                    const r = https.request(reqOpts, (rs) => {
+                                        let b = ''; rs.on('data', c => b += c);
+                                        rs.on('end', () => resRetry({ statusCode: rs.statusCode, body: b }));
+                                    });
+                                    if (agent) r.agent = agent;
+                                    r.on('error', () => resRetry(null));
+                                    r.write('{}'); r.end();
+                                });
+                                if (retryRes && retryRes.statusCode === 200) {
+                                    data = { status: 'ok', buckets: parseGroupsToBuckets(JSON.parse(retryRes.body).groups || []) };
+                                    logTraffic(`[QUOTA] [${em}] Recovered 403 via loadCodeAssist warmup | Buckets: ${data.buckets.length}`);
+                                } else {
+                                    data = { status: 'no_license', message: 'Subscription Required', buckets: [] };
+                                    logTraffic(`[QUOTA] [${em}] HTTP 403 (No License) after warmup | Body: ${body.slice(0, 150)}`);
+                                }
+                            } catch (_) {
+                                data = { status: 'no_license', message: 'Subscription Required', buckets: [] };
+                            }
+                        } else {
+                            data = { status: 'no_license', message: 'Subscription Required', buckets: [] };
+                            logTraffic(`[QUOTA] [${em}] HTTP 403 (No License) | Body: ${body.slice(0, 150)}`);
+                        }
                     } else if (res.statusCode === 429) {
                         const prevBuckets = _dirCache[em]?.data?.buckets || [];
                         data = { status: prevBuckets.length ? 'ok' : 'exhausted', message: 'Resource Exhausted', buckets: prevBuckets };
