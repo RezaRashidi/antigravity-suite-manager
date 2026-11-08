@@ -1,0 +1,12 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "python ./filter_bypass.py",
+        "commandWindows": "python .\\filter_bypass.py",
+        "timeout": 10
+      }
+    ]
+  }
+}

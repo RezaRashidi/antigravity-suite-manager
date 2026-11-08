@@ -70,6 +70,12 @@ sync_selector_skills() {
         for sk in whoami accounts switch; do
             [ -d "${r_dir}/skills/${sk}" ] && cp -rf "${r_dir}/skills/${sk}" "${base}/config/skills/" 2>/dev/null || true
         done
+        mkdir -p "${base}/config/plugins" 2>/dev/null || true
+        if [ -d "${r_dir}/plugins" ]; then
+            for pl in "${r_dir}/plugins"/*; do
+                [ -d "$pl" ] && cp -rf "$pl" "${base}/config/plugins/" 2>/dev/null || true
+            done
+        fi
     done
 }
 

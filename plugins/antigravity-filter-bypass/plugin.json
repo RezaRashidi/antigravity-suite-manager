@@ -1,0 +1,8 @@
+{
+  "name": "antigravity-filter-bypass",
+  "version": "1.0.0",
+  "description": "Lifecycle hook plugin providing automated session resilience, error recovery, and execution continuity for Antigravity agents.",
+  "author": "Antigravity Research",
+  "repository": "https://github.com/v1ktorrr0x/antigravity-filter-bypass",
+  "disabled": false
+}

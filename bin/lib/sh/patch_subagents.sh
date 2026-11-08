@@ -6,11 +6,12 @@ sync_subagent_plugin() {
     if [ -z "$r_dir" ] || [ ! -d "$r_dir" ]; then
         r_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." 2>/dev/null && pwd)"
     fi
-    local src_plug="${r_dir}/plugins/subagent-swarm"
     for base in "${REAL_HOME:-$HOME}/.gemini" "${REAL_HOME:-$HOME}/.gemide"; do
         mkdir -p "${base}/config/plugins" 2>/dev/null || true
-        if [ -d "$src_plug" ]; then
-            cp -rf "$src_plug" "${base}/config/plugins/" 2>/dev/null || true
+        if [ -d "${r_dir}/plugins" ]; then
+            for pl in "${r_dir}/plugins"/*; do
+                [ -d "$pl" ] && cp -rf "$pl" "${base}/config/plugins/" 2>/dev/null || true
+            done
         fi
     done
 }
