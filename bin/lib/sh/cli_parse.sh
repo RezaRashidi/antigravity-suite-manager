@@ -31,7 +31,9 @@ parse_cli_args() {
             install-ide) COMMAND="install"; SUB_COMMAND="ide"; shift ;;
             set-keyring|keyring) COMMAND="keyring"; shift; CMD_ARGS=("$@"); break ;;
             paths|set-paths) COMMAND="paths"; shift; CMD_ARGS=("$@"); break ;;
-            wizard|setup|center|control-center) COMMAND="wizard"; shift; CMD_ARGS=("$@"); break ;;
+            wizard|setup) COMMAND="wizard"; shift; CMD_ARGS=("$@"); break ;;
+            center|control-center|menu) COMMAND="center"; shift; CMD_ARGS=("$@"); break ;;
+            classic-menu) COMMAND="classic-menu"; shift; CMD_ARGS=("$@"); break ;;
             rtl|patch-rtl) COMMAND="rtl"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
             unpatch-rtl) COMMAND="unpatch-rtl"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi; CMD_ARGS=("$@"); break ;;
             selector|patch-selector) COMMAND="patch-selector"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;

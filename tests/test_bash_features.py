@@ -64,6 +64,7 @@ class TestBashLibraryAndPatches(unittest.TestCase):
         self.assertIn("unpatch-rtl)", code)
         self.assertIn("clean-data|delete-data|purge-data)", code)
         self.assertIn("uninstall)", code)
+        self.assertIn("center|control-center|menu)", code)
 
         dispatch_sh = os.path.join(_BIN_DIR, "lib", "sh", "cli_dispatch.sh")
         with open(dispatch_sh, "r", encoding="utf-8") as f:
@@ -71,6 +72,7 @@ class TestBashLibraryAndPatches(unittest.TestCase):
         self.assertIn("clean-data|delete-data|purge-data)", code)
         self.assertIn("uninstall)", code)
         self.assertIn("unpatch-rtl)", code)
+        self.assertIn('[ "$COMMAND" = "center" ]', code)
 
     def test_menu_actions_and_options(self):
         """Verifies menu has options for clean data, uninstall, and unpatches."""
