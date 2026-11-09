@@ -47,6 +47,15 @@ class TestBashLibraryAndPatches(unittest.TestCase):
         self.assertIn('if [ "$HAD_APP_FORK" = true ]; then', code)
         self.assertIn('if [ "$HAD_IDE_FORK" = true ]; then', code)
 
+    def test_ensure_install_dirs_exist(self):
+        """Verifies ensure_app_install_dir and ensure_ide_install_dir exist in detect.sh."""
+        detect_path = os.path.join(_BIN_DIR, "lib", "sh", "detect.sh")
+        with open(detect_path, "r", encoding="utf-8") as f:
+            code = f.read()
+        self.assertIn("ensure_app_install_dir()", code)
+        self.assertIn("ensure_ide_install_dir()", code)
+
+
     def test_cli_dispatch_and_parse(self):
         """Verifies clean-data, uninstall, unpatch-rtl CLI commands are recognized."""
         parse_sh = os.path.join(_BIN_DIR, "lib", "sh", "cli_parse.sh")

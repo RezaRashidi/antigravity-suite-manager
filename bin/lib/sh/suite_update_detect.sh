@@ -41,7 +41,7 @@ detect_active_app_patches() {
 }
 
 detect_active_ide_patches() {
-    ensure_rtl_dirs
+    ensure_ide_install_dir 2>/dev/null || ensure_rtl_dirs 2>/dev/null || true
     local wb_js="${IDE_INSTALL_DIR}/resources/app/out/vs/workbench/workbench.desktop.main.js"
     local main_js="${IDE_INSTALL_DIR}/resources/app/out/main.js"
     local fork_marker="${IDE_INSTALL_DIR}/resources/app/out/antigravity_fork_patch.marker"

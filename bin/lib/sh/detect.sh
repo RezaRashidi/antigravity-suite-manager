@@ -72,3 +72,22 @@ detect_installations() {
         log_err "antigravity-detect.py not found in script dir or ${LOCAL_BIN}."
     fi
 }
+
+ensure_app_install_dir() {
+    [ -n "$APP_INSTALL_DIR" ] && [ -f "${APP_INSTALL_DIR}/resources/app.asar" ] && return 0
+    auto_detect_installations 2>/dev/null || true
+    [ -n "$APP_INSTALL_DIR" ] && [ -f "${APP_INSTALL_DIR}/resources/app.asar" ] && return 0
+    for c in "$APP_INSTALL_DIR" "$ANTIGRAVITY_DETECTED_APP" "/opt/Antigravity-x64" "/opt/antigravity2" "/opt/antigravity" "${REAL_HOME:-$HOME}/.local/share/antigravity"; do
+        [ -n "$c" ] && [ -f "${c}/resources/app.asar" ] && { APP_INSTALL_DIR="$c"; return 0; }
+    done
+}
+
+ensure_ide_install_dir() {
+    [ -n "$IDE_INSTALL_DIR" ] && [ -d "${IDE_INSTALL_DIR}/resources/app/out" ] && return 0
+    auto_detect_installations 2>/dev/null || true
+    [ -n "$IDE_INSTALL_DIR" ] && [ -d "${IDE_INSTALL_DIR}/resources/app/out" ] && return 0
+    for c in "$IDE_INSTALL_DIR" "$ANTIGRAVITY_DETECTED_IDE" "/opt/antigravity-ide" "/opt/antigravity" "${REAL_HOME:-$HOME}/.local/share/antigravity-ide"; do
+        [ -n "$c" ] && [ -d "${c}/resources/app/out" ] && { IDE_INSTALL_DIR="$c"; return 0; }
+    done
+}
+
