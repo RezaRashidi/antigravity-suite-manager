@@ -7,6 +7,7 @@ const { refreshGoogleToken } = require('./oauth.js');
 const { handleApiRequest, tryInterceptCommand } = require('./api.js');
 const { getProxyAgent } = require('./proxy_agent.js');
 const { getSubagentPolicy, isSubagent, trackInFlight, allocateAccountForSubagent } = require('./subagent_allocator.js');
+const { isEligibilityRpc, normalizeEligibilityResponse } = require('./eligibility_middleware.js');
 
 const DEFAULT_PORT = 41999;
 const UPSTREAM_HOST = 'daily-cloudcode-pa.googleapis.com';
@@ -118,8 +119,38 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
                 }
             };
 
+            const isEligRpc = isEligibilityRpc(req.url);
+
             const upReq = https.request(upOpts, (upRes) => {
                 logTraffic(`${isAccountRpc ? (isGen ? (isSub ? 'SubagentGen' : 'ChatGen') : 'AccountRpc') : 'ControlPlane'}: [${cascadeId || 'general'}] <- Upstream Response: ${upRes.statusCode}`);
+                
+                if (isEligRpc) {
+                    const chunks = [];
+                    upRes.on('data', c => chunks.push(c));
+                    upRes.on('end', () => {
+                        finishInFlight();
+                        const rawBody = Buffer.concat(chunks).toString('utf8');
+                        const norm = normalizeEligibilityResponse(req.url, upRes.statusCode, rawBody);
+                        if (norm.modified) {
+                            logTraffic(`[ELIGIBILITY] Normalized location/auth handshake for ${req.url} (${upRes.statusCode} -> ${norm.statusCode})`);
+                            if (boundEmail && boundEmail !== 'Primary (Native)') {
+                                const { markAccountBypassed } = require('./accounts.js');
+                                markAccountBypassed(boundEmail, true);
+                            }
+                        }
+                        const resHeaders = { ...upRes.headers };
+                        const outBuf = Buffer.from(norm.bodyStr, 'utf8');
+                        resHeaders['content-length'] = outBuf.length;
+                        delete resHeaders['transfer-encoding'];
+                        delete resHeaders['connection'];
+                        delete resHeaders['keep-alive'];
+                        res.writeHead(norm.statusCode, resHeaders);
+                        res.end(outBuf);
+                    });
+                    upRes.on('close', finishInFlight);
+                    return;
+                }
+
                 const resHeaders = { ...upRes.headers };
                 if (resHeaders['content-length']) {
                     delete resHeaders['transfer-encoding'];

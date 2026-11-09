@@ -76,7 +76,11 @@ function loadAllAccounts() {
             if (f.endsWith('.json') && f !== 'bindings.json' && f !== 'oauth_credentials.json') {
                 try {
                     const d = JSON.parse(fs.readFileSync(path.join(ACCOUNTS_DIR, f), 'utf8'));
-                    if (d && d.email) { d.is_primary = false; accounts[d.email.toLowerCase()] = d; }
+                    if (d && d.email) {
+                        d.is_primary = false;
+                        d.is_bypassed = !!d.is_bypassed;
+                        accounts[d.email.toLowerCase()] = d;
+                    }
                 } catch (_) {}
             }
         }
@@ -199,8 +203,33 @@ function setPrimaryAccount(email) {
     return true;
 }
 
+function markAccountBypassed(email, isBypassed = true) {
+    if (!email) return false;
+    ensureAccountsDir();
+    try {
+        const fp = path.join(ACCOUNTS_DIR, `${email}.json`);
+        if (fs.existsSync(fp)) {
+            const cur = JSON.parse(fs.readFileSync(fp, 'utf8'));
+            cur.is_bypassed = !!isBypassed;
+            fs.writeFileSync(fp, JSON.stringify(cur, null, 2), 'utf8');
+            return true;
+        }
+        for (const f of fs.readdirSync(ACCOUNTS_DIR)) {
+            if (f.toLowerCase() === `${email.toLowerCase()}.json`) {
+                const p = path.join(ACCOUNTS_DIR, f);
+                const cur = JSON.parse(fs.readFileSync(p, 'utf8'));
+                cur.is_bypassed = !!isBypassed;
+                fs.writeFileSync(p, JSON.stringify(cur, null, 2), 'utf8');
+                return true;
+            }
+        }
+    } catch (_) {}
+    return false;
+}
+
 module.exports = {
     findPrimaryTokenFiles,
     loadAllAccounts,
     setPrimaryAccount,
+    markAccountBypassed,
 };

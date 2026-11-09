@@ -48,6 +48,17 @@ try {
     const savedAcc = JSON.parse(fs.readFileSync(path.join(tmpDir, 'active@example.com.json'), 'utf8'));
     assert.strictEqual(savedAcc.is_primary, true);
 
+    // Test 4: markAccountBypassed and loadAllAccountsWithQuotasSync
+    const mar = require('../bin/lib/patch/multi_account_router.js');
+    mar.markAccountBypassed('active@example.com', true);
+    const updatedAcc = JSON.parse(fs.readFileSync(path.join(tmpDir, 'active@example.com.json'), 'utf8'));
+    assert.strictEqual(updatedAcc.is_bypassed, true);
+
+    const accounts = mar.loadAllAccountsWithQuotasSync();
+    const activeInList = accounts.find(a => a.email === 'active@example.com');
+    assert.ok(activeInList, 'active@example.com should be in list');
+    assert.strictEqual(activeInList.is_bypassed, true);
+
     console.log('✓ All router quota routing tests passed successfully');
     process.exit(0);
 } finally {

@@ -53,6 +53,7 @@ class AccountRecord:
     quotas: List[QuotaBucket] = field(default_factory=list)
     available_models: List[str] = field(default_factory=list)
     is_primary: bool = False
+    is_bypassed: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -66,6 +67,7 @@ class AccountRecord:
             "tier": self.tier,
             "tier_type": self.tier_type,
             "is_primary": self.is_primary,
+            "is_bypassed": self.is_bypassed,
             "available_models": self.available_models,
             "quotas": [
                 {

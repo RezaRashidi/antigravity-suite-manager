@@ -247,6 +247,9 @@ async function fetchDirectAccountQuotas(account) {
                     data.available_models = minfo.models;
                     data.model_count = minfo.modelCount;
                 } catch (_) {}
+                if (account.is_bypassed) {
+                    data.is_bypassed = true;
+                }
                 if (data.status === 'ok' || !_dirCache[em]?.data?.buckets?.length) {
                     _dirCache[em] = { ts: Date.now(), data };
                 }

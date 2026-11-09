@@ -28,7 +28,7 @@ function copySubsystemFiles(distDir) {
             if (f === 'multi_account_router.js') {
                 fs.copyFileSync(src, path.join(distDir, 'multi_account_router.cjs'));
                 if (isEsm) {
-                    const esmFacade = `import { createRequire } from 'module';\nconst require = createRequire(import.meta.url);\nconst router = require('./multi_account_router.cjs');\nexport default router;\nexport const {\n    startMultiAccountRouter,\n    loadAllAccounts,\n    loadAllAccountsWithQuotas,\n    loadAllAccountsWithQuotasSync,\n    refreshQuotasAsync,\n    removeAccount,\n    getBindings,\n    setBinding,\n    setActiveAccount,\n    setPrimaryAccount,\n    setLastCascadeId,\n    getActiveAccountEmail\n} = router;\n`;
+                    const esmFacade = `import { createRequire } from 'module';\nconst require = createRequire(import.meta.url);\nconst router = require('./multi_account_router.cjs');\nexport default router;\nexport const {\n    startMultiAccountRouter,\n    loadAllAccounts,\n    loadAllAccountsWithQuotas,\n    loadAllAccountsWithQuotasSync,\n    refreshQuotasAsync,\n    removeAccount,\n    markAccountBypassed,\n    isEligibilityRpc,\n    normalizeEligibilityResponse,\n    getBindings,\n    setBinding,\n    setActiveAccount,\n    setPrimaryAccount,\n    setLastCascadeId,\n    getActiveAccountEmail\n} = router;\n`;
                     fs.writeFileSync(path.join(distDir, 'multi_account_router.js'), esmFacade, 'utf8');
                 } else {
                     fs.copyFileSync(src, path.join(distDir, f));

@@ -20,6 +20,7 @@ async function refreshQuotasAsync() {
                 acc.quotas = prev.quotas || [];
                 acc.license_status = prev.license_status;
                 acc.tier = prev.tier;
+                if (prev.is_bypassed !== undefined) acc.is_bypassed = prev.is_bypassed;
             }
         }
         _quotaCache.accounts = accountsList;
@@ -45,6 +46,9 @@ async function refreshQuotasAsync() {
                         acc.plan = 'Google AI Free Pro';
                         acc.tier = 'Free Pro';
                     }
+                    if (direct.is_bypassed !== undefined) {
+                        acc.is_bypassed = direct.is_bypassed;
+                    }
                     try {
                         const fp = require('path').join(require('./router/bindings.js').ACCOUNTS_DIR, `${acc.email}.json`);
                         if (require('fs').existsSync(fp)) {
@@ -53,6 +57,7 @@ async function refreshQuotasAsync() {
                             cur.tier = acc.tier;
                             cur.plan = acc.plan;
                             cur.available_models = acc.available_models;
+                            if (acc.is_bypassed !== undefined) cur.is_bypassed = acc.is_bypassed;
                             require('fs').writeFileSync(fp, JSON.stringify(cur, null, 2), 'utf8');
                         }
                     } catch (_) {}
@@ -78,6 +83,7 @@ async function refreshQuotasAsync() {
                 const prev = _quotaCache.accounts?.find(a => a.email?.toLowerCase() === acc.email?.toLowerCase());
                 if (prev?.quotas?.length) {
                     acc.quotas = prev.quotas; acc.license_status = prev.license_status; acc.tier = prev.tier;
+                    if (prev.is_bypassed !== undefined) acc.is_bypassed = prev.is_bypassed;
                 } else {
                     acc.license_status = direct?.status || (direct === null ? 'loading' : 'unknown');
                     acc.license_message = direct?.message || '';
@@ -108,6 +114,11 @@ function loadAllAccountsWithQuotasSync() {
             if (em && !cachedEmails.has(em)) {
                 _quotaCache.accounts.push(acc);
                 cachedEmails.add(em);
+            } else {
+                const cachedAcc = _quotaCache.accounts.find(a => (a.email || '').toLowerCase() === em);
+                if (cachedAcc && acc.is_bypassed !== undefined) {
+                    cachedAcc.is_bypassed = acc.is_bypassed;
+                }
             }
         }
         const rawEmails = new Set(rawList.map(a => (a.email || '').toLowerCase()));
@@ -169,6 +180,9 @@ module.exports = {
     loadAllAccountsWithQuotasSync,
     refreshQuotasAsync,
     removeAccount,
+    markAccountBypassed: require('./router/accounts.js').markAccountBypassed,
+    isEligibilityRpc: require('./router/eligibility_middleware.js').isEligibilityRpc,
+    normalizeEligibilityResponse: require('./router/eligibility_middleware.js').normalizeEligibilityResponse,
     getBindings,
     setBinding,
     setActiveAccount,

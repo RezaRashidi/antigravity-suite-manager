@@ -73,6 +73,7 @@
         else badgeText = 'PRO';
 
         const primBadge = acc.is_primary ? '<div style="font-size:11px;color:#eab308;font-weight:600;margin-top:2px;">★ Primary Account (Native Session)</div>' : '<div style="font-size:11px;opacity:0.6;margin-top:2px;">Secondary Account</div>';
+        const bypassBadge = acc.is_bypassed ? '<div class="agy-bypass-badge" style="display:inline-block;font-size:10px;color:#10b981;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);padding:1px 6px;border-radius:3px;font-weight:600;margin-top:3px;">Region Bypass</div>' : '';
         const modelCount = (acc.available_models && acc.available_models.length) || acc.model_count || 0;
         const modelsSummary = modelCount ? `<div style="font-size:11px;color:var(--agy-dropdown-text);background:var(--agy-dropdown-hover);border:1px solid var(--agy-dropdown-border);padding:6px 10px;border-radius:6px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;"><strong style="color:var(--agy-dropdown-text);font-weight:600;">Models:</strong><span style="font-weight:600;color:var(--agy-dropdown-text);">${modelCount}</span></div>` : '';
 
@@ -84,6 +85,7 @@
                     <div class="agy-usage-title">Usage limits</div>
                     <div class="agy-usage-email-sub">${email} • <span style="color:var(--agy-accent,#38bdf8);font-weight:600;">${planName}</span></div>
                     ${primBadge}
+                    ${bypassBadge}
                 </div>
                 <span class="agy-tier-badge" style="${badgeText === 'PAID PRO' ? 'background:rgba(168,85,247,0.2);color:#c084fc;border:1px solid rgba(168,85,247,0.4);' : (badgeText === 'FREE PRO' ? 'background:rgba(59,130,246,0.2);color:#60a5fa;border:1px solid rgba(59,130,246,0.4);' : '')}">${badgeText}</span>
             </div>

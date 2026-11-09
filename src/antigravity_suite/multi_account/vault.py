@@ -45,6 +45,7 @@ def load_account_from_file(path: Path) -> Optional[AccountRecord]:
             auth_method=d.get("auth_method", "consumer"),
             plan=d.get("plan", "Unknown"),
             tier=d.get("tier", "UNKNOWN_TIER"),
+            is_bypassed=bool(d.get("is_bypassed", False)),
         )
     except Exception:
         return None
@@ -63,6 +64,7 @@ def save_account_to_vault(rec: AccountRecord) -> Path:
         "tier": rec.tier,
         "tier_type": getattr(rec, "tier_type", ""),
         "is_primary": rec.is_primary,
+        "is_bypassed": getattr(rec, "is_bypassed", False),
     }
     tmp = target.with_suffix(".tmp")
     with open(tmp, "w", encoding="utf-8") as f:
