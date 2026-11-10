@@ -48,11 +48,18 @@ install_binary() {
     current_installed=$(get_installed_version "$name" "$target_dir")
 
     if [ "$FORCE_INSTALL" != true ] && [ -n "$current_installed" ] && [ "$current_installed" != "None" ]; then
-        highest_ver=$(printf '%s\n%s\n' "$current_installed" "$ver" | sort -V 2>/dev/null | tail -n 1)
-        if [ "$highest_ver" = "$current_installed" ]; then
-            log_success "${name} is already at or newer than target version (installed: v${current_installed}, target: v${ver}). Skipping binary extraction."
-            log_info "(Use --force to force re-download and re-installation)"
-            return 0
+        if [ "$ALLOW_DOWNGRADE" = true ]; then
+            if [ "$current_installed" = "$ver" ]; then
+                log_success "${name} is already at requested version (v${ver}). Skipping binary extraction."
+                return 0
+            fi
+        else
+            highest_ver=$(printf '%s\n%s\n' "$current_installed" "$ver" | sort -V 2>/dev/null | tail -n 1)
+            if [ "$highest_ver" = "$current_installed" ]; then
+                log_success "${name} is already at or newer than target version (installed: v${current_installed}, target: v${ver}). Skipping binary extraction."
+                log_info "(Use --force to force re-download and re-installation)"
+                return 0
+            fi
         fi
     fi
 

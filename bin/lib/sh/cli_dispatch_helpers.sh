@@ -23,6 +23,16 @@ dispatch_update() {
     esac
 }
 
+dispatch_downgrade() {
+    auto_detect_installations
+    local ver="${TARGET_DOWNGRADE_VER:-}"
+    if [ -z "$ver" ] && [ $# -gt 0 ]; then
+        ver="$1"
+        shift
+    fi
+    downgrade_interactive_or_target "${SUB_COMMAND:-}" "$ver" "$@"
+}
+
 dispatch_clean_data() {
     if [ -z "$SUB_COMMAND" ] && [ ${#CMD_ARGS[@]} -eq 0 ]; then
         clean_data_interactive

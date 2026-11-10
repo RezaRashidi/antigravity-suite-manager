@@ -54,6 +54,37 @@ parse_cli_args() {
             update-all) COMMAND="update"; SUB_COMMAND="all"; shift ;;
             update-app) COMMAND="update"; SUB_COMMAND="app"; shift ;;
             update-ide) COMMAND="update"; SUB_COMMAND="ide"; shift ;;
+            downgrade)
+                COMMAND="downgrade"; shift
+                if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then
+                    SUB_COMMAND="$1"; shift
+                    if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then
+                        TARGET_DOWNGRADE_VER="$1"; shift
+                    fi
+                fi
+                CMD_ARGS=("$@")
+                ;;
+            downgrade-all)
+                COMMAND="downgrade"; SUB_COMMAND="all"; shift
+                if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then
+                    TARGET_DOWNGRADE_VER="$1"; shift
+                fi
+                CMD_ARGS=("$@")
+                ;;
+            downgrade-app)
+                COMMAND="downgrade"; SUB_COMMAND="app"; shift
+                if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then
+                    TARGET_DOWNGRADE_VER="$1"; shift
+                fi
+                CMD_ARGS=("$@")
+                ;;
+            downgrade-ide)
+                COMMAND="downgrade"; SUB_COMMAND="ide"; shift
+                if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then
+                    TARGET_DOWNGRADE_VER="$1"; shift
+                fi
+                CMD_ARGS=("$@")
+                ;;
             update-repo|self-update|update-self|24) COMMAND="update-repo"; shift ;;
             benchmark|bench|speed-test|26) COMMAND="benchmark"; shift; CMD_ARGS=("$@"); break ;;
             multi-account|multiaccount|accounts|27) COMMAND="multi-account"; shift; CMD_ARGS=("$@"); break ;;

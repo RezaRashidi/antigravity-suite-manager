@@ -15,6 +15,7 @@ Options:
   --force, -f                 Force re-download and re-installation even if already at latest version
   --no-cache                  Bypass /tmp archive cache and force fresh download
   --cache-dir <dir>           Override cache directory (default: /tmp/antigravity-cache)
+  --to <version>              Target version for downgrade or specific install
   --app-url <url>             Override Antigravity App download URL (skips auto-discovery)
   --ide-url <url>             Override Antigravity IDE download URL (skips auto-discovery)
   --app-dir <path>            Override Antigravity App install directory (default: /opt/antigravity2)
@@ -42,6 +43,9 @@ Examples:
   $(basename "$0") -s 2             # Start wizard from step 2
   $(basename "$0") -o 5             # Run only step 5 (icons)
   $(basename "$0") update           # Smart update all components
+  $(basename "$0") downgrade app 2.30.0 # Downgrade Antigravity App to v2.30.0
+  $(basename "$0") downgrade ide 2.5.5  # Downgrade Antigravity IDE to v2.5.5
+  $(basename "$0") downgrade            # Interactive version downgrade picker
   $(basename "$0") multi-account    # Multi-account & quota manager
   $(basename "$0") keyring status   # Check keyring status
 EOF

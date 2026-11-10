@@ -26,9 +26,9 @@ def configure_single_installation(item: Dict[str, Any], curr_app: str, curr_ide:
         print(f"  • Path: {item['path']} | Executable: {item['executable'] or 'None'}")
         print("  [1] Change / Relocate Installation Directory Path\n  [2] Set as Suite Target (Primary App / IDE)")
         print("  [3] Re-generate Desktop Launcher & Shortcut\n  [4] Toggle Credential Storage Mode")
-        print("  [5] Download & Re-install Latest Binaries\n  [0] Done (Return to list)")
+        print("  [5] Download & Re-install Latest Binaries\n  [6] Downgrade to Previous Version\n  [0] Done (Return to list)")
         try:
-            sub_c = input("Select option [0-5, Default: 0]: ").strip()
+            sub_c = input("Select option [0-6, Default: 0]: ").strip()
         except (KeyboardInterrupt, EOFError):
             break
 
@@ -72,4 +72,9 @@ def configure_single_installation(item: Dict[str, Any], curr_app: str, curr_ide:
             manage_sh = get_bin_script("manage-antigravity.sh")
             flag = "--ide-dir" if c_type == "ide" else "--app-dir"
             subprocess.run(["bash", manage_sh, "install", c_type, flag, item["path"]], check=False)
+        elif sub_c == "6":
+            c_type = "ide" if "IDE" in item["type"] else "app"
+            manage_sh = get_bin_script("manage-antigravity.sh")
+            flag = "--ide-dir" if c_type == "ide" else "--app-dir"
+            subprocess.run(["bash", manage_sh, "downgrade", c_type, flag, item["path"]], check=False)
     return curr_app, curr_ide

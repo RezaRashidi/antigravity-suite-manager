@@ -80,6 +80,7 @@ dispatch_command() {
         unpatch|restore|revert-patch|unpatch-all) auto_detect_installations; unpatch_antigravity ;;
         traffic|trace|monitor) dispatch_traffic ;;
         update) dispatch_update ;;
+        downgrade) dispatch_downgrade "${CMD_ARGS[@]}" ;;
         update-repo|self-update|update-self) update_suite_repo ;;
         restart-services|restart-service|restart-daemon|restart-daemons) restart_suite_services ;;
         clean-cache) clean_cache ;;

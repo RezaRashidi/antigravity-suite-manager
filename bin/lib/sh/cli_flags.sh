@@ -35,6 +35,7 @@ parse_config_flag() {
         --classic-menu) COMMAND="classic-menu"; return 1 ;;
         --app-url) APP_URL="$2"; return 2 ;;
         --ide-url) IDE_URL="$2"; return 2 ;;
+        --to|--target-version) TARGET_DOWNGRADE_VER="$2"; return 2 ;;
         --app-dir) APP_INSTALL_DIR="$2"; CLI_APP_DIR_SPECIFIED=true; return 2 ;;
         --ide-dir) IDE_INSTALL_DIR="$2"; CLI_IDE_DIR_SPECIFIED=true; return 2 ;;
         --cache-dir) CACHE_DIR="$2"; return 2 ;;

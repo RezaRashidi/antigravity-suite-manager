@@ -73,8 +73,9 @@ show_classic_menu() {
     echo "42) Apply All Patches to All Targets (App & IDE)"
     echo "43) Apply Subagent Dynamic Multi-Account & Swarm Patch"
     echo "44) Revert Subagent Dynamic Multi-Account & Swarm Patch"
+    echo "45) Downgrade Antigravity App or IDE to Previous Version"
     echo "0) Exit"
     echo -e "${CYAN}-----------------------------------------------------${NC}"
-    read -rp "Select an option [0-44]: " choice
+    read -rp "Select an option [0-45]: " choice
     execute_menu_choice "$choice"
 }

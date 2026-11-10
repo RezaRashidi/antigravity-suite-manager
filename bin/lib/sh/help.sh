@@ -54,6 +54,7 @@ Commands:
   clean-data    Clean or purge user data and caches [app|ide|history|all]
   uninstall     Uninstall Antigravity binaries and shortcuts [all|app|ide] [--with-data|--keep-data]
   update        Smart update components [all|app|ide|rtl|checksums|repo|services] (preserves user data & active patches)
+  downgrade     Downgrade Antigravity components [all|app|ide] [version] (preserves user data & active patches)
   update-repo   Update Antigravity Suite Manager repository, recompile, and redeploy
   restart-services Restart systemd history sync and X11 icon injector daemons
   benchmark     Benchmark AI response speed, IPv6/proxy latency, and context bloat (alias: bench)
