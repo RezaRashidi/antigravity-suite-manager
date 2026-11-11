@@ -189,4 +189,6 @@ module.exports = {
     setPrimaryAccount,
     setLastCascadeId,
     getActiveAccountEmail: () => getActiveAccountEmail(loadAllAccounts()),
+    getAuthenticUserAgent: require('./router/ua.js').getAuthenticUserAgent,
+    resetProxyAgent: require('./router/proxy_agent.js').resetProxyAgent,
 };

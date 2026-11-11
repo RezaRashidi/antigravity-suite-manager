@@ -10,6 +10,8 @@ import subprocess
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
+from antigravity_suite.multi_account.ua import get_authentic_user_agent
+
 
 def find_ls_ports_and_csrf() -> List[Tuple[int, int, str]]:
     try:
@@ -61,7 +63,7 @@ def call_cloudcode_rpc(token: str, rpc_method: str) -> Optional[Dict[str, Any]]:
         headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {token}",
-            "User-Agent": "Antigravity/1.0",
+            "User-Agent": get_authentic_user_agent(),
         },
     )
     try:

@@ -8,6 +8,8 @@ import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional
 
+from antigravity_suite.multi_account.ua import get_authentic_user_agent
+
 
 def get_discovery_urls(base_url: str) -> List[str]:
     """Generates candidate URLs for model discovery."""
@@ -28,7 +30,7 @@ def fetch_models(
 ) -> Any:
     """Fetches model catalog from candidate endpoints using Bearer auth."""
     urls = get_discovery_urls(base_url)
-    req_headers = {"Accept": "application/json", "User-Agent": "Antigravity-Suite/1.0"}
+    req_headers = {"Accept": "application/json", "User-Agent": get_authentic_user_agent()}
     if api_key:
         req_headers["Authorization"] = f"Bearer {api_key}"
     if headers:

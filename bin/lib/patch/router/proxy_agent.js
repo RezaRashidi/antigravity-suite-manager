@@ -10,6 +10,16 @@ const os = require('os');
 let _cachedAgent = null;
 let _lastProxyUrl = null;
 
+function resetProxyAgent() {
+    if (_cachedAgent) {
+        try {
+            _cachedAgent.destroy();
+        } catch (_) {}
+        _cachedAgent = null;
+        _lastProxyUrl = null;
+    }
+}
+
 function getProxyUrl() {
     const envProxy = process.env.https_proxy || process.env.HTTPS_PROXY ||
                      process.env.all_proxy || process.env.ALL_PROXY ||
@@ -58,6 +68,10 @@ function getProxyAgent() {
 
         _cachedAgent = new https.Agent({
             keepAlive: true,
+            keepAliveMsecs: 10000,
+            maxSockets: 64,
+            maxFreeSockets: 16,
+            timeout: 60000,
             createConnection: (options, callback) => {
                 const targetHost = options.host || options.hostname;
                 const targetPort = options.port || 443;
@@ -84,6 +98,9 @@ function getProxyAgent() {
                         servername: targetHost,
                         rejectUnauthorized: options.rejectUnauthorized !== false,
                     }, () => callback(null, tlsSocket));
+                    tlsSocket.setTimeout(90000, () => {
+                        tlsSocket.destroy(new Error(`Proxy TLS socket idle timeout to ${targetHost}:${targetPort}`));
+                    });
                     tlsSocket.on('error', err => callback(err));
                 });
 
@@ -101,4 +118,4 @@ function getProxyAgent() {
     }
 }
 
-module.exports = { getProxyUrl, getProxyAgent };
+module.exports = { getProxyUrl, getProxyAgent, resetProxyAgent };

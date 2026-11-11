@@ -7,6 +7,7 @@ import urllib.request
 from typing import List, Optional
 from antigravity_suite.multi_account.models import AccountRecord, QuotaBucket
 from antigravity_suite.multi_account.tokens import is_token_expired, refresh_access_token
+from antigravity_suite.multi_account.ua import get_authentic_user_agent
 
 
 def parse_quota_buckets(groups: list) -> List[QuotaBucket]:
@@ -43,7 +44,7 @@ def fetch_account_quotas(account: AccountRecord) -> List[QuotaBucket]:
         headers={
             "Authorization": f"Bearer {account.token.access_token}",
             "Content-Type": "application/json",
-            "User-Agent": "Antigravity/2.23.1",
+            "User-Agent": get_authentic_user_agent(),
         },
     )
     try:
@@ -74,17 +75,17 @@ def fetch_account_tier(account: AccountRecord) -> str:
             headers={
                 "Authorization": f"Bearer {account.token.access_token}",
                 "Content-Type": "application/json",
-                "User-Agent": "Antigravity/2.23.1",
+                "User-Agent": get_authentic_user_agent(),
             },
         )
         with urllib.request.urlopen(req, timeout=5.0) as resp:
             data = json.loads(resp.read().decode("utf-8", "ignore"))
             models = data.get("models", {})
-            model_names = [m.get("displayName") or k for k, m in models.items() if m.get("displayName")]
+            model_names = [m.get("displayName") or k for k, m in models.items() if isinstance(m, dict) and (m.get("displayName") or k)]
             account.available_models = model_names
 
-            has_paid_exclusive = any("5-5" in k or m.get("tagTitle") == "New" for k, m in models.items())
-            has_free_notice = any("paid pro" in str(m.get("tagDescription", "")).lower() for m in models.values())
+            has_paid_exclusive = any("5-5" in k or m.get("tagTitle") == "New" for k, m in models.items() if isinstance(m, dict))
+            has_free_notice = any("paid pro" in str(m.get("tagDescription", "")).lower() for m in models.values() if isinstance(m, dict))
 
             if has_paid_exclusive:
                 account.tier_type = "Paid Pro"
@@ -108,7 +109,7 @@ def fetch_account_tier(account: AccountRecord) -> str:
             headers={
                 "Authorization": f"Bearer {account.token.access_token}",
                 "Content-Type": "application/json",
-                "User-Agent": "Antigravity/2.23.1",
+                "User-Agent": get_authentic_user_agent(),
             },
         )
         with urllib.request.urlopen(req, timeout=5.0) as resp:

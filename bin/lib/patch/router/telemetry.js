@@ -2,6 +2,7 @@
 const http = require('http'), https = require('https'), fs = require('fs');
 const { refreshGoogleToken } = require('./oauth.js');
 const { getProxyAgent } = require('./proxy_agent.js');
+const { getAuthenticUserAgent } = require('./ua.js');
 const { logTraffic } = require('./bindings.js');
 let _quotaCache = { timestamp: 0, accounts: [] }, _cachedLs = null, _dirCache = {};
 
@@ -118,7 +119,7 @@ async function fetchAccountModels(token) {
             headers: {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json',
-                'User-Agent': 'Antigravity/2.23.1',
+                'User-Agent': getAuthenticUserAgent(),
                 'Content-Length': Buffer.byteLength(body)
             },
             timeout: 5000
@@ -157,7 +158,7 @@ function warmUpCodeAssist(token) {
             headers: {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json',
-                'User-Agent': 'Antigravity/2.23.1',
+                'User-Agent': getAuthenticUserAgent(),
                 'Content-Length': 2
             },
             timeout: 5000
@@ -192,7 +193,7 @@ async function fetchDirectAccountQuotas(account) {
             headers: {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json',
-                'User-Agent': 'Antigravity/2.23.1',
+                'User-Agent': getAuthenticUserAgent(),
                 'Content-Length': 2
             },
             timeout: 7000

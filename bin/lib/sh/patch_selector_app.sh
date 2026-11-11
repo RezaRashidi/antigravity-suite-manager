@@ -45,7 +45,7 @@ patch_selector_app() {
         return 1
     fi
 
-    cp "$tmp/app.asar.patched" "$asar"
+    cp --remove-destination "$tmp/app.asar.patched" "$asar" 2>/dev/null || mv -f "$tmp/app.asar.patched" "$asar"
     rm -rf "$tmp"
     sync_selector_skills
     log_success "Account selector applied to Antigravity App (${APP_INSTALL_DIR})."
@@ -87,7 +87,7 @@ unpatch_selector_app() {
         return 1
     fi
 
-    cp "$tmp/app.asar.patched" "$asar"
+    cp --remove-destination "$tmp/app.asar.patched" "$asar" 2>/dev/null || mv -f "$tmp/app.asar.patched" "$asar"
     rm -rf "$tmp"
     log_success "Account selector removed from Antigravity App (${APP_INSTALL_DIR})."
 }

@@ -9,6 +9,8 @@ import urllib.error
 import urllib.request
 from typing import Dict, Optional, Tuple
 
+from antigravity_suite.multi_account.ua import get_authentic_user_agent
+
 
 def test_model_endpoint(
     base_url: str,
@@ -33,7 +35,7 @@ def test_model_endpoint(
     req_headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "User-Agent": "Antigravity-Suite/1.0",
+        "User-Agent": get_authentic_user_agent(),
     }
     if api_key:
         req_headers["Authorization"] = f"Bearer {api_key}"

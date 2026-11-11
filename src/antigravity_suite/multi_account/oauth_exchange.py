@@ -12,6 +12,7 @@ from typing import Optional
 
 from antigravity_suite.multi_account.models import AccountRecord, AccountToken
 from antigravity_suite.multi_account.tokens import get_oauth_credentials, parse_jwt_claims
+from antigravity_suite.multi_account.ua import get_authentic_user_agent
 from antigravity_suite.multi_account.vault import save_account_to_vault
 
 
@@ -53,7 +54,7 @@ def exchange_auth_code(code: str, redirect_uri: str) -> Optional[AccountRecord]:
                     headers={
                         "Authorization": f"Bearer {rec.token.access_token}",
                         "Content-Type": "application/json",
-                        "User-Agent": "Antigravity/2.23.1",
+                        "User-Agent": get_authentic_user_agent(),
                     },
                     method="POST",
                 )

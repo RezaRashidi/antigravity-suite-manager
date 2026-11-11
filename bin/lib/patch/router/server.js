@@ -1,11 +1,13 @@
 // Multi-Account Router: Loopback HTTP Proxy Server
 const http = require('http');
 const https = require('https');
+const zlib = require('zlib');
 const { getBindings, setBinding, getActiveAccountEmail, logTraffic } = require('./bindings.js');
 const { loadAllAccounts } = require('./accounts.js');
 const { refreshGoogleToken } = require('./oauth.js');
 const { handleApiRequest, tryInterceptCommand } = require('./api.js');
-const { getProxyAgent } = require('./proxy_agent.js');
+const { getProxyAgent, resetProxyAgent } = require('./proxy_agent.js');
+const { getAuthenticUserAgent } = require('./ua.js');
 const { getSubagentPolicy, isSubagent, trackInFlight, allocateAccountForSubagent } = require('./subagent_allocator.js');
 const { isEligibilityRpc, normalizeEligibilityResponse } = require('./eligibility_middleware.js');
 
@@ -100,9 +102,19 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
             }
 
             const headers = { ...req.headers, host: UPSTREAM_HOST };
+            if (!headers['user-agent'] || headers['user-agent'].includes('Antigravity/2.')) {
+                headers['user-agent'] = getAuthenticUserAgent();
+            }
             if (isAccountRpc && token) headers.authorization = `Bearer ${token}`;
             if (body.length > 0) headers['content-length'] = Buffer.byteLength(body);
-            delete headers['transfer-encoding']; delete headers['connection'];
+            delete headers['transfer-encoding'];
+            delete headers['connection'];
+
+            const isEligRpc = isEligibilityRpc(req.url);
+            if (isEligRpc) {
+                // Prevent upstream compression on intercepted handshakes to avoid gzip corruption
+                delete headers['accept-encoding'];
+            }
 
             const agent = getProxyAgent();
             const upOpts = {
@@ -112,24 +124,58 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
 
             let inFlightTracked = isGen && boundEmail && boundEmail !== 'Primary (Native)';
             if (inFlightTracked) trackInFlight(boundEmail, 1);
+            let settled = false;
+            let streamTimer = null;
+            let ttfbTimer = null;
+
+            const clearTimers = () => {
+                if (ttfbTimer) { clearTimeout(ttfbTimer); ttfbTimer = null; }
+                if (streamTimer) { clearTimeout(streamTimer); streamTimer = null; }
+            };
+
             const finishInFlight = () => {
+                clearTimers();
                 if (inFlightTracked) {
                     inFlightTracked = false;
                     trackInFlight(boundEmail, -1);
                 }
             };
 
-            const isEligRpc = isEligibilityRpc(req.url);
+            // TTFB timeout: 120s for generation (reasoning models like Argon), 25s for non-generation RPCs
+            const ttfbTimeoutMs = isGen ? 120000 : 25000;
+            ttfbTimer = setTimeout(() => {
+                if (settled) return;
+                logTraffic(`Chat: [${cascadeId || 'general'}] !! Upstream TTFB Timeout (${ttfbTimeoutMs / 1000}s) on ${req.url}`);
+                resetProxyAgent();
+                upReq.destroy(new Error(`Upstream TTFB timeout (${ttfbTimeoutMs / 1000}s)`));
+            }, ttfbTimeoutMs);
 
             const upReq = https.request(upOpts, (upRes) => {
+                // Headers received: clear TTFB timer
+                if (ttfbTimer) { clearTimeout(ttfbTimer); ttfbTimer = null; }
+
                 logTraffic(`${isAccountRpc ? (isGen ? (isSub ? 'SubagentGen' : 'ChatGen') : 'AccountRpc') : 'ControlPlane'}: [${cascadeId || 'general'}] <- Upstream Response: ${upRes.statusCode}`);
                 
                 if (isEligRpc) {
                     const chunks = [];
                     upRes.on('data', c => chunks.push(c));
                     upRes.on('end', () => {
+                        settled = true;
                         finishInFlight();
-                        const rawBody = Buffer.concat(chunks).toString('utf8');
+                        let rawBuf = Buffer.concat(chunks);
+                        const enc = (upRes.headers['content-encoding'] || '').toLowerCase();
+                        if (enc === 'gzip') {
+                            try {
+                                rawBuf = zlib.gunzipSync(rawBuf);
+                            } catch (e) {
+                                logTraffic(`[ELIGIBILITY] Gunzip failed for ${req.url}: ${e.message}`);
+                            }
+                        } else if (enc === 'deflate') {
+                            try {
+                                rawBuf = zlib.inflateSync(rawBuf);
+                            } catch (_) {}
+                        }
+                        const rawBody = rawBuf.toString('utf8');
                         const norm = normalizeEligibilityResponse(req.url, upRes.statusCode, rawBody);
                         if (norm.modified) {
                             logTraffic(`[ELIGIBILITY] Normalized location/auth handshake for ${req.url} (${upRes.statusCode} -> ${norm.statusCode})`);
@@ -141,14 +187,29 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
                         const resHeaders = { ...upRes.headers };
                         const outBuf = Buffer.from(norm.bodyStr, 'utf8');
                         resHeaders['content-length'] = outBuf.length;
+                        delete resHeaders['content-encoding'];
                         delete resHeaders['transfer-encoding'];
                         delete resHeaders['connection'];
                         delete resHeaders['keep-alive'];
                         res.writeHead(norm.statusCode, resHeaders);
                         res.end(outBuf);
                     });
-                    upRes.on('close', finishInFlight);
+                    upRes.on('close', () => { settled = true; finishInFlight(); });
                     return;
+                }
+
+                // Streaming chunk idle monitor for generation
+                if (isGen) {
+                    const resetStreamIdle = () => {
+                        if (streamTimer) clearTimeout(streamTimer);
+                        streamTimer = setTimeout(() => {
+                            logTraffic(`Chat: [${cascadeId || 'general'}] !! Stream Idle Timeout (60s) on ${req.url}`);
+                            resetProxyAgent();
+                            upReq.destroy(new Error('Stream idle timeout (60s)'));
+                        }, 60000);
+                    };
+                    resetStreamIdle();
+                    upRes.on('data', resetStreamIdle);
                 }
 
                 const resHeaders = { ...upRes.headers };
@@ -159,20 +220,31 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
                 delete resHeaders['keep-alive'];
                 res.writeHead(upRes.statusCode, resHeaders);
                 upRes.pipe(res);
-                upRes.on('end', finishInFlight);
-                upRes.on('close', finishInFlight);
+                upRes.on('end', () => { settled = true; finishInFlight(); });
+                upRes.on('close', () => { settled = true; finishInFlight(); });
             });
 
-            req.on('aborted', () => { finishInFlight(); upReq.destroy(); });
-            req.on('error', () => { finishInFlight(); upReq.destroy(); });
-            res.on('error', () => { finishInFlight(); upReq.destroy(); });
-            res.on('close', finishInFlight);
-            res.on('finish', finishInFlight);
+            req.on('aborted', () => { settled = true; finishInFlight(); upReq.destroy(); });
+            req.on('error', () => { settled = true; finishInFlight(); upReq.destroy(); });
+            res.on('error', () => { settled = true; finishInFlight(); upReq.destroy(); });
+            res.on('close', () => { settled = true; finishInFlight(); });
+            res.on('finish', () => { settled = true; finishInFlight(); });
+
             upReq.on('error', (err) => {
+                settled = true;
                 finishInFlight();
                 logTraffic(`Chat: [${cascadeId || 'general'}] !! Upstream Error: ${err.message}`);
-                if (!res.headersSent) { res.writeHead(502, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: err.message })); }
+                const msg = err.message || '';
+                if (msg.includes('hang up') || msg.includes('ECONNRESET') || msg.includes('ETIMEDOUT') || msg.includes('timeout')) {
+                    resetProxyAgent();
+                }
+                if (!res.headersSent) {
+                    const status = msg.includes('timeout') ? 504 : 502;
+                    res.writeHead(status, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: err.message }));
+                }
             });
+
             if (body.length > 0) upReq.write(body);
             upReq.end();
         });
@@ -184,4 +256,11 @@ function startMultiAccountRouter(port = DEFAULT_PORT) {
     return _server;
 }
 
-module.exports = { resolveTokenForAccount, resolveTokenForCascade, setLastCascadeId, startMultiAccountRouter };
+module.exports = {
+    resolveTokenForAccount,
+    resolveTokenForCascade,
+    setLastCascadeId,
+    startMultiAccountRouter,
+    getAuthenticUserAgent,
+    resetProxyAgent
+};
