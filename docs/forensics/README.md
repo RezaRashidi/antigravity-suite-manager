@@ -59,5 +59,10 @@ This document records the end-to-end diagnostic methodology, reverse-engineering
 - [51. Issue 49: Retirement of Continuous History Merger Daemon and Repurposing into One-Shot Legacy Chat Migrator (v2.5.5 -> v2.6.0)](51_merger_repurposed_to_v255_v260_chat_migrator_and_daemon_retirement.md)
 - [52. Issue 50: Resolution of Google HTTP 403 License Error via Official OAuth Client Migration and Subagent Dynamic Swarm Stabilization](52_google_oauth_403_client_deprecation_and_subagent_swarm_resolution.md)
 - [53. Issue 51: Resolution of Account Selector "NO LICENSE" Denial via Consumer OAuth Client Restoration, Scope Alignment, and Onboarding Handshake](53_consumer_oauth_client_restoration_and_license_onboarding_handshake.md)
-- [54. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
+- [54. Issue 52: Smart Update Helper Consolidation (`ensure_app_install_dir` & `ensure_ide_install_dir`)](54_smart_update_ensure_app_install_dir_missing_resolution.md)
+- [55. Issue 53: Resolution of Setup Wizard Trigger on `manage-antigravity.sh center`](55_cli_center_positional_subcommand_routing_resolution.md)
+- [56. Issue 54: Implementation of Local Network Eligibility Normalization Middleware](56_local_network_eligibility_normalization_middleware.md)
+- [57. Issue 55: Account Health Quarantine, HTTP 403/401 Failover & Bounded GZIP Classification](57_account_health_quarantine_403_failover_and_gzip_recovery.md)
+- [58. Issue 56: Antigravity IDE Launch Hang from Pre-Ready `session.defaultSession` Access](58_ide_early_default_session_electron_crash_resolution.md)
+- [59. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
 
