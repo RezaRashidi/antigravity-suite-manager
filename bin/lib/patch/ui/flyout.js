@@ -33,9 +33,13 @@
         `;
     }
 
+    function escHtml(s) {
+        return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
     window.__antigravityBuildFlyout = function(acc) {
         if (!acc) return '<div style="padding:10px;font-size:12px;">No account selected</div>';
-        const tier = acc.tier || 'PRO', email = acc.email || 'Account';
+        const tier = acc.tier || 'PRO', rawEmail = acc.email || 'Account', email = escHtml(rawEmail);
         let body = '';
 
         if (acc.quotas && acc.quotas.length > 0) {
@@ -54,21 +58,28 @@
             if (claudeExhausted) gh += `<div style="font-size:11px;color:#f59e0b;background:rgba(245,158,11,0.12);padding:5px 8px;border-radius:5px;margin-top:6px;border:1px solid rgba(245,158,11,0.25);line-height:1.3;">Claude 5-hour limit reached. Switch prompt bar dropdown to Gemini models.</div>`;
             if (other.length) gh += `<div class="agy-usage-group" style="margin-top:6px;"><div class="agy-group-title">Other Models</div>${other.map(renderBucket).join('')}</div>`;
             body = gh;
+        } else if (acc.license_status === 'verify_required' || acc.tier === 'Verify Required') {
+            body = `<div class="agy-usage-alert alert-error"><div style="font-weight:600;margin-bottom:2px;">Verification Required</div><div>Google requires account verification (HTTP 403). Excluded from automatic routing until re-verified.</div></div>`;
         } else if (acc.license_status === 'no_license') {
             body = `<div class="agy-usage-alert alert-warning"><div style="font-weight:600;margin-bottom:2px;">Subscription Required</div><div>This account does not have an active Gemini license.</div></div>`;
+        } else if (acc.license_status === 'auth_failed') {
+            body = `<div class="agy-usage-alert alert-error"><div style="font-weight:600;margin-bottom:2px;">Authentication Expired</div><div>Token refresh failed. Please log in again.</div></div>`;
         } else if (acc.license_status === 'exhausted') {
             body = `<div class="agy-usage-alert alert-error"><div style="font-weight:600;margin-bottom:2px;">Resource Exhausted</div><div>5-Hour or weekly quota limit reached.</div></div>`;
         } else {
             body = `<div style="font-size:11px;color:var(--agy-dropdown-subtext);padding:8px 0;">Loading usage telemetry...</div>`;
         }
 
-        const planName = acc.plan || (acc.userTier?.name) || (acc.tier === 'PRO' ? 'Google AI Pro' : (acc.tier || 'Google AI Pro'));
+        const rawPlanName = acc.plan || (acc.userTier?.name) || (acc.tier === 'PRO' ? 'Google AI Pro' : (acc.tier || 'Google AI Pro'));
+        const planName = escHtml(rawPlanName);
         let badgeText = 'PRO';
-        if (acc.tier === 'No License' || acc.license_status === 'no_license') badgeText = 'NO LICENSE';
+        if (acc.tier === 'Verify Required' || acc.license_status === 'verify_required') badgeText = 'VERIFY';
+        else if (acc.tier === 'Auth Required' || acc.license_status === 'auth_failed') badgeText = 'AUTH';
+        else if (acc.tier === 'No License' || acc.license_status === 'no_license') badgeText = 'NO LICENSE';
         else if (acc.tier === 'Resource Exhausted' || acc.license_status === 'exhausted') badgeText = 'EXHAUSTED';
         else if (acc.tier_type === 'Paid Pro' || acc.tier === 'Paid Pro') badgeText = 'PAID PRO';
         else if (acc.tier_type === 'Free Pro' || acc.tier === 'Free Pro') badgeText = 'FREE PRO';
-        else if (planName.toLowerCase().includes('pro') || acc.tier === 'PRO' || acc.tier === 'TEAMS_TIER_PRO') badgeText = 'PRO';
+        else if (rawPlanName.toLowerCase().includes('pro') || acc.tier === 'PRO' || acc.tier === 'TEAMS_TIER_PRO') badgeText = 'PRO';
         else if (acc.tier && (acc.tier.toLowerCase().includes('free') || acc.tier === 'UNKNOWN_TIER')) badgeText = 'FREE';
         else badgeText = 'PRO';
 

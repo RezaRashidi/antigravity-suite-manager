@@ -1,6 +1,6 @@
 // Multi-Account Router: Web API and In-Chat Remote Control Interceptor
 const { getBindings, setBinding, setActiveAccount, getActiveAccountEmail, logTraffic } = require('./bindings.js');
-const { loadAllAccounts } = require('./accounts.js');
+const { loadAllAccounts, isAccountHealthy, pickHealthyFallbackAccount } = require('./accounts.js');
 
 function handleApiRequest(req, res, bodyStr) {
     if (!req.url.startsWith('/api/multi-account') && req.url !== '/ui_bundle.js') return false;
@@ -20,17 +20,33 @@ function handleApiRequest(req, res, bodyStr) {
         return true;
     }
     if (req.url.startsWith('/api/multi-account/state')) {
-        const mar = require('../multi_account_router'), raw = Object.values(loadAllAccounts());
+        const mar = require('../multi_account_router'), accountsMap = loadAllAccounts();
         if (req.url.includes('refresh')) mar.refreshQuotasAsync().catch(() => {});
         const accounts = mar.loadAllAccountsWithQuotasSync(), bindings = getBindings();
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ accounts, bindings, active_default: getActiveAccountEmail(raw) }));
+        res.end(JSON.stringify({ accounts, bindings, active_default: getActiveAccountEmail(accountsMap) }));
         return true;
     }
     if (req.url === '/api/multi-account/bind' && req.method === 'POST') {
         try {
             const data = JSON.parse(bodyStr);
             if (data.cascadeId && data.email) {
+                const accounts = loadAllAccounts();
+                const acc = accounts[data.email.toLowerCase()];
+                const fallback = pickHealthyFallbackAccount(accounts);
+                if (acc && !isAccountHealthy(acc, accounts) && fallback && !data.force) {
+                    logTraffic(`[BIND_SKIP] Ignored bind to unhealthy account [${data.email}] (${acc.license_status || 'unhealthy'})`);
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({
+                        ok: false,
+                        skipped: true,
+                        unhealthy: true,
+                        reason: acc.license_status || 'unhealthy',
+                        message: acc.license_message || acc.license_status || 'Account unhealthy',
+                        active_account: getActiveAccountEmail(accounts),
+                    }));
+                    return true;
+                }
                 setBinding(data.cascadeId, data.email, data.model || '');
                 setActiveAccount(data.email);
                 const s = require('./server.js');
@@ -45,16 +61,27 @@ function handleApiRequest(req, res, bodyStr) {
     if (req.url === '/api/multi-account/set-active' && req.method === 'POST') {
         try {
             const data = JSON.parse(bodyStr);
+            let skipped = false, skipReason = null;
             if (data.email) {
-                setActiveAccount(data.email);
+                const accounts = loadAllAccounts();
+                const acc = accounts[data.email.toLowerCase()];
+                if (!acc || isAccountHealthy(acc, accounts) || !pickHealthyFallbackAccount(accounts)) {
+                    setActiveAccount(data.email);
+                } else {
+                    skipped = true;
+                    skipReason = acc.license_status || 'unhealthy';
+                    logTraffic(`[ACTIVE_SKIP] Ignored set-active for unhealthy account [${data.email}]`);
+                }
             }
-            if (data.cascadeId) {
+            if (data.cascadeId && !skipped) {
                 const s = require('./server.js');
                 if (s.setLastCascadeId) s.setLastCascadeId(data.cascadeId, data.email);
             }
-            try { require('./telemetry.js').forceRefreshLanguageServerQuota(); } catch (_) {}
+            if (!skipped) {
+                try { require('./telemetry.js').forceRefreshLanguageServerQuota(); } catch (_) {}
+            }
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ok: true }));
+            res.end(JSON.stringify(skipped ? { ok: false, skipped: true, unhealthy: true, reason: skipReason } : { ok: true }));
         } catch (_) { res.writeHead(400); res.end(JSON.stringify({ error: 'bad json' })); }
         return true;
     }
@@ -102,18 +129,23 @@ function tryInterceptCommand(req, res, bodyStr, cascadeId) {
     const cmd = text.trim();
     if (!cmd.startsWith('/accounts') && !cmd.startsWith('/switch') && !cmd.startsWith('/whoami')) return false;
 
-    const accounts = Object.values(loadAllAccounts()), bindings = getBindings();
-    const curEmail = (cascadeId && bindings[cascadeId]?.email) || getActiveAccountEmail(accounts) || 'Primary (Native)';
+    const accountsMap = loadAllAccounts(), accounts = Object.values(accountsMap), bindings = getBindings();
+    const curEmail = (cascadeId && bindings[cascadeId]?.email) || getActiveAccountEmail(accountsMap) || 'Primary (Native)';
     let reply = '';
 
     if (cmd.startsWith('/switch')) {
         const arg = cmd.replace('/switch', '').trim();
         const target = accounts.find((a, i) => String(i + 1) === arg || (a.email && a.email.toLowerCase().includes(arg.toLowerCase())));
         if (target) {
-            setBinding(cascadeId, target.email);
-            if (!cascadeId || cascadeId === '__default__' || cascadeId === 'default' || cascadeId.startsWith('draft_') || cascadeId.startsWith('chat_')) setActiveAccount(target.email);
-            reply = `✓ **Switched conversation to:** \`${target.email}\`\n\nAll subsequent messages in this session will use this account.`;
-            logTraffic(`[REMOTE_CMD] Switched cascade [${cascadeId}] to [${target.email}]`);
+            if (!isAccountHealthy(target, accountsMap) && pickHealthyFallbackAccount(accountsMap)) {
+                reply = `⚠️ Account \`${target.email}\` is unhealthy (\`${target.license_status || 'unhealthy'}\`) and cannot be selected.`;
+                logTraffic(`[REMOTE_CMD] Blocked /switch to unhealthy account [${target.email}]`);
+            } else {
+                setBinding(cascadeId, target.email);
+                if (!cascadeId || cascadeId === '__default__' || cascadeId === 'default' || cascadeId.startsWith('draft_') || cascadeId.startsWith('chat_')) setActiveAccount(target.email);
+                reply = `✓ **Switched conversation to:** \`${target.email}\`\n\nAll subsequent messages in this session will use this account.`;
+                logTraffic(`[REMOTE_CMD] Switched cascade [${cascadeId}] to [${target.email}]`);
+            }
         } else { reply = `❌ Account not found for: \`${arg}\`\n\nType \`/accounts\` to view available accounts.`; }
     } else {
         reply = `### 👤 Antigravity Accounts (Remote Control)\n\n**Current Chat Bound To:** \`${curEmail}\`\n\n**Available Accounts:**\n` +

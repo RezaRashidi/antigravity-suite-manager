@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { ACCOUNTS_DIR, logTraffic } = require('./bindings.js');
+const { isAccountHealthy } = require('./accounts.js');
 
 const POLICY_FILE = path.join(ACCOUNTS_DIR, 'subagent_policy.json');
 const _subagentCache = new Map();
@@ -87,15 +88,22 @@ function allocateAccountForSubagent(subagentId, parentId, accountsMap = {}, bind
     if (!subagentId) return null;
     if (_subagentLeases.has(subagentId)) {
         const lease = _subagentLeases.get(subagentId);
-        if (accountsMap[lease.email] && Date.now() - lease.leasedAt < 3600000) return lease.email;
+        const leasedAcc = accountsMap[lease.email] || accountsMap[lease.email?.toLowerCase()];
+        if (leasedAcc && isAccountHealthy(leasedAcc, accountsMap) && Date.now() - lease.leasedAt < 3600000) {
+            return lease.email;
+        }
+        _subagentLeases.delete(subagentId);
     }
 
-    const emails = Object.keys(accountsMap);
-    if (!emails.length) return null;
+    const allEmails = Object.keys(accountsMap);
+    if (!allEmails.length) return null;
+
+    const healthyEmails = allEmails.filter(em => isAccountHealthy(accountsMap[em], accountsMap));
+    const emails = healthyEmails.length ? healthyEmails : allEmails;
     if (emails.length === 1) return emails[0];
 
     const parentEmail = (parentId && bindings[parentId]?.email) || null;
-    let candidates = emails.filter(em => em !== parentEmail);
+    let candidates = emails.filter(em => em.toLowerCase() !== (parentEmail || '').toLowerCase());
     if (!candidates.length) candidates = emails;
 
     if (quotas && quotas.length > 0) {

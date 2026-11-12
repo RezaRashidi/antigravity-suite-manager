@@ -3,11 +3,210 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { spawnSync } = require('child_process');
-const { ACCOUNTS_DIR, ensureAccountsDir } = require('./bindings.js');
+const { ACCOUNTS_DIR, ensureAccountsDir, logTraffic } = require('./bindings.js');
+
+const UNHEALTHY_STATUSES = new Set(['verify_required', 'no_license', 'auth_failed']);
+const DEFAULT_UNHEALTHY_COOLDOWN_MS = 30 * 60 * 1000;
+const TRANSIENT_COOLDOWN_MS = 60 * 1000;
+const _unhealthyAccounts = new Map();
+
+function writeJsonAtomic(filePath, dataObj) {
+    ensureAccountsDir();
+    const tmp = `${filePath}.tmp.${process.pid}.${Date.now()}`;
+    fs.writeFileSync(tmp, JSON.stringify(dataObj, null, 2), 'utf8');
+    fs.renameSync(tmp, filePath);
+}
+
+function getRefreshTokenFingerprint(acc) {
+    const rt = acc?.token?.refresh_token || acc?.refresh_token || '';
+    return rt ? String(rt).slice(-12) : '';
+}
+
+function classifyHttpError(statusCode, bodyStr = '') {
+    const body = String(bodyStr || '');
+    if (/verify your account/i.test(body)) {
+        return { reason: 'verify_required', message: 'Verify your account to continue.', persist: true };
+    }
+    if (/valid license|SUBSCRIPTION_REQUIRED|UNSUPPORTED_CLIENT/i.test(body)) {
+        return { reason: 'no_license', message: 'Subscription Required', persist: true };
+    }
+    if (statusCode === 401 || /UNAUTHENTICATED|invalid_grant/i.test(body)) {
+        return { reason: 'auth_failed', message: 'Authentication expired or revoked', persist: true };
+    }
+    if (statusCode === 403) {
+        return { reason: 'forbidden_transient', message: 'Upstream HTTP 403 Forbidden (temporary cooldown)', persist: false };
+    }
+    return { reason: 'unknown', message: `Upstream HTTP ${statusCode}`, persist: false };
+}
+
+function findAccountJsonPath(email) {
+    if (!email) return null;
+    ensureAccountsDir();
+    const direct = path.join(ACCOUNTS_DIR, `${email}.json`);
+    if (fs.existsSync(direct)) return direct;
+    try {
+        const lower = `${email.toLowerCase()}.json`;
+        for (const f of fs.readdirSync(ACCOUNTS_DIR)) {
+            if (f.toLowerCase() === lower) return path.join(ACCOUNTS_DIR, f);
+        }
+    } catch (_) {}
+    return null;
+}
+
+function scrubAccountHealthFields(acc) {
+    if (!acc || typeof acc !== 'object') return acc;
+    acc.license_status = 'ok';
+    delete acc.license_message;
+    delete acc.unhealthy_at;
+    delete acc.unhealthy_until;
+    delete acc.unhealthy_token_fp;
+    if (acc.tier === 'Verify Required' || acc.tier === 'No License' || acc.tier === 'Auth Required') {
+        acc.tier = acc.tier_type || 'PRO';
+    }
+    return acc;
+}
+
+function markAccountUnhealthy(email, reason = 'verify_required', message = '', cooldownMs = DEFAULT_UNHEALTHY_COOLDOWN_MS, accountObj = null, options = {}) {
+    if (!email || email === 'Primary (Native)') return false;
+    const key = email.toLowerCase();
+    const effectiveCooldownMs = (reason === 'forbidden_transient' && cooldownMs === DEFAULT_UNHEALTHY_COOLDOWN_MS)
+        ? TRANSIENT_COOLDOWN_MS
+        : (cooldownMs > 0 ? cooldownMs : DEFAULT_UNHEALTHY_COOLDOWN_MS);
+    const shouldPersist = options.persist !== undefined ? !!options.persist : UNHEALTHY_STATUSES.has(reason);
+    const fp = accountObj ? getRefreshTokenFingerprint(accountObj) : (_unhealthyAccounts.get(key)?.tokenFp || '');
+    const now = Date.now();
+    _unhealthyAccounts.set(key, {
+        reason,
+        message: message || reason,
+        markedAt: now,
+        cooldownMs: effectiveCooldownMs,
+        untilMs: now + effectiveCooldownMs,
+        tokenFp: fp,
+    });
+    if (shouldPersist) {
+        try {
+            const fpJson = findAccountJsonPath(email);
+            if (fpJson) {
+                const cur = JSON.parse(fs.readFileSync(fpJson, 'utf8'));
+                const refreshFp = getRefreshTokenFingerprint(cur);
+                if (refreshFp) _unhealthyAccounts.get(key).tokenFp = refreshFp;
+                cur.license_status = reason;
+                cur.license_message = message || reason;
+                cur.unhealthy_at = new Date(now).toISOString();
+                cur.unhealthy_until = new Date(now + effectiveCooldownMs).toISOString();
+                if (refreshFp) cur.unhealthy_token_fp = refreshFp;
+                if (reason === 'verify_required') cur.tier = 'Verify Required';
+                else if (reason === 'no_license') cur.tier = 'No License';
+                else if (reason === 'auth_failed') cur.tier = 'Auth Required';
+                writeJsonAtomic(fpJson, cur);
+            }
+        } catch (_) {}
+    }
+    try { logTraffic(`[HEALTH] Marked [${email}] unhealthy (${reason}, persist=${shouldPersist}): ${message || reason}`); } catch (_) {}
+    return true;
+}
+
+function clearAccountUnhealthy(email) {
+    if (!email || email === 'Primary (Native)') return false;
+    const key = email.toLowerCase();
+    const hadMem = _unhealthyAccounts.delete(key);
+    try {
+        const fpJson = findAccountJsonPath(email);
+        if (fpJson) {
+            const cur = JSON.parse(fs.readFileSync(fpJson, 'utf8'));
+            if (UNHEALTHY_STATUSES.has(cur.license_status) || cur.license_message || cur.unhealthy_at || cur.unhealthy_until || cur.unhealthy_token_fp) {
+                scrubAccountHealthFields(cur);
+                writeJsonAtomic(fpJson, cur);
+                return true;
+            }
+        }
+    } catch (_) {}
+    return hadMem;
+}
+
+function isAccountHealthy(accOrEmail, accountsMap = null) {
+    if (!accOrEmail) return false;
+    let acc = null;
+    let email = null;
+    if (typeof accOrEmail === 'string') {
+        email = accOrEmail;
+        if (email === 'Primary (Native)') {
+            const prim = accountsMap ? Object.values(accountsMap).find(a => a && a.is_primary) : null;
+            return prim ? isAccountHealthy(prim, accountsMap) : true;
+        }
+        acc = accountsMap ? accountsMap[email.toLowerCase()] : null;
+    } else {
+        acc = accOrEmail;
+        email = acc.email || '';
+    }
+
+    const key = (email || '').toLowerCase();
+    const curFp = acc ? getRefreshTokenFingerprint(acc) : '';
+    if (key) {
+        const mem = _unhealthyAccounts.get(key);
+        if (mem) {
+            if (mem.tokenFp && curFp && mem.tokenFp !== curFp) {
+                _unhealthyAccounts.delete(key);
+                clearAccountUnhealthy(email);
+                scrubAccountHealthFields(acc);
+            } else if ((Date.now() - mem.markedAt) < mem.cooldownMs) {
+                return false;
+            } else {
+                _unhealthyAccounts.delete(key);
+                clearAccountUnhealthy(email);
+                scrubAccountHealthFields(acc);
+            }
+        }
+    }
+
+    if (acc) {
+        if (acc.unhealthy_token_fp && curFp && acc.unhealthy_token_fp !== curFp) {
+            clearAccountUnhealthy(email || acc.email);
+            scrubAccountHealthFields(acc);
+        } else if (acc.unhealthy_until) {
+            const untilMs = Date.parse(acc.unhealthy_until);
+            if (!Number.isNaN(untilMs) && Date.now() >= untilMs) {
+                clearAccountUnhealthy(email || acc.email);
+                scrubAccountHealthFields(acc);
+            }
+        }
+        if (UNHEALTHY_STATUSES.has(acc.license_status)) return false;
+        if (acc.tier === 'Verify Required' || acc.tier === 'No License' || acc.tier === 'Auth Required') return false;
+        if (acc.token !== undefined) {
+            const hasAccess = typeof acc.token === 'string' ? !!acc.token : !!(acc.token && (acc.token.access_token || acc.token.refresh_token));
+            if (!hasAccess && !acc.access_token && !acc.refresh_token) return false;
+        }
+    }
+    return true;
+}
+
+function pickHealthyFallbackAccount(accountsMap = {}, excludeEmails = [], preferredEmail = null) {
+    const excluded = new Set((excludeEmails || []).filter(Boolean).map(e => String(e).toLowerCase()));
+    const entries = Object.values(accountsMap || {}).filter(a => a && a.email && !excluded.has(a.email.toLowerCase()) && isAccountHealthy(a, accountsMap));
+    if (!entries.length) return null;
+
+    if (preferredEmail && preferredEmail !== 'Primary (Native)') {
+        const pref = entries.find(a => a.email.toLowerCase() === preferredEmail.toLowerCase());
+        if (pref) return pref.email;
+    }
+
+    entries.sort((a, b) => {
+        const aOk = a.license_status === 'ok' ? 1 : 0;
+        const bOk = b.license_status === 'ok' ? 1 : 0;
+        if (aOk !== bOk) return bOk - aOk;
+        const aTier = String(a.tier_type || a.tier || '').toLowerCase().includes('paid') ? 1 : 0;
+        const bTier = String(b.tier_type || b.tier || '').toLowerCase().includes('paid') ? 1 : 0;
+        if (aTier !== bTier) return bTier - aTier;
+        return a.email.localeCompare(b.email);
+    });
+    return entries[0].email;
+}
 
 function findPrimaryTokenFiles() {
-    const homes = [os.homedir()];
-    if (process.env.REAL_HOME && process.env.REAL_HOME !== os.homedir()) homes.push(process.env.REAL_HOME);
+    const homes = process.env.ANTIGRAVITY_TEST
+        ? [process.env.REAL_HOME || os.homedir()]
+        : [os.homedir()];
+    if (!process.env.ANTIGRAVITY_TEST && process.env.REAL_HOME && process.env.REAL_HOME !== os.homedir()) homes.push(process.env.REAL_HOME);
     const files = [];
     for (const home of homes) {
         const direct = [
@@ -68,12 +267,16 @@ function readTokenFromKeyring() {
     return null;
 }
 
+function isAccountJsonFile(f) {
+    return f.endsWith('.json') && f !== 'bindings.json' && f !== 'oauth_credentials.json' && f !== 'subagent_policy.json';
+}
+
 function loadAllAccounts() {
     ensureAccountsDir();
     const accounts = {}, primary = path.join(os.homedir(), '.gemini', 'jetski-standalone-oauth-token');
     try {
         for (const f of fs.readdirSync(ACCOUNTS_DIR)) {
-            if (f.endsWith('.json') && f !== 'bindings.json' && f !== 'oauth_credentials.json') {
+            if (isAccountJsonFile(f)) {
                 try {
                     const d = JSON.parse(fs.readFileSync(path.join(ACCOUNTS_DIR, f), 'utf8'));
                     if (d && d.email) {
@@ -103,7 +306,7 @@ function loadAllAccounts() {
                     if (d.token) accounts[k].token = d.token;
                     if (d.auth_method) accounts[k].auth_method = d.auth_method;
                     try {
-                        fs.writeFileSync(path.join(ACCOUNTS_DIR, `${em}.json`), JSON.stringify(accounts[k], null, 2), 'utf8');
+                        writeJsonAtomic(path.join(ACCOUNTS_DIR, `${em}.json`), accounts[k]);
                     } catch (_) {}
                 }
             }
@@ -139,13 +342,13 @@ function setPrimaryAccount(email) {
 
     try {
         for (const f of fs.readdirSync(ACCOUNTS_DIR)) {
-            if (f.endsWith('.json') && f !== 'bindings.json' && f !== 'oauth_credentials.json') {
+            if (isAccountJsonFile(f)) {
                 try {
                     const fp = path.join(ACCOUNTS_DIR, f);
                     const d = JSON.parse(fs.readFileSync(fp, 'utf8'));
                     if (d && d.email) {
                         d.is_primary = (d.email.toLowerCase() === email.toLowerCase());
-                        fs.writeFileSync(fp, JSON.stringify(d, null, 2), 'utf8');
+                        writeJsonAtomic(fp, d);
                     }
                 } catch (_) {}
             }
@@ -207,29 +410,28 @@ function markAccountBypassed(email, isBypassed = true) {
     if (!email) return false;
     ensureAccountsDir();
     try {
-        const fp = path.join(ACCOUNTS_DIR, `${email}.json`);
-        if (fs.existsSync(fp)) {
-            const cur = JSON.parse(fs.readFileSync(fp, 'utf8'));
+        const fpJson = findAccountJsonPath(email);
+        if (fpJson) {
+            const cur = JSON.parse(fs.readFileSync(fpJson, 'utf8'));
             cur.is_bypassed = !!isBypassed;
-            fs.writeFileSync(fp, JSON.stringify(cur, null, 2), 'utf8');
+            writeJsonAtomic(fpJson, cur);
             return true;
-        }
-        for (const f of fs.readdirSync(ACCOUNTS_DIR)) {
-            if (f.toLowerCase() === `${email.toLowerCase()}.json`) {
-                const p = path.join(ACCOUNTS_DIR, f);
-                const cur = JSON.parse(fs.readFileSync(p, 'utf8'));
-                cur.is_bypassed = !!isBypassed;
-                fs.writeFileSync(p, JSON.stringify(cur, null, 2), 'utf8');
-                return true;
-            }
         }
     } catch (_) {}
     return false;
 }
 
 module.exports = {
+    writeJsonAtomic,
     findPrimaryTokenFiles,
     loadAllAccounts,
     setPrimaryAccount,
     markAccountBypassed,
+    UNHEALTHY_STATUSES,
+    classifyHttpError,
+    markAccountUnhealthy,
+    clearAccountUnhealthy,
+    isAccountHealthy,
+    pickHealthyFallbackAccount,
+    _unhealthyAccounts,
 };

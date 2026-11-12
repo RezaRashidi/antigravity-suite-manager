@@ -196,9 +196,21 @@ async function refreshGoogleToken(account) {
                 account.token = d.access_token;
                 if (d.expires_in) account.expires_at = new Date(Date.now() + d.expires_in * 1000).toISOString();
             }
+            if (account.license_status === 'auth_failed' || account.tier === 'Auth Required') {
+                account.license_status = 'ok';
+                delete account.license_message;
+                delete account.unhealthy_at;
+                delete account.unhealthy_until;
+                delete account.unhealthy_token_fp;
+                if (account.tier === 'Auth Required') account.tier = account.tier_type || 'PRO';
+                try { require('./accounts.js')._unhealthyAccounts?.delete(String(account.email || '').toLowerCase()); } catch (_) {}
+            }
             if (account.email) {
                 try {
-                    fs.writeFileSync(path.join(ACCOUNTS_DIR, `${account.email}.json`), JSON.stringify(account, null, 2), 'utf8');
+                    const fp = path.join(ACCOUNTS_DIR, `${account.email}.json`);
+                    const tmp = `${fp}.tmp.${process.pid}.${Date.now()}`;
+                    fs.writeFileSync(tmp, JSON.stringify(account, null, 2), 'utf8');
+                    fs.renameSync(tmp, fp);
                 } catch (_) {}
             }
             if (account.is_primary) {

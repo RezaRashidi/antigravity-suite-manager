@@ -71,4 +71,13 @@ const normalHtml = sandbox.window.__antigravityBuildFlyout({
 });
 assert.ok(!normalHtml.includes('Region Bypass'), 'Flyout should not contain bypass indicator for normal account');
 
+const verifyHtml = sandbox.window.__antigravityBuildFlyout({
+    email: 'verify@gmail.com',
+    tier: 'Verify Required',
+    license_status: 'verify_required',
+    quotas: []
+});
+assert.ok(verifyHtml.includes('VERIFY'), 'Flyout should display VERIFY badge for unverified account');
+assert.ok(verifyHtml.includes('Verification Required'), 'Flyout should display Verification Required warning');
+
 console.log('✓ All eligibility middleware and flyout integration tests passed successfully');

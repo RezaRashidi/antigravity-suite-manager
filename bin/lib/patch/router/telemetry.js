@@ -4,6 +4,7 @@ const { refreshGoogleToken } = require('./oauth.js');
 const { getProxyAgent } = require('./proxy_agent.js');
 const { getAuthenticUserAgent } = require('./ua.js');
 const { logTraffic } = require('./bindings.js');
+const { classifyHttpError, markAccountUnhealthy, clearAccountUnhealthy } = require('./accounts.js');
 let _quotaCache = { timestamp: 0, accounts: [] }, _cachedLs = null, _dirCache = {};
 
 function findLanguageServerInfo() {
@@ -127,6 +128,7 @@ async function fetchAccountModels(token) {
         if (agent) reqOpts.agent = agent;
         const req = https.request(reqOpts, (res) => {
             let data = ''; res.on('data', c => data += c);
+            res.on('error', () => resolve({ tierType: 'PRO', models: [], modelCount: 0 }));
             res.on('end', () => {
                 try {
                     if (res.statusCode === 200) {
@@ -142,6 +144,7 @@ async function fetchAccountModels(token) {
                 resolve({ tierType: 'PRO', models: [], modelCount: 0 });
             });
         });
+        req.on('timeout', () => req.destroy(new Error('timeout')));
         req.on('error', () => resolve({ tierType: 'PRO', models: [], modelCount: 0 }));
         req.write(body); req.end();
     });
@@ -166,8 +169,10 @@ function warmUpCodeAssist(token) {
         if (agent) reqOpts.agent = agent;
         const req = https.request(reqOpts, (res) => {
             let d = ''; res.on('data', c => d += c);
+            res.on('error', () => resolve(false));
             res.on('end', () => resolve(res.statusCode === 200));
         });
+        req.on('timeout', () => req.destroy(new Error('timeout')));
         req.on('error', () => resolve(false));
         req.write('{}'); req.end();
     });
@@ -180,7 +185,8 @@ async function fetchDirectAccountQuotas(account) {
     const token = await refreshGoogleToken(account);
     if (!token) {
         logTraffic(`[QUOTA] [${em}] Auth token resolution failed`);
-        return { status: 'auth_failed', buckets: [] };
+        markAccountUnhealthy(em, 'auth_failed', 'Auth token resolution failed', 10 * 60 * 1000, account);
+        return { status: 'auth_failed', message: 'Auth token resolution failed', buckets: [] };
     }
     const modelInfoPromise = fetchAccountModels(token).catch(() => ({ tierType: 'PRO', models: [], modelCount: 0 }));
     return new Promise((resolve) => {
@@ -201,10 +207,25 @@ async function fetchDirectAccountQuotas(account) {
         if (agent) reqOpts.agent = agent;
         const req = https.request(reqOpts, (res) => {
             let body = ''; res.on('data', c => body += c);
+            res.on('error', (err) => {
+                logTraffic(`[QUOTA] [${em}] Response Error: ${err.message}`);
+                resolve({ status: 'network_error', buckets: [] });
+            });
             res.on('end', async () => {
                 let data = { status: 'unknown', buckets: [] };
+                const mapQuota403Reason = (status, rawText) => {
+                    const classified = classifyHttpError(status, rawText);
+                    if (classified.reason === 'verify_required' || classified.reason === 'no_license' || classified.reason === 'auth_failed') {
+                        return classified;
+                    }
+                    if (/PERMISSION_DENIED|"error"\s*:/i.test(String(rawText || ''))) {
+                        return { reason: 'no_license', message: 'Subscription Required', persist: true };
+                    }
+                    return classified;
+                };
                 try {
                     if (res.statusCode === 200) {
+                        clearAccountUnhealthy(em);
                         data = { status: 'ok', buckets: parseGroupsToBuckets(JSON.parse(body).groups || []) };
                         logTraffic(`[QUOTA] [${em}] HTTP 200 | Buckets: ${data.buckets.length}`);
                     } else if (res.statusCode === 403) {
@@ -214,26 +235,39 @@ async function fetchDirectAccountQuotas(account) {
                                 const retryRes = await new Promise((resRetry) => {
                                     const r = https.request(reqOpts, (rs) => {
                                         let b = ''; rs.on('data', c => b += c);
+                                        rs.on('error', () => resRetry(null));
                                         rs.on('end', () => resRetry({ statusCode: rs.statusCode, body: b }));
                                     });
                                     if (agent) r.agent = agent;
+                                    r.on('timeout', () => r.destroy(new Error('timeout')));
                                     r.on('error', () => resRetry(null));
                                     r.write('{}'); r.end();
                                 });
                                 if (retryRes && retryRes.statusCode === 200) {
+                                    clearAccountUnhealthy(em);
                                     data = { status: 'ok', buckets: parseGroupsToBuckets(JSON.parse(retryRes.body).groups || []) };
                                     logTraffic(`[QUOTA] [${em}] Recovered 403 via loadCodeAssist warmup | Buckets: ${data.buckets.length}`);
                                 } else {
-                                    data = { status: 'no_license', message: 'Subscription Required', buckets: [] };
-                                    logTraffic(`[QUOTA] [${em}] HTTP 403 (No License) after warmup | Body: ${body.slice(0, 150)}`);
+                                    const classified = mapQuota403Reason(retryRes?.statusCode || 403, retryRes?.body || body);
+                                    markAccountUnhealthy(em, classified.reason, classified.message, undefined, account, { persist: classified.persist });
+                                    data = { status: classified.reason, message: classified.message, buckets: [] };
+                                    logTraffic(`[QUOTA] [${em}] HTTP 403 (${classified.reason}) after warmup | Body: ${body.slice(0, 150)}`);
                                 }
                             } catch (_) {
-                                data = { status: 'no_license', message: 'Subscription Required', buckets: [] };
+                                const classified = mapQuota403Reason(403, body);
+                                markAccountUnhealthy(em, classified.reason, classified.message, undefined, account, { persist: classified.persist });
+                                data = { status: classified.reason, message: classified.message, buckets: [] };
                             }
                         } else {
-                            data = { status: 'no_license', message: 'Subscription Required', buckets: [] };
-                            logTraffic(`[QUOTA] [${em}] HTTP 403 (No License) | Body: ${body.slice(0, 150)}`);
+                            const classified = mapQuota403Reason(403, body);
+                            markAccountUnhealthy(em, classified.reason, classified.message, undefined, account, { persist: classified.persist });
+                            data = { status: classified.reason, message: classified.message, buckets: [] };
+                            logTraffic(`[QUOTA] [${em}] HTTP 403 (${classified.reason}) | Body: ${body.slice(0, 150)}`);
                         }
+                    } else if (res.statusCode === 401) {
+                        markAccountUnhealthy(em, 'auth_failed', 'HTTP 401 Unauthorized', 10 * 60 * 1000, account);
+                        data = { status: 'auth_failed', message: 'Authentication Required', buckets: [] };
+                        logTraffic(`[QUOTA] [${em}] HTTP 401 (Auth Failed) | Body: ${body.slice(0, 150)}`);
                     } else if (res.statusCode === 429) {
                         const prevBuckets = _dirCache[em]?.data?.buckets || [];
                         data = { status: prevBuckets.length ? 'ok' : 'exhausted', message: 'Resource Exhausted', buckets: prevBuckets };
@@ -257,6 +291,7 @@ async function fetchDirectAccountQuotas(account) {
                 resolve(data);
             });
         });
+        req.on('timeout', () => req.destroy(new Error('timeout')));
         req.on('error', (err) => {
             logTraffic(`[QUOTA] [${em}] Network Error: ${err.message}`);
             resolve({ status: 'network_error', buckets: [] });

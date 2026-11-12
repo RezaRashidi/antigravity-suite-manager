@@ -51,7 +51,11 @@ function relaxCsp(ses) {
         });
     } catch (_) {}
 }
-if (sessionModule?.defaultSession) relaxCsp(sessionModule.defaultSession);
+if (app?.isReady?.()) {
+    try {
+        if (sessionModule?.defaultSession) relaxCsp(sessionModule.defaultSession);
+    } catch (_) {}
+}
 if (app?.on) {
     app.on('session-created', (ses) => relaxCsp(ses));
 }
@@ -266,6 +270,9 @@ if (app) {
     });
 
     app.whenReady().then(() => {
+        try {
+            if (sessionModule?.defaultSession) relaxCsp(sessionModule.defaultSession);
+        } catch (_) {}
         scanAllTargets();
         setInterval(scanAllTargets, 1200);
     });

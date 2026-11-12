@@ -1,6 +1,6 @@
 // Multi-Account Router: Gateway and Facade Module
 const { getBindings, setBinding, setActiveAccount, getActiveAccountEmail } = require('./router/bindings.js');
-const { loadAllAccounts, setPrimaryAccount } = require('./router/accounts.js');
+const { loadAllAccounts, setPrimaryAccount, isAccountHealthy, markAccountUnhealthy, clearAccountUnhealthy, writeJsonAtomic } = require('./router/accounts.js');
 const { fetchLanguageServerTelemetry, fetchDirectAccountQuotas, _quotaCache } = require('./router/telemetry.js');
 const { startMultiAccountRouter, setLastCascadeId } = require('./router/server.js');
 
@@ -35,7 +35,8 @@ async function refreshQuotasAsync() {
                     fetchDirectAccountQuotas(acc),
                     new Promise(r => setTimeout(() => r(null), 8000))
                 ]);
-                if (direct?.tier_type) {
+                const directFailed = direct && (direct.status === 'verify_required' || direct.status === 'no_license' || direct.status === 'auth_failed' || direct.status === 'forbidden_transient');
+                if (direct?.tier_type && !directFailed) {
                     acc.tier_type = direct.tier_type;
                     acc.available_models = direct.available_models || [];
                     acc.model_count = direct.model_count || acc.available_models.length;
@@ -58,7 +59,7 @@ async function refreshQuotasAsync() {
                             cur.plan = acc.plan;
                             cur.available_models = acc.available_models;
                             if (acc.is_bypassed !== undefined) cur.is_bypassed = acc.is_bypassed;
-                            require('fs').writeFileSync(fp, JSON.stringify(cur, null, 2), 'utf8');
+                            writeJsonAtomic(fp, cur);
                         }
                     } catch (_) {}
                 }
@@ -71,6 +72,20 @@ async function refreshQuotasAsync() {
                         acc.tier = isPro ? 'PRO' : 'FREE';
                         acc.plan = isPro ? (acc.plan || 'Google AI Pro') : 'Free';
                     }
+                    return;
+                }
+                if (directFailed) {
+                    if (direct.tier_type) {
+                        acc.tier_type = direct.tier_type;
+                        acc.available_models = direct.available_models || [];
+                        acc.model_count = direct.model_count || acc.available_models.length;
+                    }
+                    acc.license_status = direct.status;
+                    acc.license_message = direct.message || '';
+                    acc.quotas = [];
+                    acc.tier = direct.status === 'verify_required' ? 'Verify Required'
+                        : (direct.status === 'auth_failed' ? 'Auth Required'
+                            : (direct.status === 'no_license' ? 'No License' : (acc.tier_type || 'PRO')));
                     return;
                 }
                 if (acc.is_primary && lsTelemetry?.buckets?.length > 0) {
@@ -88,8 +103,7 @@ async function refreshQuotasAsync() {
                     acc.license_status = direct?.status || (direct === null ? 'loading' : 'unknown');
                     acc.license_message = direct?.message || '';
                     acc.quotas = direct?.buckets || [];
-                    if (direct?.status === 'no_license') acc.tier = 'No License';
-                    else if (direct?.status === 'exhausted') acc.tier = 'Resource Exhausted';
+                    if (direct?.status === 'exhausted') acc.tier = 'Resource Exhausted';
                     else {
                         const isPro = acc.quotas?.some(b => b.family === 'claude');
                         acc.tier = isPro ? 'PRO' : 'FREE';
@@ -181,6 +195,9 @@ module.exports = {
     refreshQuotasAsync,
     removeAccount,
     markAccountBypassed: require('./router/accounts.js').markAccountBypassed,
+    isAccountHealthy,
+    markAccountUnhealthy,
+    clearAccountUnhealthy,
     isEligibilityRpc: require('./router/eligibility_middleware.js').isEligibilityRpc,
     normalizeEligibilityResponse: require('./router/eligibility_middleware.js').normalizeEligibilityResponse,
     getBindings,

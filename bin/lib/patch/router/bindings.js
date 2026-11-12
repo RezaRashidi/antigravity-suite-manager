@@ -47,23 +47,49 @@ function setActiveAccount(email) {
 }
 
 function getActiveAccountEmail(accountsMap = {}) {
-    const hasAccounts = Object.keys(accountsMap).length > 0;
+    const normalizedMap = Array.isArray(accountsMap)
+        ? Object.fromEntries(accountsMap.filter(a => a && a.email).map(a => [a.email.toLowerCase(), a]))
+        : (accountsMap || {});
+    const hasAccounts = Object.keys(normalizedMap).length > 0;
+    let health = null;
+    const isHealthy = (email) => {
+        if (!hasAccounts) return true;
+        const acc = normalizedMap[email.toLowerCase()];
+        if (!acc) return false;
+        if (!health) {
+            try { health = require('./accounts.js'); } catch (_) { health = {}; }
+        }
+        return typeof health.isAccountHealthy === 'function' ? health.isAccountHealthy(acc, normalizedMap) : true;
+    };
+
     if (_activeAccountEmail && _activeAccountEmail !== 'Primary (Native)') {
-        if (!hasAccounts || accountsMap[_activeAccountEmail.toLowerCase()]) {
+        if (!hasAccounts || isHealthy(_activeAccountEmail)) {
             return _activeAccountEmail;
         }
     }
     const b = getBindings();
     if (b.__active_account && b.__active_account !== 'Primary (Native)') {
-        if (!hasAccounts || accountsMap[b.__active_account.toLowerCase()]) {
+        if (!hasAccounts || isHealthy(b.__active_account)) {
             _activeAccountEmail = b.__active_account;
             return _activeAccountEmail;
         }
     }
-    for (const [em, acc] of Object.entries(accountsMap)) {
-        if (acc && acc.is_primary) {
+    for (const [em, acc] of Object.entries(normalizedMap)) {
+        if (acc && acc.is_primary && isHealthy(acc.email || em)) {
             _activeAccountEmail = acc.email || em;
             return _activeAccountEmail;
+        }
+    }
+    if (hasAccounts) {
+        if (!health) {
+            try { health = require('./accounts.js'); } catch (_) { health = {}; }
+        }
+        if (typeof health.pickHealthyFallbackAccount === 'function') {
+            const fallback = health.pickHealthyFallbackAccount(normalizedMap);
+            if (fallback) {
+                _activeAccountEmail = fallback;
+                return _activeAccountEmail;
+            }
         }
     }
     return 'Primary (Native)';

@@ -69,8 +69,16 @@
             pill.dataset.email = active.email; pill.dataset.cid = cascadeId;
             (window.__antigravitySetHtml || ((e, s) => e.innerHTML = s))(pill, `<button class="agy-acc-pill-btn flex cursor-pointer items-center h-7 gap-1 rounded-full pl-2 pr-1.5 text-xs text-secondary-foreground select-none outline-none hover:bg-secondary transition-colors" type="button" id="agy-acc-btn" title="${active.email}"><span class="truncate max-w-[130px] font-medium">${handle}</span><span class="opacity-60 text-[9px] ml-0.5">▼</span></button><div class="agy-acc-dropdown" id="agy-acc-dd"><div class="agy-acc-header">Google Accounts</div><div class="agy-acc-list">${(state.accounts || []).map(a => {
                 const isSel = a.email?.toLowerCase() === active.email?.toLowerCase(), isPrim = !!a.is_primary;
+                const isBad = a.license_status === 'verify_required' || a.license_status === 'no_license' || a.license_status === 'auth_failed';
+                const statusTag = a.license_status === 'verify_required'
+                    ? '<span style="font-size:9px;color:#ef4444;border:1px solid rgba(239,68,68,0.4);padding:0 4px;border-radius:3px;font-weight:600;" title="Verification Required">VERIFY</span>'
+                    : (a.license_status === 'no_license'
+                        ? '<span style="font-size:9px;color:#f59e0b;border:1px solid rgba(245,158,11,0.4);padding:0 4px;border-radius:3px;font-weight:600;" title="No License">NO LIC</span>'
+                        : (a.license_status === 'auth_failed'
+                            ? '<span style="font-size:9px;color:#ef4444;border:1px solid rgba(239,68,68,0.4);padding:0 4px;border-radius:3px;font-weight:600;" title="Authentication Expired">AUTH</span>'
+                            : ''));
                 const star = isPrim ? '<span style="color:#eab308;font-size:11px;" title="Primary Account">★</span>' : '';
-                return `<div class="agy-acc-item ${isSel ? "selected" : ""}" data-email="${a.email}"><div class="agy-acc-item-left" style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;"><div class="agy-acc-avatar-sm">${(a.email || "G")[0].toUpperCase()}</div><div class="agy-acc-text-col" style="display:flex;flex-direction:column;min-width:0;flex:1;"><div style="display:flex;align-items:center;gap:4px;overflow:hidden;"><span class="agy-acc-email-text">${a.email.split("@")[0]}</span>${star}</div><span class="agy-acc-email-sub">${a.email}</span></div></div><div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${isSel ? '<span style="color:#3b82f6;font-size:12px;font-weight:bold;">✓</span>' : ''}<span class="agy-view-usage-link" data-email="${a.email}" title="View details and usage">›</span></div></div>`;
+                return `<div class="agy-acc-item ${isSel ? "selected" : ""}" data-email="${a.email}" style="${isBad ? 'opacity:0.65;' : ''}"><div class="agy-acc-item-left" style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;"><div class="agy-acc-avatar-sm">${(a.email || "G")[0].toUpperCase()}</div><div class="agy-acc-text-col" style="display:flex;flex-direction:column;min-width:0;flex:1;"><div style="display:flex;align-items:center;gap:4px;overflow:hidden;"><span class="agy-acc-email-text">${a.email.split("@")[0]}</span>${star}${statusTag}</div><span class="agy-acc-email-sub">${a.email}</span></div></div><div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${isSel ? '<span style="color:#3b82f6;font-size:12px;font-weight:bold;">✓</span>' : ''}<span class="agy-view-usage-link" data-email="${a.email}" title="View details and usage">›</span></div></div>`;
             }).join("")}</div><div class="agy-acc-footer"><button class="agy-acc-btn-action" id="agy-acc-add">+ Add Account</button><button class="agy-acc-btn-action" id="agy-acc-ref">Refresh</button></div><div class="agy-usage-flyout" id="agy-flyout"></div></div>`);
             const btn = document.getElementById("agy-acc-btn"), dd = document.getElementById("agy-acc-dd"), fly = document.getElementById("agy-flyout");
             if (btn && dd) btn.onclick = (e) => { e.stopPropagation(); if (!dd.classList.toggle("open")) return fly?.classList.remove("visible"); updateDdPos(); void fetchState(); };
@@ -107,13 +115,22 @@
                 item.onclick = async (e) => {
                     if (e.target.closest(".agy-view-usage-link, .agy-usage-flyout")) return; e.stopPropagation();
                     if (em) {
-                        try { if (window.antigravityMultiAccount) await Promise.race([window.antigravityMultiAccount.bindCascade?.(cascadeId, em), new Promise(r => setTimeout(r, 200))]); } catch (_) {}
-                        try { await fetch(apiH() + "/api/multi-account/bind", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cascadeId, email: em, active: true }) }); } catch (_) {}
-                        if (!state.bindings) state.bindings = {}; state.bindings[cascadeId] = em;
-                        state.active_default = em; state.bindings.__active_account = em;
-                        window.dispatchEvent(new CustomEvent('antigravity:account-switched', { detail: { email: em } }));
-                        try { if (window.__antigravityRefreshModels) void window.__antigravityRefreshModels(); } catch (_) {}
-                        render(); toast(`✓ Switched chat to ${em.split("@")[0]}`);
+                        let bindRes = null;
+                        try {
+                            const r = await fetch(apiH() + "/api/multi-account/bind", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cascadeId, email: em, active: true }) });
+                            bindRes = await r.json();
+                        } catch (_) {}
+                        if (bindRes && bindRes.skipped && bindRes.unhealthy) {
+                            toast(`⚠ ${em.split("@")[0]}: ${bindRes.reason || 'unhealthy'} (auto-routing kept)`);
+                            await fetchState();
+                        } else {
+                            try { if (window.antigravityMultiAccount) await Promise.race([window.antigravityMultiAccount.bindCascade?.(cascadeId, em), new Promise(r => setTimeout(r, 200))]); } catch (_) {}
+                            if (!state.bindings) state.bindings = {}; state.bindings[cascadeId] = em;
+                            state.active_default = em; state.bindings.__active_account = em;
+                            window.dispatchEvent(new CustomEvent('antigravity:account-switched', { detail: { email: em } }));
+                            try { if (window.__antigravityRefreshModels) void window.__antigravityRefreshModels(); } catch (_) {}
+                            render(); toast(`✓ Switched chat to ${em.split("@")[0]}`);
+                        }
                     }
                     dd.classList.remove("open"); fly?.classList.remove("visible");
                 };
