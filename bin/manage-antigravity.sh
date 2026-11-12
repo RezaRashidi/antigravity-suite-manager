@@ -3,9 +3,14 @@
 # Main modular CLI entry point
 set -e
 
-# Wayland / X11 desktop environment flags
-# --ozone-platform=x11
-export ELECTRON_OZONE_PLATFORM_HINT="x11"
+# Wayland / X11 desktop environment auto-detection
+if [ "${XDG_SESSION_TYPE:-}" = "wayland" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; then
+    export ELECTRON_OZONE_PLATFORM_HINT="wayland"
+elif [ -n "${DISPLAY:-}" ]; then
+    export ELECTRON_OZONE_PLATFORM_HINT="x11"
+else
+    export ELECTRON_OZONE_PLATFORM_HINT="auto"
+fi
 
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"

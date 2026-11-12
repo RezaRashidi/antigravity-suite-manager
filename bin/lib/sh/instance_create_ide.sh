@@ -44,9 +44,9 @@ export REAL_HOME="${REAL_HOME}"
 export PROFILE="${profile_dir}"
 export HOME="\${PROFILE}"
 export XDG_CONFIG_HOME="\${PROFILE}/.config"
-export ELECTRON_OZONE_PLATFORM_HINT="x11"
+$(emit_launcher_ozone_detect)
 
-! pgrep -f "antigravity-apply-icon.py --daemon" >/dev/null 2>&1 && python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
+[ "\$OZONE_PLATFORM" = "x11" ] && ! pgrep -f "antigravity-apply-icon.py --daemon" >/dev/null 2>&1 && python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
 disown -a 2>/dev/null || true
 
 SANDBOX_FLAG=""
@@ -57,7 +57,7 @@ if [ -f "${IDE_INSTALL_DIR}/chrome-sandbox" ]; then
     fi
 fi
 
-exec "${IDE_INSTALL_DIR}/antigravity-ide" \${SANDBOX_FLAG}--password-store=basic --ozone-platform=x11 --user-data-dir "\${PROFILE}/.config/Antigravity IDE" --class="${wm_class}" --name="${wm_class}" "\$@"
+exec "${IDE_INSTALL_DIR}/antigravity-ide" \${SANDBOX_FLAG}--password-store=basic \${OZONE_FLAG}--user-data-dir "\${PROFILE}/.config/Antigravity IDE" --class="${wm_class}" --name="${wm_class}" "\$@"
 EOF
     chmod +x "$launcher"
 

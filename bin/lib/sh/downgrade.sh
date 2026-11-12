@@ -171,6 +171,7 @@ downgrade_app() {
     [ "$HAD_APP_SELECTOR" = true ] && { FORCE_INSTALL=true patch_selector_app; }
     [ "$HAD_APP_FORK" = true ] && { FORCE_INSTALL=true patch_fork_app; }
     [ "$HAD_APP_OPEN_IDE" = true ] && { FORCE_INSTALL=true patch_open_ide_app; }
+    [ "$HAD_APP_WINDOW_BOUNDS" = true ] && { FORCE_INSTALL=true patch_window_bounds_app; }
 
     log_success "Antigravity App downgrade to v${target_ver} complete."
 }

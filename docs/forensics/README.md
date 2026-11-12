@@ -64,5 +64,6 @@ This document records the end-to-end diagnostic methodology, reverse-engineering
 - [56. Issue 54: Implementation of Local Network Eligibility Normalization Middleware](56_local_network_eligibility_normalization_middleware.md)
 - [57. Issue 55: Account Health Quarantine, HTTP 403/401 Failover & Bounded GZIP Classification](57_account_health_quarantine_403_failover_and_gzip_recovery.md)
 - [58. Issue 56: Antigravity IDE Launch Hang from Pre-Ready `session.defaultSession` Access](58_ide_early_default_session_electron_crash_resolution.md)
-- [59. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
+- [59. Issue 57: App v2.30+ X11 `BaseWindow` Maximize/Resize Cutoff & Dynamic Ozone Auto-Detection](59_x11_basewindow_bounds_cutoff_and_ozone_autodetect.md)
+- [60. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
 

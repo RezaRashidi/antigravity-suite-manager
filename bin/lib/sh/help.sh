@@ -42,6 +42,8 @@ Commands:
   unpatch-fork  Revert conversation forking patch
   open-ide      Enable native 'Open in IDE' titlebar button in App (alias: patch-open-ide)
   unpatch-open-ide Revert native 'Open in IDE' button patch
+  patch-window  Fix X11 BaseWindow maximize/resize bottom cutoff in App (alias: window-bounds, fix-window)
+  unpatch-window Revert X11 Window Bounds patch (alias: unpatch-window-bounds)
   models        Custom models & multi-provider discovery/selection (alias: custom-models)
   patch-models  Connect custom models proxy & UI [all|app|ide] (alias: models-patch)
   unpatch-models Revert custom models patch [all|app|ide]

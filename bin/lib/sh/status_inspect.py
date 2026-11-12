@@ -54,6 +54,10 @@ def check_app_open_ide(app_dir: str) -> str:
     return _check_asar_content(app_dir, b'ANTIGRAVITY_SUITE_OPEN_IDE_PATCH')
 
 
+def check_app_window_bounds(app_dir: str) -> str:
+    return _check_asar_content(app_dir, b'ANTIGRAVITY_SUITE_WINDOW_BOUNDS_PATCH')
+
+
 def _check_asar_content(app_dir: str, needle: bytes) -> str:
     asar_path = os.path.join(app_dir, 'resources', 'app.asar')
     if not os.path.isfile(asar_path): return f"{R}Missing{NC}"

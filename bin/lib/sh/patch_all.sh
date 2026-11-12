@@ -14,24 +14,24 @@ patch_all_app() {
 
     # 1. Custom Models Settings UI
     if [ -f "$(get_models_deploy_script 2>/dev/null)" ]; then
-        log_info "[1/5] In-App Custom Models UI patch..."
+        log_info "[1/6] In-App Custom Models UI patch..."
         FORCE_INSTALL=true patch_models_app || log_warn "Custom Models patch skipped or failed."
     fi
     # 2. RTL Typography
-    log_info "[2/5] RTL Typography patch..."
+    log_info "[2/6] RTL Typography patch..."
     FORCE_INSTALL=true patch_rtl_app || log_warn "RTL patch skipped or failed."
-
     # 3. Multi-Account Selector
-    log_info "[3/5] Prompt-bar Multi-Account Selector patch..."
+    log_info "[3/6] Prompt-bar Multi-Account Selector patch..."
     FORCE_INSTALL=true patch_selector_app || log_warn "Selector patch skipped or failed."
-
     # 4. Conversation Forking
-    log_info "[4/5] Conversation Forking patch..."
+    log_info "[4/6] Conversation Forking patch..."
     FORCE_INSTALL=true patch_fork_app || log_warn "Forking patch skipped or failed."
-
     # 5. Native Open in IDE button
-    log_info "[5/5] Native Open in IDE titlebar button patch..."
+    log_info "[5/6] Native Open in IDE titlebar button patch..."
     FORCE_INSTALL=true patch_open_ide_app || log_warn "Open in IDE patch skipped or failed."
+    # 6. X11 Window Bounds fix
+    log_info "[6/6] X11 Window Bounds maximize/resize fix..."
+    FORCE_INSTALL=true patch_window_bounds_app || log_warn "Window Bounds patch skipped or failed."
 
     log_success "All patches applied to Antigravity App (${APP_INSTALL_DIR})."
 }

@@ -16,7 +16,7 @@ export ANTIGRAVITY_APP_NAME="${wm}"
 export ANTIGRAVITY_ICON_PATH="${icon}"
 export ANTIGRAVITY_TRAY_ICON_PATH="${tray}"
 export ANTIGRAVITY_ACCOUNTS_DIR="${REAL_HOME}/.config/antigravity/accounts"
-export ELECTRON_OZONE_PLATFORM_HINT="x11"
+$(emit_launcher_ozone_detect)
 
 if [ "\$1" = "--restart" ] || [ "\$1" = "-r" ]; then
     shift
@@ -64,13 +64,13 @@ if [ \$# -eq 0 ]; then
     done
     if [ -n "\$running_pid" ] && [ "\$running_pid" != "\$\$" ]; then
         echo "[INFO] ${wm} is already running (PID: \${running_pid}). Bringing to front..."
-        python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --focus "${wm}" 2>/dev/null || true
+        [ "\$OZONE_PLATFORM" = "x11" ] && python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --focus "${wm}" 2>/dev/null || true
         exit 0
     fi
 fi
 
 cd "\${REAL_HOME}" || cd /tmp
-! pgrep -f "antigravity-apply-icon.py --daemon" >/dev/null 2>&1 && python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
+[ "\$OZONE_PLATFORM" = "x11" ] && ! pgrep -f "antigravity-apply-icon.py --daemon" >/dev/null 2>&1 && python3 "${LOCAL_BIN}/antigravity-apply-icon.py" --daemon >/dev/null 2>&1 &
 disown -a 2>/dev/null || true
 [ -n "${pstore}" ] && { mkdir -p "\${PROFILE}/.gemini/cache"; touch "\${PROFILE}/.gemini/cache/antigravity-keyring-unavailable"; }
 
@@ -82,7 +82,7 @@ if [ -f "${APP_INSTALL_DIR}/chrome-sandbox" ]; then
     fi
 fi
 
-exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}${pstore}--ozone-platform=x11 --user-data-dir="${udata}" --class="${wm}" --name="${wm}" "\$@"
+exec "${APP_INSTALL_DIR}/antigravity" \${SANDBOX_FLAG}${pstore}\${OZONE_FLAG}--user-data-dir="${udata}" --class="${wm}" --name="${wm}" "\$@"
 EOF
     chmod +x "$target"
     [ -n "$symlink" ] && ln -sfn "$target" "$symlink" || true

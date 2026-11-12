@@ -19,6 +19,8 @@ parse_patch_arg() {
         unpatch-fork) COMMAND="unpatch-fork"; shift_sub_arg "$2"; return $? ;;
         open-ide|patch-open-ide) COMMAND="open-ide"; shift_sub_arg "$2"; return $? ;;
         unpatch-open-ide) COMMAND="unpatch-open-ide"; shift_sub_arg "$2"; return $? ;;
+        window-bounds|patch-window-bounds|patch-window|fix-window) COMMAND="window-bounds"; shift_sub_arg "$2"; return $? ;;
+        unpatch-window-bounds|unpatch-window) COMMAND="unpatch-window-bounds"; shift_sub_arg "$2"; return $? ;;
         *) return 0 ;;
     esac
 }

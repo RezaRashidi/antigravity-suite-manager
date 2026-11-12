@@ -6,7 +6,7 @@ update_app() {
     resolve_dynamic_urls
     log_info "Updating Antigravity App at ${APP_INSTALL_DIR}..."
     detect_active_app_patches
-    log_info "Pre-update active App patches: Selector=${HAD_APP_SELECTOR}, RTL=${HAD_APP_RTL}, Fork=${HAD_APP_FORK}, OpenIDE=${HAD_APP_OPEN_IDE}, Models=${HAD_APP_MODELS}"
+    log_info "Pre-update active App patches: Selector=${HAD_APP_SELECTOR}, RTL=${HAD_APP_RTL}, Fork=${HAD_APP_FORK}, OpenIDE=${HAD_APP_OPEN_IDE}, WinBounds=${HAD_APP_WINDOW_BOUNDS}, Models=${HAD_APP_MODELS}"
 
     terminate_running_app
     install_binary "Antigravity-App" "$APP_URL" "$TARGET_APP_VER" "$APP_INSTALL_DIR"
@@ -21,6 +21,7 @@ update_app() {
     [ "$HAD_APP_SELECTOR" = true ] && { FORCE_INSTALL=true patch_selector_app; }
     [ "$HAD_APP_FORK" = true ] && { FORCE_INSTALL=true patch_fork_app; }
     [ "$HAD_APP_OPEN_IDE" = true ] && { FORCE_INSTALL=true patch_open_ide_app; }
+    [ "$HAD_APP_WINDOW_BOUNDS" = true ] && { FORCE_INSTALL=true patch_window_bounds_app; }
 
     log_success "Antigravity App update routine complete."
 }

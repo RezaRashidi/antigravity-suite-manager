@@ -72,3 +72,32 @@ log_err() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 
 mkdir -p "$LOCAL_BIN" "$LOCAL_APPS" "$LOCAL_ICONS" "$SHARED_CONV_DIR" "$SHARED_CONFIG_DIR" "$CACHE_DIR"
 
+detect_ozone_platform() {
+    if [ "${XDG_SESSION_TYPE:-}" = "wayland" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; then
+        echo "wayland"
+    elif [ -n "${DISPLAY:-}" ]; then
+        echo "x11"
+    else
+        echo "auto"
+    fi
+}
+
+emit_launcher_ozone_detect() {
+    cat <<'OZONE_EOF'
+OZONE_PLATFORM="x11"
+if [ "${XDG_SESSION_TYPE:-}" = "wayland" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; then
+    OZONE_PLATFORM="wayland"
+elif [ -z "${DISPLAY:-}" ]; then
+    OZONE_PLATFORM="auto"
+fi
+OZONE_FLAG="--ozone-platform=${OZONE_PLATFORM} "
+for _arg in "$@"; do
+    case "$_arg" in
+        --ozone-platform=*) OZONE_PLATFORM="${_arg#--ozone-platform=}"; OZONE_FLAG=""; break ;;
+        --ozone-platform) OZONE_FLAG=""; break ;;
+    esac
+done
+export ELECTRON_OZONE_PLATFORM_HINT="$OZONE_PLATFORM"
+OZONE_EOF
+}
+

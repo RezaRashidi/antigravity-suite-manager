@@ -44,6 +44,10 @@ A powerful, all-in-one productivity suite for **Google Antigravity** (Desktop Ap
 - **Fork Conversation Button**: Branch any chat at any message turn into a new trajectory or an isolated Git worktree without losing context.
 - **Native "Open in IDE" Titlebar Button**: Restores the titlebar button to jump instantly from the Desktop App into Antigravity IDE with your current workspace and files loaded.
 
+### 8. 🪟 X11 Window Bounds Fix & Display Auto-Detection
+- **Automatic Wayland / X11 Detection**: Launchers dynamically detect the active display server (`WAYLAND_DISPLAY` / `DISPLAY`) and configure Chromium Ozone flags accordingly instead of forcing X11 everywhere.
+- **X11 Maximize & Resize Viewport Fix (`patch-window`)**: Standalone App ASAR patch that eliminates the App v2.30+ X11 `BaseWindow` bottom viewport cutoff during maximize/unmaximize/resize transitions.
+
 ---
 
 ## 📥 Installation & Getting Started
@@ -81,6 +85,7 @@ Keep your App, IDE, and enhancements up to date:
 | `~/manage-antigravity.sh migrate-chats` | One-shot migrate legacy chats into modern unified database |
 | `~/manage-antigravity.sh status` | Show installed versions, cache status, and active patches |
 | `~/manage-antigravity.sh patch-all` | Apply all active enhancements in verified order |
+| `~/manage-antigravity.sh patch-window` | Apply standalone App X11 window bounds fix (`unpatch-window` to revert) |
 | `~/manage-antigravity.sh unpatch` | Safely revert all patches back to original pristine state |
 
 ---

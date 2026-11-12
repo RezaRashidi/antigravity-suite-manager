@@ -250,12 +250,47 @@ exec /opt/antigravity --user-data-dir="{old_p}/.config" --class="antigravity-app
         self.assertIn("_patched_wids", content)
 
     def test_wayland_x11_flags_in_manage_antigravity(self):
-        """Bug L2-1.1: Verifies ELECTRON_OZONE_PLATFORM_HINT=x11 and --ozone-platform=x11."""
-        manage_path = os.path.join(os.path.dirname(__file__), "..", "bin", "manage-antigravity.sh")
+        """Verifies runtime Wayland/X11/auto Ozone detection in manage-antigravity and generated launchers."""
+        repo_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        manage_path = os.path.join(repo_dir, "bin", "manage-antigravity.sh")
         with open(manage_path, "r", encoding="utf-8") as f:
             content = f.read()
-        self.assertIn('export ELECTRON_OZONE_PLATFORM_HINT="x11"', content)
-        self.assertIn('--ozone-platform=x11', content)
+        self.assertIn('ELECTRON_OZONE_PLATFORM_HINT="wayland"', content)
+        self.assertIn('ELECTRON_OZONE_PLATFORM_HINT="x11"', content)
+        self.assertIn('ELECTRON_OZONE_PLATFORM_HINT="auto"', content)
+
+        with tempfile.TemporaryDirectory() as td:
+            fake_bin = os.path.join(td, "antigravity")
+            with open(fake_bin, "w", encoding="utf-8") as f:
+                f.write('#!/usr/bin/env bash\necho "HINT=$ELECTRON_OZONE_PLATFORM_HINT ARGS=$*"\n')
+            os.chmod(fake_bin, 0o755)
+            launcher = os.path.join(td, "antigravity-test")
+            gen_cmd = (
+                f'source "{repo_dir}/bin/lib/sh/env.sh" >/dev/null && '
+                f'source "{repo_dir}/bin/lib/sh/app_launcher.sh" >/dev/null && '
+                f'REAL_HOME="{td}" HOME="{td}" LOCAL_BIN="{td}" APP_INSTALL_DIR="{td}" KEYRING_MODE_APP1="normal" && '
+                f'write_dynamic_app_launcher "{launcher}" "1" "antigravity-1" "24" "{td}/p" "{td}/u"'
+            )
+            subprocess.run(["bash", "-c", gen_cmd], check=True)
+
+            base_env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": td}
+            cases = [
+                ({"WAYLAND_DISPLAY": "wayland-0"}, [], "HINT=wayland", "--ozone-platform=wayland"),
+                ({"DISPLAY": ":0"}, [], "HINT=x11", "--ozone-platform=x11"),
+                ({}, [], "HINT=auto", "--ozone-platform=auto"),
+            ]
+            for extra_env, args, exp_hint, exp_flag in cases:
+                out = subprocess.check_output([launcher] + args, env={**base_env, **extra_env}, text=True)
+                self.assertIn(exp_hint, out)
+                self.assertIn(exp_flag, out)
+
+            override_out = subprocess.check_output(
+                [launcher, "--ozone-platform=x11"],
+                env={**base_env, "WAYLAND_DISPLAY": "wayland-0"},
+                text=True,
+            )
+            self.assertIn("HINT=x11", override_out)
+            self.assertNotIn("--ozone-platform=wayland", override_out)
 
     def test_keyring_service_gemini_antigravity_filter(self):
         """Bug L2-3.1: Verifies gemini service keyring items require antigravity username."""

@@ -77,6 +77,16 @@ dispatch_unpatch_open_ide() {
     unpatch_open_ide_app "$@"
 }
 
+dispatch_window_bounds() {
+    auto_detect_installations
+    patch_window_bounds_app "$@"
+}
+
+dispatch_unpatch_window_bounds() {
+    auto_detect_installations
+    unpatch_window_bounds_app "$@"
+}
+
 dispatch_patch_models() {
     auto_detect_installations
     local target="${1:-${SUB_COMMAND:-all}}"

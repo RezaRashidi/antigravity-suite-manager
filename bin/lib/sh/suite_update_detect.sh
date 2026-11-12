@@ -19,6 +19,7 @@ detect_active_app_patches() {
     HAD_APP_RTL=false
     HAD_APP_FORK=false
     HAD_APP_OPEN_IDE=false
+    HAD_APP_WINDOW_BOUNDS=false
     HAD_APP_MODELS=false
 
     [ ! -f "$asar" ] && return 0
@@ -34,6 +35,9 @@ detect_active_app_patches() {
     fi
     if grep -qa "ANTIGRAVITY_SUITE_OPEN_IDE_PATCH" "$asar" 2>/dev/null; then
         HAD_APP_OPEN_IDE=true
+    fi
+    if grep -qa "ANTIGRAVITY_SUITE_WINDOW_BOUNDS_PATCH" "$asar" 2>/dev/null; then
+        HAD_APP_WINDOW_BOUNDS=true
     fi
     if grep -qa "antigravity-model-patch" "$asar" 2>/dev/null; then
         HAD_APP_MODELS=true
