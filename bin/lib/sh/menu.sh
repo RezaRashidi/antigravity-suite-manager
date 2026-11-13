@@ -74,8 +74,10 @@ show_classic_menu() {
     echo "43) Apply Subagent Dynamic Multi-Account & Swarm Patch"
     echo "44) Revert Subagent Dynamic Multi-Account & Swarm Patch"
     echo "45) Downgrade Antigravity App or IDE to Previous Version"
+    echo "46) Apply X11 Window Bounds Fix Patch (App)"
+    echo "47) Revert / Unpatch X11 Window Bounds Fix (App)"
     echo "0) Exit"
     echo -e "${CYAN}-----------------------------------------------------${NC}"
-    read -rp "Select an option [0-45]: " choice
+    read -rp "Select an option [0-47]: " choice
     execute_menu_choice "$choice"
 }

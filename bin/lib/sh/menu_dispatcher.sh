@@ -47,6 +47,8 @@ execute_menu_choice() {
         43) FORCE_INSTALL=true patch_subagents ;;
         44) unpatch_subagents ;;
         45) downgrade_interactive_or_target ;;
+        46) FORCE_INSTALL=true patch_window_bounds_app ;;
+        47) unpatch_window_bounds_app ;;
         0) exit 0 ;;
         *) log_err "Invalid selection."; exit 1 ;;
     esac

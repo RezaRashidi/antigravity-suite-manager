@@ -34,6 +34,14 @@ def handle_control_center_open_ide_patch(manage_sh: str, unified: Optional[List[
         run_target_patch(manage_sh, "unpatch-open-ide" if c == "2" else "open-ide", unified, "Open IDE Patch", force=True)
 
 
+def handle_control_center_window_bounds_patch(manage_sh: str, unified: Optional[List[Dict[str, Any]]] = None) -> None:
+    print(f"\n{CYAN}--- X11 Window Bounds Fix Patch (App v2.30+) ---{NC}")
+    print("  [1] Apply / Update X11 Window Bounds Fix in App\n  [2] Revert / Unpatch X11 Window Bounds Fix\n  [0] Return")
+    c = input("Select action [1-2, Default: 1]: ").strip()
+    if c not in ["0"]:
+        run_target_patch(manage_sh, "unpatch-window" if c == "2" else "patch-window", unified, "Window Bounds Patch", force=True)
+
+
 def handle_control_center_rtl_patch(manage_sh: str, unified: Optional[List[Dict[str, Any]]] = None) -> None:
     print(f"\n{CYAN}--- RTL Layout & Font Patch (mmnaderi/antigravity-rtl) ---{NC}")
     print("  [1] Apply / Update RTL Patch (App & IDE)\n  [2] Revert / Unpatch RTL Patch\n  [0] Return")

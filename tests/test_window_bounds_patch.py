@@ -98,6 +98,23 @@ setTimeout(() => {
         with open(self.utils_js, "r", encoding="utf-8") as f:
             self.assertEqual(f.read(), SAMPLE_UTILS_JS)
 
+    def test_menu_and_control_center_expose_window_bounds(self):
+        menu_sh = open("bin/lib/sh/menu.sh", encoding="utf-8").read()
+        menu_disp = open("bin/lib/sh/menu_dispatcher.sh", encoding="utf-8").read()
+        cc_render = open("src/antigravity_suite/detect/control_center_render.py", encoding="utf-8").read()
+        cc_disp = open("src/antigravity_suite/detect/control_center_dispatch.py", encoding="utf-8").read()
+        uni_menu = open("src/antigravity_suite/detect/configure_unified_menu.py", encoding="utf-8").read()
+        uni_disp = open("src/antigravity_suite/detect/unified_patches.py", encoding="utf-8").read()
+
+        self.assertIn("46) Apply X11 Window Bounds Fix Patch", menu_sh)
+        self.assertIn("47) Revert / Unpatch X11 Window Bounds Fix", menu_sh)
+        self.assertIn("46) FORCE_INSTALL=true patch_window_bounds_app ;;", menu_disp)
+        self.assertIn("47) unpatch_window_bounds_app ;;", menu_disp)
+        self.assertIn("[WB] X11 Window Bounds Fix", cc_render)
+        self.assertIn("handle_control_center_window_bounds_patch", cc_disp)
+        self.assertIn("[WB] X11 Window Bounds Fix", uni_menu)
+        self.assertIn("handle_unified_patch_window_bounds", uni_disp)
+
 
 if __name__ == "__main__":
     unittest.main()

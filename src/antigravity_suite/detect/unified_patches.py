@@ -13,6 +13,7 @@ from antigravity_suite.detect.unified_patches_helpers import (
     handle_unified_patch_models,
     handle_unified_patch_open_ide,
     handle_unified_patch_selector,
+    handle_unified_patch_window_bounds,
 )
 
 
@@ -41,6 +42,8 @@ def handle_unified_patches_and_reinstall(choice: str, u_item: Dict[str, Any], en
         handle_unified_patch_models(u_item, eng_p, manage_sh)
     elif up == "Y":
         handle_unified_patch_open_ide(u_item, eng_p, manage_sh)
+    elif up in ["WB", "WINDOW", "WINDOW-BOUNDS", "PATCH-WINDOW"]:
+        handle_unified_patch_window_bounds(u_item, eng_p, manage_sh)
     elif up in ["SA", "SUBAGENTS", "SUBAGENT", "SWARM"]:
         print(f"\n{CYAN}Configuring Subagent Dynamic Multi-Account & Swarm for {eng_p}...{NC}")
         subprocess.run(["bash", manage_sh, "subagents"], check=False)
