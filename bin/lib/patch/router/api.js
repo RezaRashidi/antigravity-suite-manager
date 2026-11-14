@@ -110,7 +110,14 @@ function handleApiRequest(req, res, bodyStr) {
             const { spawn } = require('child_process'), rh = process.env.REAL_HOME || require('os').homedir();
             const py = process.platform === 'win32' ? 'python' : (process.env.PYTHON || 'python3');
             const sDirs = [process.env.ANTIGRAVITY_SUITE_DIR, require('path').join(rh, 'PhpstormProjects', 'antigravity-suite-manager'), require('path').join(rh, '.antigravity-suite-manager')].filter(Boolean);
-            const env = { ...process.env, REAL_HOME: rh, ANTIGRAVITY_ACCOUNTS_DIR: process.env.ANTIGRAVITY_ACCOUNTS_DIR || require('path').join(rh, '.config', 'antigravity', 'accounts'), PYTHONPATH: sDirs.map(d => require('path').join(d, 'src')).join(':') + (process.env.PYTHONPATH ? ':' + process.env.PYTHONPATH : '') };
+            const env = {
+                ...process.env,
+                DISPLAY: process.env.DISPLAY || ':0',
+                XAUTHORITY: process.env.XAUTHORITY || require('path').join(rh, '.Xauthority'),
+                REAL_HOME: rh,
+                ANTIGRAVITY_ACCOUNTS_DIR: process.env.ANTIGRAVITY_ACCOUNTS_DIR || require('path').join(rh, '.config', 'antigravity', 'accounts'),
+                PYTHONPATH: sDirs.map(d => require('path').join(d, 'src')).join(':') + (process.env.PYTHONPATH ? ':' + process.env.PYTHONPATH : '')
+            };
             spawn(py, ['-m', 'antigravity_suite.multi_account.cli', 'login'], { detached: true, stdio: 'ignore', env }).unref();
             res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true }));
         } catch (_) { res.writeHead(500); res.end(JSON.stringify({ error: 'login spawn failed' })); }

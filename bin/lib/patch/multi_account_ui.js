@@ -138,14 +138,23 @@
             if (fly) { fly.onmouseenter = () => { if (hTimer) clearTimeout(hTimer); }; fly.onmouseleave = () => { hTimer = setTimeout(() => fly?.classList.remove("visible"), 350); }; }
             document.getElementById("agy-acc-add")?.addEventListener("click", async (e) => {
                 e.stopPropagation();
-                if (window.antigravityMultiAccount?.startLogin) await window.antigravityMultiAccount.startLogin();
-                else {
+                toast("Opening browser sign-in...");
+                let launched = false;
+                if (window.antigravityMultiAccount?.startLogin) {
                     try {
-                        await fetch(apiH() + "/api/multi-account/login", { method: "POST" });
-                        toast("Browser login launched");
-                    } catch (_) {
-                        alert("Add account via: manage-antigravity.sh multi-account login");
-                    }
+                        const res = await window.antigravityMultiAccount.startLogin();
+                        if (res) launched = true;
+                    } catch (_) {}
+                }
+                if (!launched) {
+                    try {
+                        const res = await fetch(apiH() + "/api/multi-account/login", { method: "POST" });
+                        if (res.ok) launched = true;
+                    } catch (_) {}
+                }
+                if (!launched) {
+                    alert("Could not start login automatically. Please run:\nmanage-antigravity.sh multi-account login");
+                    return;
                 }
                 const prevCount = (state.accounts || []).length;
                 let attempts = 0;

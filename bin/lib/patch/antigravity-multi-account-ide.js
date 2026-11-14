@@ -111,7 +111,14 @@ function registerIpc() {
             const { spawn } = require('child_process'), rh = process.env.REAL_HOME || require('os').homedir();
             const py = process.platform === 'win32' ? 'python' : (process.env.PYTHON || 'python3');
             const sDirs = [process.env.ANTIGRAVITY_SUITE_DIR, path.join(rh, 'PhpstormProjects', 'antigravity-suite-manager'), path.join(rh, '.antigravity-suite-manager')].filter(Boolean);
-            const env = { ...process.env, REAL_HOME: rh, ANTIGRAVITY_ACCOUNTS_DIR: process.env.ANTIGRAVITY_ACCOUNTS_DIR || path.join(rh, '.config', 'antigravity', 'accounts'), PYTHONPATH: sDirs.map(d => path.join(d, 'src')).join(':') + (process.env.PYTHONPATH ? ':' + process.env.PYTHONPATH : '') };
+            const env = {
+                ...process.env,
+                DISPLAY: process.env.DISPLAY || ':0',
+                XAUTHORITY: process.env.XAUTHORITY || path.join(rh, '.Xauthority'),
+                REAL_HOME: rh,
+                ANTIGRAVITY_ACCOUNTS_DIR: process.env.ANTIGRAVITY_ACCOUNTS_DIR || path.join(rh, '.config', 'antigravity', 'accounts'),
+                PYTHONPATH: sDirs.map(d => path.join(d, 'src')).join(':') + (process.env.PYTHONPATH ? ':' + process.env.PYTHONPATH : '')
+            };
             spawn(py, ['-m', 'antigravity_suite.multi_account.cli', 'login'], { detached: true, stdio: 'ignore', env }).unref();
             return true;
         });

@@ -8,6 +8,7 @@ function patchIpcAndPreload(distDir) {
         let code = fs.readFileSync(ipcPath, 'utf8');
         if (!code.includes("electron_1.ipcMain.handle('multi-account:get-state'")) {
             const snippets = `
+    /* AGY_MULTI_ACCOUNT_IPC_START */
     electron_1.ipcMain.handle('multi-account:get-state', async () => {
         try {
             const router = require('./multi_account_router.js');
@@ -50,7 +51,14 @@ function patchIpcAndPreload(distDir) {
             const py = process.platform === 'win32' ? 'python' : (process.env.PYTHON || 'python3');
             const rh = process.env.REAL_HOME || require('os').homedir();
             const sDirs = [process.env.ANTIGRAVITY_SUITE_DIR, require('path').join(rh, 'PhpstormProjects', 'antigravity-suite-manager'), require('path').join(rh, '.antigravity-suite-manager')].filter(Boolean);
-            const env = { ...process.env, REAL_HOME: rh, ANTIGRAVITY_ACCOUNTS_DIR: process.env.ANTIGRAVITY_ACCOUNTS_DIR || require('path').join(rh, '.config', 'antigravity', 'accounts'), PYTHONPATH: sDirs.map(d => require('path').join(d, 'src')).join(':') + (process.env.PYTHONPATH ? ':' + process.env.PYTHONPATH : '') };
+            const env = {
+                ...process.env,
+                DISPLAY: process.env.DISPLAY || ':0',
+                XAUTHORITY: process.env.XAUTHORITY || require('path').join(rh, '.Xauthority'),
+                REAL_HOME: rh,
+                ANTIGRAVITY_ACCOUNTS_DIR: process.env.ANTIGRAVITY_ACCOUNTS_DIR || require('path').join(rh, '.config', 'antigravity', 'accounts'),
+                PYTHONPATH: sDirs.map(d => require('path').join(d, 'src')).join(':') + (process.env.PYTHONPATH ? ':' + process.env.PYTHONPATH : '')
+            };
             spawn(py, ['-m', 'antigravity_suite.multi_account.cli', 'login'], { detached: true, stdio: 'ignore', env }).unref();
             return true;
         } catch (_) { return false; }
@@ -70,9 +78,13 @@ function patchIpcAndPreload(distDir) {
         } catch (_) {}
         return true;
     });
+    /* AGY_MULTI_ACCOUNT_IPC_END */
 `;
-            code = code.replace('function registerIpcHandlers(storageManager) {', 'function registerIpcHandlers(storageManager) {' + snippets);
-            fs.writeFileSync(ipcPath, code, 'utf8');
+            const m = code.match(/function registerIpcHandlers\s*\([^)]*\)\s*\{/);
+            if (m) {
+                code = code.replace(m[0], m[0] + snippets);
+                fs.writeFileSync(ipcPath, code, 'utf8');
+            }
         }
     }
 
@@ -89,7 +101,11 @@ function patchIpcAndPreload(distDir) {
 function unpatchIpcAndPreload(distDir) {
     const ipcPath = path.join(distDir, 'ipcHandlers.js'), preloadPath = path.join(distDir, 'preload.js');
     if (fs.existsSync(ipcPath)) {
-        fs.writeFileSync(ipcPath, fs.readFileSync(ipcPath, 'utf8').replace(/electron_1\.ipcMain\.handle\('multi-account:get-state'[\s\S]*?\}\);/g, ''), 'utf8');
+        let code = fs.readFileSync(ipcPath, 'utf8');
+        code = code.replace(/\/\* AGY_MULTI_ACCOUNT_IPC_START \*\/[\s\S]*?\/\* AGY_MULTI_ACCOUNT_IPC_END \*\/\n?/g, '');
+        code = code.replace(/electron_1\.ipcMain\.handle\('multi-account:get-state'[\s\S]*?electron_1\.ipcMain\.handle\('multi-account:log'[\s\S]*?\}\);\n?/g, '');
+        code = code.replace(/electron_1\.ipcMain\.handle\('multi-account:get-state'[\s\S]*?\}\);/g, '');
+        fs.writeFileSync(ipcPath, code, 'utf8');
     }
     if (fs.existsSync(preloadPath)) {
         fs.writeFileSync(preloadPath, fs.readFileSync(preloadPath, 'utf8').replace(/const multiAccountAPI = \{[\s\S]*?exposeInMainWorld\('antigravityMultiAccount'[\s\S]*?\);\n?/g, ''), 'utf8');
