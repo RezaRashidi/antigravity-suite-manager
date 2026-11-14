@@ -186,7 +186,49 @@
     const hookState = (fn) => function() { const r = fn.apply(this, arguments); scheduleRender(); void fetchState(); return r; };
     if (history.pushState) history.pushState = hookState(history.pushState); if (history.replaceState) history.replaceState = hookState(history.replaceState); ['popstate', 'hashchange', 'focus'].forEach(ev => window.addEventListener(ev, () => { scheduleRender(); void fetchState(true); }));
     window.addEventListener("resize", updateDdPos); window.addEventListener("keydown", (e) => { if (e.key === "F5" && !e.ctrlKey && !e.metaKey && !e.shiftKey) { render(); void fetchState(true); } });
-    try { const mo = new MutationObserver(() => { const t = window.__antigravityFindTarget?.(), c = window.__antigravityDetectCascadeId?.(t?.target) || "default", p = document.getElementById("antigravity-account-pill"); if (!p || !document.body?.contains(p) || c !== cascadeId) { scheduleRender(); if (c !== cascadeId) void fetchState(); } }); if (document.body) mo.observe(document.body, { childList: true, subtree: true }); } catch (_) {}
-    setInterval(() => { const p = document.getElementById("antigravity-account-pill"), t = window.__antigravityFindTarget?.(), c = window.__antigravityDetectCascadeId?.(t?.target) || "default"; if (!p || !document.body?.contains(p) || (t?.target && p.parentElement !== t.target) || c !== cascadeId) { scheduleRender(); if (c !== cascadeId) void fetchState(); } }, 250);
+
+    let moTimer = null;
+    function checkPillAndCascade() {
+        const p = document.getElementById("antigravity-account-pill");
+        const t = window.__antigravityFindTarget?.();
+        const c = window.__antigravityDetectCascadeId?.(t?.target) || "default";
+        if (!p || !document.body?.contains(p) || (t?.target && p.parentElement !== t.target) || c !== cascadeId) {
+            scheduleRender();
+            if (c !== cascadeId) void fetchState();
+        }
+    }
+
+    try {
+        const mo = new MutationObserver((mutations) => {
+            let isRelevant = false;
+            for (let i = 0; i < mutations.length; i++) {
+                const target = mutations[i].target;
+                if (!target) continue;
+                const el = target.nodeType === 1 ? target : target.parentElement;
+                if (el?.closest?.('textarea, input, [contenteditable], .monaco-editor, [data-lexical-editor], [data-testid*="input"], [role="textbox"], .agy-toast, .agy-usage-flyout, #antigravity-account-pill')) {
+                    continue;
+                }
+                isRelevant = true;
+                break;
+            }
+            if (!isRelevant) return;
+
+            if (moTimer) clearTimeout(moTimer);
+            moTimer = setTimeout(() => {
+                moTimer = null;
+                checkPillAndCascade();
+            }, 150);
+        });
+        if (document.body) mo.observe(document.body, { childList: true, subtree: true });
+    } catch (_) {}
+
+    setInterval(() => {
+        const active = document.activeElement;
+        if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || active.isContentEditable || active.closest?.('[contenteditable], .monaco-editor, [data-lexical-editor], [role="textbox"]'))) {
+            return;
+        }
+        checkPillAndCascade();
+    }, 2500);
+
     render(); fetchState(); setTimeout(() => fetchState(true), 1500); setInterval(fetchState, 30000);
 })();

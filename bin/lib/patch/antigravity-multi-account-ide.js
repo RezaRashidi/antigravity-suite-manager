@@ -190,6 +190,7 @@ function getInjectionScripts() {
 function tryInjectTarget(target) {
     if (!target) return;
     try {
+        if (target._agyInjected) return;
         const url = (typeof target.getURL === 'function' ? target.getURL() : target.url) || '';
         const isTarget = url.includes('127.0.0.1') || url.includes('localhost') || url.includes('workbench') || url.includes('vscode-app') || url.includes('vscode-webview') || url === '';
         if (!isTarget) return;
@@ -206,7 +207,10 @@ function tryInjectTarget(target) {
 
         if (typeof target.executeJavaScript === 'function') {
             target.executeJavaScript(checkScript).then(status => {
-                if (status === 'inject') {
+                if (status === 'active') {
+                    target._agyInjected = true;
+                } else if (status === 'inject') {
+                    target._agyInjected = true;
                     const payload = getInjectionScripts();
                     target.executeJavaScript(payload).catch(() => {});
                 }
@@ -281,6 +285,6 @@ if (app) {
             if (sessionModule?.defaultSession) relaxCsp(sessionModule.defaultSession);
         } catch (_) {}
         scanAllTargets();
-        setInterval(scanAllTargets, 1200);
+        setInterval(scanAllTargets, 4000);
     });
 }

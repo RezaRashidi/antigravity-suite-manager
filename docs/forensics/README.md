@@ -67,5 +67,6 @@ This document records the end-to-end diagnostic methodology, reverse-engineering
 - [59. Issue 57: App v2.30+ X11 `BaseWindow` Maximize/Resize Cutoff & Dynamic Ozone Auto-Detection](59_x11_basewindow_bounds_cutoff_and_ozone_autodetect.md)
 - [60. Issue 58: App v2.32.1 Custom Models LanguageServer Spread Arguments & Window Bounds Menu Routing](60_app_v2321_custom_models_runtime_layout_and_wb_menu_routing.md)
 - [61. Issue 59: Multi-Account "+ Add Account" Button Silent Failure & IPC Signature Mismatch](61_multi_account_add_button_ipc_signature_mismatch_and_ui_resilience.md)
-- [62. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
+- [62. Issue 60: Prompt Bar Typing Lag, Layout Thrashing & MutationObserver Saturation](62_prompt_input_typing_lag_and_dom_reflow_thrashing.md)
+- [63. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
 

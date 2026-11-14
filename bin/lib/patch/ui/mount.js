@@ -25,10 +25,10 @@
     window.__antigravityDetectCascadeId = function(targetEl) {
         try {
             const ref = targetEl || document.getElementById('antigravity-account-pill') || document.querySelector('[data-testid="model-selector-trigger"]');
-            const cv = ref?.closest('[data-testid="conversation-view"]') ||
-                Array.from(document.querySelectorAll('[data-testid="conversation-view"]')).find(el => el.offsetParent !== null || el.getBoundingClientRect().height > 0) ||
+            const cv = ref?.closest?.('[data-testid="conversation-view"]') ||
+                document.querySelector('[data-testid="conversation-view"]:not([hidden])') ||
                 document.querySelector('[data-testid="conversation-view"]');
-            const cvId = cv?.getAttribute('data-cascade-id');
+            const cvId = cv?.getAttribute?.('data-cascade-id');
 
             const sel = document.querySelector(
                 '[data-testid*="conversation-row"][data-selected="true"], ' +
@@ -36,7 +36,7 @@
                 '[data-testid="conversation-row-tab"][data-selected="true"], ' +
                 '[data-testid="conversation-row-sidebar"].bg-sidebar-secondary'
             );
-            const selId = sel?.getAttribute('data-cascade-id');
+            const selId = sel?.getAttribute?.('data-cascade-id');
 
             if (selId && selId !== 'conversation' && selId !== 'default' && selId.length >= 8) {
                 if (cv?.dataset?.agyDraftId) delete cv.dataset.agyDraftId;
@@ -68,15 +68,24 @@
 
     window.__antigravityFindTarget = function() {
         try {
-            const triggers = Array.from(document.querySelectorAll('[data-testid="model-selector-trigger"]'));
-            const visible = triggers.filter(el => el.offsetParent !== null || el.getBoundingClientRect().width > 0);
-            const trigger = visible.find(el => el.closest('[data-testid="conversation-view"]')) || visible[visible.length - 1] || triggers[triggers.length - 1];
-            if (trigger) {
-                const parent = trigger.parentElement?.closest('.flex.items-center') || trigger.parentElement;
-                if (parent && parent !== trigger) {
-                    let ref = trigger;
-                    while (ref && ref.parentElement && ref.parentElement !== parent) ref = ref.parentElement;
-                    return { target: parent, insertAfter: ref, floating: false };
+            const triggers = document.querySelectorAll('[data-testid="model-selector-trigger"]');
+            if (triggers.length > 0) {
+                let trigger = null;
+                for (let i = 0; i < triggers.length; i++) {
+                    const tr = triggers[i];
+                    if (tr.closest('[data-testid="conversation-view"]')) {
+                        trigger = tr;
+                        break;
+                    }
+                }
+                if (!trigger) trigger = triggers[triggers.length - 1];
+                if (trigger) {
+                    const parent = trigger.parentElement?.closest('.flex.items-center') || trigger.parentElement;
+                    if (parent && parent !== trigger) {
+                        let ref = trigger;
+                        while (ref && ref.parentElement && ref.parentElement !== parent) ref = ref.parentElement;
+                        return { target: parent, insertAfter: ref, floating: false };
+                    }
                 }
             }
             const tb = document.querySelector('[data-testid="conversation-view"] [data-testid="input-box-bottom-toolbar"], [data-testid="input-box-bottom-toolbar"]');
@@ -95,15 +104,21 @@
         return null;
     };
 
+    let footerHidden = false;
+    let footerMo = null;
     function hideDevFooter() {
+        if (footerHidden) return;
         try {
             const btns = document.querySelectorAll('button[title="Reset State"], button[title*="Reset"]');
+            if (!btns.length) return;
             for (const btn of btns) {
                 const bar = btn.closest('.shrink-0') || btn.closest('[data-screenshot-volatile]') || btn.closest('.border-t') || btn.parentElement;
-                if (bar && bar.style.display !== 'none') {
+                if (bar) {
                     bar.style.setProperty('display', 'none', 'important');
                     bar.style.setProperty('height', '0px', 'important');
                     bar.style.setProperty('visibility', 'hidden', 'important');
+                    footerHidden = true;
+                    if (footerMo) { footerMo.disconnect(); footerMo = null; }
                 }
             }
         } catch (_) {}
@@ -195,10 +210,53 @@
             document.addEventListener('DOMContentLoaded', hideDevFooter);
         }
         try {
-            const mo = new MutationObserver(hideDevFooter);
-            if (document.body) mo.observe(document.body, { childList: true, subtree: true });
-            else document.addEventListener('DOMContentLoaded', () => { if (document.body) mo.observe(document.body, { childList: true, subtree: true }); });
+            footerMo = new MutationObserver((mutations) => {
+                if (footerHidden) {
+                    if (footerMo) { footerMo.disconnect(); footerMo = null; }
+                    return;
+                }
+                for (let i = 0; i < mutations.length; i++) {
+                    const target = mutations[i].target;
+                    // Ignore typing/input mutations completely
+                    const el = target?.nodeType === 1 ? target : target?.parentElement;
+                    if (el?.closest?.('textarea, input, [contenteditable], .monaco-editor, [data-lexical-editor], [data-testid*="input"], [role="textbox"]')) {
+                        continue;
+                    }
+                    hideDevFooter();
+                    break;
+                }
+            });
+            if (document.body) footerMo.observe(document.body, { childList: true, subtree: true });
+            else document.addEventListener('DOMContentLoaded', () => { if (document.body && !footerHidden && footerMo) footerMo.observe(document.body, { childList: true, subtree: true }); });
         } catch (_) {}
+
+        // Optimize RTL Direction Engine if loaded: prevent full-chat BLOCKS re-scan while typing
+        const optimizeRtl = () => {
+            if (window.__antigravityRtlCore && !window.__antigravityRtlCore._agyWrapped && typeof window.__antigravityRtlCore.updateDir === 'function') {
+                const origUpdateDir = window.__antigravityRtlCore.updateDir;
+                window.__antigravityRtlCore._agyWrapped = true;
+                window.__antigravityRtlCore.updateDir = function(forceRTL) {
+                    const active = document.activeElement;
+                    const isTyping = active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || active.isContentEditable || active.closest?.('[contenteditable], .monaco-editor, [data-lexical-editor], [role="textbox"]'));
+                    if (isTyping) {
+                        const el = active.closest?.('[contenteditable="true"], textarea') || active;
+                        const raw = el.tagName === 'TEXTAREA' ? el.value : el.textContent;
+                        const text = (raw || '').replace(/[​-‏﻿]/g, '').trim();
+                        if (text.length > 0) {
+                            const dir = /^[^a-zA-Z]*[֑-߿יִ-﷽ﹰ-ﻼ]/.test(text) ? 'rtl' : 'ltr';
+                            if (el.getAttribute('dir') !== dir) el.setAttribute('dir', dir);
+                        } else if (el.hasAttribute('dir')) {
+                            el.removeAttribute('dir');
+                        }
+                        return;
+                    }
+                    return origUpdateDir(forceRTL);
+                };
+            }
+        };
+        optimizeRtl();
+        setTimeout(optimizeRtl, 1000);
+        setTimeout(optimizeRtl, 3000);
     }
 })();
 
