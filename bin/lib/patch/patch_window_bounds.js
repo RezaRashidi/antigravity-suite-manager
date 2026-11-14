@@ -22,44 +22,11 @@ const ORIG_SYNC_BLOCK = [
     "    baseWin.on('resize', syncHubViewBounds);"
 ].join('\n');
 
-const PATCHED_SYNC_BLOCK = `    ${PATCH_START}
-    const _wbTimers = [];
-    const _wbClearTimers = () => { while (_wbTimers.length) clearTimeout(_wbTimers.pop()); };
-    const _wbApplyBounds = () => {
-        if (!baseWin.isDestroyed?.() && !hubWcv.webContents?.isDestroyed?.()) {
-            const [width, height] = baseWin.getContentSize();
-            if (width <= 0 || height <= 0) return;
-            const cur = typeof hubWcv.getBounds === 'function' ? hubWcv.getBounds() : null;
-            if (cur && cur.x === 0 && cur.y === 0 && cur.width === width && cur.height === height) return;
-            const bounds = { x: 0, y: 0, width, height };
-            curtainView.setBounds(bounds);
-            hubWcv.setBounds(bounds);
-        }
-    };
-    const syncHubViewBounds = () => {
-        _wbApplyBounds();
-        _wbClearTimers();
-        for (const ms of [16, 80, 200, 450]) _wbTimers.push(setTimeout(_wbApplyBounds, ms));
-    };
-    syncHubViewBounds();
-    baseWin.on('resize', syncHubViewBounds);
-    for (const _ev of ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'show']) {
-        baseWin.on(_ev, syncHubViewBounds);
-    }
-    ${PATCH_END}`;
-
-const ORIG_CLEANUP_LINE = "        win.off?.('resize', syncHubViewBounds);";
-const PATCHED_CLEANUP_BLOCK = `        ${CLEAN_START}
-        _wbClearTimers();
-        for (const _ev of ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'show']) {
-            win.off?.(_ev, syncHubViewBounds);
-        }
-        ${CLEAN_END}
-${ORIG_CLEANUP_LINE}`;
-
-const PATCH_BLOCK_RE = /    \/\* WINDOW_BOUNDS_PATCH_START \*\/[\s\S]*?\/\* WINDOW_BOUNDS_PATCH_END \*\//;
+const ORIG_SYNC_FLEX_RE = /([ \t]*)(?:const\s+)?syncHubViewBounds\s*=\s*\(\)\s*=>\s*\{[\s\S]*?baseWin\.on\(['"]resize['"],\s*syncHubViewBounds\);/;
+const CLEAN_LINE_RE = /([ \t]*)win\.off\?\.?\(['"]resize['"],\s*syncHubViewBounds\);/;
+const UNPATCH_RE = /[ \t]*\/\* WINDOW_BOUNDS_PATCH_START \*\/[\s\S]*?\/\* WINDOW_BOUNDS_ORIG_START \*\/\r?\n[ \t]*\/\*\r?\n([\s\S]*?)\r?\n[ \t]*\*\/\r?\n[ \t]*\/\* WINDOW_BOUNDS_ORIG_END \*\/\r?\n[ \t]*\/\* WINDOW_BOUNDS_PATCH_END \*\//;
+const PATCH_BLOCK_RE = /[ \t]*\/\* WINDOW_BOUNDS_PATCH_START \*\/[\s\S]*?\/\* WINDOW_BOUNDS_PATCH_END \*\//;
 const CLEAN_BLOCK_RE = /[ \t]*\/\* WINDOW_BOUNDS_CLEANUP_START \*\/[\s\S]*?\/\* WINDOW_BOUNDS_CLEANUP_END \*\/\r?\n?/;
-const ORIG_SYNC_FLEX_RE = /    const syncHubViewBounds = \(\) => \{\r?\n[\s\S]*?baseWin\.on\('resize', syncHubViewBounds\);/;
 
 function resolveDist(dir) {
     if (!dir) return null;
@@ -68,8 +35,48 @@ function resolveDist(dir) {
     return null;
 }
 
+function buildPatchedSyncBlock(origText) {
+    const match = origText.match(ORIG_SYNC_FLEX_RE);
+    const indent = match ? match[1] : '    ';
+    const hasConst = /^\s*const\s+/.test(origText);
+    const decl = hasConst ? 'const syncHubViewBounds =' : 'syncHubViewBounds =';
+    return `${indent}${PATCH_START}\n` +
+           `${indent}const _wbTimers = [];\n` +
+           `${indent}const _wbClearTimers = () => { while (_wbTimers.length) clearTimeout(_wbTimers.pop()); };\n` +
+           `${indent}const _wbApplyBounds = () => {\n` +
+           `${indent}    if (!baseWin.isDestroyed?.() && !hubWcv.webContents?.isDestroyed?.()) {\n` +
+           `${indent}        const [width, height] = baseWin.getContentSize();\n` +
+           `${indent}        if (width <= 0 || height <= 0) return;\n` +
+           `${indent}        const cur = typeof hubWcv.getBounds === 'function' ? hubWcv.getBounds() : null;\n` +
+           `${indent}        if (cur && cur.x === 0 && cur.y === 0 && cur.width === width && cur.height === height) return;\n` +
+           `${indent}        const bounds = { x: 0, y: 0, width, height };\n` +
+           `${indent}        curtainView?.setBounds?.(bounds);\n` +
+           `${indent}        hubWcv?.setBounds?.(bounds);\n` +
+           `${indent}    }\n` +
+           `${indent}};\n` +
+           `${indent}${decl} () => {\n` +
+           `${indent}    _wbApplyBounds();\n` +
+           `${indent}    _wbClearTimers();\n` +
+           `${indent}    for (const ms of [16, 80, 200, 450]) _wbTimers.push(setTimeout(_wbApplyBounds, ms));\n` +
+           `${indent}};\n` +
+           `${indent}syncHubViewBounds();\n` +
+           `${indent}baseWin.on('resize', syncHubViewBounds);\n` +
+           `${indent}for (const _ev of ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'show']) {\n` +
+           `${indent}    baseWin.on(_ev, syncHubViewBounds);\n` +
+           `${indent}}\n` +
+           `${indent}/* WINDOW_BOUNDS_ORIG_START */\n` +
+           `${indent}/*\n${origText}\n${indent}*/\n` +
+           `${indent}/* WINDOW_BOUNDS_ORIG_END */\n` +
+           `${indent}${PATCH_END}`;
+}
+
 function stripWindowBoundsPatch(code) {
-    let out = code.replace(PATCH_BLOCK_RE, ORIG_SYNC_BLOCK);
+    let out = code;
+    if (UNPATCH_RE.test(out)) {
+        out = out.replace(UNPATCH_RE, '$1');
+    } else if (PATCH_BLOCK_RE.test(out)) {
+        out = out.replace(PATCH_BLOCK_RE, ORIG_SYNC_BLOCK);
+    }
     out = out.replace(CLEAN_BLOCK_RE, '');
     return out;
 }
@@ -83,17 +90,25 @@ function patchAppWindowBounds(targetDir) {
     const utilsPath = path.join(dist, 'utils.js');
     let code = stripWindowBoundsPatch(fs.readFileSync(utilsPath, 'utf8'));
 
-    if (code.includes(ORIG_SYNC_BLOCK)) {
-        code = code.replace(ORIG_SYNC_BLOCK, PATCHED_SYNC_BLOCK);
-    } else if (ORIG_SYNC_FLEX_RE.test(code)) {
-        code = code.replace(ORIG_SYNC_FLEX_RE, PATCHED_SYNC_BLOCK);
+    const match = code.match(ORIG_SYNC_FLEX_RE);
+    if (match) {
+        code = code.replace(match[0], buildPatchedSyncBlock(match[0]));
     } else {
         console.error('[WindowBounds] Could not locate syncHubViewBounds in dist/utils.js');
         return false;
     }
 
-    if (code.includes(ORIG_CLEANUP_LINE) && !code.includes(CLEAN_START)) {
-        code = code.replace(ORIG_CLEANUP_LINE, PATCHED_CLEANUP_BLOCK);
+    const cleanMatch = code.match(CLEAN_LINE_RE);
+    if (cleanMatch && !code.includes(CLEAN_START)) {
+        const indent = cleanMatch[1] || '        ';
+        const cleanBlock = `${indent}${CLEAN_START}\n` +
+            `${indent}_wbClearTimers();\n` +
+            `${indent}for (const _ev of ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'show']) {\n` +
+            `${indent}    win.off?.(_ev, syncHubViewBounds);\n` +
+            `${indent}}\n` +
+            `${indent}${CLEAN_END}\n` +
+            cleanMatch[0];
+        code = code.replace(cleanMatch[0], cleanBlock);
     }
 
     fs.writeFileSync(utilsPath, code, 'utf8');

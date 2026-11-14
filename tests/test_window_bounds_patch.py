@@ -27,6 +27,29 @@ SAMPLE_UTILS_JS = """function createHub() {
 }
 """
 
+SAMPLE_UTILS_V2321_JS = """function initializeHub() {
+    let win;
+    let syncHubViewBounds;
+    if (builtInBrowser) {
+        baseWin.contentView.addChildView(clipView ?? curtainView);
+        baseWin.contentView.addChildView(hubWcv);
+        syncHubViewBounds = () => {
+            if (!baseWin.isDestroyed?.() && !hubWcv.webContents?.isDestroyed?.()) {
+                const [width, height] = baseWin.getContentSize();
+                curtainView?.setBounds({ x: 0, y: 0, width, height });
+                hubWcv.setBounds({ x: 0, y: 0, width, height });
+            }
+        };
+        syncHubViewBounds();
+        baseWin.on('resize', syncHubViewBounds);
+        win = baseWin;
+    }
+    if (syncHubViewBounds) {
+        win.off?.('resize', syncHubViewBounds);
+    }
+}
+"""
+
 
 class TestWindowBoundsPatch(unittest.TestCase):
     def setUp(self):
@@ -98,13 +121,44 @@ setTimeout(() => {
         with open(self.utils_js, "r", encoding="utf-8") as f:
             self.assertEqual(f.read(), SAMPLE_UTILS_JS)
 
+    def test_patch_app_v2321_layout_cycle(self):
+        with open(self.utils_js, "w", encoding="utf-8") as f:
+            f.write(SAMPLE_UTILS_V2321_JS)
+
+        for _ in range(2):
+            res = subprocess.run(["node", self.patch_js, self.app_dir], capture_output=True, text=True)
+            self.assertEqual(res.returncode, 0, res.stderr)
+
+        marker = os.path.join(self.dist_dir, "antigravity_window_bounds_patch.marker")
+        self.assertTrue(os.path.isfile(marker))
+
+        with open(self.utils_js, "r", encoding="utf-8") as f:
+            patched = f.read()
+        self.assertEqual(patched.count("WINDOW_BOUNDS_PATCH_START"), 1)
+        self.assertEqual(patched.count("WINDOW_BOUNDS_CLEANUP_START"), 1)
+        self.assertIn("curtainView?.setBounds?.(bounds)", patched)
+
+        res_unpatch = subprocess.run(["node", self.patch_js, "--unpatch", self.app_dir], capture_output=True, text=True)
+        self.assertEqual(res_unpatch.returncode, 0, res_unpatch.stderr)
+        self.assertFalse(os.path.isfile(marker))
+        with open(self.utils_js, "r", encoding="utf-8") as f:
+            self.assertEqual(f.read(), SAMPLE_UTILS_V2321_JS)
+
     def test_menu_and_control_center_expose_window_bounds(self):
-        menu_sh = open("bin/lib/sh/menu.sh", encoding="utf-8").read()
-        menu_disp = open("bin/lib/sh/menu_dispatcher.sh", encoding="utf-8").read()
-        cc_render = open("src/antigravity_suite/detect/control_center_render.py", encoding="utf-8").read()
-        cc_disp = open("src/antigravity_suite/detect/control_center_dispatch.py", encoding="utf-8").read()
-        uni_menu = open("src/antigravity_suite/detect/configure_unified_menu.py", encoding="utf-8").read()
-        uni_disp = open("src/antigravity_suite/detect/unified_patches.py", encoding="utf-8").read()
+        with open("bin/lib/sh/menu.sh", encoding="utf-8") as f:
+            menu_sh = f.read()
+        with open("bin/lib/sh/menu_dispatcher.sh", encoding="utf-8") as f:
+            menu_disp = f.read()
+        with open("src/antigravity_suite/detect/control_center_render.py", encoding="utf-8") as f:
+            cc_render = f.read()
+        with open("src/antigravity_suite/detect/control_center_dispatch.py", encoding="utf-8") as f:
+            cc_disp = f.read()
+        with open("src/antigravity_suite/detect/configure_unified_menu.py", encoding="utf-8") as f:
+            uni_menu = f.read()
+        with open("src/antigravity_suite/detect/configure_unified.py", encoding="utf-8") as f:
+            uni_cfg = f.read()
+        with open("src/antigravity_suite/detect/unified_patches.py", encoding="utf-8") as f:
+            uni_disp = f.read()
 
         self.assertIn("46) Apply X11 Window Bounds Fix Patch", menu_sh)
         self.assertIn("47) Revert / Unpatch X11 Window Bounds Fix", menu_sh)
@@ -113,6 +167,7 @@ setTimeout(() => {
         self.assertIn("[WB] X11 Window Bounds Fix", cc_render)
         self.assertIn("handle_control_center_window_bounds_patch", cc_disp)
         self.assertIn("[WB] X11 Window Bounds Fix", uni_menu)
+        self.assertIn('"WB"', uni_cfg)
         self.assertIn("handle_unified_patch_window_bounds", uni_disp)
 
 

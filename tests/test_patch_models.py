@@ -47,9 +47,17 @@ class TestPatchModels(unittest.TestCase):
         self.assertNotIn("window.confirm", content)
 
     def test_deploy_check_runs_cleanly(self):
-        orig_asar = Path("/opt/Antigravity-x64/resources/app.asar.orig")
-        if not orig_asar.is_file():
-            self.skipTest("Clean app.asar.orig not found on system")
+        orig_asar = None
+        for cand in [
+            Path("/opt/antigravity2/resources/app.asar.orig"),
+            Path("/opt/antigravity2/resources/app.asar"),
+            Path("/opt/Antigravity-x64/resources/app.asar.orig"),
+        ]:
+            if cand.is_file():
+                orig_asar = cand
+                break
+        if not orig_asar:
+            self.skipTest("Clean app.asar or app.asar.orig not found on system")
 
         temp_dir = tempfile.mkdtemp()
         try:

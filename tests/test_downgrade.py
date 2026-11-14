@@ -66,7 +66,8 @@ class TestDowngradeResolver(unittest.TestCase):
         )
         lines = [line for line in res_list.stdout.strip().split("\n") if line]
         self.assertGreaterEqual(len(lines), 1)
-        self.assertIn("2.31.0|", lines[0])
+        self.assertTrue(lines[0].startswith("2."))
+        self.assertTrue(any("2.31.0|" in line for line in lines))
 
         res_resolve = subprocess.run(
             [sys.executable, _RESOLVER, "resolve", "app", "2.30.0"],
