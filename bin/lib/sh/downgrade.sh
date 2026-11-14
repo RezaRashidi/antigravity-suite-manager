@@ -147,7 +147,7 @@ downgrade_app() {
 
     # Detect currently active patches before replacing binaries
     detect_active_app_patches
-    log_info "Pre-downgrade active App patches: Selector=${HAD_APP_SELECTOR}, RTL=${HAD_APP_RTL}, Fork=${HAD_APP_FORK}, OpenIDE=${HAD_APP_OPEN_IDE}, Models=${HAD_APP_MODELS}"
+    log_info "Pre-downgrade active App patches: Selector=${HAD_APP_SELECTOR}, RTL=${HAD_APP_RTL}, Fork=${HAD_APP_FORK}, OpenIDE=${HAD_APP_OPEN_IDE}, WinBounds=${HAD_APP_WINDOW_BOUNDS}, TypingPerf=${HAD_APP_TYPING_PERF}, Models=${HAD_APP_MODELS}"
 
     if [ "$NON_INTERACTIVE" != true ]; then
         read -rp "Are you sure you want to downgrade Antigravity App to v${target_ver}? [y/N]: " confirm
@@ -172,6 +172,7 @@ downgrade_app() {
     [ "$HAD_APP_FORK" = true ] && { FORCE_INSTALL=true patch_fork_app; }
     [ "$HAD_APP_OPEN_IDE" = true ] && { FORCE_INSTALL=true patch_open_ide_app; }
     [ "$HAD_APP_WINDOW_BOUNDS" = true ] && { FORCE_INSTALL=true patch_window_bounds_app; }
+    [ "$HAD_APP_TYPING_PERF" = true ] && { FORCE_INSTALL=true patch_typing_perf_app; }
 
     log_success "Antigravity App downgrade to v${target_ver} complete."
 }
@@ -229,7 +230,7 @@ downgrade_ide() {
     log_info "Package Source: ${target_url}"
 
     detect_active_ide_patches
-    log_info "Pre-downgrade active IDE patches: Selector=${HAD_IDE_SELECTOR}, RTL=${HAD_IDE_RTL}, Fork=${HAD_IDE_FORK}"
+    log_info "Pre-downgrade active IDE patches: Selector=${HAD_IDE_SELECTOR}, RTL=${HAD_IDE_RTL}, Fork=${HAD_IDE_FORK}, TypingPerf=${HAD_IDE_TYPING_PERF}"
 
     if [ "$NON_INTERACTIVE" != true ]; then
         read -rp "Are you sure you want to downgrade Antigravity IDE to v${target_ver}? [y/N]: " confirm
@@ -256,8 +257,9 @@ downgrade_ide() {
     fi
     [ "$HAD_IDE_RTL" = true ] && [ "$SKIP_RTL" != true ] && { FORCE_INSTALL=true patch_rtl_ide --force; }
     [ "$HAD_IDE_FORK" = true ] && { FORCE_INSTALL=true patch_fork_ide; }
+    [ "$HAD_IDE_TYPING_PERF" = true ] && { FORCE_INSTALL=true patch_typing_perf_ide; }
 
-    if [ "$HAD_IDE_SELECTOR" = true ] || [ "$HAD_IDE_RTL" = true ] || [ "$HAD_IDE_FORK" = true ]; then
+    if [ "$HAD_IDE_SELECTOR" = true ] || [ "$HAD_IDE_RTL" = true ] || [ "$HAD_IDE_FORK" = true ] || [ "$HAD_IDE_TYPING_PERF" = true ]; then
         fix_ide_checksums "${IDE_INSTALL_DIR}"
     fi
 

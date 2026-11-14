@@ -85,3 +85,16 @@ def handle_unified_patch_window_bounds(u_item: Dict[str, Any], eng_p: str, manag
     elif c == "2":
         print(f"\n{CYAN}Reverting X11 Window Bounds fix from {eng_p}...{NC}")
         subprocess.run(["bash", manage_sh, "unpatch-window", "--app-dir", eng_p], check=False)
+
+
+def handle_unified_patch_typing_perf(c_type: str, flag: str, u_item: Dict[str, Any], eng_p: str, manage_sh: str) -> None:
+    inst_name = u_item.get("name", u_item.get("type", "Instance"))
+    print(f"\n{CYAN}--- Prompt Input Typing Performance Patch ({inst_name}) ---{NC}")
+    print("  [1] Apply / Update Typing Performance Patch\n  [2] Revert / Unpatch Typing Performance Patch\n  [0] Cancel")
+    c = input("Select action [1-2, Default: 1]: ").strip()
+    if c in ["1", ""]:
+        print(f"\n{CYAN}Applying Typing Performance patch to {u_item['type']} at {eng_p}...{NC}")
+        subprocess.run(["bash", manage_sh, "patch-typing", c_type, flag, eng_p, "--force"], check=False)
+    elif c == "2":
+        print(f"\n{CYAN}Reverting Typing Performance patch from {u_item['type']} at {eng_p}...{NC}")
+        subprocess.run(["bash", manage_sh, "unpatch-typing", c_type, flag, eng_p], check=False)

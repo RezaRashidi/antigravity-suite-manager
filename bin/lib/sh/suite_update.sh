@@ -27,6 +27,10 @@ reapply_detected_patches() {
         log_info "Re-applying X11 Window Bounds patch to App..."
         FORCE_INSTALL=true patch_window_bounds_app
     fi
+    if [ "$HAD_APP_TYPING_PERF" = true ]; then
+        log_info "Re-applying Prompt Input Typing Performance patch to App..."
+        FORCE_INSTALL=true patch_typing_perf_app
+    fi
     if [ "$HAD_IDE_RTL" = true ] && [ "$SKIP_RTL" != true ]; then
         log_info "Re-applying RTL patch to IDE..."
         FORCE_INSTALL=true patch_rtl_ide --force
@@ -39,7 +43,11 @@ reapply_detected_patches() {
         log_info "Re-applying Conversation Forking patch to IDE..."
         FORCE_INSTALL=true patch_fork_ide
     fi
-    if [ "$HAD_IDE_SELECTOR" = true ] || [ "$HAD_IDE_RTL" = true ] || [ "$HAD_IDE_FORK" = true ]; then
+    if [ "$HAD_IDE_TYPING_PERF" = true ]; then
+        log_info "Re-applying Prompt Input Typing Performance patch to IDE..."
+        FORCE_INSTALL=true patch_typing_perf_ide
+    fi
+    if [ "$HAD_IDE_SELECTOR" = true ] || [ "$HAD_IDE_RTL" = true ] || [ "$HAD_IDE_FORK" = true ] || [ "$HAD_IDE_TYPING_PERF" = true ]; then
         fix_ide_checksums "${IDE_INSTALL_DIR}"
     fi
 }
@@ -53,8 +61,8 @@ update_all() {
     detect_active_app_patches
     detect_active_ide_patches
     log_info "Pre-update active patch detection:"
-    log_info "  • App: Selector=${HAD_APP_SELECTOR}, RTL=${HAD_APP_RTL}, Fork=${HAD_APP_FORK}, OpenIDE=${HAD_APP_OPEN_IDE}, WinBounds=${HAD_APP_WINDOW_BOUNDS}, Models=${HAD_APP_MODELS}"
-    log_info "  • IDE: Selector=${HAD_IDE_SELECTOR}, RTL=${HAD_IDE_RTL}, Fork=${HAD_IDE_FORK}"
+    log_info "  • App: Selector=${HAD_APP_SELECTOR}, RTL=${HAD_APP_RTL}, Fork=${HAD_APP_FORK}, OpenIDE=${HAD_APP_OPEN_IDE}, WinBounds=${HAD_APP_WINDOW_BOUNDS}, TypingPerf=${HAD_APP_TYPING_PERF}, Models=${HAD_APP_MODELS}"
+    log_info "  • IDE: Selector=${HAD_IDE_SELECTOR}, RTL=${HAD_IDE_RTL}, Fork=${HAD_IDE_FORK}, TypingPerf=${HAD_IDE_TYPING_PERF}"
 
     log_info "Starting full suite update..."
     log_info "User configs, databases, keys, and history will be preserved."

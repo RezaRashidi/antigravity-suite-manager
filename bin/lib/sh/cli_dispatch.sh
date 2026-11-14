@@ -74,6 +74,8 @@ dispatch_command() {
         unpatch-open-ide) dispatch_unpatch_open_ide "${CMD_ARGS[@]}" ;;
         window-bounds|patch-window-bounds|patch-window|fix-window) dispatch_window_bounds "${CMD_ARGS[@]}" ;;
         unpatch-window-bounds|unpatch-window) dispatch_unpatch_window_bounds "${CMD_ARGS[@]}" ;;
+        typing-perf|patch-typing-perf|patch-typing|fix-typing|typing-lag) dispatch_typing_perf "${CMD_ARGS[@]}" ;;
+        unpatch-typing-perf|unpatch-typing) dispatch_unpatch_typing_perf "${CMD_ARGS[@]}" ;;
         patch-models|models-patch) dispatch_patch_models "${CMD_ARGS[@]}" ;;
         unpatch-models) dispatch_unpatch_models "${CMD_ARGS[@]}" ;;
         subagents|patch-subagents|sa) dispatch_subagents "${CMD_ARGS[@]}" ;;

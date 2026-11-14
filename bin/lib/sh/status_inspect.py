@@ -58,6 +58,10 @@ def check_app_window_bounds(app_dir: str) -> str:
     return _check_asar_content(app_dir, b'ANTIGRAVITY_SUITE_WINDOW_BOUNDS_PATCH')
 
 
+def check_app_typing_perf(app_dir: str) -> str:
+    return _check_asar_content(app_dir, b'ANTIGRAVITY_SUITE_TYPING_PERF_PATCH')
+
+
 def _check_asar_content(app_dir: str, needle: bytes) -> str:
     asar_path = os.path.join(app_dir, 'resources', 'app.asar')
     if not os.path.isfile(asar_path): return f"{R}Missing{NC}"
@@ -80,3 +84,8 @@ def check_ide_rtl(ide_dir: str) -> str:
             if 'antigravity-rtl-main.js' in txt or os.path.isfile(main_js + '.rtl-bak'): return f"{G}Applied{NC}"
     except Exception: pass
     return f"{Y}Not Applied{NC}"
+
+
+def check_ide_typing_perf(ide_dir: str) -> str:
+    marker = os.path.join(ide_dir, 'resources', 'app', 'out', 'antigravity_ide_typing_perf_patch.marker')
+    return f"{G}Applied{NC}" if os.path.isfile(marker) else f"{Y}Not Applied{NC}"

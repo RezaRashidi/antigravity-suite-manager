@@ -49,6 +49,8 @@ execute_menu_choice() {
         45) downgrade_interactive_or_target ;;
         46) FORCE_INSTALL=true patch_window_bounds_app ;;
         47) unpatch_window_bounds_app ;;
+        48) FORCE_INSTALL=true patch_typing_perf ;;
+        49) unpatch_typing_perf ;;
         0) exit 0 ;;
         *) log_err "Invalid selection."; exit 1 ;;
     esac

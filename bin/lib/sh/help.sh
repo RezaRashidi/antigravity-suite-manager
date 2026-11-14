@@ -44,6 +44,8 @@ Commands:
   unpatch-open-ide Revert native 'Open in IDE' button patch
   patch-window  Fix X11 BaseWindow maximize/resize bottom cutoff in App (alias: window-bounds, fix-window)
   unpatch-window Revert X11 Window Bounds patch (alias: unpatch-window-bounds)
+  patch-typing  Eliminate prompt input typing lag & DOM reflow thrashing [all|app|ide] (alias: typing-perf, fix-typing)
+  unpatch-typing Revert Prompt Input Typing Performance patch [all|app|ide] (alias: unpatch-typing-perf)
   models        Custom models & multi-provider discovery/selection (alias: custom-models)
   patch-models  Connect custom models proxy & UI [all|app|ide] (alias: models-patch)
   unpatch-models Revert custom models patch [all|app|ide]

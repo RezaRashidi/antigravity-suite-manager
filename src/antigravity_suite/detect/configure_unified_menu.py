@@ -32,7 +32,7 @@ def render_unified_header(u_item: Dict[str, Any], c: Dict[str, Any] | None, p_di
         print("  [CM] Custom Models UI Patch       [Y] Open in IDE Button")
         print("  [SA] Subagents Swarm Patch        [AP] Apply All Patches")
         print("  [WB] X11 Window Bounds Fix        [R] Apply RTL Typography Patch")
-        print("  [0] Done (Return)")
+        print("  [TP] Typing Performance Fix       [0] Done (Return)")
     else:
         print(f"{BOLD}Engine & Installation Settings:{NC}")
         print("  [1] Relocate Directory            [2] Set Primary Target")
@@ -43,5 +43,5 @@ def render_unified_header(u_item: Dict[str, Any], c: Dict[str, Any] | None, p_di
         print("  [CM] Custom Models UI Patch       [Y] Open in IDE Button")
         print("  [SA] Subagents Swarm Patch        [AP] Apply All Patches")
         print("  [WB] X11 Window Bounds Fix        [R] Apply RTL Typography Patch")
-        print("  [0] Done (Return)")
+        print("  [TP] Typing Performance Fix       [0] Done (Return)")
     print(f"{CYAN}----------------------------------------------------------------------------------------{NC}")

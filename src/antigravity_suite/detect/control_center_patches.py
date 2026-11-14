@@ -42,6 +42,14 @@ def handle_control_center_window_bounds_patch(manage_sh: str, unified: Optional[
         run_target_patch(manage_sh, "unpatch-window" if c == "2" else "patch-window", unified, "Window Bounds Patch", force=True)
 
 
+def handle_control_center_typing_perf_patch(manage_sh: str, unified: Optional[List[Dict[str, Any]]] = None) -> None:
+    print(f"\n{CYAN}--- Prompt Input Typing Performance Patch (App & IDE) ---{NC}")
+    print("  [1] Apply / Update Prompt Input Typing Performance Patch (App & IDE)\n  [2] Revert / Unpatch Typing Performance Patch\n  [0] Return")
+    c = input("Select action [1-2, Default: 1]: ").strip()
+    if c not in ["0"]:
+        run_target_patch(manage_sh, "unpatch-typing" if c == "2" else "patch-typing", unified, "Typing Performance Patch", force=True)
+
+
 def handle_control_center_rtl_patch(manage_sh: str, unified: Optional[List[Dict[str, Any]]] = None) -> None:
     print(f"\n{CYAN}--- RTL Layout & Font Patch (mmnaderi/antigravity-rtl) ---{NC}")
     print("  [1] Apply / Update RTL Patch (App & IDE)\n  [2] Revert / Unpatch RTL Patch\n  [0] Return")

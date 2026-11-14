@@ -30,6 +30,7 @@ from antigravity_suite.detect.control_center_actions import (
     handle_control_center_steps,
     handle_control_center_subagents_patch,
     handle_control_center_traffic,
+    handle_control_center_typing_perf_patch,
     handle_control_center_uninstall,
     handle_control_center_update,
     handle_control_center_window_bounds_patch,
@@ -55,6 +56,7 @@ def dispatch_control_center_choice(choice: str, manage_sh: str, installer_sh: st
     elif up == "J": handle_control_center_fork_patch(manage_sh, unified)
     elif up == "Y": handle_control_center_open_ide_patch(manage_sh, unified)
     elif up in ["WB", "WINDOW", "WINDOW-BOUNDS", "PATCH-WINDOW"]: handle_control_center_window_bounds_patch(manage_sh, unified)
+    elif up in ["TP", "TYPING", "TYPING-PERF", "PATCH-TYPING"]: handle_control_center_typing_perf_patch(manage_sh, unified)
     elif up == "R": handle_control_center_rtl_patch(manage_sh, unified)
     elif up in ["CM", "MODELS"]: handle_control_center_models_patch(manage_sh, unified)
     elif up in ["SA", "SUBAGENTS", "SUBAGENT", "SWARM"]: handle_control_center_subagents_patch(manage_sh)

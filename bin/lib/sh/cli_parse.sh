@@ -44,6 +44,8 @@ parse_cli_args() {
             unpatch-open-ide) COMMAND="unpatch-open-ide"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
             window-bounds|patch-window-bounds|patch-window|fix-window) COMMAND="window-bounds"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
             unpatch-window-bounds|unpatch-window) COMMAND="unpatch-window-bounds"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
+            typing-perf|patch-typing-perf|patch-typing|fix-typing|typing-lag) COMMAND="typing-perf"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
+            unpatch-typing-perf|unpatch-typing) COMMAND="unpatch-typing"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
             patch-models|models-patch) COMMAND="patch-models"; shift; CMD_ARGS=("$@"); break ;;
             unpatch-models) COMMAND="unpatch-models"; shift; CMD_ARGS=("$@"); break ;;
             subagents|patch-subagents|sa) COMMAND="subagents"; shift; CMD_ARGS=("$@"); break ;;

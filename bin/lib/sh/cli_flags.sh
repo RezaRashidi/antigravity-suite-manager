@@ -21,6 +21,8 @@ parse_patch_arg() {
         unpatch-open-ide) COMMAND="unpatch-open-ide"; shift_sub_arg "$2"; return $? ;;
         window-bounds|patch-window-bounds|patch-window|fix-window) COMMAND="window-bounds"; shift_sub_arg "$2"; return $? ;;
         unpatch-window-bounds|unpatch-window) COMMAND="unpatch-window-bounds"; shift_sub_arg "$2"; return $? ;;
+        typing-perf|patch-typing-perf|patch-typing|fix-typing|typing-lag) COMMAND="typing-perf"; shift_sub_arg "$2"; return $? ;;
+        unpatch-typing-perf|unpatch-typing) COMMAND="unpatch-typing"; shift_sub_arg "$2"; return $? ;;
         *) return 0 ;;
     esac
 }

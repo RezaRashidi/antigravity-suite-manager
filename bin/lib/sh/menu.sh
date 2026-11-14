@@ -76,8 +76,10 @@ show_classic_menu() {
     echo "45) Downgrade Antigravity App or IDE to Previous Version"
     echo "46) Apply X11 Window Bounds Fix Patch (App)"
     echo "47) Revert / Unpatch X11 Window Bounds Fix (App)"
+    echo "48) Apply Prompt Input Typing Performance Patch (App & IDE)"
+    echo "49) Revert / Unpatch Prompt Input Typing Performance Patch (App & IDE)"
     echo "0) Exit"
     echo -e "${CYAN}-----------------------------------------------------${NC}"
-    read -rp "Select an option [0-47]: " choice
+    read -rp "Select an option [0-49]: " choice
     execute_menu_choice "$choice"
 }

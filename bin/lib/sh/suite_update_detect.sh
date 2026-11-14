@@ -20,6 +20,7 @@ detect_active_app_patches() {
     HAD_APP_FORK=false
     HAD_APP_OPEN_IDE=false
     HAD_APP_WINDOW_BOUNDS=false
+    HAD_APP_TYPING_PERF=false
     HAD_APP_MODELS=false
 
     [ ! -f "$asar" ] && return 0
@@ -39,6 +40,9 @@ detect_active_app_patches() {
     if grep -qa "ANTIGRAVITY_SUITE_WINDOW_BOUNDS_PATCH" "$asar" 2>/dev/null; then
         HAD_APP_WINDOW_BOUNDS=true
     fi
+    if grep -qa "ANTIGRAVITY_SUITE_TYPING_PERF_PATCH" "$asar" 2>/dev/null; then
+        HAD_APP_TYPING_PERF=true
+    fi
     if grep -qa "antigravity-model-patch" "$asar" 2>/dev/null; then
         HAD_APP_MODELS=true
     fi
@@ -49,9 +53,11 @@ detect_active_ide_patches() {
     local wb_js="${IDE_INSTALL_DIR}/resources/app/out/vs/workbench/workbench.desktop.main.js"
     local main_js="${IDE_INSTALL_DIR}/resources/app/out/main.js"
     local fork_marker="${IDE_INSTALL_DIR}/resources/app/out/antigravity_fork_patch.marker"
+    local typing_marker="${IDE_INSTALL_DIR}/resources/app/out/antigravity_ide_typing_perf_patch.marker"
     HAD_IDE_SELECTOR=false
     HAD_IDE_RTL=false
     HAD_IDE_FORK=false
+    HAD_IDE_TYPING_PERF=false
 
     [ ! -d "$IDE_INSTALL_DIR" ] && return 0
 
@@ -63,5 +69,8 @@ detect_active_ide_patches() {
     fi
     if ([ -f "$wb_js" ] && grep -qa "conversationForking:{enabled:!0" "$wb_js" 2>/dev/null) || [ -f "$fork_marker" ]; then
         HAD_IDE_FORK=true
+    fi
+    if [ -f "$typing_marker" ]; then
+        HAD_IDE_TYPING_PERF=true
     fi
 }

@@ -87,6 +87,28 @@ dispatch_unpatch_window_bounds() {
     unpatch_window_bounds_app "$@"
 }
 
+dispatch_typing_perf() {
+    auto_detect_installations
+    local target="${1:-${SUB_COMMAND:-all}}"
+    [ $# -gt 0 ] && shift
+    case "$target" in
+        app) patch_typing_perf_app "$@" ;;
+        ide) patch_typing_perf_ide "$@" ;;
+        all|*) patch_typing_perf "$@" ;;
+    esac
+}
+
+dispatch_unpatch_typing_perf() {
+    auto_detect_installations
+    local target="${1:-${SUB_COMMAND:-all}}"
+    [ $# -gt 0 ] && shift
+    case "$target" in
+        app) unpatch_typing_perf_app "$@" ;;
+        ide) unpatch_typing_perf_ide "$@" ;;
+        all|*) unpatch_typing_perf "$@" ;;
+    esac
+}
+
 dispatch_patch_models() {
     auto_detect_installations
     local target="${1:-${SUB_COMMAND:-all}}"
