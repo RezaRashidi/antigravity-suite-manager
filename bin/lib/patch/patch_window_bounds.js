@@ -26,7 +26,7 @@ const ORIG_SYNC_FLEX_RE = /([ \t]*)(?:const\s+)?syncHubViewBounds\s*=\s*\(\)\s*=
 const CLEAN_LINE_RE = /([ \t]*)win\.off\?\.?\(['"]resize['"],\s*syncHubViewBounds\);/;
 const UNPATCH_RE = /[ \t]*\/\* WINDOW_BOUNDS_PATCH_START \*\/[\s\S]*?\/\* WINDOW_BOUNDS_ORIG_START \*\/\r?\n[ \t]*\/\*\r?\n([\s\S]*?)\r?\n[ \t]*\*\/\r?\n[ \t]*\/\* WINDOW_BOUNDS_ORIG_END \*\/\r?\n[ \t]*\/\* WINDOW_BOUNDS_PATCH_END \*\//;
 const PATCH_BLOCK_RE = /[ \t]*\/\* WINDOW_BOUNDS_PATCH_START \*\/[\s\S]*?\/\* WINDOW_BOUNDS_PATCH_END \*\//;
-const CLEAN_BLOCK_RE = /[ \t]*\/\* WINDOW_BOUNDS_CLEANUP_START \*\/[\s\S]*?\/\* WINDOW_BOUNDS_CLEANUP_END \*\/\r?\n?/;
+const CLEAN_BLOCK_RE = /[ \t]*\/\* WINDOW_BOUNDS_CLEANUP_START \*\/[\s\S]*?\/\* WINDOW_BOUNDS_CLEANUP_END \*\/\r?\n?/g;
 
 function resolveDist(dir) {
     if (!dir) return null;
@@ -43,6 +43,7 @@ function buildPatchedSyncBlock(origText) {
     return `${indent}${PATCH_START}\n` +
            `${indent}const _wbTimers = [];\n` +
            `${indent}const _wbClearTimers = () => { while (_wbTimers.length) clearTimeout(_wbTimers.pop()); };\n` +
+           `${indent}try { if (typeof baseWin !== 'undefined' && baseWin) baseWin._wbClearTimers = _wbClearTimers; } catch (_) {}\n` +
            `${indent}const _wbApplyBounds = () => {\n` +
            `${indent}    if (!baseWin.isDestroyed?.() && !hubWcv.webContents?.isDestroyed?.()) {\n` +
            `${indent}        const [width, height] = baseWin.getContentSize();\n` +
@@ -102,7 +103,8 @@ function patchAppWindowBounds(targetDir) {
     if (cleanMatch && !code.includes(CLEAN_START)) {
         const indent = cleanMatch[1] || '        ';
         const cleanBlock = `${indent}${CLEAN_START}\n` +
-            `${indent}_wbClearTimers();\n` +
+            `${indent}try { if (typeof _wbClearTimers === 'function') _wbClearTimers(); } catch (_) {}\n` +
+            `${indent}try { if (typeof win !== 'undefined' && win && typeof win._wbClearTimers === 'function') win._wbClearTimers(); } catch (_) {}\n` +
             `${indent}for (const _ev of ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'show']) {\n` +
             `${indent}    win.off?.(_ev, syncHubViewBounds);\n` +
             `${indent}}\n` +
