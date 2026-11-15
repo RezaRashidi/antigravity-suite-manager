@@ -278,6 +278,42 @@ async function runTests() {
             gzipMock.close();
         }
 
+        // HTTP 404 on streamGenerateContent (e.g. model not found on account A -> fails over to account B)
+        clearAccountUnhealthy('good-two@gmail.com');
+        const notFoundMock = http.createServer((req, res) => {
+            if (req.headers.authorization === 'Bearer tok-good-two') {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({ error: { code: 404, message: 'Requested entity was not found.', status: 'NOT_FOUND' } }));
+            }
+            if (req.headers.authorization === 'Bearer tok-good-one') {
+                res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+                return res.end('data: {"candidates":[{"content":{"parts":[{"text":"hydrogen-failover-ok"}]}}]}\n\n');
+            }
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: { code: 404 } }));
+        });
+        await new Promise(r => notFoundMock.listen(0, '127.0.0.1', r));
+        const nfPort = notFoundMock.address().port;
+        const nfRouter = startMultiAccountRouter(0, {
+            allowNewInstance: true,
+            host: '127.0.0.1',
+            upstreamProtocol: 'http:',
+            upstreamHost: '127.0.0.1',
+            upstreamPort: nfPort,
+        });
+        await new Promise(r => nfRouter.once('listening', r));
+        try {
+            const nfRes = await postJson(nfRouter.address().port, '/v1internal:streamGenerateContent?alt=sse', {
+                cascadeId: 'nf-test-chat',
+                request: { model: 'gemini-4-hydrogen-medium', contents: [{ parts: [{ text: 'hi' }] }] },
+            });
+            assert.strictEqual(nfRes.status, 200);
+            assert.ok(nfRes.body.includes('hydrogen-failover-ok'));
+        } finally {
+            nfRouter.close();
+            notFoundMock.close();
+        }
+
         console.log('✓ All router health, quarantine, cascade extraction, and 403 auto-failover tests passed');
     } finally {
         routerSrv.close();

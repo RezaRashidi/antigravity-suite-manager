@@ -33,6 +33,9 @@ function classifyHttpError(statusCode, bodyStr = '') {
     if (statusCode === 401 || /UNAUTHENTICATED|invalid_grant/i.test(body)) {
         return { reason: 'auth_failed', message: 'Authentication expired or revoked', persist: true };
     }
+    if (statusCode === 404 && /Requested entity was not found|NOT_FOUND/i.test(body)) {
+        return { reason: 'model_not_found', message: 'Requested entity was not found (model or tier unavailable)', persist: false };
+    }
     if (statusCode === 403) {
         return { reason: 'forbidden_transient', message: 'Upstream HTTP 403 Forbidden (temporary cooldown)', persist: false };
     }

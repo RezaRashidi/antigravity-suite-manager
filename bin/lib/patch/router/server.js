@@ -178,15 +178,6 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
             const triedEmails = new Set();
 
             if (isAccountRpc) {
-                if (isGen && cascadeId) {
-                    const modelMatch = bodyStr.match(/"(?:model|modelName|model_name)":\s*"([^"]+)"/);
-                    if (modelMatch && modelMatch[1]) {
-                        try {
-                            const { setBinding } = require('./bindings.js');
-                            setBinding(cascadeId, boundEmail, modelMatch[1]);
-                        } catch (_) {}
-                    }
-                }
                 accountsSnapshot = loadAllAccounts();
                 const activeDefault = getActiveAccountEmail(accountsSnapshot);
                 const subPolicy = getSubagentPolicy();
@@ -197,7 +188,23 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
                     const allocated = allocateAccountForSubagent(cascadeId, subInfo.parentId, accountsSnapshot, bindings);
                     boundEmail = allocated || activeDefault || 'Primary (Native)';
                 } else {
-                    boundEmail = (cascadeId && bindings[cascadeId]?.email) || activeDefault || 'Primary (Native)';
+                    const existingChatEmail = cascadeId && bindings[cascadeId]
+                        ? (typeof bindings[cascadeId] === 'object' ? bindings[cascadeId].email : bindings[cascadeId])
+                        : null;
+                    boundEmail = (existingChatEmail && existingChatEmail !== 'Primary (Native)')
+                        ? existingChatEmail
+                        : (activeDefault || 'Primary (Native)');
+                }
+
+                if (isGen && cascadeId) {
+                    const modelMatch = bodyStr.match(/"(?:model|modelName|model_name)":\s*"([^"]+)"/);
+                    if (modelMatch && modelMatch[1]) {
+                        try {
+                            const { setBinding } = require('./bindings.js');
+                            const targetEmail = (boundEmail && boundEmail !== 'Primary (Native)') ? boundEmail : null;
+                            setBinding(cascadeId, targetEmail, modelMatch[1]);
+                        } catch (_) {}
+                    }
                 }
 
                 // Proactive health check: avoid routing onto a known unverified/403 account
@@ -368,8 +375,13 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
                         return;
                     }
 
-                    // Intercept account-level 403/401 before piping headers to client and seamlessly fail over
-                    if (isAccountRpc && (upRes.statusCode === 403 || upRes.statusCode === 401)) {
+                    // Intercept account-level 403/401/404 before piping headers to client and seamlessly fail over
+                    const isCandidateError = isAccountRpc && (
+                        upRes.statusCode === 403 ||
+                        upRes.statusCode === 401 ||
+                        (upRes.statusCode === 404 && isGen)
+                    );
+                    if (isCandidateError) {
                         const errChunks = [];
                         let errBytes = 0;
                         let errTruncated = false;

@@ -33,7 +33,7 @@ function getBindings() {
 }
 
 function setActiveAccount(email) {
-    if (!email) return;
+    if (!email || email === 'Primary (Native)') return;
     _activeAccountEmail = email;
     ensureAccountsDir();
     const b = getBindings();
@@ -95,15 +95,22 @@ function getActiveAccountEmail(accountsMap = {}) {
     return 'Primary (Native)';
 }
 
-function setBinding(cascadeId, email, model = null) {
+function setBinding(cascadeId, email = null, model = null) {
     if (!cascadeId) return;
     ensureAccountsDir();
     const b = getBindings();
     const existing = b[cascadeId] || {};
-    const finalEmail = email || existing.email || '';
-    const finalModel = (model !== null && model !== undefined && model !== '') ? model : (existing.model || '');
+    const existingEmail = typeof existing === 'object' ? existing.email : existing;
+    const existingModel = typeof existing === 'object' ? existing.model : '';
+    const finalEmail = (email && email !== 'Primary (Native)')
+        ? email
+        : ((existingEmail && existingEmail !== 'Primary (Native)') ? existingEmail : (email || ''));
+    const finalModel = (model !== null && model !== undefined && model !== '') ? model : (existingModel || '');
     b[cascadeId] = { cascade_id: cascadeId, email: finalEmail, model: finalModel, updated_at: new Date().toISOString() };
-    if (cascadeId === '__default__' || cascadeId === 'default') { b.__active_account = finalEmail; _activeAccountEmail = finalEmail; }
+    if ((cascadeId === '__default__' || cascadeId === 'default') && finalEmail && finalEmail !== 'Primary (Native)') {
+        b.__active_account = finalEmail;
+        _activeAccountEmail = finalEmail;
+    }
     try {
         const tmp = BINDINGS_FILE + '.tmp';
         fs.writeFileSync(tmp, JSON.stringify(b, null, 2), 'utf8');

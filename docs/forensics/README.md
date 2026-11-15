@@ -69,5 +69,6 @@ This document records the end-to-end diagnostic methodology, reverse-engineering
 - [61. Issue 59: Multi-Account "+ Add Account" Button Silent Failure & IPC Signature Mismatch](61_multi_account_add_button_ipc_signature_mismatch_and_ui_resilience.md)
 - [62. Issue 60: Prompt Bar Typing Lag, Layout Thrashing & MutationObserver Saturation](62_prompt_input_typing_lag_and_dom_reflow_thrashing.md)
 - [63. Issue 61: Per-Chat Account & Model Persistence with Dynamic Fallback](63_per_chat_account_and_model_persistence_with_fallback.md)
-- [64. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
+- [64. Issue 62: Model Sniffing Account Clobbering to Primary Native and HTTP 404 Model Failover](64_model_sniffing_email_clobber_and_404_failover.md)
+- [65. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
 
