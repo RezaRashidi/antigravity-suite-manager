@@ -1,7 +1,11 @@
 // Antigravity Multi-Account UI Injector: Main Controller
 (function initUI() {
     if (window.__antigravityRenderSelector) { window.__antigravityRenderSelector(); return; }
-    let state = { accounts: [], bindings: {} }, cascadeId = "default", rTimer = null, lastF = 0;
+    let state = { accounts: [], bindings: {} }, cascadeId = "default", rTimer = null, lastF = 0, lastActiveEmail = null;
+    function notifyAccountSwitch(em, cid, reason) {
+        if (!em || em === "Account") return;
+        window.dispatchEvent(new CustomEvent('antigravity:account-switched', { detail: { email: em, cascadeId: cid, reason } }));
+    }
     const apiH = () => window.__AGY_ROUTER_HOST__ || localStorage.getItem("agy_router_host") || "http://127.0.0.1:41999";
     function toast(msg) {
         let t = document.getElementById("antigravity-account-toast") || Object.assign(document.createElement("div"), { id: "antigravity-account-toast", className: "agy-toast" });
@@ -45,19 +49,39 @@
             const targetInfo = window.__antigravityFindTarget ? window.__antigravityFindTarget() : null; if (!targetInfo?.target) return;
             const newCid = window.__antigravityDetectCascadeId ? window.__antigravityDetectCascadeId(targetInfo.target) : "default";
             const isDraftId = (id) => !id || id === "default" || id.startsWith("chat_") || id.startsWith("draft_");
+            let switchedChatAccount = false;
             if (cascadeId !== newCid) {
                 const prevCid = cascadeId;
                 cascadeId = newCid;
                 if (prevCid && isDraftId(prevCid) && newCid && !isDraftId(newCid) && state.bindings?.[prevCid]) {
                     const em = typeof state.bindings[prevCid] === "object" ? state.bindings[prevCid].email : state.bindings[prevCid];
                     delete state.bindings[prevCid]; state.bindings[newCid] = em;
+                    if (em && em !== "Account") lastActiveEmail = em;
                     void fetch(apiH() + "/api/multi-account/bind", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cascadeId: newCid, email: em }) });
                 } else {
                     const em = getActive()?.email;
-                    if (em && em !== "Account") void fetch(apiH() + "/api/multi-account/set-active", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cascadeId: newCid, email: em }) });
+                    if (em && em !== "Account") {
+                        const accountChanged = Boolean(lastActiveEmail && em.toLowerCase() !== lastActiveEmail.toLowerCase());
+                        lastActiveEmail = em;
+                        switchedChatAccount = true;
+                        fetch(apiH() + "/api/multi-account/set-active", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cascadeId: newCid, email: em }) })
+                            .then(() => { if (accountChanged) notifyAccountSwitch(em, newCid, 'chat-switch'); })
+                            .catch(() => {});
+                    }
                 }
             }
             const { target, insertAfter, floating } = targetInfo, active = getActive();
+            if (!switchedChatAccount && active?.email && active.email !== "Account") {
+                if (!lastActiveEmail) {
+                    lastActiveEmail = active.email;
+                } else if (active.email.toLowerCase() !== lastActiveEmail.toLowerCase()) {
+                    const em = active.email;
+                    lastActiveEmail = em;
+                    fetch(apiH() + "/api/multi-account/set-active", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cascadeId, email: em }) })
+                        .then(() => notifyAccountSwitch(em, cascadeId, 'binding-sync'))
+                        .catch(() => {});
+                }
+            }
             let pill = document.getElementById("antigravity-account-pill");
             if (!pill || pill.parentElement !== target) {
                 if (pill) pill.remove(); pill = document.createElement("div"); pill.id = "antigravity-account-pill";
@@ -127,6 +151,7 @@
                             try { if (window.antigravityMultiAccount) await Promise.race([window.antigravityMultiAccount.bindCascade?.(cascadeId, em), new Promise(r => setTimeout(r, 200))]); } catch (_) {}
                             if (!state.bindings) state.bindings = {}; state.bindings[cascadeId] = em;
                             state.active_default = em; state.bindings.__active_account = em;
+                            lastActiveEmail = em;
                             window.dispatchEvent(new CustomEvent('antigravity:account-switched', { detail: { email: em } }));
                             try { if (window.__antigravityRefreshModels) void window.__antigravityRefreshModels(); } catch (_) {}
                             render(); toast(`✓ Switched chat to ${em.split("@")[0]}`);
