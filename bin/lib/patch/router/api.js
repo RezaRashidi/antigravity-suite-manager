@@ -47,7 +47,7 @@ function handleApiRequest(req, res, bodyStr) {
                     }));
                     return true;
                 }
-                setBinding(data.cascadeId, data.email, data.model || '');
+                setBinding(data.cascadeId, data.email, data.model || null);
                 setActiveAccount(data.email);
                 const s = require('./server.js');
                 if (s.setLastCascadeId) s.setLastCascadeId(data.cascadeId, data.email);
@@ -74,6 +74,9 @@ function handleApiRequest(req, res, bodyStr) {
                 }
             }
             if (data.cascadeId && !skipped) {
+                if (data.model) {
+                    setBinding(data.cascadeId, data.email, data.model);
+                }
                 const s = require('./server.js');
                 if (s.setLastCascadeId) s.setLastCascadeId(data.cascadeId, data.email);
             }

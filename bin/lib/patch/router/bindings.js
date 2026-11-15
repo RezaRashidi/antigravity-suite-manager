@@ -95,16 +95,20 @@ function getActiveAccountEmail(accountsMap = {}) {
     return 'Primary (Native)';
 }
 
-function setBinding(cascadeId, email, model = '') {
+function setBinding(cascadeId, email, model = null) {
+    if (!cascadeId) return;
     ensureAccountsDir();
     const b = getBindings();
-    b[cascadeId] = { cascade_id: cascadeId, email, model, updated_at: new Date().toISOString() };
-    if (cascadeId === '__default__' || cascadeId === 'default') { b.__active_account = email; _activeAccountEmail = email; }
+    const existing = b[cascadeId] || {};
+    const finalEmail = email || existing.email || '';
+    const finalModel = (model !== null && model !== undefined && model !== '') ? model : (existing.model || '');
+    b[cascadeId] = { cascade_id: cascadeId, email: finalEmail, model: finalModel, updated_at: new Date().toISOString() };
+    if (cascadeId === '__default__' || cascadeId === 'default') { b.__active_account = finalEmail; _activeAccountEmail = finalEmail; }
     try {
         const tmp = BINDINGS_FILE + '.tmp';
         fs.writeFileSync(tmp, JSON.stringify(b, null, 2), 'utf8');
         fs.renameSync(tmp, BINDINGS_FILE);
-        logTraffic(`[BIND] Chat: ${cascadeId} bound to account: ${email}`);
+        logTraffic(`[BIND] Chat: ${cascadeId} bound to account: ${finalEmail}${finalModel ? ' | model: ' + finalModel : ''}`);
     } catch (e) {
         console.error('[MultiAccountRouter] Failed to write bindings:', e.message);
     }

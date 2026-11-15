@@ -178,6 +178,15 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
             const triedEmails = new Set();
 
             if (isAccountRpc) {
+                if (isGen && cascadeId) {
+                    const modelMatch = bodyStr.match(/"(?:model|modelName|model_name)":\s*"([^"]+)"/);
+                    if (modelMatch && modelMatch[1]) {
+                        try {
+                            const { setBinding } = require('./bindings.js');
+                            setBinding(cascadeId, boundEmail, modelMatch[1]);
+                        } catch (_) {}
+                    }
+                }
                 accountsSnapshot = loadAllAccounts();
                 const activeDefault = getActiveAccountEmail(accountsSnapshot);
                 const subPolicy = getSubagentPolicy();

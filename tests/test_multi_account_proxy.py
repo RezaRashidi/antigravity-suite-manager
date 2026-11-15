@@ -19,11 +19,15 @@ class TestMultiAccountProxy(unittest.TestCase):
         self.assertNotIn("Content-Length", out_h)
 
     def test_proxy_server_healthz(self):
-        server = run_proxy_server(port=41997)
+        import socket
+        with socket.socket() as s:
+            s.bind(('127.0.0.1', 0))
+            free_port = s.getsockname()[1]
+        server = run_proxy_server(port=free_port)
         t = threading.Thread(target=server.serve_forever, daemon=True)
         t.start()
         try:
-            self.assertTrue(is_proxy_running(port=41997))
+            self.assertTrue(is_proxy_running(port=free_port))
         finally:
             server.shutdown()
             server.server_close()

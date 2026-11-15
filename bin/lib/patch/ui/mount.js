@@ -179,6 +179,8 @@
             }
 
             if (store) {
+                window.__antigravityStore = store;
+                window.__antigravityClient = client;
                 let statusObj = null;
                 if (client && typeof client.getUserStatus === 'function') {
                     try {
@@ -192,6 +194,9 @@
                     statusObj = store.getState()?.userStatus;
                 }
                 if (statusObj && statusObj.cascadeModelConfigData) {
+                    if (Array.isArray(statusObj.cascadeModelConfigData.clientModelConfigs)) {
+                        window.__antigravityAvailableConfigs = statusObj.cascadeModelConfigData.clientModelConfigs;
+                    }
                     store.dispatch({ type: 'userStatus/setUserStatus', payload: { ...statusObj } });
                 }
             }
@@ -199,6 +204,110 @@
             console.warn('[MultiAccount] Dynamic model refresh error:', err);
         }
     }
+
+    window.__antigravityGetSelectedModel = function() {
+        try {
+            const triggers = document.querySelectorAll('[data-testid="model-selector-trigger"]');
+            if (!triggers.length) return null;
+            let trigger = null;
+            for (let i = 0; i < triggers.length; i++) {
+                if (triggers[i].closest('[data-testid="conversation-view"]')) {
+                    trigger = triggers[i];
+                    break;
+                }
+            }
+            if (!trigger) trigger = triggers[triggers.length - 1];
+            if (!trigger) return null;
+            const text = (trigger.textContent || '').replace(/[▾▲▼◂▸◀▶]/g, '').replace(/\s+/g, ' ').trim();
+            return text || null;
+        } catch (_) {
+            return null;
+        }
+    };
+
+    window.__antigravitySelectModel = async function(targetModelName, availableConfigs) {
+        try {
+            const triggers = document.querySelectorAll('[data-testid="model-selector-trigger"]');
+            if (!triggers.length) return null;
+            let trigger = null;
+            for (let i = 0; i < triggers.length; i++) {
+                if (triggers[i].closest('[data-testid="conversation-view"]')) {
+                    trigger = triggers[i];
+                    break;
+                }
+            }
+            if (!trigger) trigger = triggers[triggers.length - 1];
+            if (!trigger) return null;
+
+            const norm = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const current = (trigger.textContent || '').replace(/[▾▲▼◂▸◀▶]/g, '').replace(/\s+/g, ' ').trim();
+            const currentNorm = norm(current);
+
+            const configs = Array.isArray(availableConfigs) && availableConfigs.length > 0
+                ? availableConfigs
+                : (window.__antigravityAvailableConfigs || []);
+
+            const isModelValidInConfigs = (name) => {
+                if (!name || !configs.length) return true;
+                const n = norm(name);
+                return configs.some(cfg => {
+                    const l = norm(cfg.label);
+                    const m = norm(cfg.modelOrAlias?.model || cfg.modelOrAlias?.choice?.value);
+                    return (l && (l.includes(n) || n.includes(l))) || (m && (m.includes(n) || n.includes(m)));
+                });
+            };
+
+            let chosenTarget = targetModelName;
+            if (!chosenTarget || !isModelValidInConfigs(chosenTarget)) {
+                if (current && isModelValidInConfigs(current)) {
+                    chosenTarget = current;
+                } else if (configs.length > 0) {
+                    const fallback = configs.find(c => /flash/i.test(c.label)) || configs.find(c => /pro/i.test(c.label)) || configs[0];
+                    chosenTarget = fallback?.label || null;
+                }
+            }
+
+            if (!chosenTarget) return current || null;
+
+            const targetNorm = norm(chosenTarget);
+            if (currentNorm && targetNorm && (currentNorm === targetNorm || currentNorm.includes(targetNorm) || targetNorm.includes(currentNorm))) {
+                return current;
+            }
+
+            trigger.click();
+            await new Promise(r => setTimeout(r, 70));
+
+            const items = Array.from(document.querySelectorAll('[role="menuitem"], [role="option"], [data-radix-collection-item], [data-radix-menu-content] button, [data-radix-popper-content-wrapper] button'));
+            let matchedItem = null;
+            let fallbackItem = null;
+
+            for (const it of items) {
+                const itemText = (it.textContent || '').replace(/[▾▲▼◂▸◀▶]/g, '').replace(/\s+/g, ' ').trim();
+                const itNorm = norm(itemText);
+                if (!itNorm) continue;
+                if (itNorm.includes(targetNorm) || targetNorm.includes(itNorm)) {
+                    matchedItem = it;
+                    break;
+                }
+                if (!fallbackItem && (itNorm.includes('flash') || itNorm.includes('pro') || itNorm.includes('gemini') || itNorm.includes('claude'))) {
+                    fallbackItem = it;
+                }
+            }
+
+            const itemToClick = matchedItem || fallbackItem || items[0];
+            if (itemToClick) {
+                itemToClick.click();
+                await new Promise(r => setTimeout(r, 40));
+                const updated = (trigger.textContent || '').replace(/[▾▲▼◂▸◀▶]/g, '').replace(/\s+/g, ' ').trim();
+                return updated || chosenTarget;
+            } else {
+                document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+                return current || null;
+            }
+        } catch (_) {
+            return null;
+        }
+    };
 
     window.__antigravityRefreshModels = triggerDynamicModelRefresh;
     window.addEventListener('antigravity:account-switched', () => {
