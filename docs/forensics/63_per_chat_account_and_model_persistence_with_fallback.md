@@ -1,7 +1,7 @@
 # Issue 61: Per-Chat Account & Model Persistence with Dynamic Fallback
 
 ## 1. Problem Statement
-In multi-account workflows, chats may be bound to different Google accounts (e.g., `aireza2509@gmail.com` with Pro/Hydrogen entitlements vs. a secondary account with standard quotas). Previously:
+In multi-account workflows, chats may be bound to different Google accounts (e.g., `user1@example.com` with Pro/Hydrogen entitlements vs. a secondary account `user2@example.com` with standard quotas). Previously:
 1. The binding mechanism only tracked `email` per chat ID (`cascadeId`).
 2. When switching between conversations, the active account switched, but the model selection in Antigravity's model dropdown remained fixed on whatever model was last active in the previous chat (e.g., `Gemini 4 Hydrogen`).
 3. If the newly active account lacked access to that model (or if the model was unsupported by that account's tier), prompt generation failed or errored out.

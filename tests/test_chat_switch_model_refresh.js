@@ -31,15 +31,15 @@ async function runTests() {
         __AGY_ROUTER_HOST__: 'http://127.0.0.1:41999',
         __AGY_INITIAL_STATE__: {
             accounts: [
-                { email: 'aireza2509@gmail.com', is_primary: true },
-                { email: 'other@gmail.com', is_primary: false },
+                { email: 'user1@example.com', is_primary: true },
+                { email: 'user2@example.com', is_primary: false },
             ],
             bindings: {
-                'chat-aaa-1111': { email: 'aireza2509@gmail.com', model: 'Gemini 4 Hydrogen' },
-                'chat-bbb-2222': { email: 'other@gmail.com', model: 'Gemini 3.8 Flash' },
-                'chat-ccc-3333': { email: 'other@gmail.com', model: '' },
+                'chat-aaa-1111': { email: 'user1@example.com', model: 'Gemini 4 Hydrogen' },
+                'chat-bbb-2222': { email: 'user2@example.com', model: 'Gemini 3.8 Flash' },
+                'chat-ccc-3333': { email: 'user2@example.com', model: '' },
             },
-            active_default: 'aireza2509@gmail.com',
+            active_default: 'user1@example.com',
         },
         __antigravityAvailableConfigs: [
             { label: 'Gemini 4 Hydrogen', modelOrAlias: { model: 'models/gemini-4-hydrogen' } },
@@ -110,13 +110,13 @@ async function runTests() {
 
     // 1. Initial mount: should NOT emit antigravity:account-switched
     assert.strictEqual(events.length, 0, 'Initial mount should not dispatch account-switched');
-    assert.strictEqual(pillEl.dataset.email, 'aireza2509@gmail.com');
+    assert.strictEqual(pillEl.dataset.email, 'user1@example.com');
 
-    // 2. Switch to chat-bbb-2222 (bound to other@gmail.com, model Gemini 3.8 Flash)
+    // 2. Switch to chat-bbb-2222 (bound to user2@example.com, model Gemini 3.8 Flash)
     currentCid = 'chat-bbb-2222';
     windowObj.__antigravityRenderSelector();
     await new Promise(r => setTimeout(r, 120));
-    assert.strictEqual(pillEl.dataset.email, 'other@gmail.com');
+    assert.strictEqual(pillEl.dataset.email, 'user2@example.com');
     const setActiveCall = fetchCalls.find(c => c.url.endsWith('/api/multi-account/set-active'));
     assert(setActiveCall, 'set-active should be called on chat switch');
     assert.strictEqual(events.length, 0, 'account-switched must wait until set-active resolves');
@@ -125,18 +125,18 @@ async function runTests() {
     await new Promise(r => setTimeout(r, 200));
     assert.strictEqual(events.length, 1, 'account-switched should fire after set-active resolves');
     assert.strictEqual(events[0].type, 'antigravity:account-switched');
-    assert.strictEqual(events[0].detail.email, 'other@gmail.com');
+    assert.strictEqual(events[0].detail.email, 'user2@example.com');
     assert.strictEqual(events[0].detail.cascadeId, 'chat-bbb-2222');
     assert.strictEqual(currentSelectedModel, 'Gemini 3.8 Flash', 'Model must restore to Gemini 3.8 Flash');
 
-    // 3. Switch back to chat-aaa-1111 (aireza2509@gmail.com, model Gemini 4 Hydrogen)
+    // 3. Switch back to chat-aaa-1111 (user1@example.com, model Gemini 4 Hydrogen)
     currentCid = 'chat-aaa-1111';
     windowObj.__antigravityRenderSelector();
     await new Promise(r => setTimeout(r, 120));
     if (resolveSetActive) resolveSetActive();
     await new Promise(r => setTimeout(r, 200));
     assert.strictEqual(events.length, 2, 'account-switched should fire on switch back to chat-aaa');
-    assert.strictEqual(events[1].detail.email, 'aireza2509@gmail.com');
+    assert.strictEqual(events[1].detail.email, 'user1@example.com');
     assert.strictEqual(currentSelectedModel, 'Gemini 4 Hydrogen', 'Model must restore to Gemini 4 Hydrogen');
 
     // 4. Test missing model fallback on account without Hydrogen
@@ -146,7 +146,7 @@ async function runTests() {
     ];
     // Create new chat-ddd-4444 bound to an account with Hydrogen saved, but available configs only has Flash
     sandbox.window.__AGY_INITIAL_STATE__.bindings['chat-ddd-4444'] = {
-        email: 'other@gmail.com',
+        email: 'user2@example.com',
         model: 'Gemini 4 Hydrogen'
     };
     currentCid = 'chat-ddd-4444';
