@@ -73,6 +73,43 @@ function runTests() {
     releaseSubagentLease('sub-uuid-3');
     console.log('✓ In-flight and lease release passed');
 
+    // 3. Model-aware allocation: subagent stays on parent when no other account supports model
+    const tieredAccounts = {
+        'risaai315@test.com': {
+            email: 'risaai315@test.com',
+            tier_type: 'Paid Pro',
+            available_models: ['Gemini 4 Carbon (High)', 'Gemini 4 Carbon (Medium)', 'Gemini 3.8 Flash (High)']
+        },
+        'aireza@test.com': {
+            email: 'aireza@test.com',
+            tier_type: 'Paid Pro',
+            available_models: ['Gemini 4 Carbon', 'Gemini 3.8 Flash (High)']
+        },
+        'freepro@test.com': {
+            email: 'freepro@test.com',
+            tier_type: 'Free Pro',
+            available_models: ['Gemini 4 Carbon', 'Gemini 3.8 Flash (High)']
+        }
+    };
+    const tieredBindings = {
+        'paid-parent': { email: 'risaai315@test.com', model: 'Gemini 4 Carbon High' }
+    };
+
+    const stayParent = allocateAccountForSubagent('sub-carbon-1', 'paid-parent', tieredAccounts, tieredBindings, [], 'gemini-4-carbon-high');
+    assert.strictEqual(stayParent, 'risaai315@test.com', 'Subagent must stay on parent when no other account supports gemini-4-carbon-high');
+    console.log('✓ Subagent kept on parent when model absent on peers');
+
+    // Unlisted orchestrator alias on Carbon must also stay on parent when peers lack tiered Carbon
+    const stayOrchestrator = allocateAccountForSubagent('sub-orch-1', 'paid-parent', tieredAccounts, tieredBindings, [], 'gemini-pro-orchestrator');
+    assert.strictEqual(stayOrchestrator, 'risaai315@test.com', 'Orchestrator subagent must stay on parent when peers lack tiered Carbon');
+    console.log('✓ Subagent kept on parent for unlisted orchestrator model');
+
+    // Shared model present on peers DOES allow switching
+    const switchShared = allocateAccountForSubagent('sub-flash-1', 'paid-parent', tieredAccounts, tieredBindings, [], 'gemini-3.8-flash-high');
+    assert.ok(['aireza@test.com', 'freepro@test.com'].includes(switchShared), 'Subagent must switch when peer accounts support shared model');
+    releaseSubagentLease('sub-flash-1');
+    console.log('✓ Subagent switches when model exists on other accounts:', switchShared);
+
     console.log('All Subagent Allocator tests passed successfully!');
     process.exit(0);
 }

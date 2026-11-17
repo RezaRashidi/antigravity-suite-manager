@@ -9,6 +9,99 @@ const UNHEALTHY_STATUSES = new Set(['verify_required', 'no_license', 'auth_faile
 const DEFAULT_UNHEALTHY_COOLDOWN_MS = 30 * 60 * 1000;
 const TRANSIENT_COOLDOWN_MS = 60 * 1000;
 const _unhealthyAccounts = new Map();
+const _unsupportedModels = new Map();
+const _MODEL_FAMILY_TOKENS = ['carbon', 'hydrogen', 'argon', 'opus', 'sonnet', 'flash'];
+
+function normalizeModelKey(name) {
+    if (!name || typeof name !== 'string') return '';
+    return name.toLowerCase().trim()
+        .replace(/\bextra\b/g, 'xhigh')
+        .replace(/[^a-z0-9]/g, '');
+}
+
+function getAccountCatalogSet(acc) {
+    const out = new Set();
+    if (!acc || typeof acc !== 'object') return out;
+    for (const list of [acc.available_models, acc.available_model_ids]) {
+        if (!Array.isArray(list)) continue;
+        for (const item of list) {
+            const norm = normalizeModelKey(item);
+            if (norm) out.add(norm);
+        }
+    }
+    return out;
+}
+
+function markModelUnsupported(email, modelName, cooldownMs = DEFAULT_UNHEALTHY_COOLDOWN_MS) {
+    const norm = normalizeModelKey(modelName);
+    if (!email || email === 'Primary (Native)' || !norm) return false;
+    const key = email.toLowerCase();
+    let perAcc = _unsupportedModels.get(key);
+    if (!perAcc) {
+        perAcc = new Map();
+        _unsupportedModels.set(key, perAcc);
+    }
+    perAcc.set(norm, Date.now() + (cooldownMs > 0 ? cooldownMs : DEFAULT_UNHEALTHY_COOLDOWN_MS));
+    return true;
+}
+
+function isModelMarkedUnsupported(email, modelName) {
+    const norm = normalizeModelKey(modelName);
+    if (!email || !norm) return false;
+    const perAcc = _unsupportedModels.get(email.toLowerCase());
+    if (!perAcc) return false;
+    const until = perAcc.get(norm);
+    if (!until) return false;
+    if (Date.now() >= until) {
+        perAcc.delete(norm);
+        return false;
+    }
+    return true;
+}
+
+function clearUnsupportedModels(email) {
+    if (!email) return;
+    _unsupportedModels.delete(email.toLowerCase());
+}
+
+/**
+ * Checks if an account supports a requested model based on learned 404s and fetched model catalogs.
+ */
+function accountSupportsModel(acc, modelName, accountsMap = null, parentAcc = null, parentModelName = null) {
+    if (!acc) return false;
+    if (!modelName) return true;
+    if (acc.email && isModelMarkedUnsupported(acc.email, modelName)) return false;
+
+    const target = normalizeModelKey(modelName);
+    if (!target) return true;
+
+    const accSet = getAccountCatalogSet(acc);
+    if (accSet.size === 0) return true;
+    if (accSet.has(target)) return true;
+
+    if (parentAcc && getAccountCatalogSet(parentAcc).has(target)) return false;
+    if (accountsMap && typeof accountsMap === 'object') {
+        for (const peer of Object.values(accountsMap)) {
+            if (peer && getAccountCatalogSet(peer).has(target)) return false;
+        }
+    }
+
+    // Unlisted internal models (e.g. orchestrator aliases): require matching tier & parent family set.
+    if (parentAcc) {
+        const parentTier = String(parentAcc.tier_type || parentAcc.tier || '').toLowerCase();
+        const accTier = String(acc.tier_type || acc.tier || '').toLowerCase();
+        if (parentTier && accTier && parentTier !== accTier) return false;
+
+        const parentSet = getAccountCatalogSet(parentAcc);
+        const hint = normalizeModelKey(parentModelName || modelName);
+        const fam = _MODEL_FAMILY_TOKENS.find(t => hint.includes(t));
+        if (fam && parentSet.size > 0) {
+            const parentFam = Array.from(parentSet).filter(m => m.includes(fam));
+            if (parentFam.length > 0 && !parentFam.every(m => accSet.has(m))) return false;
+        }
+    }
+    return true;
+}
 
 function writeJsonAtomic(filePath, dataObj) {
     ensureAccountsDir();
@@ -183,9 +276,14 @@ function isAccountHealthy(accOrEmail, accountsMap = null) {
     return true;
 }
 
-function pickHealthyFallbackAccount(accountsMap = {}, excludeEmails = [], preferredEmail = null) {
+function pickHealthyFallbackAccount(accountsMap = {}, excludeEmails = [], preferredEmail = null, modelName = null, parentAcc = null, parentModelName = null) {
     const excluded = new Set((excludeEmails || []).filter(Boolean).map(e => String(e).toLowerCase()));
-    const entries = Object.values(accountsMap || {}).filter(a => a && a.email && !excluded.has(a.email.toLowerCase()) && isAccountHealthy(a, accountsMap));
+    const entries = Object.values(accountsMap || {}).filter(a =>
+        a && a.email &&
+        !excluded.has(a.email.toLowerCase()) &&
+        isAccountHealthy(a, accountsMap) &&
+        (!modelName || accountSupportsModel(a, modelName, accountsMap, parentAcc, parentModelName))
+    );
     if (!entries.length) return null;
 
     if (preferredEmail && preferredEmail !== 'Primary (Native)') {
@@ -436,5 +534,10 @@ module.exports = {
     clearAccountUnhealthy,
     isAccountHealthy,
     pickHealthyFallbackAccount,
+    normalizeModelKey,
+    accountSupportsModel,
+    markModelUnsupported,
+    clearUnsupportedModels,
     _unhealthyAccounts,
+    _unsupportedModels,
 };

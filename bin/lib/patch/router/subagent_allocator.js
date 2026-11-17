@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { ACCOUNTS_DIR, logTraffic } = require('./bindings.js');
-const { isAccountHealthy } = require('./accounts.js');
+const { isAccountHealthy, accountSupportsModel } = require('./accounts.js');
 
 const POLICY_FILE = path.join(ACCOUNTS_DIR, 'subagent_policy.json');
 const _subagentCache = new Map();
@@ -84,12 +84,28 @@ function getInFlightCount(email) {
     return _inFlightCounts.get(email) || 0;
 }
 
-function allocateAccountForSubagent(subagentId, parentId, accountsMap = {}, bindings = {}, quotas = []) {
+function resolveEffectiveSubagentModel(subagentId, parentId, bindings = {}, requestedModel = null) {
+    if (requestedModel && typeof requestedModel === 'string') return requestedModel;
+    const subModel = subagentId && typeof bindings[subagentId] === 'object' ? bindings[subagentId]?.model : null;
+    const parentModel = parentId && typeof bindings[parentId] === 'object' ? bindings[parentId]?.model : null;
+    if (subModel && subModel !== 'gemini-3.5-flash-lite') return subModel;
+    if (parentModel && parentModel !== 'gemini-3.5-flash-lite') return parentModel;
+    return subModel || parentModel || null;
+}
+
+function allocateAccountForSubagent(subagentId, parentId, accountsMap = {}, bindings = {}, quotas = [], requestedModel = null) {
     if (!subagentId) return null;
+    const parentBinding = parentId ? bindings[parentId] : null;
+    const parentEmail = (typeof parentBinding === 'object' ? parentBinding?.email : parentBinding) || null;
+    const parentModel = (typeof parentBinding === 'object' ? parentBinding?.model : null) || null;
+    const effectiveModel = resolveEffectiveSubagentModel(subagentId, parentId, bindings, requestedModel);
+    const parentAcc = parentEmail ? (accountsMap[parentEmail] || accountsMap[parentEmail.toLowerCase()] || null) : null;
+
     if (_subagentLeases.has(subagentId)) {
         const lease = _subagentLeases.get(subagentId);
         const leasedAcc = accountsMap[lease.email] || accountsMap[lease.email?.toLowerCase()];
-        if (leasedAcc && isAccountHealthy(leasedAcc, accountsMap) && Date.now() - lease.leasedAt < 3600000) {
+        const modelOk = !effectiveModel || accountSupportsModel(leasedAcc, effectiveModel, accountsMap, parentAcc, parentModel);
+        if (leasedAcc && isAccountHealthy(leasedAcc, accountsMap) && modelOk && Date.now() - lease.leasedAt < 3600000) {
             return lease.email;
         }
         _subagentLeases.delete(subagentId);
@@ -102,9 +118,22 @@ function allocateAccountForSubagent(subagentId, parentId, accountsMap = {}, bind
     const emails = healthyEmails.length ? healthyEmails : allEmails;
     if (emails.length === 1) return emails[0];
 
-    const parentEmail = (parentId && bindings[parentId]?.email) || null;
     let candidates = emails.filter(em => em.toLowerCase() !== (parentEmail || '').toLowerCase());
-    if (!candidates.length) candidates = emails;
+    if (effectiveModel) {
+        candidates = candidates.filter(em =>
+            accountSupportsModel(accountsMap[em], effectiveModel, accountsMap, parentAcc, parentModel)
+        );
+    }
+    if (!candidates.length) {
+        if (parentEmail && isAccountHealthy(parentAcc || parentEmail, accountsMap)) {
+            logTraffic(`[SUBAGENT_KEEP] Subagent: [${subagentId}] kept on parent account [${parentEmail}] (model '${effectiveModel || 'unknown'}' unavailable on other healthy accounts)`);
+            return parentEmail;
+        }
+        const anyCompatible = effectiveModel
+            ? emails.filter(em => accountSupportsModel(accountsMap[em], effectiveModel, accountsMap, parentAcc, parentModel))
+            : [];
+        candidates = anyCompatible.length ? anyCompatible : emails;
+    }
 
     if (quotas && quotas.length > 0) {
         const withQuota = candidates.filter(em => {

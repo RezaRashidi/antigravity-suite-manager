@@ -314,6 +314,54 @@ async function runTests() {
             notFoundMock.close();
         }
 
+        // Subagent fetchAvailableModels + exclusive model must stay on parent Paid Pro & monitor must not clobber binding model
+        const subId = 'sub-carbon-e2e-uuid-1234';
+        const subDir = path.join(tmpDir, '.gemini', 'antigravity', 'brain', activeBindId, '.system_generated', 'subagents');
+        fs.mkdirSync(subDir, { recursive: true });
+        fs.writeFileSync(path.join(subDir, `${subId}.json`), JSON.stringify({ conversationId: subId, state: 'SUBAGENT_STATE_ALIVE' }));
+        for (const [em, mods] of [
+            ['good-one@gmail.com', ['Gemini 4 Carbon (High)', 'Gemini 3.8 Flash (High)']],
+            ['good-two@gmail.com', ['Gemini 4 Carbon', 'Gemini 3.8 Flash (High)']],
+        ]) {
+            const fp = path.join(tmpDir, `${em}.json`);
+            const cur = JSON.parse(fs.readFileSync(fp, 'utf8'));
+            cur.available_models = mods;
+            fs.writeFileSync(fp, JSON.stringify(cur, null, 2));
+        }
+        const subSeenAuth = [];
+        const subMock = http.createServer((req, res) => {
+            subSeenAuth.push({ url: req.url, auth: req.headers.authorization || '' });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(req.url.includes('fetchAvailableModels') ? JSON.stringify({ models: {} }) : 'data: {"candidates":[]}\n\n');
+        });
+        await new Promise(r => subMock.listen(0, '127.0.0.1', r));
+        const subRouter = startMultiAccountRouter(0, {
+            allowNewInstance: true,
+            host: '127.0.0.1',
+            upstreamProtocol: 'http:',
+            upstreamHost: '127.0.0.1',
+            upstreamPort: subMock.address().port,
+        });
+        await new Promise(r => subRouter.once('listening', r));
+        try {
+            const sp = subRouter.address().port;
+            await postJson(sp, '/v1internal:streamGenerateContent?alt=sse', { cascadeId: activeBindId, request: { model: 'gemini-4-carbon-high' } });
+            await postJson(sp, '/v1internal:streamGenerateContent?alt=sse', { cascadeId: activeBindId, request: { model: 'gemini-3.5-flash-lite' } });
+            const { getBindings } = require('../bin/lib/patch/router/bindings.js');
+            assert.strictEqual(getBindings()[activeBindId].model, 'gemini-4-carbon-high', 'Monitor model must not clobber chat model binding');
+
+            await postJson(sp, '/v1internal:fetchAvailableModels', { cascadeId: subId });
+            assert.strictEqual(subSeenAuth[subSeenAuth.length - 1].auth, 'Bearer tok-good-one', 'Subagent fetchAvailableModels must stay on parent account');
+
+            await postJson(sp, '/v1internal:streamGenerateContent?alt=sse', { cascadeId: subId, request: { model: 'gemini-4-carbon-high' } });
+            assert.strictEqual(subSeenAuth[subSeenAuth.length - 1].auth, 'Bearer tok-good-one', 'Subagent must stay on parent when peer lacks Carbon High');
+
+            await postJson(sp, '/v1internal:streamGenerateContent?alt=sse', { cascadeId: 'sub-flash-e2e-uuid-5678', request: { model: 'gemini-3.8-flash-high' } });
+        } finally {
+            subRouter.close();
+            subMock.close();
+        }
+
         console.log('✓ All router health, quarantine, cascade extraction, and 403 auto-failover tests passed');
     } finally {
         routerSrv.close();

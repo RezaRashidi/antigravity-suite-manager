@@ -134,18 +134,19 @@ async function fetchAccountModels(token) {
                     if (res.statusCode === 200) {
                         const parsed = JSON.parse(data);
                         const models = parsed.models || {};
-                        const modelList = Object.keys(models).map(k => models[k].displayName || k).filter(Boolean);
-                        const hasPaidExclusive = Object.keys(models).some(k => k.includes('5-5') || models[k].tagTitle === 'New');
+                        const modelIds = Object.keys(models).filter(Boolean);
+                        const modelList = modelIds.map(k => models[k].displayName || k).filter(Boolean);
+                        const hasPaidExclusive = modelIds.some(k => k.includes('5-5') || models[k].tagTitle === 'New');
                         const hasFreeNotice = Object.values(models).some(m => String(m.tagDescription || '').toLowerCase().includes('paid pro'));
-                        const tierType = hasPaidExclusive ? 'Paid Pro' : ((hasFreeNotice || Object.keys(models).length >= 15) ? 'Free Pro' : 'Free');
-                        return resolve({ tierType, models: modelList, modelCount: Object.keys(models).length });
+                        const tierType = hasPaidExclusive ? 'Paid Pro' : ((hasFreeNotice || modelIds.length >= 15) ? 'Free Pro' : 'Free');
+                        return resolve({ tierType, models: modelList, modelIds, modelCount: modelIds.length });
                     }
                 } catch (_) {}
-                resolve({ tierType: 'PRO', models: [], modelCount: 0 });
+                resolve({ tierType: 'PRO', models: [], modelIds: [], modelCount: 0 });
             });
         });
         req.on('timeout', () => req.destroy(new Error('timeout')));
-        req.on('error', () => resolve({ tierType: 'PRO', models: [], modelCount: 0 }));
+        req.on('error', () => resolve({ tierType: 'PRO', models: [], modelIds: [], modelCount: 0 }));
         req.write(body); req.end();
     });
 }
@@ -280,6 +281,7 @@ async function fetchDirectAccountQuotas(account) {
                     const minfo = await modelInfoPromise;
                     data.tier_type = minfo.tierType;
                     data.available_models = minfo.models;
+                    data.available_model_ids = minfo.modelIds || [];
                     data.model_count = minfo.modelCount;
                 } catch (_) {}
                 if (account.is_bypassed) {

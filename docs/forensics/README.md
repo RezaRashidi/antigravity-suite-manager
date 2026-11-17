@@ -70,5 +70,6 @@ This document records the end-to-end diagnostic methodology, reverse-engineering
 - [62. Issue 60: Prompt Bar Typing Lag, Layout Thrashing & MutationObserver Saturation](62_prompt_input_typing_lag_and_dom_reflow_thrashing.md)
 - [63. Issue 61: Per-Chat Account & Model Persistence with Dynamic Fallback](63_per_chat_account_and_model_persistence_with_fallback.md)
 - [64. Issue 62: Model Sniffing Account Clobbering to Primary Native and HTTP 404 Model Failover](64_model_sniffing_email_clobber_and_404_failover.md)
-- [65. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
+- [65. Issue 63: Subagent Model-Aware Account Allocation, Language Server Catalog Clobbering & Monitor Model Protection](65_subagent_model_aware_allocation_and_catalog_isolation.md)
+- [66. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
 

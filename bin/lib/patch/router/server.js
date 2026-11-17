@@ -10,12 +10,13 @@ const {
     clearAccountUnhealthy,
     isAccountHealthy,
     pickHealthyFallbackAccount,
+    markModelUnsupported,
 } = require('./accounts.js');
 const { refreshGoogleToken } = require('./oauth.js');
 const { handleApiRequest, tryInterceptCommand } = require('./api.js');
 const { getProxyAgent, resetProxyAgent } = require('./proxy_agent.js');
 const { getAuthenticUserAgent } = require('./ua.js');
-const { getSubagentPolicy, isSubagent, trackInFlight, allocateAccountForSubagent } = require('./subagent_allocator.js');
+const { getSubagentPolicy, isSubagent, trackInFlight, allocateAccountForSubagent, releaseSubagentLease } = require('./subagent_allocator.js');
 const { isEligibilityRpc, normalizeEligibilityResponse } = require('./eligibility_middleware.js');
 
 const DEFAULT_PORT = 41999;
@@ -161,19 +162,22 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
             if (tryInterceptCommand(req, res, bodyStr, cascadeId)) return;
 
             const isGen = req.url && (req.url.includes('streamGenerateContent') || req.url.includes('generateContent'));
+            const isModelListRpc = req.url && req.url.includes('fetchAvailableModels');
             const isAccountRpc = req.url && (
                 isGen ||
                 req.url.includes('retrieveUserQuota') ||
-                req.url.includes('fetchAvailableModels')
+                isModelListRpc
             );
             const isEligRpc = isEligibilityRpc(req.url);
+            const modelMatch = isGen ? bodyStr.match(/"(?:model|modelName|model_name)":\s*"([^"]+)"/) : null;
+            const requestedModel = modelMatch?.[1] || null;
 
             if (!cascadeId && !isGen && freshLastId) {
                 cascadeId = freshLastId;
             }
 
             // loadCodeAssist stays native: hijacking it breaks login onboarding (401).
-            let token = null, boundEmail = 'Primary (Native)', isSub = false;
+            let token = null, boundEmail = 'Primary (Native)', isSub = false, parentEmail = null, parentModel = null;
             let accountsSnapshot = {};
             const triedEmails = new Set();
 
@@ -183,10 +187,21 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
                 const subPolicy = getSubagentPolicy();
                 const subInfo = subPolicy.enabled && cascadeId ? isSubagent(cascadeId) : { isSubagent: false };
                 isSub = !!subInfo.isSubagent;
+                if (isSub && subInfo.parentId && bindings[subInfo.parentId]) {
+                    const pb = bindings[subInfo.parentId];
+                    parentEmail = typeof pb === 'object' ? pb.email : pb;
+                    parentModel = typeof pb === 'object' ? pb.model : null;
+                }
 
                 if (isSub) {
-                    const allocated = allocateAccountForSubagent(cascadeId, subInfo.parentId, accountsSnapshot, bindings);
-                    boundEmail = allocated || activeDefault || 'Primary (Native)';
+                    if (isModelListRpc) {
+                        boundEmail = (parentEmail && parentEmail !== 'Primary (Native)')
+                            ? parentEmail
+                            : (activeDefault || 'Primary (Native)');
+                    } else {
+                        const allocated = allocateAccountForSubagent(cascadeId, subInfo.parentId, accountsSnapshot, bindings, [], requestedModel);
+                        boundEmail = allocated || parentEmail || activeDefault || 'Primary (Native)';
+                    }
                 } else {
                     const existingChatEmail = cascadeId && bindings[cascadeId]
                         ? (typeof bindings[cascadeId] === 'object' ? bindings[cascadeId].email : bindings[cascadeId])
@@ -196,26 +211,27 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
                         : (activeDefault || 'Primary (Native)');
                 }
 
-                if (isGen && cascadeId) {
-                    const modelMatch = bodyStr.match(/"(?:model|modelName|model_name)":\s*"([^"]+)"/);
-                    if (modelMatch && modelMatch[1]) {
-                        try {
-                            const { setBinding } = require('./bindings.js');
+                if (isGen && cascadeId && requestedModel) {
+                    try {
+                        const existingModel = bindings[cascadeId] && typeof bindings[cascadeId] === 'object' ? bindings[cascadeId].model : '';
+                        // Never let background safety monitor (gemini-3.5-flash-lite) clobber the user's selected chat model.
+                        if (requestedModel !== 'gemini-3.5-flash-lite' || !existingModel) {
                             const targetEmail = (boundEmail && boundEmail !== 'Primary (Native)') ? boundEmail : null;
-                            setBinding(cascadeId, targetEmail, modelMatch[1]);
-                        } catch (_) {}
-                    }
+                            setBinding(cascadeId, targetEmail, requestedModel);
+                        }
+                    } catch (_) {}
                 }
 
                 // Proactive health check: avoid routing onto a known unverified/403 account
                 const targetAcc = boundEmail === 'Primary (Native)'
                     ? Object.values(accountsSnapshot).find(a => a && a.is_primary)
                     : accountsSnapshot[boundEmail.toLowerCase()];
+                const parentAcc = parentEmail ? accountsSnapshot[parentEmail.toLowerCase()] : null;
 
                 if (targetAcc && !isAccountHealthy(targetAcc, accountsSnapshot)) {
                     const reason = targetAcc.license_status || 'unhealthy';
                     const exclude = [boundEmail, targetAcc.email];
-                    const healthyFallback = pickHealthyFallbackAccount(accountsSnapshot, exclude, activeDefault);
+                    const healthyFallback = pickHealthyFallbackAccount(accountsSnapshot, exclude, activeDefault, requestedModel, parentAcc, parentModel);
                     if (healthyFallback) {
                         logTraffic(`[HEALTH_SKIP] Account [${boundEmail}] is ${reason}; routing [${cascadeId || 'general'}] to [${healthyFallback}]`);
                         triedEmails.add(boundEmail.toLowerCase());
@@ -228,7 +244,7 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
                 if (!token && boundEmail !== 'Primary (Native)') {
                     markAccountUnhealthy(boundEmail, 'auth_failed', 'Token resolution failed', 10 * 60 * 1000, accountsSnapshot[boundEmail.toLowerCase()]);
                     triedEmails.add(boundEmail.toLowerCase());
-                    const nextAcc = pickHealthyFallbackAccount(accountsSnapshot, Array.from(triedEmails));
+                    const nextAcc = pickHealthyFallbackAccount(accountsSnapshot, Array.from(triedEmails), null, requestedModel, parentAcc, parentModel);
                     if (nextAcc) {
                         logTraffic(`[HEALTH_SKIP] Missing token for [${boundEmail}]; failing over [${cascadeId || 'general'}] to [${nextAcc}]`);
                         boundEmail = nextAcc;
@@ -412,7 +428,11 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
 
                             triedEmails.add(String(currentEmail).toLowerCase());
                             const freshAccounts = loadAllAccounts();
-                            if (currentEmail === 'Primary (Native)') {
+                            const fallbackModel = requestedModel || (cascadeId && bindings[cascadeId]?.model) || parentModel || null;
+                            if (cls.reason === 'model_not_found' && fallbackModel) {
+                                markModelUnsupported(currentEmail, fallbackModel);
+                                if (isSub && cascadeId) releaseSubagentLease(cascadeId);
+                            } else if (currentEmail === 'Primary (Native)') {
                                 const prim = Object.values(freshAccounts).find(a => a && a.is_primary);
                                 if (prim?.email) {
                                     triedEmails.add(prim.email.toLowerCase());
@@ -423,7 +443,9 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
                             }
 
                             if (!reqAborted && !res.headersSent && attemptNum < maxAttempts) {
-                                let nextEmail = pickHealthyFallbackAccount(freshAccounts, Array.from(triedEmails));
+                                const parentAcc = parentEmail ? freshAccounts[parentEmail.toLowerCase()] : null;
+                                const preferredFallback = isSub ? parentEmail : null;
+                                let nextEmail = pickHealthyFallbackAccount(freshAccounts, Array.from(triedEmails), preferredFallback, fallbackModel, parentAcc, parentModel);
                                 while (nextEmail && !reqAborted) {
                                     triedEmails.add(nextEmail.toLowerCase());
                                     const nextToken = await resolveTokenForAccount(nextEmail);
@@ -434,7 +456,7 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
                                         return;
                                     }
                                     markAccountUnhealthy(nextEmail, 'auth_failed', 'Token resolution failed', 10 * 60 * 1000, freshAccounts[nextEmail.toLowerCase()]);
-                                    nextEmail = pickHealthyFallbackAccount(freshAccounts, Array.from(triedEmails));
+                                    nextEmail = pickHealthyFallbackAccount(freshAccounts, Array.from(triedEmails), preferredFallback, fallbackModel, parentAcc, parentModel);
                                 }
                             }
 

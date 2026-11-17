@@ -39,6 +39,7 @@ async function refreshQuotasAsync() {
                 if (direct?.tier_type && !directFailed) {
                     acc.tier_type = direct.tier_type;
                     acc.available_models = direct.available_models || [];
+                    acc.available_model_ids = direct.available_model_ids || [];
                     acc.model_count = direct.model_count || acc.available_models.length;
                     if (direct.tier_type === 'Paid Pro') {
                         acc.plan = 'Google AI Paid Pro';
@@ -58,6 +59,7 @@ async function refreshQuotasAsync() {
                             cur.tier = acc.tier;
                             cur.plan = acc.plan;
                             cur.available_models = acc.available_models;
+                            cur.available_model_ids = acc.available_model_ids;
                             if (acc.is_bypassed !== undefined) cur.is_bypassed = acc.is_bypassed;
                             writeJsonAtomic(fp, cur);
                         }
@@ -78,6 +80,7 @@ async function refreshQuotasAsync() {
                     if (direct.tier_type) {
                         acc.tier_type = direct.tier_type;
                         acc.available_models = direct.available_models || [];
+                        acc.available_model_ids = direct.available_model_ids || [];
                         acc.model_count = direct.model_count || acc.available_models.length;
                     }
                     acc.license_status = direct.status;
