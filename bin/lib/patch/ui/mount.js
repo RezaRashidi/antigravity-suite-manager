@@ -38,16 +38,16 @@
             );
             const selId = sel?.getAttribute?.('data-cascade-id');
 
-            if (selId && selId !== 'conversation' && selId !== 'default' && selId.length >= 8) {
-                if (cv?.dataset?.agyDraftId) delete cv.dataset.agyDraftId;
-                if (cv?.dataset?.agySessionId) delete cv.dataset.agySessionId;
-                return selId;
-            }
-
             if (cvId && cvId !== 'conversation' && cvId !== 'default' && cvId.length >= 8) {
                 if (cv?.dataset?.agyDraftId) delete cv.dataset.agyDraftId;
                 if (cv?.dataset?.agySessionId) delete cv.dataset.agySessionId;
                 return cvId;
+            }
+
+            if (selId && selId !== 'conversation' && selId !== 'default' && selId.length >= 8) {
+                if (cv?.dataset?.agyDraftId) delete cv.dataset.agyDraftId;
+                if (cv?.dataset?.agySessionId) delete cv.dataset.agySessionId;
+                return selId;
             }
 
             const pm = (window.location.pathname + window.location.hash).match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i) ||
@@ -126,83 +126,93 @@
     window.__antigravityHideDevFooter = hideDevFooter;
     hideDevFooter();
 
-    async function triggerDynamicModelRefresh() {
-        if (typeof window.__customModelsRefreshChatSelector === 'function') {
-            try { await window.__customModelsRefreshChatSelector(); } catch (_) {}
-        }
-        const csrfToken = window.__APP_CONFIG__?.csrfToken || window.__CODEIUM_CSRF__;
-        if (csrfToken) {
+    let activeRefreshSeq = 0;
+    function triggerDynamicModelRefresh() {
+        const seq = ++activeRefreshSeq;
+        const p = (async () => {
+            if (typeof window.__customModelsRefreshChatSelector === 'function') {
+                try { await window.__customModelsRefreshChatSelector(); } catch (_) {}
+            }
+            const csrfToken = window.__APP_CONFIG__?.csrfToken || window.__CODEIUM_CSRF__;
+            if (csrfToken) {
+                try {
+                    await fetch('/exa.language_server_pb.LanguageServerService/GetAvailableModels', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Connect-Protocol-Version': '1',
+                            'x-codeium-csrf-token': csrfToken,
+                        },
+                        body: JSON.stringify({ forceRefresh: true }),
+                    });
+                } catch (_) {}
+            }
+
             try {
-                await fetch('/exa.language_server_pb.LanguageServerService/GetAvailableModels', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Connect-Protocol-Version': '1',
-                        'x-codeium-csrf-token': csrfToken,
-                    },
-                    body: JSON.stringify({ forceRefresh: true }),
-                });
-            } catch (_) {}
-        }
+                const root = document.getElementById('root') || document.body.firstElementChild;
+                if (!root) return;
+                const keys = Object.keys(root);
+                const fiberKey = keys.find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactContainer$') || k.startsWith('__reactInternalInstance$'))
+                    || (root.firstElementChild && Object.keys(root.firstElementChild).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactContainer$') || k.startsWith('__reactInternalInstance$')));
+                if (!fiberKey) return;
+                const startNode = root[fiberKey] || (root.firstElementChild && root.firstElementChild[fiberKey]);
+                if (!startNode) return;
+                const rootNode = startNode.current || startNode;
 
-        try {
-            const root = document.getElementById('root') || document.body.firstElementChild;
-            if (!root) return;
-            const keys = Object.keys(root);
-            const fiberKey = keys.find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactContainer$') || k.startsWith('__reactInternalInstance$'))
-                || (root.firstElementChild && Object.keys(root.firstElementChild).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactContainer$') || k.startsWith('__reactInternalInstance$')));
-            if (!fiberKey) return;
-            const startNode = root[fiberKey] || (root.firstElementChild && root.firstElementChild[fiberKey]);
-            if (!startNode) return;
-            const rootNode = startNode.current || startNode;
-
-            const queue = [rootNode];
-            let client = null, store = null, visited = 0;
-            while (queue.length > 0 && visited < 1000) {
-                const node = queue.shift();
-                visited++;
-                if (!node) continue;
-                if (!store) {
-                    if (node.memoizedProps?.store?.dispatch) store = node.memoizedProps.store;
-                    else if (node.stateNode?.store?.dispatch) store = node.stateNode.store;
-                }
-                if (!client) {
-                    if (node.memoizedProps?.value && typeof node.memoizedProps.value.getUserStatus === 'function') {
-                        client = node.memoizedProps.value;
-                    } else if (node.memoizedProps?.client && typeof node.memoizedProps.client.getUserStatus === 'function') {
-                        client = node.memoizedProps.client;
+                const queue = [rootNode];
+                let client = null, store = null, visited = 0;
+                while (queue.length > 0 && visited < 1000) {
+                    const node = queue.shift();
+                    visited++;
+                    if (!node) continue;
+                    if (!store) {
+                        if (node.memoizedProps?.store?.dispatch) store = node.memoizedProps.store;
+                        else if (node.stateNode?.store?.dispatch) store = node.stateNode.store;
                     }
-                }
-                if (store && client) break;
-                if (node.child) queue.push(node.child);
-                if (node.sibling) queue.push(node.sibling);
-            }
-
-            if (store) {
-                window.__antigravityStore = store;
-                window.__antigravityClient = client;
-                let statusObj = null;
-                if (client && typeof client.getUserStatus === 'function') {
-                    try {
-                        const statusRes = await client.getUserStatus();
-                        if (statusRes?.userStatus?.cascadeModelConfigData?.clientModelConfigs) {
-                            statusObj = statusRes.userStatus;
+                    if (!client) {
+                        if (node.memoizedProps?.value && typeof node.memoizedProps.value.getUserStatus === 'function') {
+                            client = node.memoizedProps.value;
+                        } else if (node.memoizedProps?.client && typeof node.memoizedProps.client.getUserStatus === 'function') {
+                            client = node.memoizedProps.client;
                         }
-                    } catch (_) {}
-                }
-                if (!statusObj && typeof store.getState === 'function') {
-                    statusObj = store.getState()?.userStatus;
-                }
-                if (statusObj && statusObj.cascadeModelConfigData) {
-                    if (Array.isArray(statusObj.cascadeModelConfigData.clientModelConfigs)) {
-                        window.__antigravityAvailableConfigs = statusObj.cascadeModelConfigData.clientModelConfigs;
                     }
-                    store.dispatch({ type: 'userStatus/setUserStatus', payload: { ...statusObj } });
+                    if (store && client) break;
+                    if (node.child) queue.push(node.child);
+                    if (node.sibling) queue.push(node.sibling);
                 }
+
+                if (store) {
+                    window.__antigravityStore = store;
+                    window.__antigravityClient = client;
+                    let statusObj = null;
+                    if (client && typeof client.getUserStatus === 'function') {
+                        try {
+                            const statusRes = await client.getUserStatus();
+                            if (statusRes?.userStatus?.cascadeModelConfigData?.clientModelConfigs) {
+                                statusObj = statusRes.userStatus;
+                            }
+                        } catch (_) {}
+                    }
+                    if (!statusObj && typeof store.getState === 'function') {
+                        statusObj = store.getState()?.userStatus;
+                    }
+                    if (statusObj && statusObj.cascadeModelConfigData) {
+                        if (Array.isArray(statusObj.cascadeModelConfigData.clientModelConfigs)) {
+                            window.__antigravityAvailableConfigs = statusObj.cascadeModelConfigData.clientModelConfigs;
+                        }
+                        store.dispatch({ type: 'userStatus/setUserStatus', payload: { ...statusObj } });
+                    }
+                }
+            } catch (err) {
+                console.warn('[MultiAccount] Dynamic model refresh error:', err);
             }
-        } catch (err) {
-            console.warn('[MultiAccount] Dynamic model refresh error:', err);
-        }
+        })();
+        window.__antigravityActiveRefreshPromise = p;
+        return p.finally(() => {
+            if (activeRefreshSeq === seq && window.__antigravityActiveRefreshPromise === p) {
+                window.__antigravityActiveRefreshPromise = null;
+            }
+        });
     }
 
     window.__antigravityGetSelectedModel = function() {
@@ -251,6 +261,7 @@
                 if (!name || !configs.length) return true;
                 const n = norm(name);
                 return configs.some(cfg => {
+                    if (!cfg || cfg.disabled) return false;
                     const l = norm(cfg.label);
                     const m = norm(cfg.modelOrAlias?.model || cfg.modelOrAlias?.choice?.value);
                     return (l && (l.includes(n) || n.includes(l))) || (m && (m.includes(n) || n.includes(m)));

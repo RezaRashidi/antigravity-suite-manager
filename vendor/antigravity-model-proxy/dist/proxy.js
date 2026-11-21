@@ -456,9 +456,9 @@ function proxyToGoogle(req, res, reqBody, allowMultiAccount = true) {
         agent: useMultiAccount ? undefined : (0, proxyAgent_1.getProxyAgent)(),
     };
     const proxyReq = transport.request(parsedUrl, options, (proxyRes) => {
-        // P0-5: Timeout for Google proxy requests (60s)
-        proxyReq.setTimeout(60000, () => {
-            electron_log_1.default.error('[Proxy] Google proxy request timed out after 60s');
+        // P0-5: Timeout for Google proxy requests (120s to match MultiAccountRouter TTFB)
+        proxyReq.setTimeout(120000, () => {
+            electron_log_1.default.error('[Proxy] Google proxy request timed out after 120s');
             proxyReq.destroy();
             if (!res.headersSent) {
                 res.writeHead(504, { 'Content-Type': 'application/json' });
@@ -863,8 +863,8 @@ function handleRequest(req, res) {
         res.end(JSON.stringify((0, customRequest_1.getProxyMetrics)()));
         return;
     }
-    // P0-4: Enforce maximum request body size to prevent memory exhaustion DoS
-    const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10 MB
+    // P0-4: Enforce maximum request body size while allowing large 1M-context summarization payloads
+    const MAX_BODY_SIZE = 128 * 1024 * 1024; // 128 MB
     let bodyLength = 0;
     let bodyRejected = false;
     const bodyChunks = [];
@@ -874,11 +874,11 @@ function handleRequest(req, res) {
             if (!bodyRejected) {
                 bodyRejected = true;
                 electron_log_1.default.warn(`[Proxy] Request body exceeds ${MAX_BODY_SIZE / 1024 / 1024}MB limit (${req.method} ${req.url})`);
-                req.destroy();
                 if (!res.headersSent) {
                     res.writeHead(413, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ error: { message: `Request body too large. Maximum: ${MAX_BODY_SIZE / 1024 / 1024}MB` } }));
                 }
+                req.destroy();
             }
             return;
         }

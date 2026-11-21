@@ -53,7 +53,8 @@ function findLanguageServerInfo() {
 function parseGroupsToBuckets(groups) {
     const buckets = [], seen = new Set();
     for (const g of groups || []) {
-        const fam = (g.displayName || '').includes('Gemini') ? 'gemini' : (((g.displayName || '').includes('Claude') || (g.displayName || '').includes('GPT')) ? 'claude' : 'other');
+        const dn = g.displayName || '';
+        const fam = dn.includes('Argon') ? 'argon' : (dn.includes('Gemini') ? 'gemini' : ((dn.includes('Claude') || dn.includes('GPT')) ? 'claude' : 'other'));
         for (const b of g.buckets || []) {
             const win = (b.window || '').toLowerCase().includes('5h') ? '5h' : 'weekly', frac = typeof b.remainingFraction === 'number' ? b.remainingFraction : 1.0;
             const k = `${fam}:${win}`;
@@ -134,6 +135,7 @@ async function fetchAccountModels(token) {
                     if (res.statusCode === 200) {
                         const parsed = JSON.parse(data);
                         const models = parsed.models || {};
+                        try { require('./server.js').updateModelCatalogCache?.(models); } catch (_) {}
                         const modelIds = Object.keys(models).filter(Boolean);
                         const modelList = modelIds.map(k => models[k].displayName || k).filter(Boolean);
                         const hasPaidExclusive = modelIds.some(k => k.includes('5-5') || models[k].tagTitle === 'New');

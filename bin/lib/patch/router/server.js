@@ -23,6 +23,48 @@ const DEFAULT_PORT = 41999;
 const UPSTREAM_HOST = 'daily-cloudcode-pa.googleapis.com';
 const MAX_FAILOVER_ATTEMPTS = 6;
 let _server = null, _lastCascadeId = null, _lastCascadeTs = 0;
+let _knownModelCatalog = {};
+
+function updateModelCatalogCache(modelsMap) {
+    if (!modelsMap || typeof modelsMap !== 'object' || Array.isArray(modelsMap)) return;
+    for (const [k, v] of Object.entries(modelsMap)) {
+        if (!v || typeof v !== 'object') continue;
+        const prev = _knownModelCatalog[k];
+        if (!prev || (!v.disabled && prev.disabled)) {
+            _knownModelCatalog[k] = v;
+        }
+    }
+}
+
+function mergeModelCatalogResponse(rawBody) {
+    try {
+        const parsed = JSON.parse(rawBody);
+        if (!parsed || typeof parsed !== 'object' || !parsed.models || typeof parsed.models !== 'object' || Array.isArray(parsed.models)) {
+            return rawBody;
+        }
+        updateModelCatalogCache(parsed.models);
+        let modified = false;
+        for (const [k, v] of Object.entries(_knownModelCatalog)) {
+            if (!parsed.models[k]) {
+                parsed.models[k] = { ...v, recommended: false };
+                modified = true;
+            }
+        }
+        return modified ? JSON.stringify(parsed) : rawBody;
+    } catch (_) {
+        return rawBody;
+    }
+}
+
+function isInternalBackgroundModel(modelName) {
+    const m = String(modelName || '').trim().toLowerCase();
+    if (!m) return false;
+    return m === 'gemini-3.5-flash-lite' ||
+        m === 'gemini-3.1-flash-lite' ||
+        m === 'gemini-2.5-flash-lite' ||
+        m === 'gemini-4-hydrogen-sonar' ||
+        m.startsWith('tab_');
+}
 
 function decodeUpstreamBuffer(rawBuf, contentEncoding = '') {
     const enc = String(contentEncoding || '').toLowerCase();
@@ -146,6 +188,7 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
         const chunks = [];
         req.on('data', chunk => chunks.push(chunk));
         req.on('end', async () => {
+          try {
             const body = Buffer.concat(chunks);
             const bodyStr = body.toString('utf8');
             if (handleApiRequest(req, res, bodyStr)) return;
@@ -172,7 +215,7 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
             const modelMatch = isGen ? bodyStr.match(/"(?:model|modelName|model_name)":\s*"([^"]+)"/) : null;
             const requestedModel = modelMatch?.[1] || null;
 
-            if (!cascadeId && !isGen && freshLastId) {
+            if (!cascadeId && !isGen && !isModelListRpc && freshLastId) {
                 cascadeId = freshLastId;
             }
 
@@ -214,8 +257,8 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
                 if (isGen && cascadeId && requestedModel) {
                     try {
                         const existingModel = bindings[cascadeId] && typeof bindings[cascadeId] === 'object' ? bindings[cascadeId].model : '';
-                        // Never let background safety monitor (gemini-3.5-flash-lite) clobber the user's selected chat model.
-                        if (requestedModel !== 'gemini-3.5-flash-lite' || !existingModel) {
+                        // Never let background safety/monitor/autocomplete models clobber the user's selected chat model.
+                        if (!isInternalBackgroundModel(requestedModel) || !existingModel) {
                             const targetEmail = (boundEmail && boundEmail !== 'Primary (Native)') ? boundEmail : null;
                             setBinding(cascadeId, targetEmail, requestedModel);
                         }
@@ -289,7 +332,7 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
                 if (body.length > 0) headers['content-length'] = Buffer.byteLength(body);
                 delete headers['transfer-encoding'];
                 delete headers['connection'];
-                if (isEligRpc) {
+                if (isEligRpc || isModelListRpc) {
                     delete headers['accept-encoding'];
                 }
 
@@ -480,6 +523,41 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
                         return;
                     }
 
+                    if (isModelListRpc && upRes.statusCode === 200) {
+                        const resChunks = [];
+                        upRes.on('data', c => resChunks.push(c));
+                        upRes.on('error', (err) => {
+                            settled = true;
+                            finishInFlight();
+                            logTraffic(`ModelListRpc: [${cascadeId || 'general'}] !! Response Stream Error: ${err.message}`);
+                            if (!res.headersSent) {
+                                res.writeHead(502, { 'Content-Type': 'application/json' });
+                                res.end(JSON.stringify({ error: err.message }));
+                            } else if (!res.destroyed) {
+                                res.destroy(err);
+                            }
+                        });
+                        upRes.on('end', () => {
+                            settled = true;
+                            finishInFlight();
+                            const rawBuf = decodeUpstreamBuffer(Buffer.concat(resChunks), upRes.headers['content-encoding']);
+                            const outStr = mergeModelCatalogResponse(rawBuf.toString('utf8'));
+                            const outBuf = Buffer.from(outStr, 'utf8');
+                            const resHeaders = { ...upRes.headers };
+                            resHeaders['content-length'] = outBuf.length;
+                            delete resHeaders['content-encoding'];
+                            delete resHeaders['transfer-encoding'];
+                            delete resHeaders['connection'];
+                            delete resHeaders['keep-alive'];
+                            if (!res.headersSent) {
+                                res.writeHead(upRes.statusCode, resHeaders);
+                                res.end(outBuf);
+                            }
+                        });
+                        upRes.on('close', () => { settled = true; finishInFlight(); });
+                        return;
+                    }
+
                     if (isGen) {
                         const resetStreamIdle = () => {
                             if (streamTimer) clearTimeout(streamTimer);
@@ -540,6 +618,13 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
             };
 
             sendAttempt(boundEmail, token, 1);
+          } catch (err) {
+            logTraffic(`RouterError: ${err && err.message ? err.message : String(err)}`);
+            if (!res.headersSent) {
+                res.writeHead(502, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err && err.message ? err.message : 'Internal router error' }));
+            }
+          }
         });
     });
 
@@ -557,5 +642,7 @@ module.exports = {
     extractCascadeId,
     startMultiAccountRouter,
     getAuthenticUserAgent,
-    resetProxyAgent
+    resetProxyAgent,
+    updateModelCatalogCache,
+    mergeModelCatalogResponse
 };

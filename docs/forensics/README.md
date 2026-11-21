@@ -72,5 +72,6 @@ This document records the end-to-end diagnostic methodology, reverse-engineering
 - [64. Issue 62: Model Sniffing Account Clobbering to Primary Native and HTTP 404 Model Failover](64_model_sniffing_email_clobber_and_404_failover.md)
 - [65. Issue 63: Subagent Model-Aware Account Allocation, Language Server Catalog Clobbering & Monitor Model Protection](65_subagent_model_aware_allocation_and_catalog_isolation.md)
 - [66. Issue 64: Antigravity App v2.34.0 `loadURL` Refactor & Custom Models Pristine Backup Corruption](66_app_v2340_loadurl_refactor_and_models_backup_preservation.md)
-- [67. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
+- [67. Issue 65: Concurrent Chat Model Clobbering, Argon Quota Collision & Context Summarization 10MB Proxy Body Limit](67_concurrent_chat_model_clobber_argon_quota_and_proxy_body_limit.md)
+- [68. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
 

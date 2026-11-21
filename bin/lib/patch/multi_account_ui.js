@@ -1,7 +1,7 @@
 // Antigravity Multi-Account UI Injector: Main Controller
 (function initUI() {
     if (window.__antigravityRenderSelector) { window.__antigravityRenderSelector(); return; }
-    let state = { accounts: [], bindings: {} }, cascadeId = "default", rTimer = null, lastF = 0, lastActiveEmail = null, lastSavedModels = {}, isRestoring = false;
+    let state = { accounts: [], bindings: {} }, cascadeId = "default", rTimer = null, lastF = 0, lastActiveEmail = null, lastSavedModels = {}, isRestoring = false, restoreSeq = 0, lastUserModelClickTs = 0;
     const isDraftId = (id) => !id || id === "default" || id.startsWith("chat_") || id.startsWith("draft_");
     function notifyAccountSwitch(em, cid, reason) {
         if (!em || em === "Account") return;
@@ -9,15 +9,24 @@
     }
     async function handleChatModelRestoration(cid) {
         if (!cid || cid === "default" || isDraftId(cid)) return;
+        const mySeq = ++restoreSeq;
         isRestoring = true;
         try {
+            if (window.__antigravityActiveRefreshPromise) {
+                try {
+                    await Promise.race([window.__antigravityActiveRefreshPromise, new Promise(r => setTimeout(r, 2500))]);
+                } catch (_) {}
+            }
+            await new Promise(r => setTimeout(r, 120));
+            if (mySeq !== restoreSeq || cascadeId !== cid) return;
             const b = state.bindings?.[cid];
             const savedModel = (typeof b === "object" ? b?.model : null) || lastSavedModels[cid] || null;
-            await new Promise(r => setTimeout(r, 120));
             const configs = window.__antigravityAvailableConfigs || [];
             const restored = await window.__antigravitySelectModel?.(savedModel, configs);
+            if (mySeq !== restoreSeq || cascadeId !== cid) return;
             if (restored) {
-                const curEmail = getActive()?.email;
+                const boundEm = (typeof b === "object" ? b?.email : b);
+                const curEmail = (boundEm && boundEm !== "Account") ? boundEm : getActive()?.email;
                 if (!state.bindings) state.bindings = {};
                 if (typeof state.bindings[cid] === "object") {
                     state.bindings[cid].model = restored;
@@ -32,7 +41,7 @@
                 });
             }
         } finally {
-            setTimeout(() => { isRestoring = false; }, 200);
+            setTimeout(() => { if (mySeq === restoreSeq) isRestoring = false; }, 200);
         }
     }
     const apiH = () => window.__AGY_ROUTER_HOST__ || localStorage.getItem("agy_router_host") || "http://127.0.0.1:41999";
@@ -113,7 +122,8 @@
                 }
             }
             const { target, insertAfter, floating } = targetInfo, active = getActive();
-            if (!switchedChatAccount && active?.email && active.email !== "Account") {
+            const isWinFocused = typeof document.hasFocus !== "function" || document.hasFocus();
+            if (!switchedChatAccount && isWinFocused && active?.email && active.email !== "Account") {
                 if (!lastActiveEmail) {
                     lastActiveEmail = active.email;
                 } else if (active.email.toLowerCase() !== lastActiveEmail.toLowerCase()) {
@@ -243,43 +253,68 @@
             document.getElementById("agy-acc-ref")?.addEventListener("click", async (e) => { e.stopPropagation(); await fetchState(true); toast("Refreshed limits"); });
         } catch (_) {}
     }
+    function persistChatModel(cid, curModel) {
+        if (!cid || isDraftId(cid) || !curModel) return;
+        const b = state.bindings?.[cid];
+        const saved = typeof b === "object" ? b?.model : null;
+        if (curModel === saved) return;
+        lastSavedModels[cid] = curModel;
+        const boundEmail = typeof b === "object" ? b?.email : b;
+        const curEmail = (boundEmail && boundEmail !== "Account") ? boundEmail : getActive()?.email;
+        if (!state.bindings) state.bindings = {};
+        if (typeof state.bindings[cid] === "object") {
+            state.bindings[cid].model = curModel;
+        } else {
+            state.bindings[cid] = { email: state.bindings[cid] || curEmail, model: curModel };
+        }
+        void fetch(apiH() + "/api/multi-account/bind", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cascadeId: cid, email: curEmail, model: curModel })
+        });
+    }
+    document.addEventListener("pointerdown", (e) => {
+        if (e.target?.closest?.('[data-testid="model-selector-trigger"], [role="menuitem"], [role="option"], [data-radix-collection-item], [data-radix-menu-content], [data-radix-popper-content-wrapper]')) {
+            lastUserModelClickTs = Date.now();
+        }
+    }, true);
     function scheduleRender() { if (!rTimer) rTimer = setTimeout(() => { rTimer = null; render(); }, 60); } window.__antigravityRenderSelector = scheduleRender;
     document.addEventListener("click", (e) => {
         const dd = document.getElementById("agy-acc-dd"), pill = document.getElementById("antigravity-account-pill");
         if (dd && pill && !pill.contains(e.target)) { dd.classList.remove("open"); document.getElementById("agy-flyout")?.classList.remove("visible"); }
-        if (e.target.closest('[data-testid*="conversation"], [class*="sidebar"], [data-testid="new-conversation-button"], [aria-label*="New Chat" i], [title*="New Chat" i]')) {
+        const isNavClick = Boolean(e.target?.closest?.('[data-testid*="conversation"], [class*="sidebar"], [data-testid="new-conversation-button"], [aria-label*="New Chat" i], [title*="New Chat" i]'));
+        if (isNavClick) {
             if (e.target.closest('[data-testid="new-conversation-button"], [aria-label*="New Chat" i], [title*="New Chat" i]')) {
                 const cv = document.querySelector('[data-testid="conversation-view"]');
                 if (cv?.dataset?.agyDraftId) delete cv.dataset.agyDraftId;
                 if (cv?.dataset?.agySessionId) delete cv.dataset.agySessionId;
             }
             scheduleRender(); setTimeout(() => { scheduleRender(); void fetchState(true); }, 150);
+            return;
         }
+        if (pill?.contains?.(e.target)) return;
+        const cidAtClick = cascadeId;
         setTimeout(() => {
-            if (isRestoring) return;
+            if (isRestoring || cascadeId !== cidAtClick) return;
             const curModel = window.__antigravityGetSelectedModel?.();
-            if (!curModel || !cascadeId || isDraftId(cascadeId)) return;
-            const b = state.bindings?.[cascadeId];
-            const saved = typeof b === "object" ? b?.model : null;
-            if (curModel !== saved) {
-                lastSavedModels[cascadeId] = curModel;
-                const curEmail = getActive()?.email;
-                if (!state.bindings) state.bindings = {};
-                if (typeof state.bindings[cascadeId] === "object") {
-                    state.bindings[cascadeId].model = curModel;
-                } else {
-                    state.bindings[cascadeId] = { email: state.bindings[cascadeId] || curEmail, model: curModel };
-                }
-                void fetch(apiH() + "/api/multi-account/bind", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ cascadeId, email: curEmail, model: curModel })
-                });
-            }
+            persistChatModel(cidAtClick, curModel);
         }, 350);
     });
     const hookState = (fn) => function() { const r = fn.apply(this, arguments); scheduleRender(); void fetchState(); return r; };
-    if (history.pushState) history.pushState = hookState(history.pushState); if (history.replaceState) history.replaceState = hookState(history.replaceState); ['popstate', 'hashchange', 'focus'].forEach(ev => window.addEventListener(ev, () => { scheduleRender(); void fetchState(true); }));
+    if (history.pushState) history.pushState = hookState(history.pushState); if (history.replaceState) history.replaceState = hookState(history.replaceState);
+    ['popstate', 'hashchange'].forEach(ev => window.addEventListener(ev, () => { scheduleRender(); void fetchState(true); }));
+    window.addEventListener('focus', async () => {
+        scheduleRender();
+        await fetchState(true);
+        if (typeof document.hasFocus === "function" && !document.hasFocus()) return;
+        const active = getActive();
+        if (active?.email && active.email !== "Account" && state.active_default && active.email.toLowerCase() !== state.active_default.toLowerCase()) {
+            lastActiveEmail = active.email;
+            fetch(apiH() + "/api/multi-account/set-active", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cascadeId, email: active.email }) })
+                .then(() => notifyAccountSwitch(active.email, cascadeId, 'window-focus'))
+                .catch(() => {});
+        }
+    });
     window.addEventListener("resize", updateDdPos); window.addEventListener("keydown", (e) => { if (e.key === "F5" && !e.ctrlKey && !e.metaKey && !e.shiftKey) { render(); void fetchState(true); } });
 
     let moTimer = null;
@@ -294,20 +329,9 @@
             const curModel = window.__antigravityGetSelectedModel?.();
             const b = state.bindings?.[c];
             const saved = typeof b === "object" ? b?.model : null;
-            if (curModel && curModel !== saved) {
-                lastSavedModels[c] = curModel;
-                const curEmail = getActive()?.email;
-                if (!state.bindings) state.bindings = {};
-                if (typeof state.bindings[c] === "object") {
-                    state.bindings[c].model = curModel;
-                } else {
-                    state.bindings[c] = { email: state.bindings[c] || curEmail, model: curModel };
-                }
-                void fetch(apiH() + "/api/multi-account/bind", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ cascadeId: c, email: curEmail, model: curModel })
-                });
+            const userSelectedModelRecently = (Date.now() - lastUserModelClickTs) < 3000;
+            if (curModel && curModel !== saved && (!saved || userSelectedModelRecently)) {
+                persistChatModel(c, curModel);
             }
         }
     }

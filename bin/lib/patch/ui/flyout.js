@@ -49,11 +49,13 @@
                 seen.add(k); return true;
             });
             const gemini = uq.filter(q => q.family === 'gemini');
+            const argon = uq.filter(q => q.family === 'argon');
             const claude = uq.filter(q => q.family === 'claude');
-            const other = uq.filter(q => q.family !== 'gemini' && q.family !== 'claude');
+            const other = uq.filter(q => q.family !== 'gemini' && q.family !== 'argon' && q.family !== 'claude');
             const claudeExhausted = claude.some(q => q.fraction === 0);
             let gh = '';
             if (gemini.length) gh += `<div class="agy-usage-group"><div class="agy-group-title">Gemini Models</div>${gemini.map(renderBucket).join('')}</div>`;
+            if (argon.length) gh += `<div class="agy-usage-group" style="margin-top:6px;"><div class="agy-group-title">Gemini 4 Argon</div>${argon.map(renderBucket).join('')}</div>`;
             if (claude.length) gh += `<div class="agy-usage-group" style="margin-top:6px;"><div class="agy-group-title">Claude and GPT models</div>${claude.map(renderBucket).join('')}</div>`;
             if (claudeExhausted) gh += `<div style="font-size:11px;color:#f59e0b;background:rgba(245,158,11,0.12);padding:5px 8px;border-radius:5px;margin-top:6px;border:1px solid rgba(245,158,11,0.25);line-height:1.3;">Claude 5-hour limit reached. Switch prompt bar dropdown to Gemini models.</div>`;
             if (other.length) gh += `<div class="agy-usage-group" style="margin-top:6px;"><div class="agy-group-title">Other Models</div>${other.map(renderBucket).join('')}</div>`;

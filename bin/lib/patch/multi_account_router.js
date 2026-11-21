@@ -51,19 +51,6 @@ async function refreshQuotasAsync() {
                     if (direct.is_bypassed !== undefined) {
                         acc.is_bypassed = direct.is_bypassed;
                     }
-                    try {
-                        const fp = require('path').join(require('./router/bindings.js').ACCOUNTS_DIR, `${acc.email}.json`);
-                        if (require('fs').existsSync(fp)) {
-                            const cur = JSON.parse(require('fs').readFileSync(fp, 'utf8'));
-                            cur.tier_type = acc.tier_type;
-                            cur.tier = acc.tier;
-                            cur.plan = acc.plan;
-                            cur.available_models = acc.available_models;
-                            cur.available_model_ids = acc.available_model_ids;
-                            if (acc.is_bypassed !== undefined) cur.is_bypassed = acc.is_bypassed;
-                            writeJsonAtomic(fp, cur);
-                        }
-                    } catch (_) {}
                 }
                 if (direct && direct.status === 'ok' && direct.buckets?.length > 0) {
                     acc.quotas = direct.buckets; acc.license_status = 'ok';
@@ -74,7 +61,25 @@ async function refreshQuotasAsync() {
                         acc.tier = isPro ? 'PRO' : 'FREE';
                         acc.plan = isPro ? (acc.plan || 'Google AI Pro') : 'Free';
                     }
-                    return;
+                }
+                if (direct && !directFailed && (direct.tier_type || (direct.status === 'ok' && direct.buckets?.length > 0))) {
+                    try {
+                        const fp = require('path').join(require('./router/bindings.js').ACCOUNTS_DIR, `${acc.email}.json`);
+                        if (require('fs').existsSync(fp)) {
+                            const cur = JSON.parse(require('fs').readFileSync(fp, 'utf8'));
+                            if (direct.tier_type) {
+                                cur.tier_type = acc.tier_type;
+                                cur.tier = acc.tier;
+                                cur.plan = acc.plan;
+                                cur.available_models = acc.available_models;
+                                cur.available_model_ids = acc.available_model_ids;
+                            }
+                            if (acc.quotas?.length) cur.quotas = acc.quotas;
+                            if (acc.is_bypassed !== undefined) cur.is_bypassed = acc.is_bypassed;
+                            writeJsonAtomic(fp, cur);
+                        }
+                    } catch (_) {}
+                    if (direct.status === 'ok' && direct.buckets?.length > 0) return;
                 }
                 if (directFailed) {
                     if (direct.tier_type) {
