@@ -51,6 +51,17 @@ restore_pristine_models_base() {
        [ "$ACTIVE_PATCH_WINDOW_BOUNDS" = "true" ] || [ "$ACTIVE_PATCH_TYPING_PERF" = "true" ]; then
         has_active=true
     fi
+    local has_model_patch=false
+    grep -qa "antigravity-model-patch" "$asar" 2>/dev/null && has_model_patch=true
+
+    if [ "$has_model_patch" = "true" ]; then
+        if [ -f "$orig" ] && ! grep -qa "antigravity-model-patch" "$orig" 2>/dev/null; then
+            log_info "Temporarily restoring pristine base for model patcher..."
+            cp -f "$orig" "$asar"
+        fi
+        return 0
+    fi
+
     if [ ! -f "$orig" ] || [ "$has_active" != "true" ]; then
         cp -p "$asar" "$orig"
         [ "$has_active" != "true" ] && rm -rf "$(dirname "$asar")/.antigravity-model-patch" 2>/dev/null || true

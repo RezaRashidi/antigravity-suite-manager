@@ -99,6 +99,8 @@ function patchAppTypingPerf(unpackedDir) {
         code = code.replace("win.webContents.on('dom-ready', () => {", snippet + "win.webContents.on('dom-ready', () => {");
     } else if (code.includes('void win.loadURL(url);')) {
         code = code.replace('void win.loadURL(url);', 'void win.loadURL(url);\n    ' + snippet);
+    } else if (code.includes('await win.loadURL(url);')) {
+        code = code.replace('await win.loadURL(url);', snippet + '    await win.loadURL(url);');
     } else {
         throw new Error('Could not find dom-ready or loadURL hook in dist/utils.js');
     }

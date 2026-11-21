@@ -18,9 +18,36 @@ patch_rtl_app() {
     fix_permissions "$APP_INSTALL_DIR"
 
     log_info "Applying RTL patch to Antigravity App (${asar})..."
+    local shim_js="" rtl_v234_prepared=false
+    for cand in "${SCRIPT_DIR}/bin/lib/patch/patch_rtl_v234_shim.js" "${SCRIPT_DIR}/lib/patch/patch_rtl_v234_shim.js" "${LOCAL_BIN}/lib/patch/patch_rtl_v234_shim.js"; do
+        [ -f "$cand" ] && { shim_js="$cand"; break; }
+    done
+    if [ -n "$shim_js" ] && command -v run_asar >/dev/null 2>&1; then
+        local shim_tmp; shim_tmp=$(mktemp -d /tmp/asar_rtl_shim_XXXXXX)
+        if run_asar extract "$asar" "$shim_tmp/unpacked" >/dev/null 2>&1; then
+            if [ "$(node "$shim_js" --prepare "$shim_tmp/unpacked" 2>/dev/null)" = "PREPARED" ]; then
+                run_asar pack "$shim_tmp/unpacked" "$asar" >/dev/null 2>&1 && rtl_v234_prepared=true
+            fi
+        fi
+        rm -rf "$shim_tmp"
+    fi
+
     if ! echo "n" | run_antigravity_rtl --app --path "$asar"; then
+        if [ "$rtl_v234_prepared" = true ] && [ -f "${asar}.bak" ]; then
+            cp -f "${asar}.bak" "$asar" 2>/dev/null || true
+        fi
         log_err "RTL app patch failed during execution."
         return 1
+    fi
+
+    if [ "$rtl_v234_prepared" = true ] && [ -n "$shim_js" ] && command -v run_asar >/dev/null 2>&1; then
+        local shim_tmp2; shim_tmp2=$(mktemp -d /tmp/asar_rtl_shim_XXXXXX)
+        if run_asar extract "$asar" "$shim_tmp2/unpacked" >/dev/null 2>&1; then
+            if [ "$(node "$shim_js" --finalize "$shim_tmp2/unpacked" 2>/dev/null)" = "FINALIZED" ]; then
+                run_asar pack "$shim_tmp2/unpacked" "$asar" >/dev/null 2>&1 || true
+            fi
+        fi
+        rm -rf "$shim_tmp2"
     fi
 
     if grep -qa "ANTIGRAVITY RTL PATCH" "$asar"; then

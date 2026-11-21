@@ -31,6 +31,10 @@ patch_models_app() {
     local sdir; sdir="$(dirname "$(dirname "$script")")"
     export NODE_PATH="${sdir}/node_modules:${REAL_HOME:-$HOME}/.local/node_modules:${NODE_PATH}"
     local res_dir="${APP_INSTALL_DIR}/resources"
+    if grep -qa "antigravity-model-patch" "$asar" 2>/dev/null && [ ! -d "${res_dir}/.antigravity-model-patch" ]; then
+        log_warn "In-app Custom Models patch is already applied and no pristine backup exists; skipping re-injection."
+        return 0
+    fi
     log_info "Injecting Custom Models Settings UI into Antigravity App..."
     if ! node "$script" --resources "$res_dir"; then
         log_err "Failed to apply in-app custom models patch via deploy.mjs."
