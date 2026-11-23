@@ -257,8 +257,8 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
                 if (isGen && cascadeId && requestedModel) {
                     try {
                         const existingModel = bindings[cascadeId] && typeof bindings[cascadeId] === 'object' ? bindings[cascadeId].model : '';
-                        // Never let background safety/monitor/autocomplete models clobber the user's selected chat model.
-                        if (!isInternalBackgroundModel(requestedModel) || !existingModel) {
+                        // Only auto-seed model if the chat has no model bound yet, and never let background safety/monitor/autocomplete models clobber it.
+                        if (!existingModel && !isInternalBackgroundModel(requestedModel)) {
                             const targetEmail = (boundEmail && boundEmail !== 'Primary (Native)') ? boundEmail : null;
                             setBinding(cascadeId, targetEmail, requestedModel);
                         }

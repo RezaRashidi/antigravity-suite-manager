@@ -335,6 +335,7 @@ function findPrimaryTokenFiles() {
 }
 
 function readTokenFromKeyring() {
+    if (process.env.ANTIGRAVITY_TEST) return null;
     try {
         const rh = process.env.REAL_HOME || os.homedir();
         if (fs.existsSync(path.join(rh, '.gemini', 'cache', 'antigravity-keyring-unavailable'))) return null;
@@ -374,7 +375,8 @@ function isAccountJsonFile(f) {
 
 function loadAllAccounts() {
     ensureAccountsDir();
-    const accounts = {}, primary = path.join(os.homedir(), '.gemini', 'jetski-standalone-oauth-token');
+    const primaryHome = (process.env.ANTIGRAVITY_TEST && process.env.REAL_HOME) ? process.env.REAL_HOME : os.homedir();
+    const accounts = {}, primary = path.join(primaryHome, '.gemini', 'jetski-standalone-oauth-token');
     try {
         for (const f of fs.readdirSync(ACCOUNTS_DIR)) {
             if (isAccountJsonFile(f)) {

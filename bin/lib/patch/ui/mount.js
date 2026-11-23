@@ -269,8 +269,9 @@
             };
 
             let chosenTarget = targetModelName;
-            if (!chosenTarget || !isModelValidInConfigs(chosenTarget)) {
-                if (current && isModelValidInConfigs(current)) {
+            const isTargetValid = targetModelName ? isModelValidInConfigs(targetModelName) : false;
+            if (!chosenTarget || !isTargetValid) {
+                if (!chosenTarget && current && isModelValidInConfigs(current)) {
                     chosenTarget = current;
                 } else if (configs.length > 0) {
                     const fallback = configs.find(c => /flash/i.test(c.label)) || configs.find(c => /pro/i.test(c.label)) || configs[0];
@@ -278,7 +279,7 @@
                 }
             }
 
-            if (!chosenTarget) return current || null;
+            if (!chosenTarget) return null;
 
             const targetNorm = norm(chosenTarget);
             if (currentNorm && targetNorm && (currentNorm === targetNorm || currentNorm.includes(targetNorm) || targetNorm.includes(currentNorm))) {
@@ -289,9 +290,12 @@
             await new Promise(r => setTimeout(r, 70));
 
             const items = Array.from(document.querySelectorAll('[role="menuitem"], [role="option"], [data-radix-collection-item], [data-radix-menu-content] button, [data-radix-popper-content-wrapper] button'));
-            let matchedItem = null;
-            let fallbackItem = null;
+            if (!items.length) {
+                document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+                return null;
+            }
 
+            let matchedItem = null;
             for (const it of items) {
                 const itemText = (it.textContent || '').replace(/[▾▲▼◂▸◀▶]/g, '').replace(/\s+/g, ' ').trim();
                 const itNorm = norm(itemText);
@@ -300,20 +304,28 @@
                     matchedItem = it;
                     break;
                 }
-                if (!fallbackItem && (itNorm.includes('flash') || itNorm.includes('pro') || itNorm.includes('gemini') || itNorm.includes('claude'))) {
-                    fallbackItem = it;
-                }
             }
 
-            const itemToClick = matchedItem || fallbackItem || items[0];
-            if (itemToClick) {
-                itemToClick.click();
+            if (!matchedItem && !isTargetValid) {
+                for (const it of items) {
+                    const itemText = (it.textContent || '').replace(/[▾▲▼◂▸◀▶]/g, '').replace(/\s+/g, ' ').trim();
+                    const itNorm = norm(itemText);
+                    if (itNorm.includes('flash') || itNorm.includes('pro') || itNorm.includes('gemini')) {
+                        matchedItem = it;
+                        break;
+                    }
+                }
+                if (!matchedItem && items.length > 0) matchedItem = items[0];
+            }
+
+            if (matchedItem) {
+                matchedItem.click();
                 await new Promise(r => setTimeout(r, 40));
                 const updated = (trigger.textContent || '').replace(/[▾▲▼◂▸◀▶]/g, '').replace(/\s+/g, ' ').trim();
                 return updated || chosenTarget;
             } else {
                 document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-                return current || null;
+                return null;
             }
         } catch (_) {
             return null;

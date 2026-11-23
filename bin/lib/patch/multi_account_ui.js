@@ -1,7 +1,7 @@
 // Antigravity Multi-Account UI Injector: Main Controller
 (function initUI() {
     if (window.__antigravityRenderSelector) { window.__antigravityRenderSelector(); return; }
-    let state = { accounts: [], bindings: {} }, cascadeId = "default", rTimer = null, lastF = 0, lastActiveEmail = null, lastSavedModels = {}, isRestoring = false, restoreSeq = 0, lastUserModelClickTs = 0;
+    let state = { accounts: [], bindings: {} }, cascadeId = "default", rTimer = null, lastF = 0, lastActiveEmail = null, lastSavedModels = {}, isRestoring = false, restoreSeq = 0, lastUserModelClickTs = 0, lastUserModelClickCid = null;
     const isDraftId = (id) => !id || id === "default" || id.startsWith("chat_") || id.startsWith("draft_");
     function notifyAccountSwitch(em, cid, reason) {
         if (!em || em === "Account") return;
@@ -25,20 +25,27 @@
             const restored = await window.__antigravitySelectModel?.(savedModel, configs);
             if (mySeq !== restoreSeq || cascadeId !== cid) return;
             if (restored) {
-                const boundEm = (typeof b === "object" ? b?.email : b);
-                const curEmail = (boundEm && boundEm !== "Account") ? boundEm : getActive()?.email;
-                if (!state.bindings) state.bindings = {};
-                if (typeof state.bindings[cid] === "object") {
-                    state.bindings[cid].model = restored;
-                } else {
-                    state.bindings[cid] = { email: state.bindings[cid] || curEmail, model: restored };
+                const norm = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                const sNorm = norm(savedModel);
+                const rNorm = norm(restored);
+                const matchesSaved = sNorm && rNorm && (sNorm.includes(rNorm) || rNorm.includes(sNorm));
+                const shouldPersist = !savedModel || matchesSaved || (configs.length > 0 && !configs.some(c => norm(c.label).includes(sNorm) || sNorm.includes(norm(c.label))));
+                if (shouldPersist) {
+                    const boundEm = (typeof b === "object" ? b?.email : b);
+                    const curEmail = (boundEm && boundEm !== "Account") ? boundEm : getActive()?.email;
+                    if (!state.bindings) state.bindings = {};
+                    if (typeof state.bindings[cid] === "object") {
+                        state.bindings[cid].model = restored;
+                    } else {
+                        state.bindings[cid] = { email: state.bindings[cid] || curEmail, model: restored };
+                    }
+                    lastSavedModels[cid] = restored;
+                    void fetch(apiH() + "/api/multi-account/bind", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ cascadeId: cid, email: curEmail, model: restored })
+                    });
                 }
-                lastSavedModels[cid] = restored;
-                void fetch(apiH() + "/api/multi-account/bind", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ cascadeId: cid, email: curEmail, model: restored })
-                });
             }
         } finally {
             setTimeout(() => { if (mySeq === restoreSeq) isRestoring = false; }, 200);
@@ -276,6 +283,7 @@
     document.addEventListener("pointerdown", (e) => {
         if (e.target?.closest?.('[data-testid="model-selector-trigger"], [role="menuitem"], [role="option"], [data-radix-collection-item], [data-radix-menu-content], [data-radix-popper-content-wrapper]')) {
             lastUserModelClickTs = Date.now();
+            lastUserModelClickCid = cascadeId;
         }
     }, true);
     function scheduleRender() { if (!rTimer) rTimer = setTimeout(() => { rTimer = null; render(); }, 60); } window.__antigravityRenderSelector = scheduleRender;
@@ -329,8 +337,8 @@
             const curModel = window.__antigravityGetSelectedModel?.();
             const b = state.bindings?.[c];
             const saved = typeof b === "object" ? b?.model : null;
-            const userSelectedModelRecently = (Date.now() - lastUserModelClickTs) < 3000;
-            if (curModel && curModel !== saved && (!saved || userSelectedModelRecently)) {
+            const userSelectedModelRecently = (lastUserModelClickCid === c) && (Date.now() - lastUserModelClickTs < 3000);
+            if (curModel && curModel !== saved && userSelectedModelRecently) {
                 persistChatModel(c, curModel);
             }
         }

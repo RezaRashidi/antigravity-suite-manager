@@ -62,24 +62,51 @@ function unpatchIdeConversationForking(ideDir) {
 
 const PRELOAD_FORK_SNIPPET = `/* FORK_EXP_PRELOAD_START */
 try {
-    const k = 'jetski.developer.customFlagOverrides';
-    let f = {};
-    try { f = JSON.parse(window.localStorage.getItem(k) || '{}'); } catch (_) {}
-    f['enable-conversation-forking'] = true;
-    f['enable-fork-in-new-worktree'] = true;
-    f['enable-fork-at-historical-step'] = true;
-    delete f['enable-battle-mode'];
-    delete f['enable-battle-contrib-variants'];
-    delete f['enable-battle-mode-custom-agents'];
-    delete f['jetski-autonomous-mode'];
-    delete f['labs-autonomous-mode'];
-    delete f['enable-aux-pane-redesign'];
-    delete f['enable-thought-editing'];
-    delete f['enable-thought-steering-from-selection'];
-    window.localStorage.setItem(k, JSON.stringify(f));
-
-    const envKey = 'jetski.developer.featureEnvironmentOverride';
-    window.localStorage.removeItem(envKey);
+    const { webFrame } = require('electron');
+    if (webFrame && typeof webFrame.executeJavaScriptInIsolatedWorld === 'function') {
+        webFrame.executeJavaScriptInIsolatedWorld(0, [{
+            code: \`(function() {
+                try {
+                    const enableDevMode = (cfg) => {
+                        if (cfg && typeof cfg === 'object') cfg.devMode = true;
+                        return cfg;
+                    };
+                    if (window.__APP_CONFIG__) {
+                        enableDevMode(window.__APP_CONFIG__);
+                    } else {
+                        let _cfg;
+                        Object.defineProperty(window, '__APP_CONFIG__', {
+                            configurable: true,
+                            enumerable: true,
+                            get() { return _cfg; },
+                            set(v) { _cfg = enableDevMode(v); }
+                        });
+                    }
+                    const k = 'jetski.developer.customFlagOverrides';
+                    let f = {};
+                    try { f = JSON.parse(window.localStorage.getItem(k) || '{}'); } catch (_) {}
+                    f['enable-conversation-forking'] = true;
+                    f['enable-fork-in-new-worktree'] = true;
+                    f['enable-fork-at-historical-step'] = true;
+                    f['enable-developer-mode'] = false;
+                    f['enable-git-vcs-ui'] = false;
+                    f['enable-jj-vcs-ui'] = false;
+                    f['enable-abfs-workspace-ui'] = false;
+                    f['google-workspace-mentions'] = false;
+                    delete f['enable-battle-mode'];
+                    delete f['enable-battle-contrib-variants'];
+                    delete f['enable-battle-mode-custom-agents'];
+                    delete f['jetski-autonomous-mode'];
+                    delete f['labs-autonomous-mode'];
+                    delete f['enable-aux-pane-redesign'];
+                    delete f['enable-thought-editing'];
+                    delete f['enable-thought-steering-from-selection'];
+                    window.localStorage.setItem(k, JSON.stringify(f));
+                    window.localStorage.removeItem('jetski.developer.featureEnvironmentOverride');
+                } catch (_) {}
+            })();\`
+        }]);
+    }
 } catch (_) {}
 /* FORK_EXP_PRELOAD_END */
 `;

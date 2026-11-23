@@ -25,12 +25,8 @@ ensure_models_patch_runtime() {
 
 detect_active_patches() {
     local asar="$1"
-    ACTIVE_PATCH_RTL=false
-    ACTIVE_PATCH_SELECTOR=false
-    ACTIVE_PATCH_FORK=false
-    ACTIVE_PATCH_OPEN_IDE=false
-    ACTIVE_PATCH_WINDOW_BOUNDS=false
-    ACTIVE_PATCH_TYPING_PERF=false
+    ACTIVE_PATCH_RTL=false; ACTIVE_PATCH_SELECTOR=false; ACTIVE_PATCH_FORK=false
+    ACTIVE_PATCH_OPEN_IDE=false; ACTIVE_PATCH_WINDOW_BOUNDS=false; ACTIVE_PATCH_TYPING_PERF=false
     [ ! -f "$asar" ] && return 0
 
     grep -qa "ANTIGRAVITY RTL PATCH" "$asar" 2>/dev/null && ACTIVE_PATCH_RTL=true

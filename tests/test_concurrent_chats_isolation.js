@@ -133,6 +133,14 @@ async function runTests() {
         await postJson(port, '/v1internal:streamGenerateContent?alt=sse', { cascadeId: 'chat-paid-1111', request: { model: 'gemini-4-hydrogen-sonar' } });
         assert.strictEqual(getBindings()['chat-paid-1111'].model, 'gemini-4-hydrogen-high', 'Sonar model must not overwrite chat model');
 
+        // Paid Pro chat receives background generation with a different real model (e.g. Free chat's model) -> must NOT clobber gemini-4-hydrogen-high
+        await postJson(port, '/v1internal:streamGenerateContent?alt=sse', { cascadeId: 'chat-paid-1111', request: { model: 'gemini-3.8-flash-high' } });
+        assert.strictEqual(getBindings()['chat-paid-1111'].model, 'gemini-4-hydrogen-high', 'Generation RPC with different model must not overwrite user-selected model');
+
+        // Unseeded chat receives generation request -> auto-seeds model
+        await postJson(port, '/v1internal:streamGenerateContent?alt=sse', { cascadeId: 'chat-unseeded-3333', request: { model: 'gemini-3.8-flash-high' } });
+        assert.strictEqual(getBindings()['chat-unseeded-3333']?.model, 'gemini-3.8-flash-high', 'Unseeded chat should auto-seed model from generation RPC');
+
         // When user actually views Free chat (activeDefault = free@gmail.com), fetchAvailableModels preserves M525 in models map for concurrent Paid Pro chats
         setActiveAccount('free@gmail.com');
         const freeModelsRes = await postJson(port, '/v1internal:fetchAvailableModels', {});
@@ -254,6 +262,58 @@ async function runTests() {
     await new Promise(r => setTimeout(r, 50));
     assert.strictEqual(bindCalls.length, bindsBeforeGlitch, 'Passive interval/MutationObserver must NEVER overwrite saved model without user interaction');
     console.log('✓ UI restoration wait and passive clobber guard verified');
+
+    // Cross-chat click isolation: user clicks dropdown in Free chat, then quickly switches to Paid chat while it is busy
+    let pointerListener = null;
+    sandbox.document.addEventListener = (type, fn) => {
+        if (type === 'pointerdown') pointerListener = fn;
+    };
+    vm.runInNewContext(uiSrc, sandbox);
+    await new Promise(r => setTimeout(r, 20));
+
+    // User clicks model selector in Free chat
+    currentCid = 'chat-free-2222';
+    if (pointerListener) {
+        pointerListener({ target: { closest: (sel) => sel.includes('model-selector-trigger') ? true : null } });
+    }
+
+    // Now switch to Paid chat while it's generating / visible text is temporarily Flash
+    currentCid = 'chat-paid-1111';
+    currentSelectedModel = 'Gemini 3.8 Flash (High)';
+    const bindsBeforeCrossChat = bindCalls.length;
+    if (intervalFn) intervalFn();
+    await new Promise(r => setTimeout(r, 50));
+    assert.strictEqual(bindCalls.length, bindsBeforeCrossChat, 'Clicking model in Chat B must not clobber Chat A upon switching');
+
+    // Functional mount.js __antigravitySelectModel tests
+    const mountSrc = fs.readFileSync(path.join(__dirname, '..', 'bin', 'lib', 'patch', 'ui', 'mount.js'), 'utf8');
+    const mountSandbox = {
+        window: {
+            __antigravityAvailableConfigs: [{ label: 'Gemini 4 Hydrogen' }, { label: 'Gemini 3.8 Flash' }],
+            addEventListener: () => {},
+        },
+        document: {
+            querySelectorAll: (sel) => {
+                if (sel === '[data-testid="model-selector-trigger"]') {
+                    return [{
+                        textContent: 'Gemini 3.8 Flash',
+                        closest: () => true,
+                        click: () => {},
+                    }];
+                }
+                // Return empty items to simulate busy generation where dropdown cannot open
+                return [];
+            },
+            dispatchEvent: () => {},
+        },
+        KeyboardEvent: function() {},
+        setTimeout,
+        Promise,
+    };
+    vm.runInNewContext(mountSrc, mountSandbox);
+    const selectRes = await mountSandbox.window.__antigravitySelectModel('Gemini 4 Hydrogen', mountSandbox.window.__antigravityAvailableConfigs);
+    assert.strictEqual(selectRes, null, '__antigravitySelectModel must return null (not current/Chat B model) when dropdown items cannot be opened during generation');
+    console.log('✓ Cross-chat click isolation and mount.js busy guard verified');
 
     console.log('✓ All concurrent chats isolation regression tests passed!');
 }
