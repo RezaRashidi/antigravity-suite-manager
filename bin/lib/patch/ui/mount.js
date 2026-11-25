@@ -1,5 +1,9 @@
 // Antigravity Multi-Account UI: Target Detection and Cascade Identification
 (function initMountModule() {
+    if (typeof window !== 'undefined') {
+        if (window.__antigravityMountInit) return;
+        window.__antigravityMountInit = true;
+    }
     try {
         if (typeof window !== 'undefined') {
             const envKey = 'jetski.developer.featureEnvironmentOverride';
@@ -106,6 +110,11 @@
 
     let footerHidden = false;
     let footerMo = null;
+    let footerMoTimer = null;
+    function disconnectFooterMo() {
+        if (footerMoTimer) { clearTimeout(footerMoTimer); footerMoTimer = null; }
+        if (footerMo) { footerMo.disconnect(); footerMo = null; }
+    }
     function hideDevFooter() {
         if (footerHidden) return;
         try {
@@ -114,11 +123,12 @@
             for (const btn of btns) {
                 const bar = btn.closest('.shrink-0') || btn.closest('[data-screenshot-volatile]') || btn.closest('.border-t') || btn.parentElement;
                 if (bar) {
+                    bar.classList?.add('agy-hidden-dev-footer');
                     bar.style.setProperty('display', 'none', 'important');
                     bar.style.setProperty('height', '0px', 'important');
                     bar.style.setProperty('visibility', 'hidden', 'important');
                     footerHidden = true;
-                    if (footerMo) { footerMo.disconnect(); footerMo = null; }
+                    disconnectFooterMo();
                 }
             }
         } catch (_) {}
@@ -344,22 +354,42 @@
         try {
             footerMo = new MutationObserver((mutations) => {
                 if (footerHidden) {
-                    if (footerMo) { footerMo.disconnect(); footerMo = null; }
+                    disconnectFooterMo();
                     return;
                 }
+                const active = document.activeElement;
+                if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || active.isContentEditable || active.closest?.('[contenteditable], .monaco-editor, [data-lexical-editor], [role="textbox"]'))) {
+                    return;
+                }
+                let relevant = false;
                 for (let i = 0; i < mutations.length; i++) {
                     const target = mutations[i].target;
-                    // Ignore typing/input mutations completely
                     const el = target?.nodeType === 1 ? target : target?.parentElement;
                     if (el?.closest?.('textarea, input, [contenteditable], .monaco-editor, [data-lexical-editor], [data-testid*="input"], [role="textbox"]')) {
                         continue;
                     }
-                    hideDevFooter();
+                    relevant = true;
                     break;
                 }
+                if (!relevant) return;
+                if (!footerMoTimer) {
+                    footerMoTimer = setTimeout(() => {
+                        footerMoTimer = null;
+                        hideDevFooter();
+                    }, 250);
+                }
             });
-            if (document.body) footerMo.observe(document.body, { childList: true, subtree: true });
-            else document.addEventListener('DOMContentLoaded', () => { if (document.body && !footerHidden && footerMo) footerMo.observe(document.body, { childList: true, subtree: true }); });
+            const startFooterWatch = () => {
+                if (document.body && !footerHidden && footerMo) {
+                    footerMo.observe(document.body, { childList: true, subtree: true });
+                    setTimeout(() => {
+                        if (!footerHidden) hideDevFooter();
+                        disconnectFooterMo();
+                    }, 8000);
+                }
+            };
+            if (document.body) startFooterWatch();
+            else document.addEventListener('DOMContentLoaded', startFooterWatch);
         } catch (_) {}
 
         // Optimize RTL Direction Engine if loaded: prevent full-chat BLOCKS re-scan while typing

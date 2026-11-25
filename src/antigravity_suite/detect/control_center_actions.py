@@ -36,7 +36,6 @@ from antigravity_suite.detect.control_center_patches import (
     handle_control_center_patch_all,
     handle_control_center_rtl_patch,
     handle_control_center_selector_patch,
-    handle_control_center_typing_perf_patch,
     handle_control_center_window_bounds_patch,
 )
 
@@ -62,7 +61,6 @@ __all__ = [
     "handle_control_center_steps",
     "handle_control_center_subagents_patch",
     "handle_control_center_traffic",
-    "handle_control_center_typing_perf_patch",
     "handle_control_center_uninstall",
     "handle_control_center_update",
     "handle_control_center_window_bounds_patch",

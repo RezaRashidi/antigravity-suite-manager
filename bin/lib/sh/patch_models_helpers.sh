@@ -26,7 +26,7 @@ ensure_models_patch_runtime() {
 detect_active_patches() {
     local asar="$1"
     ACTIVE_PATCH_RTL=false; ACTIVE_PATCH_SELECTOR=false; ACTIVE_PATCH_FORK=false
-    ACTIVE_PATCH_OPEN_IDE=false; ACTIVE_PATCH_WINDOW_BOUNDS=false; ACTIVE_PATCH_TYPING_PERF=false
+    ACTIVE_PATCH_OPEN_IDE=false; ACTIVE_PATCH_WINDOW_BOUNDS=false
     [ ! -f "$asar" ] && return 0
 
     grep -qa "ANTIGRAVITY RTL PATCH" "$asar" 2>/dev/null && ACTIVE_PATCH_RTL=true
@@ -34,7 +34,6 @@ detect_active_patches() {
     (grep -qa "ANTIGRAVITY_SUITE_FORK_PATCH" "$asar" 2>/dev/null || grep -qa "FORK_EXP_PRELOAD_START" "$asar" 2>/dev/null) && ACTIVE_PATCH_FORK=true
     grep -qa "ANTIGRAVITY_SUITE_OPEN_IDE_PATCH" "$asar" 2>/dev/null && ACTIVE_PATCH_OPEN_IDE=true
     grep -qa "ANTIGRAVITY_SUITE_WINDOW_BOUNDS_PATCH" "$asar" 2>/dev/null && ACTIVE_PATCH_WINDOW_BOUNDS=true
-    grep -qa "ANTIGRAVITY_SUITE_TYPING_PERF_PATCH" "$asar" 2>/dev/null && ACTIVE_PATCH_TYPING_PERF=true
     return 0
 }
 
@@ -44,7 +43,7 @@ restore_pristine_models_base() {
     local has_active=false
     if [ "$ACTIVE_PATCH_RTL" = "true" ] || [ "$ACTIVE_PATCH_SELECTOR" = "true" ] || \
        [ "$ACTIVE_PATCH_FORK" = "true" ] || [ "$ACTIVE_PATCH_OPEN_IDE" = "true" ] || \
-       [ "$ACTIVE_PATCH_WINDOW_BOUNDS" = "true" ] || [ "$ACTIVE_PATCH_TYPING_PERF" = "true" ]; then
+       [ "$ACTIVE_PATCH_WINDOW_BOUNDS" = "true" ]; then
         has_active=true
     fi
     local has_model_patch=false
@@ -68,7 +67,7 @@ restore_pristine_models_base() {
 }
 
 reapply_post_model_patches() {
-    local rtl="$1" sel="$2" fork="$3" open_ide="$4" win_bounds="${5:-false}" typing_perf="${6:-false}"
+    local rtl="$1" sel="$2" fork="$3" open_ide="$4" win_bounds="${5:-false}"
     local asar="${APP_INSTALL_DIR}/resources/app.asar"
     if [ "$rtl" = "true" ]; then
         log_info "Re-applying RTL patch on top of custom models patch..."
@@ -90,9 +89,5 @@ reapply_post_model_patches() {
     if [ "$win_bounds" = "true" ]; then
         log_info "Re-applying X11 Window Bounds patch on top of custom models patch..."
         FORCE_INSTALL=true patch_window_bounds_app >/dev/null 2>&1 || patch_window_bounds_app
-    fi
-    if [ "$typing_perf" = "true" ]; then
-        log_info "Re-applying Prompt Input Typing Performance patch on top of custom models patch..."
-        FORCE_INSTALL=true patch_typing_perf_app >/dev/null 2>&1 || patch_typing_perf_app
     fi
 }

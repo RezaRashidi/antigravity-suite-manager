@@ -13,9 +13,6 @@ function patchIpcAndPreload(distDir) {
         try {
             const router = require('./multi_account_router.js');
             let accounts = router.loadAllAccountsWithQuotasSync ? router.loadAllAccountsWithQuotasSync() : Object.values(router.loadAllAccounts());
-            if (!accounts?.some(a => a.quotas?.length) && router.loadAllAccountsWithQuotas) {
-                try { accounts = await Promise.race([router.loadAllAccountsWithQuotas(), new Promise(r => setTimeout(() => r(accounts), 800))]); } catch (_) {}
-            }
             if (!accounts || !accounts.length) accounts = Object.values(router.loadAllAccounts());
             const bindings = router.getBindings();
             return { accounts, bindings, active_default: router.getActiveAccountEmail ? router.getActiveAccountEmail() : bindings.__active_account, proxy_running: true };

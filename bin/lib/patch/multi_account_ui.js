@@ -1,8 +1,9 @@
 // Antigravity Multi-Account UI Injector: Main Controller
 (function initUI() {
     if (window.__antigravityRenderSelector) { window.__antigravityRenderSelector(); return; }
-    let state = { accounts: [], bindings: {} }, cascadeId = "default", rTimer = null, lastF = 0, lastActiveEmail = null, lastSavedModels = {}, isRestoring = false, restoreSeq = 0, lastUserModelClickTs = 0, lastUserModelClickCid = null;
+    let state = { accounts: [], bindings: {} }, cascadeId = "default", rTimer = null, lastF = 0, lastActiveEmail = null, lastSavedModels = {}, isRestoring = false, restoreSeq = 0, lastUserModelClickTs = 0, lastUserModelClickCid = null, lastTypingTs = 0, inFlightRefresh = null, inFlightByEmail = {}, lastAccRefresh = {};
     const isDraftId = (id) => !id || id === "default" || id.startsWith("chat_") || id.startsWith("draft_");
+    const isTypingEl = (el) => Boolean(el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' || el.isContentEditable || el.closest?.('[contenteditable], .monaco-editor, [data-lexical-editor], [role="textbox"]')));
     function notifyAccountSwitch(em, cid, reason) {
         if (!em || em === "Account") return;
         window.dispatchEvent(new CustomEvent('antigravity:account-switched', { detail: { email: em, cascadeId: cid, reason } }));
@@ -57,15 +58,111 @@
         if (!t.parentElement && document.body) document.body.appendChild(t);
         t.textContent = msg; t.style.opacity = "1"; setTimeout(() => t.style.opacity = "0", 2000);
     }
-    async function fetchState(force = false) {
-        lastF = Date.now(); let res = null;
-        if (!state.accounts?.length && window.__AGY_INITIAL_STATE__?.accounts?.length) {
-            state = window.__AGY_INITIAL_STATE__;
-            render();
+    async function fetchState(force = false, waitRefresh = false, targetEmail = null) {
+        const emKey = targetEmail ? String(targetEmail).toLowerCase() : null;
+        if (force && emKey && inFlightByEmail[emKey]) return inFlightByEmail[emKey];
+        if (force && !emKey && inFlightRefresh) return inFlightRefresh;
+        const run = (async () => {
+            lastF = Date.now(); let res = null;
+            if (!state.accounts?.length && window.__AGY_INITIAL_STATE__?.accounts?.length) {
+                state = window.__AGY_INITIAL_STATE__;
+                render();
+            }
+            if (window.antigravityMultiAccount?.getState && !force) { try { res = await Promise.race([window.antigravityMultiAccount.getState(), new Promise((_, r) => setTimeout(() => r(0), 1000))]); } catch (_) {} }
+            if (!res?.accounts?.length || force) {
+                const hdr = document.querySelector?.('#agy-acc-dd .agy-acc-header');
+                if (force && !emKey && hdr) hdr.textContent = 'Google Accounts • Updating...';
+                try {
+                    const params = [];
+                    if (force) params.push('refresh=1');
+                    if (force && waitRefresh) params.push('wait=1');
+                    if (emKey) params.push('email=' + encodeURIComponent(targetEmail));
+                    const qs = params.length ? '?' + params.join('&') : '';
+                    const ac = typeof AbortController !== 'undefined' ? new AbortController() : null;
+                    const tid = ac ? setTimeout(() => ac.abort(), 6000) : null;
+                    const r = await fetch(apiH() + "/api/multi-account/state" + qs, ac ? { signal: ac.signal } : undefined);
+                    if (tid) clearTimeout(tid);
+                    res = await r.json();
+                    if (emKey) lastAccRefresh[emKey] = Date.now();
+                } catch (_) {
+                } finally {
+                    if (force && !emKey && hdr) hdr.textContent = 'Google Accounts';
+                }
+            }
+            if (res?.accounts?.length) {
+                const seen = new Set();
+                res.accounts = res.accounts.filter(a => a?.email && !seen.has(a.email.toLowerCase()) && seen.add(a.email.toLowerCase()));
+                state = res;
+                const ddOpen = document.getElementById("agy-acc-dd")?.classList.contains("open");
+                if (ddOpen) {
+                    updateOpenDropdownUI();
+                } else if (Date.now() - lastTypingTs >= 800) {
+                    render();
+                }
+            }
+        })();
+        if (force && emKey) {
+            inFlightByEmail[emKey] = run;
+            try { await run; } finally { if (inFlightByEmail[emKey] === run) delete inFlightByEmail[emKey]; }
+            return;
         }
-        if (window.antigravityMultiAccount?.getState && !force) { try { res = await Promise.race([window.antigravityMultiAccount.getState(), new Promise((_, r) => setTimeout(() => r(0), 1000))]); } catch (_) {} }
-        if (!res?.accounts?.length || force) { try { const r = await fetch(apiH() + "/api/multi-account/state" + (force ? "?refresh=1" : "")); res = await r.json(); } catch (_) {} }
-        if (res?.accounts?.length) { const seen = new Set(); res.accounts = res.accounts.filter(a => a?.email && !seen.has(a.email.toLowerCase()) && seen.add(a.email.toLowerCase())); state = res; render(); }
+        if (force) {
+            inFlightRefresh = run;
+            try { await run; } finally { if (inFlightRefresh === run) inFlightRefresh = null; }
+            return;
+        }
+        await run;
+    }
+    function buildTierBadge(a) {
+        if (!a) return '';
+        const isBad = a.license_status === 'verify_required' || a.license_status === 'no_license' || a.license_status === 'auth_failed';
+        if (isBad) return '';
+        const tt = String(a.tier_type || a.tier || '');
+        if (tt === 'Paid Pro') return '<span class="agy-tier-badge-sm paid">PAID PRO</span>';
+        if (tt === 'Free Pro') return '<span class="agy-tier-badge-sm free">FREE PRO</span>';
+        if (tt === 'PRO' || tt === 'TEAMS_TIER_PRO') return '<span class="agy-tier-badge-sm free">PRO</span>';
+        if (tt === 'Free' || tt === 'FREE') return '<span class="agy-tier-badge-sm free">FREE</span>';
+        return '';
+    }
+    function buildStatusBadge(a) {
+        if (!a) return '';
+        const tip = String(a.license_message || a.refresh_error || '').replace(/"/g, '&quot;');
+        if (a.license_status === 'verify_required') return `<span style="font-size:9px;color:#ef4444;border:1px solid rgba(239,68,68,0.4);padding:0 4px;border-radius:3px;font-weight:600;" title="${tip || 'Verification Required'}">VERIFY</span>`;
+        if (a.license_status === 'auth_failed') return `<span style="font-size:9px;color:#ef4444;border:1px solid rgba(239,68,68,0.4);padding:0 4px;border-radius:3px;font-weight:600;" title="${tip || 'Logged Out / Session Expired'}">LOGGED OUT</span>`;
+        if (a.license_status === 'no_license') return `<span style="font-size:9px;color:#f59e0b;border:1px solid rgba(245,158,11,0.4);padding:0 4px;border-radius:3px;font-weight:600;" title="${tip || 'No License'}">NO LIC</span>`;
+        if (a.license_status === 'exhausted') return `<span style="font-size:9px;color:#f59e0b;border:1px solid rgba(245,158,11,0.4);padding:0 4px;border-radius:3px;font-weight:600;" title="${tip || 'Resource Exhausted'}">LIMIT</span>`;
+        if (a.license_status === 'refresh_failed' || a.license_status === 'network_error' || a.license_status === 'forbidden_transient' || a.refresh_error) {
+            return `<span style="font-size:9px;color:#f97316;border:1px solid rgba(249,115,22,0.4);padding:0 4px;border-radius:3px;font-weight:600;" title="${tip || 'Refresh Failed'}">ERR</span>`;
+        }
+        return '';
+    }
+    function updateOpenDropdownUI() {
+        try {
+            const pill = document.getElementById("antigravity-account-pill");
+            const dd = document.getElementById("agy-acc-dd");
+            const fly = document.getElementById("agy-flyout");
+            if (!pill || !dd || !dd.classList.contains("open")) return;
+            const setH = window.__antigravitySetHtml || ((e, s) => e.innerHTML = s);
+            pill.querySelectorAll(".agy-acc-item").forEach(item => {
+                const em = item.getAttribute("data-email");
+                const a = state.accounts?.find(x => x.email?.toLowerCase() === em?.toLowerCase());
+                if (!a) return;
+                const badgeSlot = item.querySelector(".agy-tier-slot");
+                if (badgeSlot) {
+                    const nextHtml = buildTierBadge(a);
+                    if (badgeSlot.innerHTML !== nextHtml) setH(badgeSlot, nextHtml);
+                }
+                const statusSlot = item.querySelector(".agy-status-slot");
+                if (statusSlot) {
+                    const nextSt = buildStatusBadge(a);
+                    if (statusSlot.innerHTML !== nextSt) setH(statusSlot, nextSt);
+                }
+            });
+            if (fly && fly.classList.contains("visible") && fly.dataset.email) {
+                const fa = state.accounts?.find(x => x.email?.toLowerCase() === fly.dataset.email.toLowerCase());
+                if (fa) window.__antigravityShowFlyout?.(fly, fa, dd, null);
+            }
+        } catch (_) {}
     }
     function getActive() {
         const b = state.bindings?.[cascadeId], em = (typeof b === "object" ? b?.email : b), d = state.active_default || state.bindings?.__active_account;
@@ -149,24 +246,38 @@
             pill.className = "agy-acc-pill-container" + (floating ? " floating" : "");
             const handle = active.email ? active.email.split("@")[0] : "Account", ddOld = pill.querySelector("#agy-acc-dd");
             if (ddOld?.classList.contains("open") && pill.dataset.email === active.email && pill.dataset.cid === cascadeId) return;
-            pill.dataset.email = active.email; pill.dataset.cid = cascadeId;
+            const accountsSig = (state.accounts || []).map(a => `${a.email || ''}:${a.is_primary ? 1 : 0}:${a.license_status || ''}:${a.tier_type || a.tier || ''}`).join('|');
+            const renderSig = `${active.email || ''}|${cascadeId}|${floating ? 1 : 0}|${accountsSig}`;
+            if (pill.dataset.renderSig === renderSig && pill.innerHTML) return;
+            pill.dataset.email = active.email; pill.dataset.cid = cascadeId; pill.dataset.renderSig = renderSig;
             (window.__antigravitySetHtml || ((e, s) => e.innerHTML = s))(pill, `<button class="agy-acc-pill-btn flex cursor-pointer items-center h-7 gap-1 rounded-full pl-2 pr-1.5 text-xs text-secondary-foreground select-none outline-none hover:bg-secondary transition-colors" type="button" id="agy-acc-btn" title="${active.email}"><span class="truncate max-w-[130px] font-medium">${handle}</span><span class="opacity-60 text-[9px] ml-0.5">▼</span></button><div class="agy-acc-dropdown" id="agy-acc-dd"><div class="agy-acc-header">Google Accounts</div><div class="agy-acc-list">${(state.accounts || []).map(a => {
                 const isSel = a.email?.toLowerCase() === active.email?.toLowerCase(), isPrim = !!a.is_primary;
                 const isBad = a.license_status === 'verify_required' || a.license_status === 'no_license' || a.license_status === 'auth_failed';
-                const statusTag = a.license_status === 'verify_required'
-                    ? '<span style="font-size:9px;color:#ef4444;border:1px solid rgba(239,68,68,0.4);padding:0 4px;border-radius:3px;font-weight:600;" title="Verification Required">VERIFY</span>'
-                    : (a.license_status === 'no_license'
-                        ? '<span style="font-size:9px;color:#f59e0b;border:1px solid rgba(245,158,11,0.4);padding:0 4px;border-radius:3px;font-weight:600;" title="No License">NO LIC</span>'
-                        : (a.license_status === 'auth_failed'
-                            ? '<span style="font-size:9px;color:#ef4444;border:1px solid rgba(239,68,68,0.4);padding:0 4px;border-radius:3px;font-weight:600;" title="Authentication Expired">AUTH</span>'
-                            : ''));
+                const statusTag = `<span class="agy-status-slot">${buildStatusBadge(a)}</span>`;
                 const star = isPrim ? '<span style="color:#eab308;font-size:11px;" title="Primary Account">★</span>' : '';
-                return `<div class="agy-acc-item ${isSel ? "selected" : ""}" data-email="${a.email}" style="${isBad ? 'opacity:0.65;' : ''}"><div class="agy-acc-item-left" style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;"><div class="agy-acc-avatar-sm">${(a.email || "G")[0].toUpperCase()}</div><div class="agy-acc-text-col" style="display:flex;flex-direction:column;min-width:0;flex:1;"><div style="display:flex;align-items:center;gap:4px;overflow:hidden;"><span class="agy-acc-email-text">${a.email.split("@")[0]}</span>${star}${statusTag}</div><span class="agy-acc-email-sub">${a.email}</span></div></div><div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${isSel ? '<span style="color:#3b82f6;font-size:12px;font-weight:bold;">✓</span>' : ''}<span class="agy-view-usage-link" data-email="${a.email}" title="View details and usage">›</span></div></div>`;
+                const tierTag = `<span class="agy-tier-slot">${buildTierBadge(a)}</span>`;
+                return `<div class="agy-acc-item ${isSel ? "selected" : ""}" data-email="${a.email}" style="${isBad ? 'opacity:0.65;' : ''}"><div class="agy-acc-item-left" style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;"><div class="agy-acc-avatar-sm">${(a.email || "G")[0].toUpperCase()}</div><div class="agy-acc-text-col" style="display:flex;flex-direction:column;min-width:0;flex:1;"><div style="display:flex;align-items:center;gap:4px;overflow:hidden;"><span class="agy-acc-email-text">${a.email.split("@")[0]}</span>${star}${tierTag}${statusTag}</div><span class="agy-acc-email-sub">${a.email}</span></div></div><div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">${isSel ? '<span style="color:#3b82f6;font-size:12px;font-weight:bold;">✓</span>' : ''}<span class="agy-view-usage-link" data-email="${a.email}" title="View details and usage">›</span></div></div>`;
             }).join("")}</div><div class="agy-acc-footer"><button class="agy-acc-btn-action" id="agy-acc-add">+ Add Account</button><button class="agy-acc-btn-action" id="agy-acc-ref">Refresh</button></div><div class="agy-usage-flyout" id="agy-flyout"></div></div>`);
             const btn = document.getElementById("agy-acc-btn"), dd = document.getElementById("agy-acc-dd"), fly = document.getElementById("agy-flyout");
-            if (btn && dd) btn.onclick = (e) => { e.stopPropagation(); if (!dd.classList.toggle("open")) return fly?.classList.remove("visible"); updateDdPos(); void fetchState(); };
+            if (btn && dd) btn.onclick = (e) => { e.stopPropagation(); if (!dd.classList.toggle("open")) return fly?.classList.remove("visible"); updateDdPos(); };
             let hTimer = null;
             if (fly) fly.onclick = async (e) => {
+                const cp = e.target.closest(".agy-flyout-copy-url");
+                if (cp) {
+                    e.stopPropagation();
+                    const u = cp.getAttribute("data-url");
+                    if (u) {
+                        try { await navigator.clipboard?.writeText(u); toast("✓ Verification link copied"); } catch (_) { toast(u); }
+                    }
+                    return;
+                }
+                const vl = e.target.closest(".agy-flyout-verify-link");
+                if (vl) {
+                    e.stopPropagation();
+                    const u = vl.getAttribute("data-url") || vl.getAttribute("href");
+                    if (u) { try { window.open(u, "_blank", "noopener,noreferrer"); } catch (_) {} }
+                    return;
+                }
                 const lb = e.target.closest(".agy-flyout-logout-btn");
                 if (lb) { e.stopPropagation(); doLogout(lb.getAttribute("data-email")); return; }
                 const pb = e.target.closest(".agy-flyout-primary-btn");
@@ -187,14 +298,18 @@
             };
             pill.querySelectorAll(".agy-acc-item").forEach(item => {
                 const em = item.getAttribute("data-email");
-                const showFly = async () => {
+                const showFly = () => {
                     if (hTimer) clearTimeout(hTimer);
-                    let a = state.accounts?.find(x => x.email === em);
+                    if (fly) fly.dataset.email = em || '';
+                    const a = state.accounts?.find(x => x.email === em);
                     window.__antigravityShowFlyout?.(fly, a, dd, item);
-                    if (!a?.quotas?.length || Date.now() - lastF > 20000) { await fetchState(); a = state.accounts?.find(x => x.email === em); if (fly?.classList.contains("visible")) window.__antigravityShowFlyout?.(fly, a, dd, item); }
+                    const emKey = (em || '').toLowerCase();
+                    if (emKey && (!lastAccRefresh[emKey] || Date.now() - lastAccRefresh[emKey] > 15000)) {
+                        void fetchState(true, true, em);
+                    }
                 };
                 item.onmouseenter = showFly; item.onmouseleave = () => { hTimer = setTimeout(() => fly?.classList.remove("visible"), 350); };
-                item.querySelector(".agy-view-usage-link")?.addEventListener("click", (e) => { e.stopPropagation(); if (hTimer) clearTimeout(hTimer); void showFly(); });
+                item.querySelector(".agy-view-usage-link")?.addEventListener("click", (e) => { e.stopPropagation(); if (hTimer) clearTimeout(hTimer); if (em) delete lastAccRefresh[em.toLowerCase()]; showFly(); });
                 item.onclick = async (e) => {
                     if (e.target.closest(".agy-view-usage-link, .agy-usage-flyout")) return; e.stopPropagation();
                     if (em) {
@@ -257,7 +372,7 @@
                     }
                 }, 2000);
             });
-            document.getElementById("agy-acc-ref")?.addEventListener("click", async (e) => { e.stopPropagation(); await fetchState(true); toast("Refreshed limits"); });
+            document.getElementById("agy-acc-ref")?.addEventListener("click", async (e) => { e.stopPropagation(); lastAccRefresh = {}; await fetchState(true, true); toast("Refreshed limits"); });
         } catch (_) {}
     }
     function persistChatModel(cid, curModel) {
@@ -297,10 +412,10 @@
                 if (cv?.dataset?.agyDraftId) delete cv.dataset.agyDraftId;
                 if (cv?.dataset?.agySessionId) delete cv.dataset.agySessionId;
             }
-            scheduleRender(); setTimeout(() => { scheduleRender(); void fetchState(true); }, 150);
+            scheduleRender(); setTimeout(() => { scheduleRender(); void fetchState(false); }, 150);
             return;
         }
-        if (pill?.contains?.(e.target)) return;
+        if (pill?.contains?.(e.target) || isTypingEl(e.target)) return;
         const cidAtClick = cascadeId;
         setTimeout(() => {
             if (isRestoring || cascadeId !== cidAtClick) return;
@@ -308,12 +423,12 @@
             persistChatModel(cidAtClick, curModel);
         }, 350);
     });
-    const hookState = (fn) => function() { const r = fn.apply(this, arguments); scheduleRender(); void fetchState(); return r; };
+    const hookState = (fn) => function() { const r = fn.apply(this, arguments); scheduleRender(); void fetchState(false); return r; };
     if (history.pushState) history.pushState = hookState(history.pushState); if (history.replaceState) history.replaceState = hookState(history.replaceState);
-    ['popstate', 'hashchange'].forEach(ev => window.addEventListener(ev, () => { scheduleRender(); void fetchState(true); }));
+    ['popstate', 'hashchange'].forEach(ev => window.addEventListener(ev, () => { scheduleRender(); void fetchState(false); }));
     window.addEventListener('focus', async () => {
         scheduleRender();
-        await fetchState(true);
+        await fetchState(false);
         if (typeof document.hasFocus === "function" && !document.hasFocus()) return;
         const active = getActive();
         if (active?.email && active.email !== "Account" && state.active_default && active.email.toLowerCase() !== state.active_default.toLowerCase()) {
@@ -323,11 +438,17 @@
                 .catch(() => {});
         }
     });
-    window.addEventListener("resize", updateDdPos); window.addEventListener("keydown", (e) => { if (e.key === "F5" && !e.ctrlKey && !e.metaKey && !e.shiftKey) { render(); void fetchState(true); } });
+    window.addEventListener("resize", updateDdPos);
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "F5" && !e.ctrlKey && !e.metaKey && !e.shiftKey) { render(); void fetchState(true); return; }
+        if (!e.ctrlKey && !e.metaKey && !e.altKey) lastTypingTs = Date.now();
+    }, { passive: true, capture: true });
+    document.addEventListener("input", () => { lastTypingTs = Date.now(); }, { passive: true, capture: true });
 
     let moTimer = null;
     function checkPillAndCascade() {
         const p = document.getElementById("antigravity-account-pill");
+        if (Date.now() - lastTypingTs < 600 && p && p.isConnected !== false) return;
         const t = window.__antigravityFindTarget?.();
         const c = window.__antigravityDetectCascadeId?.(t?.target) || "default";
         if (!p || !document.body?.contains(p) || (t?.target && p.parentElement !== t.target) || c !== cascadeId) {
@@ -346,6 +467,10 @@
 
     try {
         const mo = new MutationObserver((mutations) => {
+            if (Date.now() - lastTypingTs < 700) {
+                const p = document.getElementById("antigravity-account-pill");
+                if (p && p.isConnected !== false) return;
+            }
             let isRelevant = false;
             for (let i = 0; i < mutations.length; i++) {
                 const target = mutations[i].target;
@@ -363,18 +488,17 @@
             moTimer = setTimeout(() => {
                 moTimer = null;
                 checkPillAndCascade();
-            }, 150);
+            }, 300);
         });
         if (document.body) mo.observe(document.body, { childList: true, subtree: true });
     } catch (_) {}
 
     setInterval(() => {
-        const active = document.activeElement;
-        if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT' || active.isContentEditable || active.closest?.('[contenteditable], .monaco-editor, [data-lexical-editor], [role="textbox"]'))) {
+        if (Date.now() - lastTypingTs < 1000 || isTypingEl(document.activeElement)) {
             return;
         }
         checkPillAndCascade();
     }, 2500);
 
-    render(); fetchState(); setTimeout(() => fetchState(true), 1500); setInterval(fetchState, 30000);
+    render(); fetchState(false);
 })();

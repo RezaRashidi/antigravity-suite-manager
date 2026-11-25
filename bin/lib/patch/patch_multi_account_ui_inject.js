@@ -74,10 +74,15 @@ function patchUiInjection(distDir) {
     let code = fs.readFileSync(utilsPath, 'utf8');
     if (!code.includes('MULTI_ACCOUNT_UI_START')) {
         const snippet = `/* MULTI_ACCOUNT_UI_START */
+    let __agyLastCssUrl = null;
     const __injectMultiAccountUI = () => {
         try {
+            const curUrl = typeof win.webContents.getURL === 'function' ? win.webContents.getURL() : '';
             const cssPath = require('path').join(__dirname, 'ui', 'styles.css');
-            if (require('fs').existsSync(cssPath)) void win.webContents.insertCSS(require('fs').readFileSync(cssPath, 'utf8'));
+            if (__agyLastCssUrl !== curUrl && require('fs').existsSync(cssPath)) {
+                __agyLastCssUrl = curUrl;
+                void win.webContents.insertCSS(require('fs').readFileSync(cssPath, 'utf8'));
+            }
             for (const s of ['ui/flyout.js', 'ui/mount.js', 'multi_account_ui.js']) {
                 const sp = require('path').join(__dirname, s);
                 if (require('fs').existsSync(sp)) void win.webContents.executeJavaScript(require('fs').readFileSync(sp, 'utf8')).catch(e => console.error('[MultiAccount] ' + s + ' error:', e.message));

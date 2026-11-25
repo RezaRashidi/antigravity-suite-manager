@@ -175,13 +175,26 @@ async function requestTokenRefresh(clientId, clientSecret, refreshToken) {
     });
 }
 
-async function refreshGoogleToken(account) {
+async function refreshGoogleToken(account, forceRefresh = false) {
     const refreshToken = account?.token?.refresh_token || account?.refresh_token;
     const currentAccess = (typeof account?.token === 'string') ? account.token : (account?.token?.access_token || account?.access_token);
     if (!refreshToken) return currentAccess;
 
+    const expiryRaw = (typeof account?.token === 'object' && account.token)
+        ? (account.token.expiry || account.token.expires_at)
+        : (account?.expires_at || account?.expiry);
+    const expiryMs = expiryRaw ? Date.parse(expiryRaw) : NaN;
+    const force = forceRefresh || Boolean(account?._forceTokenRefresh);
+    if (account && '_forceTokenRefresh' in account) delete account._forceTokenRefresh;
+    if (account && '_oauthError' in account) delete account._oauthError;
+    if (!force && currentAccess && !Number.isNaN(expiryMs) && (expiryMs - Date.now() > 5 * 60 * 1000)) {
+        return currentAccess;
+    }
+
     const preferred = account.client_id || (account.token && account.token.client_id) || null;
     const candidates = getAllOAuthCredentials(preferred);
+    let sawInvalidGrant = false;
+    let lastError = '';
 
     for (const cred of candidates) {
         const result = await requestTokenRefresh(cred.clientId, cred.clientSecret, refreshToken);
@@ -234,7 +247,18 @@ async function refreshGoogleToken(account) {
             }
             return d.access_token;
         }
+        if (result?.error) {
+            lastError = String(result.error);
+            if (lastError === 'invalid_grant' || result.status === 401) {
+                sawInvalidGrant = true;
+            }
+        }
     }
+    if (sawInvalidGrant) {
+        if (account) account._oauthError = 'invalid_grant';
+        return null;
+    }
+    if (account && lastError) account._oauthError = lastError;
     return currentAccess;
 }
 

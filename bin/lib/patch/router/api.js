@@ -20,8 +20,30 @@ function handleApiRequest(req, res, bodyStr) {
         return true;
     }
     if (req.url.startsWith('/api/multi-account/state')) {
-        const mar = require('../multi_account_router'), accountsMap = loadAllAccounts();
-        if (req.url.includes('refresh')) mar.refreshQuotasAsync().catch(() => {});
+        const mar = require('../multi_account_router');
+        let wantsRefresh = false, wantsWait = false, targetEmail = null;
+        try {
+            const u = new URL(req.url, 'http://127.0.0.1');
+            wantsRefresh = u.searchParams.has('refresh');
+            wantsWait = u.searchParams.get('wait') === '1';
+            targetEmail = u.searchParams.get('email') || null;
+        } catch (_) {
+            wantsRefresh = req.url.includes('refresh');
+            wantsWait = req.url.includes('wait=1');
+        }
+        if (wantsRefresh && wantsWait) {
+            Promise.race([mar.refreshQuotasAsync(true, targetEmail), new Promise(r => setTimeout(r, 4500))])
+                .catch(() => {})
+                .finally(() => {
+                    const accountsMap = loadAllAccounts();
+                    const accounts = mar.loadAllAccountsWithQuotasSync(), bindings = getBindings();
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ accounts, bindings, active_default: getActiveAccountEmail(accountsMap) }));
+                });
+            return true;
+        }
+        if (wantsRefresh) mar.refreshQuotasAsync(true, targetEmail).catch(() => {});
+        const accountsMap = loadAllAccounts();
         const accounts = mar.loadAllAccountsWithQuotasSync(), bindings = getBindings();
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ accounts, bindings, active_default: getActiveAccountEmail(accountsMap) }));

@@ -115,16 +115,40 @@ function getRefreshTokenFingerprint(acc) {
     return rt ? String(rt).slice(-12) : '';
 }
 
+function extractVerifyUrl(bodyStr = '') {
+    const body = String(bodyStr || '');
+    try {
+        const parsed = JSON.parse(body);
+        const details = parsed?.error?.details || parsed?.details || [];
+        for (const d of details) {
+            const metaUrl = d?.metadata?.validation_url || d?.metadata?.verification_url || d?.metadata?.url;
+            if (metaUrl && /^https?:\/\//i.test(metaUrl)) return metaUrl;
+            if (Array.isArray(d?.links)) {
+                for (const l of d.links) {
+                    if (l?.url && /^https?:\/\//i.test(l.url)) return l.url;
+                }
+            }
+        }
+    } catch (_) {}
+    const m = body.match(/https:\/\/(?:accounts\.google\.com|myaccount\.google\.com|g\.co|support\.google\.com)[^\s"'<>\\)]+/i);
+    return m ? m[0] : '';
+}
+
 function classifyHttpError(statusCode, bodyStr = '') {
     const body = String(bodyStr || '');
-    if (/verify your account/i.test(body)) {
-        return { reason: 'verify_required', message: 'Verify your account to continue.', persist: true };
+    if (/verify your account|VALIDATION_REQUIRED/i.test(body)) {
+        return {
+            reason: 'verify_required',
+            message: 'Verify your account to continue.',
+            verifyUrl: extractVerifyUrl(body) || 'https://accounts.google.com/ServiceLogin',
+            persist: true
+        };
     }
     if (/valid license|SUBSCRIPTION_REQUIRED|UNSUPPORTED_CLIENT/i.test(body)) {
         return { reason: 'no_license', message: 'Subscription Required', persist: true };
     }
     if (statusCode === 401 || /UNAUTHENTICATED|invalid_grant/i.test(body)) {
-        return { reason: 'auth_failed', message: 'Authentication expired or revoked', persist: true };
+        return { reason: 'auth_failed', message: 'Logged out or authentication expired/revoked', persist: true };
     }
     if (statusCode === 404 && /Requested entity was not found|NOT_FOUND/i.test(body)) {
         return { reason: 'model_not_found', message: 'Requested entity was not found (model or tier unavailable)', persist: false };
@@ -153,6 +177,8 @@ function scrubAccountHealthFields(acc) {
     if (!acc || typeof acc !== 'object') return acc;
     acc.license_status = 'ok';
     delete acc.license_message;
+    delete acc.verify_url;
+    delete acc.refresh_error;
     delete acc.unhealthy_at;
     delete acc.unhealthy_until;
     delete acc.unhealthy_token_fp;
@@ -188,6 +214,7 @@ function markAccountUnhealthy(email, reason = 'verify_required', message = '', c
                 if (refreshFp) _unhealthyAccounts.get(key).tokenFp = refreshFp;
                 cur.license_status = reason;
                 cur.license_message = message || reason;
+                if (options.verifyUrl) cur.verify_url = options.verifyUrl;
                 cur.unhealthy_at = new Date(now).toISOString();
                 cur.unhealthy_until = new Date(now + effectiveCooldownMs).toISOString();
                 if (refreshFp) cur.unhealthy_token_fp = refreshFp;

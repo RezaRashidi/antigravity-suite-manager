@@ -1,5 +1,7 @@
 // Antigravity Multi-Account UI: Flyout Template and Positioning
 (function initFlyoutModule() {
+    if (window.__antigravityFlyoutInit) return;
+    window.__antigravityFlyoutInit = true;
     function formatReset(b) {
         if (!b) return '';
         const desc = b.description || '';
@@ -42,7 +44,16 @@
         const tier = acc.tier || 'PRO', rawEmail = acc.email || 'Account', email = escHtml(rawEmail);
         let body = '';
 
-        if (acc.quotas && acc.quotas.length > 0) {
+        const errDetail = escHtml(acc.license_message || acc.refresh_error || '');
+        if (acc.license_status === 'verify_required' || acc.tier === 'Verify Required') {
+            const vUrl = acc.verify_url || 'https://accounts.google.com/ServiceLogin';
+            const safeUrl = escHtml(vUrl);
+            body = `<div class="agy-usage-alert alert-error"><div style="font-weight:600;margin-bottom:3px;">Verification Required</div><div>${errDetail || 'Google requires account verification (HTTP 403). Excluded from automatic routing until verified.'}</div><div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;"><a class="agy-flyout-verify-link" href="${safeUrl}" target="_blank" rel="noopener noreferrer" data-url="${safeUrl}" style="display:inline-block;background:#ef4444;color:#fff;text-decoration:none;padding:3px 8px;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">Verify Account ↗</a><button type="button" class="agy-flyout-copy-url" data-url="${safeUrl}" style="background:rgba(255,255,255,0.08);color:var(--agy-dropdown-text);border:1px solid var(--agy-dropdown-border);padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;">Copy Link</button></div></div>`;
+        } else if (acc.license_status === 'auth_failed' || acc.tier === 'Auth Required') {
+            body = `<div class="agy-usage-alert alert-error"><div style="font-weight:600;margin-bottom:2px;">Logged Out / Session Expired</div><div>${errDetail || 'Token refresh failed or account was signed out. Click "+ Add Account" to sign in again.'}</div></div>`;
+        } else if (acc.license_status === 'no_license' || acc.tier === 'No License') {
+            body = `<div class="agy-usage-alert alert-warning"><div style="font-weight:600;margin-bottom:2px;">Subscription Required</div><div>${errDetail || 'This account does not have an active Gemini license.'}</div></div>`;
+        } else if (acc.quotas && acc.quotas.length > 0) {
             const seen = new Set(), uq = acc.quotas.filter(q => {
                 const k = `${q.family}:${q.window}`;
                 if (seen.has(k)) return false;
@@ -54,20 +65,17 @@
             const other = uq.filter(q => q.family !== 'gemini' && q.family !== 'argon' && q.family !== 'claude');
             const claudeExhausted = claude.some(q => q.fraction === 0);
             let gh = '';
+            if (acc.refresh_error) gh += `<div class="agy-usage-alert alert-warning" style="margin-bottom:6px;"><div style="font-weight:600;margin-bottom:1px;">Not Refreshed (Cached)</div><div>${escHtml(acc.refresh_error)}</div></div>`;
             if (gemini.length) gh += `<div class="agy-usage-group"><div class="agy-group-title">Gemini Models</div>${gemini.map(renderBucket).join('')}</div>`;
             if (argon.length) gh += `<div class="agy-usage-group" style="margin-top:6px;"><div class="agy-group-title">Gemini 4 Argon</div>${argon.map(renderBucket).join('')}</div>`;
             if (claude.length) gh += `<div class="agy-usage-group" style="margin-top:6px;"><div class="agy-group-title">Claude and GPT models</div>${claude.map(renderBucket).join('')}</div>`;
             if (claudeExhausted) gh += `<div style="font-size:11px;color:#f59e0b;background:rgba(245,158,11,0.12);padding:5px 8px;border-radius:5px;margin-top:6px;border:1px solid rgba(245,158,11,0.25);line-height:1.3;">Claude 5-hour limit reached. Switch prompt bar dropdown to Gemini models.</div>`;
             if (other.length) gh += `<div class="agy-usage-group" style="margin-top:6px;"><div class="agy-group-title">Other Models</div>${other.map(renderBucket).join('')}</div>`;
             body = gh;
-        } else if (acc.license_status === 'verify_required' || acc.tier === 'Verify Required') {
-            body = `<div class="agy-usage-alert alert-error"><div style="font-weight:600;margin-bottom:2px;">Verification Required</div><div>Google requires account verification (HTTP 403). Excluded from automatic routing until re-verified.</div></div>`;
-        } else if (acc.license_status === 'no_license') {
-            body = `<div class="agy-usage-alert alert-warning"><div style="font-weight:600;margin-bottom:2px;">Subscription Required</div><div>This account does not have an active Gemini license.</div></div>`;
-        } else if (acc.license_status === 'auth_failed') {
-            body = `<div class="agy-usage-alert alert-error"><div style="font-weight:600;margin-bottom:2px;">Authentication Expired</div><div>Token refresh failed. Please log in again.</div></div>`;
-        } else if (acc.license_status === 'exhausted') {
-            body = `<div class="agy-usage-alert alert-error"><div style="font-weight:600;margin-bottom:2px;">Resource Exhausted</div><div>5-Hour or weekly quota limit reached.</div></div>`;
+        } else if (acc.license_status === 'exhausted' || acc.tier === 'Resource Exhausted') {
+            body = `<div class="agy-usage-alert alert-error"><div style="font-weight:600;margin-bottom:2px;">Resource Exhausted</div><div>${errDetail || '5-Hour or weekly quota limit reached.'}</div></div>`;
+        } else if (acc.license_status === 'refresh_failed' || acc.license_status === 'network_error' || acc.license_status === 'forbidden_transient' || acc.refresh_error) {
+            body = `<div class="agy-usage-alert alert-warning"><div style="font-weight:600;margin-bottom:2px;">Refresh Failed</div><div>${errDetail || 'Could not fetch live quota/models from Google. Check proxy/network and click Refresh.'}</div></div>`;
         } else {
             body = `<div style="font-size:11px;color:var(--agy-dropdown-subtext);padding:8px 0;">Loading usage telemetry...</div>`;
         }
@@ -76,9 +84,10 @@
         const planName = escHtml(rawPlanName);
         let badgeText = 'PRO';
         if (acc.tier === 'Verify Required' || acc.license_status === 'verify_required') badgeText = 'VERIFY';
-        else if (acc.tier === 'Auth Required' || acc.license_status === 'auth_failed') badgeText = 'AUTH';
+        else if (acc.tier === 'Auth Required' || acc.license_status === 'auth_failed') badgeText = 'LOGGED OUT';
         else if (acc.tier === 'No License' || acc.license_status === 'no_license') badgeText = 'NO LICENSE';
         else if (acc.tier === 'Resource Exhausted' || acc.license_status === 'exhausted') badgeText = 'EXHAUSTED';
+        else if (acc.license_status === 'refresh_failed' || acc.license_status === 'network_error') badgeText = 'REFRESH ERR';
         else if (acc.tier_type === 'Paid Pro' || acc.tier === 'Paid Pro') badgeText = 'PAID PRO';
         else if (acc.tier_type === 'Free Pro' || acc.tier === 'Free Pro') badgeText = 'FREE PRO';
         else if (rawPlanName.toLowerCase().includes('pro') || acc.tier === 'PRO' || acc.tier === 'TEAMS_TIER_PRO') badgeText = 'PRO';

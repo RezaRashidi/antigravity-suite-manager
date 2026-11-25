@@ -109,6 +109,26 @@ async function fetchLanguageServerTelemetry() {
     return null;
 }
 
+function classifyAccountTier(models = {}) {
+    const modelIds = Object.keys(models || {}).filter(Boolean);
+    const hasFreeNotice = modelIds.some(k => {
+        const m = models[k] || {};
+        const tt = String(m.tagTitle || '').toLowerCase();
+        const td = String(m.tagDescription || '').toLowerCase();
+        return k.endsWith('-disabled') ||
+            tt === 'paid pro' ||
+            td.includes('not included with your current plan') ||
+            td.includes('available on paid');
+    });
+    const enabledIds = modelIds.filter(k => !k.endsWith('-disabled') && !models[k]?.disabled);
+    const modelList = enabledIds.map(k => models[k]?.displayName || k).filter(Boolean);
+    const hasPaidExclusive = !hasFreeNotice && enabledIds.some(k =>
+        k.includes('5-5') || k.includes('gemini-4-neon') || k.includes('gemini-4-carbon')
+    );
+    const tierType = hasPaidExclusive ? 'Paid Pro' : ((hasFreeNotice || enabledIds.length >= 15) ? 'Free Pro' : 'Free');
+    return { tierType, models: modelList, modelIds: enabledIds, modelCount: enabledIds.length };
+}
+
 async function fetchAccountModels(token) {
     return new Promise((resolve) => {
         const agent = getProxyAgent();
@@ -129,26 +149,21 @@ async function fetchAccountModels(token) {
         if (agent) reqOpts.agent = agent;
         const req = https.request(reqOpts, (res) => {
             let data = ''; res.on('data', c => data += c);
-            res.on('error', () => resolve({ tierType: 'PRO', models: [], modelCount: 0 }));
+            res.on('error', () => resolve({ tierType: null, models: [], modelIds: [], modelCount: 0 }));
             res.on('end', () => {
                 try {
                     if (res.statusCode === 200) {
                         const parsed = JSON.parse(data);
                         const models = parsed.models || {};
                         try { require('./server.js').updateModelCatalogCache?.(models); } catch (_) {}
-                        const modelIds = Object.keys(models).filter(Boolean);
-                        const modelList = modelIds.map(k => models[k].displayName || k).filter(Boolean);
-                        const hasPaidExclusive = modelIds.some(k => k.includes('5-5') || models[k].tagTitle === 'New');
-                        const hasFreeNotice = Object.values(models).some(m => String(m.tagDescription || '').toLowerCase().includes('paid pro'));
-                        const tierType = hasPaidExclusive ? 'Paid Pro' : ((hasFreeNotice || modelIds.length >= 15) ? 'Free Pro' : 'Free');
-                        return resolve({ tierType, models: modelList, modelIds, modelCount: modelIds.length });
+                        return resolve(classifyAccountTier(models));
                     }
                 } catch (_) {}
-                resolve({ tierType: 'PRO', models: [], modelIds: [], modelCount: 0 });
+                resolve({ tierType: null, models: [], modelIds: [], modelCount: 0 });
             });
         });
         req.on('timeout', () => req.destroy(new Error('timeout')));
-        req.on('error', () => resolve({ tierType: 'PRO', models: [], modelIds: [], modelCount: 0 }));
+        req.on('error', () => resolve({ tierType: null, models: [], modelIds: [], modelCount: 0 }));
         req.write(body); req.end();
     });
 }
@@ -181,17 +196,23 @@ function warmUpCodeAssist(token) {
     });
 }
 
-async function fetchDirectAccountQuotas(account) {
+async function fetchDirectAccountQuotas(account, force = false) {
     if (!account?.token) return { status: 'no_token', buckets: [] };
     const em = account.email;
-    if (_dirCache[em] && (Date.now() - _dirCache[em].ts < 60000)) return _dirCache[em].data;
+    const cached = _dirCache[em];
+    const cacheComplete = Boolean(cached && cached.data?.buckets?.length > 0 && cached.data?.tier_type && cached.data?.model_count > 0);
+    if (!force && cached && (Date.now() - cached.ts < (cacheComplete ? 60000 : 15000))) return cached.data;
     const token = await refreshGoogleToken(account);
     if (!token) {
-        logTraffic(`[QUOTA] [${em}] Auth token resolution failed`);
-        markAccountUnhealthy(em, 'auth_failed', 'Auth token resolution failed', 10 * 60 * 1000, account);
-        return { status: 'auth_failed', message: 'Auth token resolution failed', buckets: [] };
+        const oauthErr = account._oauthError;
+        if (oauthErr === 'invalid_grant' || (!account.refresh_token && !account.token?.refresh_token)) {
+            logTraffic(`[QUOTA] [${em}] Auth token resolution failed (${oauthErr || 'missing'})`);
+            markAccountUnhealthy(em, 'auth_failed', 'Logged out or token revoked (invalid_grant). Please log in again.', 10 * 60 * 1000, account);
+            return { status: 'auth_failed', message: 'Logged out or token revoked (invalid_grant). Please log in again.', buckets: [] };
+        }
+        return { status: 'refresh_failed', message: `OAuth refresh failed (${oauthErr || 'network error'})`, buckets: [] };
     }
-    const modelInfoPromise = fetchAccountModels(token).catch(() => ({ tierType: 'PRO', models: [], modelCount: 0 }));
+    const modelInfoPromise = fetchAccountModels(token).catch(() => ({ tierType: null, models: [], modelIds: [], modelCount: 0 }));
     return new Promise((resolve) => {
         const agent = getProxyAgent();
         const reqOpts = {
@@ -212,7 +233,7 @@ async function fetchDirectAccountQuotas(account) {
             let body = ''; res.on('data', c => body += c);
             res.on('error', (err) => {
                 logTraffic(`[QUOTA] [${em}] Response Error: ${err.message}`);
-                resolve({ status: 'network_error', buckets: [] });
+                resolve({ status: 'network_error', message: `Refresh failed: ${err.message || 'response error'}`, buckets: [] });
             });
             res.on('end', async () => {
                 let data = { status: 'unknown', buckets: [] };
@@ -232,7 +253,9 @@ async function fetchDirectAccountQuotas(account) {
                         data = { status: 'ok', buckets: parseGroupsToBuckets(JSON.parse(body).groups || []) };
                         logTraffic(`[QUOTA] [${em}] HTTP 200 | Buckets: ${data.buckets.length}`);
                     } else if (res.statusCode === 403) {
-                        const warmed = await warmUpCodeAssist(token);
+                        const preClassified = classifyHttpError(403, body);
+                        const needsWarmup = preClassified.reason === 'forbidden_transient';
+                        const warmed = needsWarmup ? await warmUpCodeAssist(token) : false;
                         if (warmed) {
                             try {
                                 const retryRes = await new Promise((resRetry) => {
@@ -252,30 +275,31 @@ async function fetchDirectAccountQuotas(account) {
                                     logTraffic(`[QUOTA] [${em}] Recovered 403 via loadCodeAssist warmup | Buckets: ${data.buckets.length}`);
                                 } else {
                                     const classified = mapQuota403Reason(retryRes?.statusCode || 403, retryRes?.body || body);
-                                    markAccountUnhealthy(em, classified.reason, classified.message, undefined, account, { persist: classified.persist });
-                                    data = { status: classified.reason, message: classified.message, buckets: [] };
+                                    markAccountUnhealthy(em, classified.reason, classified.message, undefined, account, { persist: classified.persist, verifyUrl: classified.verifyUrl });
+                                    data = { status: classified.reason, message: classified.message, verify_url: classified.verifyUrl || '', buckets: [] };
                                     logTraffic(`[QUOTA] [${em}] HTTP 403 (${classified.reason}) after warmup | Body: ${body.slice(0, 150)}`);
                                 }
                             } catch (_) {
                                 const classified = mapQuota403Reason(403, body);
-                                markAccountUnhealthy(em, classified.reason, classified.message, undefined, account, { persist: classified.persist });
-                                data = { status: classified.reason, message: classified.message, buckets: [] };
+                                markAccountUnhealthy(em, classified.reason, classified.message, undefined, account, { persist: classified.persist, verifyUrl: classified.verifyUrl });
+                                data = { status: classified.reason, message: classified.message, verify_url: classified.verifyUrl || '', buckets: [] };
                             }
                         } else {
                             const classified = mapQuota403Reason(403, body);
-                            markAccountUnhealthy(em, classified.reason, classified.message, undefined, account, { persist: classified.persist });
-                            data = { status: classified.reason, message: classified.message, buckets: [] };
+                            markAccountUnhealthy(em, classified.reason, classified.message, undefined, account, { persist: classified.persist, verifyUrl: classified.verifyUrl });
+                            data = { status: classified.reason, message: classified.message, verify_url: classified.verifyUrl || '', buckets: [] };
                             logTraffic(`[QUOTA] [${em}] HTTP 403 (${classified.reason}) | Body: ${body.slice(0, 150)}`);
                         }
                     } else if (res.statusCode === 401) {
-                        markAccountUnhealthy(em, 'auth_failed', 'HTTP 401 Unauthorized', 10 * 60 * 1000, account);
-                        data = { status: 'auth_failed', message: 'Authentication Required', buckets: [] };
+                        markAccountUnhealthy(em, 'auth_failed', 'Logged out or HTTP 401 Unauthorized. Please log in again.', 10 * 60 * 1000, account);
+                        data = { status: 'auth_failed', message: 'Logged out or HTTP 401 Unauthorized. Please log in again.', buckets: [] };
                         logTraffic(`[QUOTA] [${em}] HTTP 401 (Auth Failed) | Body: ${body.slice(0, 150)}`);
                     } else if (res.statusCode === 429) {
                         const prevBuckets = _dirCache[em]?.data?.buckets || [];
-                        data = { status: prevBuckets.length ? 'ok' : 'exhausted', message: 'Resource Exhausted', buckets: prevBuckets };
+                        data = { status: prevBuckets.length ? 'ok' : 'exhausted', message: 'Resource Exhausted (HTTP 429)', buckets: prevBuckets };
                         logTraffic(`[QUOTA] [${em}] HTTP 429 (Rate Limited) | Preserving ${prevBuckets.length} cached buckets`);
                     } else {
+                        data = { status: 'refresh_failed', message: `Refresh failed (HTTP ${res.statusCode})`, buckets: [] };
                         logTraffic(`[QUOTA] [${em}] HTTP ${res.statusCode} | Body: ${body.slice(0, 150)}`);
                     }
                 } catch (_) {}
@@ -298,7 +322,7 @@ async function fetchDirectAccountQuotas(account) {
         req.on('timeout', () => req.destroy(new Error('timeout')));
         req.on('error', (err) => {
             logTraffic(`[QUOTA] [${em}] Network Error: ${err.message}`);
-            resolve({ status: 'network_error', buckets: [] });
+            resolve({ status: 'network_error', message: `Refresh failed: ${err.message || 'network error'}`, buckets: [] });
         });
         req.write('{}'); req.end();
     });
@@ -337,4 +361,4 @@ async function forceRefreshLanguageServerQuota() {
     return true;
 }
 
-module.exports = { _quotaCache, parseGroupsToBuckets, fetchLanguageServerTelemetry, fetchDirectAccountQuotas, forceRefreshLanguageServerQuota, findLanguageServerInfo };
+module.exports = { _quotaCache, classifyAccountTier, fetchAccountModels, parseGroupsToBuckets, fetchLanguageServerTelemetry, fetchDirectAccountQuotas, forceRefreshLanguageServerQuota, findLanguageServerInfo };

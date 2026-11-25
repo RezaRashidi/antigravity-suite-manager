@@ -424,13 +424,11 @@ html.dark, body.dark, [data-theme="dark"], .dark, body.vs-dark, .vs-dark, body.h
 }
 
 /* ==========================================================================
-   Dev mode status bar / "Reset State" footer removal
+   Dev mode status bar / "Reset State" footer removal (applied by mount.js)
+   NOTE: Never use global `div:has(...)` selectors here — Chromium Blink
+   evaluates them on every DOM mutation and causes severe prompt typing lag.
    ========================================================================== */
-div.shrink-0:has(button[title="Reset State"]),
-div[data-screenshot-volatile]:has(button[title="Reset State"]),
-div:has(> div[data-screenshot-volatile] button[title="Reset State"]),
-div.shrink-0:has(button[title*="Reset"]),
-div:has(> button[title="Reset State"]) {
+.agy-hidden-dev-footer {
     display: none !important;
     height: 0 !important;
     min-height: 0 !important;
