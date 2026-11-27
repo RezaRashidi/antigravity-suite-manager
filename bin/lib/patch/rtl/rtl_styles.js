@@ -717,6 +717,22 @@
         );
     }
 
+    function getLineHeightOptions() {
+        return ['1.2', '1.3', '1.4', '1.5', '1.6', '1.7', '1.8', '1.9', '2.0', '2.2', '2.4', '2.5'].map((v) => ({
+            value: v,
+            label: v === '1.6' ? '1.6 (Default)' : v
+        }));
+    }
+
+    function getFontSizeOptions() {
+        const out = [];
+        for (let px = 11; px <= 24; px++) {
+            const v = String(px);
+            out.push({ value: v, label: px === 16 ? '16px (Default)' : `${v}px` });
+        }
+        return out;
+    }
+
     const api = {
         sanitizeFontOrMetric,
         buildBaseFontCSS,
@@ -724,6 +740,8 @@
         buildDisabledCSS,
         filterFonts,
         getAvailableWeights,
+        getLineHeightOptions,
+        getFontSizeOptions,
         attachFontAutocomplete
     };
     if (typeof module !== 'undefined' && module.exports) {

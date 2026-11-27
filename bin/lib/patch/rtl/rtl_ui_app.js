@@ -58,7 +58,7 @@
                     #rtl-dropdown-panel.ag-rtl-panel {
                         position: fixed;
                         z-index: 999999;
-                        width: 288px;
+                        width: 268px;
                         padding: 12px;
                         border-radius: 10px;
                         direction: ltr;
@@ -153,69 +153,6 @@
                     }
                     .ag-rtl-switch[aria-checked="true"] .ag-rtl-knob {
                         transform: translateX(21px);
-                    }
-                    .ag-rtl-range {
-                        -webkit-appearance: none;
-                        appearance: none;
-                        width: 72px;
-                        height: 16px;
-                        background: transparent;
-                        cursor: pointer;
-                        outline: none;
-                        margin: 0;
-                    }
-                    .ag-rtl-range::-webkit-slider-runnable-track {
-                        height: 4px;
-                        border-radius: 9999px;
-                        background: var(--muted, rgba(255, 255, 255, 0.22));
-                    }
-                    .ag-rtl-range::-webkit-slider-thumb {
-                        -webkit-appearance: none;
-                        appearance: none;
-                        width: 12px;
-                        height: 12px;
-                        border-radius: 9999px;
-                        margin-top: -4px;
-                        background: var(--color-primary, var(--primary, #3b82f6));
-                        border: 1.5px solid #ffffff;
-                    }
-                    .ag-rtl-val {
-                        font-size: 11px;
-                        opacity: 0.72;
-                        min-width: 28px;
-                        text-align: right;
-                        font-variant-numeric: tabular-nums;
-                    }
-                    .ag-rtl-reset {
-                        background: none;
-                        border: none;
-                        color: inherit;
-                        opacity: 0.55;
-                        cursor: pointer;
-                        padding: 2px;
-                        font-size: 12px;
-                        line-height: 1;
-                    }
-                    .ag-rtl-reset:hover {
-                        opacity: 1;
-                    }
-                    .ag-rtl-step {
-                        width: 18px;
-                        height: 18px;
-                        border-radius: 4px;
-                        border: 1px solid var(--border, rgba(255, 255, 255, 0.16));
-                        background: var(--muted, rgba(255, 255, 255, 0.06));
-                        color: inherit;
-                        font-size: 12px;
-                        line-height: 1;
-                        display: inline-flex;
-                        align-items: center;
-                        justify-content: center;
-                        cursor: pointer;
-                        padding: 0;
-                    }
-                    .ag-rtl-step:hover {
-                        background: var(--secondary, rgba(255, 255, 255, 0.14));
                     }
                     .ag-rtl-kbd {
                         display: inline-flex;
@@ -370,38 +307,34 @@
             ]);
 
             const faInput = el('input', { id: 'rtl-fafont-input', type: 'text', placeholder: 'Default: Vazirmatn', className: 'ag-rtl-input', value: state.faFont });
-            const fwSelect = el('select', { id: 'rtl-fw-select', className: 'ag-rtl-input', style: 'cursor:pointer;padding:2px 6px;' });
+            const selectStyle = 'cursor:pointer;padding:2px 6px;';
+            const fwSelect = el('select', { id: 'rtl-fw-select', className: 'ag-rtl-input', style: selectStyle });
             const enInput = el('input', { id: 'rtl-enfont-input', type: 'text', placeholder: 'Default: System', className: 'ag-rtl-input', value: state.enFont });
             const codeInput = el('input', { id: 'rtl-codefont-input', type: 'text', placeholder: 'Default: System', className: 'ag-rtl-input', value: state.codeFont });
-            const lhInput = el('input', { id: 'rtl-lh-input', type: 'range', min: '1.2', max: '2.5', step: '0.1', className: 'ag-rtl-range', style: 'width:58px;' });
-            lhInput.value = state.lh;
-            const lhVal = el('span', { id: 'rtl-lh-val', className: 'ag-rtl-val', text: state.lh });
-            const lhDec = el('button', { id: 'rtl-lh-dec', type: 'button', className: 'ag-rtl-step', text: '−', title: 'Decrease Line Height' });
-            const lhInc = el('button', { id: 'rtl-lh-inc', type: 'button', className: 'ag-rtl-step', text: '+', title: 'Increase Line Height' });
-            const lhReset = el('button', { id: 'rtl-lh-reset', type: 'button', className: 'ag-rtl-reset', text: '↺', title: 'Reset Line Height to 1.6' });
-            const fsInput = el('input', { id: 'rtl-fs-input', type: 'range', min: '11', max: '24', step: '1', className: 'ag-rtl-range', style: 'width:58px;' });
-            fsInput.value = state.fs;
-            const fsVal = el('span', { id: 'rtl-fs-val', className: 'ag-rtl-val', text: `${state.fs}px` });
-            const fsDec = el('button', { id: 'rtl-fs-dec', type: 'button', className: 'ag-rtl-step', text: '−', title: 'Decrease Font Size' });
-            const fsInc = el('button', { id: 'rtl-fs-inc', type: 'button', className: 'ag-rtl-step', text: '+', title: 'Increase Font Size' });
-            const fsReset = el('button', { id: 'rtl-fs-reset', type: 'button', className: 'ag-rtl-reset', text: '↺', title: 'Reset Font Size to 16px' });
+            const lhInput = el('select', { id: 'rtl-lh-input', className: 'ag-rtl-input', style: selectStyle });
+            const fsInput = el('select', { id: 'rtl-fs-input', className: 'ag-rtl-input', style: selectStyle });
 
+            function fillSelectOptions(sel, opts, currentVal) {
+                sel.textContent = '';
+                let hasSaved = currentVal === '';
+                for (const o of opts) {
+                    if (o.value === currentVal) hasSaved = true;
+                    sel.appendChild(el('option', { value: o.value, text: o.label }));
+                }
+                if (!hasSaved && currentVal) {
+                    sel.appendChild(el('option', { value: currentVal, text: currentVal }));
+                }
+                sel.value = currentVal || '';
+            }
             function rebuildWeightOptions() {
                 const opts = typeof styles.getAvailableWeights === 'function'
                     ? styles.getAvailableWeights(getFonts(), state.faFont)
                     : [{ value: '', label: 'Auto' }];
-                fwSelect.textContent = '';
-                let hasSaved = state.fw === '';
-                for (const o of opts) {
-                    if (o.value === state.fw) hasSaved = true;
-                    fwSelect.appendChild(el('option', { value: o.value, text: o.label }));
-                }
-                if (!hasSaved && state.fw) {
-                    fwSelect.appendChild(el('option', { value: state.fw, text: state.fw }));
-                }
-                fwSelect.value = state.fw || '';
+                fillSelectOptions(fwSelect, opts, state.fw);
             }
             rebuildWeightOptions();
+            fillSelectOptions(lhInput, typeof styles.getLineHeightOptions === 'function' ? styles.getLineHeightOptions() : [{ value: '1.6', label: '1.6 (Default)' }], state.lh);
+            fillSelectOptions(fsInput, typeof styles.getFontSizeOptions === 'function' ? styles.getFontSizeOptions() : [{ value: '16', label: '16px (Default)' }], state.fs);
 
             const settingsWrapper = el('div', {
                 id: 'rtl-settings-wrapper',
@@ -412,14 +345,8 @@
                 el('div', { className: 'ag-rtl-row' }, [el('span', { className: 'ag-rtl-label', text: 'Font Weight' }), fwSelect]),
                 el('div', { className: 'ag-rtl-row' }, [el('span', { className: 'ag-rtl-label', text: 'EN Font' }), enInput]),
                 el('div', { className: 'ag-rtl-row' }, [el('span', { className: 'ag-rtl-label', text: 'Code Font' }), codeInput]),
-                el('div', { className: 'ag-rtl-row' }, [
-                    el('span', { className: 'ag-rtl-label', text: 'Line Height' }),
-                    el('div', { style: 'display:flex;align-items:center;gap:4px;' }, [lhVal, lhDec, lhInput, lhInc, lhReset])
-                ]),
-                el('div', { className: 'ag-rtl-row' }, [
-                    el('span', { className: 'ag-rtl-label', text: 'Font Size' }),
-                    el('div', { style: 'display:flex;align-items:center;gap:4px;' }, [fsVal, fsDec, fsInput, fsInc, fsReset])
-                ])
+                el('div', { className: 'ag-rtl-row' }, [el('span', { className: 'ag-rtl-label', text: 'Line Height' }), lhInput]),
+                el('div', { className: 'ag-rtl-row' }, [el('span', { className: 'ag-rtl-label', text: 'Font Size' }), fsInput])
             ]);
 
             const dropdownPanel = el('div', {
@@ -507,19 +434,16 @@
                 saveConfig(true);
                 applyStyles();
             });
-
-            const updateLh = (immediate) => { state.lh = lhInput.value; lhVal.textContent = state.lh; saveConfig(immediate); applyStyles(); };
-            lhInput.addEventListener('input', () => updateLh(false));
-            lhInput.addEventListener('change', () => updateLh(true));
-            lhDec.addEventListener('click', () => { lhInput.value = String(Math.max(1.2, Math.round((Number(lhInput.value) - 0.1) * 10) / 10)); updateLh(true); });
-            lhInc.addEventListener('click', () => { lhInput.value = String(Math.min(2.5, Math.round((Number(lhInput.value) + 0.1) * 10) / 10)); updateLh(true); });
-            lhReset.addEventListener('click', () => { lhInput.value = '1.6'; updateLh(true); });
-            const updateFs = (immediate) => { state.fs = fsInput.value; fsVal.textContent = `${state.fs}px`; saveConfig(immediate); applyStyles(); };
-            fsInput.addEventListener('input', () => updateFs(false));
-            fsInput.addEventListener('change', () => updateFs(true));
-            fsDec.addEventListener('click', () => { fsInput.value = String(Math.max(11, Number(fsInput.value) - 1)); updateFs(true); });
-            fsInc.addEventListener('click', () => { fsInput.value = String(Math.min(24, Number(fsInput.value) + 1)); updateFs(true); });
-            fsReset.addEventListener('click', () => { fsInput.value = '16'; updateFs(true); });
+            lhInput.addEventListener('change', () => {
+                state.lh = lhInput.value;
+                saveConfig(true);
+                applyStyles();
+            });
+            fsInput.addEventListener('change', () => {
+                state.fs = fsInput.value;
+                saveConfig(true);
+                applyStyles();
+            });
 
             let isDropdownOpen = false;
 

@@ -276,6 +276,8 @@ function runTests() {
     assert.ok(weightedCss.includes('font-weight: 700 !important'), 'Custom fw must preserve stronger bold headings/strong');
     assert.ok(weightedCss.includes('[data-testid="user-input-step"] .whitespace-pre-wrap') && weightedCss.includes('font-size: 20px !important'), 'Font size must override Tailwind .text-sm on prompt bubbles & chat blocks');
     assert.ok(weightedCss.includes('line-height: 2.1 !important'), 'Line height must apply cleanly to chat blocks and spans');
+    assert.ok(styles.getLineHeightOptions().some((o) => o.value === '1.6' && o.label.includes('Default')), 'Line height selector options include 1.6 default');
+    assert.ok(styles.getFontSizeOptions().some((o) => o.value === '16' && o.label === '16px (Default)'), 'Font size selector options include 16px default');
     const stylesSrc = fs.readFileSync(path.join(__dirname, '../bin/lib/patch/rtl/rtl_styles.js'), 'utf8');
     assert.ok(!stylesSrc.includes('FA_FONT_BOOST_RE') && !stylesSrc.includes('CODE_FONT_BOOST_RE'), 'Must not hardcode font name regexes');
 

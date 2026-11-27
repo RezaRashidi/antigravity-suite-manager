@@ -137,52 +137,41 @@
 
             const inputStyle = 'width:136px;padding:4px 8px;font-size:11px;border-radius:5px;border:1px solid var(--vscode-input-border,#334155);background:var(--vscode-input-background,#0f172a);color:var(--vscode-input-foreground,#f3f4f6);outline:none;box-sizing:border-box;';
             const faInput = el('input', inputStyle, null, { id: 'rtl-panel-fa-font', type: 'text', placeholder: 'Default: Vazirmatn', value: state.faFont });
-            const fwSelect = el('select', inputStyle + 'cursor:pointer;padding:3px 6px;', null, { id: 'rtl-panel-fw' });
+            const selectStyle = inputStyle + 'cursor:pointer;padding:3px 6px;';
+            const fwSelect = el('select', selectStyle, null, { id: 'rtl-panel-fw' });
             const enInput = el('input', inputStyle, null, { id: 'rtl-panel-en-font', type: 'text', placeholder: 'Default: System', value: state.enFont });
             const codeInput = el('input', inputStyle, null, { id: 'rtl-panel-code-font', type: 'text', placeholder: 'Default: System', value: state.codeFont });
-            const stepBtnCss = 'width:18px;height:18px;border-radius:4px;border:1px solid var(--vscode-widget-border,rgba(255,255,255,0.16));background:var(--vscode-input-background,rgba(255,255,255,0.06));color:inherit;font-size:12px;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;';
-            const lhInput = el('input', 'width:58px;cursor:pointer;accent-color:var(--vscode-button-background,#3b82f6);', null, { id: 'rtl-panel-lh', type: 'range', min: '1.2', max: '2.5', step: '0.1' });
-            lhInput.value = state.lh;
-            const lhVal = el('span', 'font-size:10px;opacity:0.75;min-width:26px;text-align:right;', state.lh, { id: 'rtl-panel-lh-val' });
-            const lhDec = el('button', stepBtnCss, '−', { id: 'rtl-panel-lh-dec', type: 'button', title: 'Decrease Line Height' });
-            const lhInc = el('button', stepBtnCss, '+', { id: 'rtl-panel-lh-inc', type: 'button', title: 'Increase Line Height' });
-            const lhReset = el('button', 'background:none;border:none;color:inherit;opacity:0.65;cursor:pointer;padding:0;font-size:11px;', '↺', { id: 'rtl-panel-lh-reset', type: 'button' });
-            const fsInput = el('input', 'width:58px;cursor:pointer;accent-color:var(--vscode-button-background,#3b82f6);', null, { id: 'rtl-panel-fs', type: 'range', min: '11', max: '24', step: '1' });
-            fsInput.value = state.fs;
-            const fsVal = el('span', 'font-size:10px;opacity:0.75;min-width:26px;text-align:right;', `${state.fs}px`, { id: 'rtl-panel-fs-val' });
-            const fsDec = el('button', stepBtnCss, '−', { id: 'rtl-panel-fs-dec', type: 'button', title: 'Decrease Font Size' });
-            const fsInc = el('button', stepBtnCss, '+', { id: 'rtl-panel-fs-inc', type: 'button', title: 'Increase Font Size' });
-            const fsReset = el('button', 'background:none;border:none;color:inherit;opacity:0.65;cursor:pointer;padding:0;font-size:11px;', '↺', { id: 'rtl-panel-fs-reset', type: 'button' });
+            const lhInput = el('select', selectStyle, null, { id: 'rtl-panel-lh' });
+            const fsInput = el('select', selectStyle, null, { id: 'rtl-panel-fs' });
 
+            function fillSelectOptions(sel, opts, currentVal) {
+                sel.textContent = '';
+                let hasSaved = currentVal === '';
+                for (const o of opts) {
+                    if (o.value === currentVal) hasSaved = true;
+                    sel.appendChild(el('option', null, o.label, { value: o.value }));
+                }
+                if (!hasSaved && currentVal) {
+                    sel.appendChild(el('option', null, currentVal, { value: currentVal }));
+                }
+                sel.value = currentVal || '';
+            }
             function rebuildWeightOptions() {
                 const opts = typeof styles.getAvailableWeights === 'function'
                     ? styles.getAvailableWeights(getFonts(), state.faFont)
                     : [{ value: '', label: 'Auto' }];
-                fwSelect.textContent = '';
-                let hasSaved = state.fw === '';
-                for (const o of opts) {
-                    if (o.value === state.fw) hasSaved = true;
-                    fwSelect.appendChild(el('option', null, o.label, { value: o.value }));
-                }
-                if (!hasSaved && state.fw) {
-                    fwSelect.appendChild(el('option', null, state.fw, { value: state.fw }));
-                }
-                fwSelect.value = state.fw || '';
+                fillSelectOptions(fwSelect, opts, state.fw);
             }
             rebuildWeightOptions();
+            fillSelectOptions(lhInput, typeof styles.getLineHeightOptions === 'function' ? styles.getLineHeightOptions() : [{ value: '1.6', label: '1.6 (Default)' }], state.lh);
+            fillSelectOptions(fsInput, typeof styles.getFontSizeOptions === 'function' ? styles.getFontSizeOptions() : [{ value: '16', label: '16px (Default)' }], state.fs);
 
             panelBody.appendChild(el('div', 'display:flex;align-items:center;justify-content:space-between;gap:8px;', [el('span', 'font-size:11px;', 'FA Font'), faInput]));
             panelBody.appendChild(el('div', 'display:flex;align-items:center;justify-content:space-between;gap:8px;', [el('span', 'font-size:11px;', 'Weight'), fwSelect]));
             panelBody.appendChild(el('div', 'display:flex;align-items:center;justify-content:space-between;gap:8px;', [el('span', 'font-size:11px;', 'EN Font'), enInput]));
             panelBody.appendChild(el('div', 'display:flex;align-items:center;justify-content:space-between;gap:8px;', [el('span', 'font-size:11px;', 'Code Font'), codeInput]));
-            panelBody.appendChild(el('div', 'display:flex;align-items:center;justify-content:space-between;', [
-                el('span', 'font-size:11px;', 'Line Height'),
-                el('div', 'display:flex;align-items:center;gap:4px;', [lhVal, lhDec, lhInput, lhInc, lhReset])
-            ]));
-            panelBody.appendChild(el('div', 'display:flex;align-items:center;justify-content:space-between;', [
-                el('span', 'font-size:11px;', 'Font Size'),
-                el('div', 'display:flex;align-items:center;gap:4px;', [fsVal, fsDec, fsInput, fsInc, fsReset])
-            ]));
+            panelBody.appendChild(el('div', 'display:flex;align-items:center;justify-content:space-between;gap:8px;', [el('span', 'font-size:11px;', 'Line Height'), lhInput]));
+            panelBody.appendChild(el('div', 'display:flex;align-items:center;justify-content:space-between;gap:8px;', [el('span', 'font-size:11px;', 'Font Size'), fsInput]));
 
             panel.appendChild(panelBody);
             document.body.appendChild(panel);
@@ -217,18 +206,16 @@
                 saveConfig(true);
                 applyStyles();
             });
-            const updateLh = (immediate) => { state.lh = lhInput.value; lhVal.textContent = state.lh; saveConfig(immediate); applyStyles(); };
-            lhInput.addEventListener('input', () => updateLh(false));
-            lhInput.addEventListener('change', () => updateLh(true));
-            lhDec.addEventListener('click', () => { lhInput.value = String(Math.max(1.2, Math.round((Number(lhInput.value) - 0.1) * 10) / 10)); updateLh(true); });
-            lhInc.addEventListener('click', () => { lhInput.value = String(Math.min(2.5, Math.round((Number(lhInput.value) + 0.1) * 10) / 10)); updateLh(true); });
-            lhReset.addEventListener('click', () => { lhInput.value = '1.6'; updateLh(true); });
-            const updateFs = (immediate) => { state.fs = fsInput.value; fsVal.textContent = `${state.fs}px`; saveConfig(immediate); applyStyles(); };
-            fsInput.addEventListener('input', () => updateFs(false));
-            fsInput.addEventListener('change', () => updateFs(true));
-            fsDec.addEventListener('click', () => { fsInput.value = String(Math.max(11, Number(fsInput.value) - 1)); updateFs(true); });
-            fsInc.addEventListener('click', () => { fsInput.value = String(Math.min(24, Number(fsInput.value) + 1)); updateFs(true); });
-            fsReset.addEventListener('click', () => { fsInput.value = '16'; updateFs(true); });
+            lhInput.addEventListener('change', () => {
+                state.lh = lhInput.value;
+                saveConfig(true);
+                applyStyles();
+            });
+            fsInput.addEventListener('change', () => {
+                state.fs = fsInput.value;
+                saveConfig(true);
+                applyStyles();
+            });
 
             return panel;
         }
