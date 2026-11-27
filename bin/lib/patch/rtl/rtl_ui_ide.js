@@ -140,13 +140,18 @@
             const fwSelect = el('select', inputStyle + 'cursor:pointer;padding:3px 6px;', null, { id: 'rtl-panel-fw' });
             const enInput = el('input', inputStyle, null, { id: 'rtl-panel-en-font', type: 'text', placeholder: 'Default: System', value: state.enFont });
             const codeInput = el('input', inputStyle, null, { id: 'rtl-panel-code-font', type: 'text', placeholder: 'Default: System', value: state.codeFont });
-            const lhInput = el('input', 'width:74px;cursor:pointer;accent-color:var(--vscode-button-background,#3b82f6);', null, { id: 'rtl-panel-lh', type: 'range', min: '1.2', max: '2.5', step: '0.1' });
+            const stepBtnCss = 'width:18px;height:18px;border-radius:4px;border:1px solid var(--vscode-widget-border,rgba(255,255,255,0.16));background:var(--vscode-input-background,rgba(255,255,255,0.06));color:inherit;font-size:12px;line-height:1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;';
+            const lhInput = el('input', 'width:58px;cursor:pointer;accent-color:var(--vscode-button-background,#3b82f6);', null, { id: 'rtl-panel-lh', type: 'range', min: '1.2', max: '2.5', step: '0.1' });
             lhInput.value = state.lh;
             const lhVal = el('span', 'font-size:10px;opacity:0.75;min-width:26px;text-align:right;', state.lh, { id: 'rtl-panel-lh-val' });
+            const lhDec = el('button', stepBtnCss, '−', { id: 'rtl-panel-lh-dec', type: 'button', title: 'Decrease Line Height' });
+            const lhInc = el('button', stepBtnCss, '+', { id: 'rtl-panel-lh-inc', type: 'button', title: 'Increase Line Height' });
             const lhReset = el('button', 'background:none;border:none;color:inherit;opacity:0.65;cursor:pointer;padding:0;font-size:11px;', '↺', { id: 'rtl-panel-lh-reset', type: 'button' });
-            const fsInput = el('input', 'width:74px;cursor:pointer;accent-color:var(--vscode-button-background,#3b82f6);', null, { id: 'rtl-panel-fs', type: 'range', min: '11', max: '24', step: '1' });
+            const fsInput = el('input', 'width:58px;cursor:pointer;accent-color:var(--vscode-button-background,#3b82f6);', null, { id: 'rtl-panel-fs', type: 'range', min: '11', max: '24', step: '1' });
             fsInput.value = state.fs;
             const fsVal = el('span', 'font-size:10px;opacity:0.75;min-width:26px;text-align:right;', `${state.fs}px`, { id: 'rtl-panel-fs-val' });
+            const fsDec = el('button', stepBtnCss, '−', { id: 'rtl-panel-fs-dec', type: 'button', title: 'Decrease Font Size' });
+            const fsInc = el('button', stepBtnCss, '+', { id: 'rtl-panel-fs-inc', type: 'button', title: 'Increase Font Size' });
             const fsReset = el('button', 'background:none;border:none;color:inherit;opacity:0.65;cursor:pointer;padding:0;font-size:11px;', '↺', { id: 'rtl-panel-fs-reset', type: 'button' });
 
             function rebuildWeightOptions() {
@@ -172,11 +177,11 @@
             panelBody.appendChild(el('div', 'display:flex;align-items:center;justify-content:space-between;gap:8px;', [el('span', 'font-size:11px;', 'Code Font'), codeInput]));
             panelBody.appendChild(el('div', 'display:flex;align-items:center;justify-content:space-between;', [
                 el('span', 'font-size:11px;', 'Line Height'),
-                el('div', 'display:flex;align-items:center;gap:5px;', [lhVal, lhInput, lhReset])
+                el('div', 'display:flex;align-items:center;gap:4px;', [lhVal, lhDec, lhInput, lhInc, lhReset])
             ]));
             panelBody.appendChild(el('div', 'display:flex;align-items:center;justify-content:space-between;', [
                 el('span', 'font-size:11px;', 'Font Size'),
-                el('div', 'display:flex;align-items:center;gap:5px;', [fsVal, fsInput, fsReset])
+                el('div', 'display:flex;align-items:center;gap:4px;', [fsVal, fsDec, fsInput, fsInc, fsReset])
             ]));
 
             panel.appendChild(panelBody);
@@ -215,10 +220,14 @@
             const updateLh = (immediate) => { state.lh = lhInput.value; lhVal.textContent = state.lh; saveConfig(immediate); applyStyles(); };
             lhInput.addEventListener('input', () => updateLh(false));
             lhInput.addEventListener('change', () => updateLh(true));
+            lhDec.addEventListener('click', () => { lhInput.value = String(Math.max(1.2, Math.round((Number(lhInput.value) - 0.1) * 10) / 10)); updateLh(true); });
+            lhInc.addEventListener('click', () => { lhInput.value = String(Math.min(2.5, Math.round((Number(lhInput.value) + 0.1) * 10) / 10)); updateLh(true); });
             lhReset.addEventListener('click', () => { lhInput.value = '1.6'; updateLh(true); });
             const updateFs = (immediate) => { state.fs = fsInput.value; fsVal.textContent = `${state.fs}px`; saveConfig(immediate); applyStyles(); };
             fsInput.addEventListener('input', () => updateFs(false));
             fsInput.addEventListener('change', () => updateFs(true));
+            fsDec.addEventListener('click', () => { fsInput.value = String(Math.max(11, Number(fsInput.value) - 1)); updateFs(true); });
+            fsInc.addEventListener('click', () => { fsInput.value = String(Math.min(24, Number(fsInput.value) + 1)); updateFs(true); });
             fsReset.addEventListener('click', () => { fsInput.value = '16'; updateFs(true); });
 
             return panel;
