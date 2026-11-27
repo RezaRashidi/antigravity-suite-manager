@@ -48,6 +48,11 @@ A powerful, all-in-one productivity suite for **Google Antigravity** (Desktop Ap
 - **Automatic Wayland / X11 Detection**: Launchers dynamically detect the active display server (`WAYLAND_DISPLAY` / `DISPLAY`) and configure Chromium Ozone flags accordingly instead of forcing X11 everywhere.
 - **X11 Maximize & Resize Viewport Fix (`patch-window`)**: Standalone App ASAR patch that eliminates the App v2.30+ X11 `BaseWindow` bottom viewport cutoff during maximize/unmaximize/resize transitions.
 
+### 9. ⇄ Internal Smart RTL & Typography Engine (`rtl`)
+- **Zero-Dependency Self-Contained Patch**: Replaces external `npx antigravity-rtl` downloads and `patch_rtl_v234_shim.js` with an in-house patcher (`bin/lib/patch/rtl/`) compatible with both App (`await`/`void win.loadURL`) and IDE while preserving Multi-Account hooks across patch/unpatch cycles.
+- **Code-Stripped & Streaming-Safe Direction**: Strips inline `<code>`, URLs, file paths, and `@mention` pills before classifying direction, keeps `WeakMap` memoization over historical turns, and updates streamed replies live even while typing in the prompt box.
+- **Table-Safe RTL & OS Font Autocomplete**: Reverses Persian table columns right-to-left via `table[dir="rtl"]` (correcting cell dividers) while locking `.md-table-host` and `.md-table-scroll` to LTR so width bleed and horizontal scrolling remain intact; aligns Persian prompt bubbles to the right and populates font autocomplete directly from OS `fc-list` metadata.
+
 ---
 
 ## 📥 Installation & Getting Started
@@ -85,6 +90,7 @@ Keep your App, IDE, and enhancements up to date:
 | `~/manage-antigravity.sh migrate-chats` | One-shot migrate legacy chats into modern unified database |
 | `~/manage-antigravity.sh status` | Show installed versions, cache status, and active patches |
 | `~/manage-antigravity.sh patch-all` | Apply all active enhancements in verified order |
+| `~/manage-antigravity.sh rtl` | Apply internal smart RTL & typography patch to App and IDE (`unpatch-rtl` to revert) |
 | `~/manage-antigravity.sh patch-window` | Apply standalone App X11 window bounds fix (`unpatch-window` to revert) |
 | `~/manage-antigravity.sh unpatch` | Safely revert all patches back to original pristine state |
 

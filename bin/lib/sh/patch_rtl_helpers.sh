@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Helper routines for RTL patch directory detection, runner, and checksum fixes
+# Helper routines for internal RTL patch directory detection, runner, and checksum fixes
 
 ensure_rtl_dirs() {
     auto_detect_installations 2>/dev/null || true
@@ -15,19 +15,17 @@ ensure_rtl_dirs() {
     fi
 }
 
-run_antigravity_rtl() {
-    if command -v antigravity-rtl >/dev/null 2>&1; then
-        antigravity-rtl "$@"
-    elif [ -x "${REAL_HOME:-$HOME}/.local/bin/antigravity-rtl" ]; then
-        "${REAL_HOME:-$HOME}/.local/bin/antigravity-rtl" "$@"
-    elif [ -x "${REAL_HOME:-$HOME}/.local/node_modules/.bin/antigravity-rtl" ]; then
-        "${REAL_HOME:-$HOME}/.local/node_modules/.bin/antigravity-rtl" "$@"
-    elif command -v npx >/dev/null 2>&1; then
-        npx --yes antigravity-rtl@latest "$@"
-    else
-        log_err "Neither 'antigravity-rtl' nor 'npx' is available."
-        return 1
-    fi
+get_rtl_patch_js() {
+    local candidates=(
+        "${ANTIGRAVITY_SUITE_DIR:-}/bin/lib/patch/rtl/patch_rtl.js"
+        "${SCRIPT_DIR}/bin/lib/patch/rtl/patch_rtl.js"
+        "${SCRIPT_DIR}/lib/patch/rtl/patch_rtl.js"
+        "${LOCAL_BIN}/lib/patch/rtl/patch_rtl.js"
+    )
+    for p in "${candidates[@]}"; do
+        [ -n "$p" ] && [ -f "$p" ] && { echo "$p"; return 0; }
+    done
+    return 1
 }
 
 fix_ide_checksums() {

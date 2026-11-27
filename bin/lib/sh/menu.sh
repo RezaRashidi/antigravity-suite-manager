@@ -38,7 +38,7 @@ show_classic_menu() {
     echo "5) Detect & Scan Installed Antigravity Instances"
     echo "6) Check Versions, Cache & Patch Statuses (Status Table)"
     echo "$acc2_opt"
-    echo "8) Apply / Update RTL Patcher (mmnaderi/antigravity-rtl)"
+    echo "8) Apply / Update Internal RTL Patcher (App & IDE)"
     echo "9) Revert / Unpatch RTL Patcher"
     echo "10) Configure Icons & Appearance Themes"
     echo "13) Migrate Legacy Chats (v2.5.5 -> v2.6.0 Unified Storage)"

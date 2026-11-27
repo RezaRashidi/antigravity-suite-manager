@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Routines to revert RTL patch from Antigravity App and IDE
+# Routines to revert internal or legacy RTL patch from Antigravity App and IDE
 
 unpatch_rtl_app() {
     local custom_app_dir=""
@@ -18,26 +18,39 @@ unpatch_rtl_app() {
         return 0
     fi
 
-    if ! grep -qa "ANTIGRAVITY RTL PATCH" "$asar"; then
+    if ! grep -qa "ANTIGRAVITY_SUITE_RTL" "$asar" && ! grep -qa "ANTIGRAVITY RTL PATCH" "$asar"; then
         log_info "RTL patch is not applied to Antigravity App at ${APP_INSTALL_DIR}."
         return 0
     fi
 
+    local p_js; p_js="$(get_rtl_patch_js)" || { log_err "Internal rtl/patch_rtl.js not found."; return 1; }
+
     log_info "Reverting RTL patch from Antigravity App (${asar})..."
     fix_permissions "$APP_INSTALL_DIR"
 
-    if [ -f "${asar}.rtl-bak" ]; then
-        cp -f "${asar}.rtl-bak" "$asar"
-        rm -f "${asar}.rtl-bak"
-    else
-        echo "y" | run_antigravity_rtl --restore --app --path "$asar" 2>/dev/null || true
+    local tmp; tmp=$(mktemp -d /tmp/asar_unpatch_rtl_XXXXXX)
+    if ! run_asar extract "$asar" "$tmp/unpacked"; then
+        log_err "Failed to extract ${asar}."
+        rm -rf "$tmp"
+        return 1
     fi
 
-    if grep -qa "ANTIGRAVITY RTL PATCH" "$asar"; then
-        echo "y" | run_antigravity_rtl --restore --app --path "$asar" 2>/dev/null || true
+    if ! node "$p_js" --app --unpatch "$tmp/unpacked"; then
+        log_err "Internal RTL app unpatch failed."
+        rm -rf "$tmp"
+        return 1
     fi
 
-    if ! grep -qa "ANTIGRAVITY RTL PATCH" "$asar"; then
+    if ! run_asar pack "$tmp/unpacked" "$tmp/app.asar.unpatched" --unpack "*.node"; then
+        log_err "Failed to pack unpatched app.asar."
+        rm -rf "$tmp"
+        return 1
+    fi
+
+    cp --remove-destination "$tmp/app.asar.unpatched" "$asar" 2>/dev/null || cp -f "$tmp/app.asar.unpatched" "$asar"
+    rm -rf "$tmp"
+
+    if ! grep -qa "ANTIGRAVITY_SUITE_RTL" "$asar" && ! grep -qa "ANTIGRAVITY RTL PATCH" "$asar"; then
         log_success "RTL patch successfully reverted from Antigravity App."
     else
         log_err "Failed to revert RTL patch from Antigravity App."
@@ -61,16 +74,16 @@ unpatch_rtl_ide() {
         return 0
     fi
 
+    local p_js; p_js="$(get_rtl_patch_js)" || { log_err "Internal rtl/patch_rtl.js not found."; return 1; }
     local main_js="${IDE_INSTALL_DIR}/resources/app/out/main.js"
     log_info "Reverting RTL patch from Antigravity IDE (${IDE_INSTALL_DIR})..."
     fix_permissions "$IDE_INSTALL_DIR"
 
-    if [ -f "${main_js}.rtl-bak" ]; then
-        cp -f "${main_js}.rtl-bak" "$main_js"
-        rm -f "${main_js}.rtl-bak"
+    if ! node "$p_js" --ide --unpatch "${IDE_INSTALL_DIR}"; then
+        log_err "Internal RTL IDE unpatch failed."
+        return 1
     fi
 
-    echo "y" | run_antigravity_rtl --restore --ide --path "${IDE_INSTALL_DIR}" 2>/dev/null || true
     fix_ide_checksums "${IDE_INSTALL_DIR}"
 
     if [ -f "$main_js" ] && grep -qa "antigravity-rtl-main.js" "$main_js"; then

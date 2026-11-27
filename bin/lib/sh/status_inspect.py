@@ -47,6 +47,9 @@ def get_ide_version(ide_dir: str) -> Optional[str]:
 
 
 def check_app_rtl(app_dir: str) -> str:
+    st = _check_asar_content(app_dir, b'ANTIGRAVITY_SUITE_RTL_PATCH_V1')
+    if 'Applied' in st:
+        return st
     return _check_asar_content(app_dir, b'/* ANTIGRAVITY RTL PATCH */')
 
 
@@ -72,8 +75,11 @@ def _check_asar_content(app_dir: str, needle: bytes) -> str:
 
 
 def check_ide_rtl(ide_dir: str) -> str:
-    main_js = os.path.join(ide_dir, 'resources', 'app', 'out', 'main.js')
+    out_dir = os.path.join(ide_dir, 'resources', 'app', 'out')
+    main_js = os.path.join(out_dir, 'main.js')
     if not os.path.isfile(main_js): return f"{R}Missing{NC}"
+    if os.path.isfile(os.path.join(out_dir, 'antigravity_rtl_patch.marker')):
+        return f"{G}Applied{NC}"
     try:
         with open(main_js, 'r', encoding='utf-8') as f:
             txt = f.read(1024)

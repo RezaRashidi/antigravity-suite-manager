@@ -51,7 +51,7 @@ Commands:
   unpatch-subagents Revert Subagent Dynamic Multi-Account & Swarm patch
   patch-all     Apply all available patches in dependency order [all|app|ide]
   unpatch       Restore clean unmodified original app.asar (revert all patches)
-  rtl           Apply / re-apply antigravity-rtl to App and IDE
+  rtl           Apply / re-apply internal Suite RTL patch to App and IDE
   unpatch-rtl   Revert RTL typography patch from App and IDE
   clean-data    Clean or purge user data and caches [app|ide|history|all]
   uninstall     Uninstall Antigravity binaries and shortcuts [all|app|ide] [--with-data|--keep-data]

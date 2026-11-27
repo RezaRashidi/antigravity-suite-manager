@@ -29,7 +29,7 @@ detect_active_patches() {
     ACTIVE_PATCH_OPEN_IDE=false; ACTIVE_PATCH_WINDOW_BOUNDS=false
     [ ! -f "$asar" ] && return 0
 
-    grep -qa "ANTIGRAVITY RTL PATCH" "$asar" 2>/dev/null && ACTIVE_PATCH_RTL=true
+    (grep -qa "ANTIGRAVITY_SUITE_RTL" "$asar" 2>/dev/null || grep -qa "ANTIGRAVITY RTL PATCH" "$asar" 2>/dev/null) && ACTIVE_PATCH_RTL=true
     (grep -qa "ANTIGRAVITY_SUITE_SELECTOR_PATCH" "$asar" 2>/dev/null || grep -qa "multi_account_ui" "$asar" 2>/dev/null) && ACTIVE_PATCH_SELECTOR=true
     (grep -qa "ANTIGRAVITY_SUITE_FORK_PATCH" "$asar" 2>/dev/null || grep -qa "FORK_EXP_PRELOAD_START" "$asar" 2>/dev/null) && ACTIVE_PATCH_FORK=true
     grep -qa "ANTIGRAVITY_SUITE_OPEN_IDE_PATCH" "$asar" 2>/dev/null && ACTIVE_PATCH_OPEN_IDE=true

@@ -6,9 +6,9 @@ dispatch_rtl() {
     local target="${1:-${SUB_COMMAND:-all}}"
     [ $# -gt 0 ] && shift
     case "$target" in
-        app) patch_rtl_app ;;
-        ide) patch_rtl_ide ;;
-        all|*) patch_rtl_all ;;
+        app) patch_rtl_app "$@" ;;
+        ide) patch_rtl_ide "$@" ;;
+        all|*) patch_rtl_all "$@" ;;
     esac
 }
 

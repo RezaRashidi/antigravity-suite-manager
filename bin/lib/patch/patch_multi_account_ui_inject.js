@@ -92,7 +92,13 @@ function patchUiInjection(distDir) {
     win.webContents.on('dom-ready', __injectMultiAccountUI);
     win.webContents.on('did-finish-load', __injectMultiAccountUI);
     /* MULTI_ACCOUNT_UI_END */`;
-        code = code.replace("win.webContents.on('dom-ready', () => {", snippet + "\n    win.webContents.on('dom-ready', () => {");
+        if (code.includes('/* ANTIGRAVITY_SUITE_RTL_START */')) {
+            code = code.replace('    /* ANTIGRAVITY_SUITE_RTL_START */', snippet + '\n    /* ANTIGRAVITY_SUITE_RTL_START */');
+        } else if (code.includes("win.webContents.on('dom-ready', () => {")) {
+            code = code.replace("win.webContents.on('dom-ready', () => {", snippet + "\n    win.webContents.on('dom-ready', () => {");
+        } else if (/([ \t]*(?:await|void)\s+win\.loadURL\(url\);)/.test(code)) {
+            code = code.replace(/([ \t]*(?:await|void)\s+win\.loadURL\(url\);)/, snippet + '\n$1');
+        }
         fs.writeFileSync(utilsPath, code, 'utf8');
     }
 }

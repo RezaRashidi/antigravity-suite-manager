@@ -27,7 +27,7 @@ detect_active_app_patches() {
     if grep -qa "multi_account_ui" "$asar" 2>/dev/null || grep -qa "ANTIGRAVITY_SUITE_SELECTOR_PATCH" "$asar" 2>/dev/null; then
         HAD_APP_SELECTOR=true
     fi
-    if grep -qa "ANTIGRAVITY RTL PATCH" "$asar" 2>/dev/null; then
+    if grep -qa "ANTIGRAVITY_SUITE_RTL" "$asar" 2>/dev/null || grep -qa "ANTIGRAVITY RTL PATCH" "$asar" 2>/dev/null; then
         HAD_APP_RTL=true
     fi
     if grep -qa "ANTIGRAVITY_SUITE_FORK_PATCH" "$asar" 2>/dev/null || grep -qa "FORK_EXP_PRELOAD_START" "$asar" 2>/dev/null; then
@@ -58,7 +58,7 @@ detect_active_ide_patches() {
     if [ -f "$wb_js" ] && (grep -qa "antigravity-multi-account-ide.js" "$wb_js" 2>/dev/null || grep -qa "MULTI_ACCOUNT_IDE_PATCH" "$wb_js" 2>/dev/null); then
         HAD_IDE_SELECTOR=true
     fi
-    if [ -f "$main_js" ] && (grep -qa "antigravity-rtl-main.js" "$main_js" 2>/dev/null || [ -f "${main_js}.rtl-bak" ]); then
+    if [ -f "${IDE_INSTALL_DIR}/resources/app/out/antigravity_rtl_patch.marker" ] || ([ -f "$main_js" ] && (grep -qa "antigravity-rtl-main.js" "$main_js" 2>/dev/null || [ -f "${main_js}.rtl-bak" ])); then
         HAD_IDE_RTL=true
     fi
     if ([ -f "$wb_js" ] && grep -qa "conversationForking:{enabled:!0" "$wb_js" 2>/dev/null) || [ -f "$fork_marker" ]; then

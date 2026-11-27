@@ -44,7 +44,7 @@ def handle_control_center_window_bounds_patch(manage_sh: str, unified: Optional[
 
 
 def handle_control_center_rtl_patch(manage_sh: str, unified: Optional[List[Dict[str, Any]]] = None) -> None:
-    print(f"\n{CYAN}--- RTL Layout & Font Patch (mmnaderi/antigravity-rtl) ---{NC}")
+    print(f"\n{CYAN}--- RTL Layout & Font Patch (Suite Internal) ---{NC}")
     print("  [1] Apply / Update RTL Patch (App & IDE)\n  [2] Revert / Unpatch RTL Patch\n  [0] Return")
     c = input("Select action [1-2, Default: 1]: ").strip()
     if c not in ["0"]:

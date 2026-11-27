@@ -392,8 +392,9 @@
             else document.addEventListener('DOMContentLoaded', startFooterWatch);
         } catch (_) {}
 
-        // Optimize RTL Direction Engine if loaded: prevent full-chat BLOCKS re-scan while typing
+        // Optimize legacy RTL Direction Engine if loaded; native v2 engine isolates typing safely on its own
         const optimizeRtl = () => {
+            if (window.__antigravityRtlCore && window.__antigravityRtlCore._nativeTypingIsolation) return;
             if (window.__antigravityRtlCore && !window.__antigravityRtlCore._agyWrapped && typeof window.__antigravityRtlCore.updateDir === 'function') {
                 const origUpdateDir = window.__antigravityRtlCore.updateDir;
                 window.__antigravityRtlCore._agyWrapped = true;
