@@ -251,17 +251,29 @@ function runTests() {
     assert.strictEqual(enStep.getAttribute('dir'), 'ltr');
     assert.strictEqual(enBubble.getAttribute('data-ag-rtl-bubble'), null, 'English prompt bubble stays on left');
 
-    // Font autocomplete ranking purely from OS catalog metadata (no hardcoded font names)
+    // Font autocomplete & OS font weight selector checks
     const osCatalog = {
-        all: ['Arial', 'Dana', 'DanaNoEn', 'JetBrains Mono', 'Vazirmatn', 'Verdana', 'Fira Code'],
-        fa: ['Dana', 'DanaNoEn', 'Vazirmatn'],
+        all: ['Arial', 'Dana', 'DanaNoEn', 'JetBrains Mono', 'Sahel', 'Vazirmatn', 'Verdana', 'Fira Code'],
+        fa: ['Dana', 'DanaNoEn', 'Sahel', 'Vazirmatn'],
         en: ['Arial', 'Verdana'],
-        code: ['Fira Code', 'JetBrains Mono']
+        code: ['Fira Code', 'JetBrains Mono'],
+        weights: {
+            dana: [400, 700],
+            dananoen: [400, 700],
+            sahel: [300, 400, 600, 700, 900]
+        }
     };
     const faFiltered = styles.filterFonts(osCatalog, 'da', 'fa');
     assert.strictEqual(faFiltered[0], 'Dana', 'OS lang=fa prefix match must rank first for FA input');
     const codeFiltered = styles.filterFonts(osCatalog, '', 'code');
     assert.deepStrictEqual(codeFiltered, ['Fira Code', 'JetBrains Mono'], 'Empty Code input must list OS monospace fonts');
+    const danaWeights = styles.getAvailableWeights(osCatalog, 'DanaNoEn');
+    assert.deepStrictEqual(danaWeights.map((w) => w.value), ['', '400', '700'], 'Weight selector must show OS weights for selected font');
+    const sahelWeights = styles.getAvailableWeights(osCatalog, 'Sahel');
+    assert.deepStrictEqual(sahelWeights.map((w) => w.value), ['', '300', '400', '600', '700', '900']);
+    const weightedCss = styles.buildDynamicCSS({ faFont: 'Sahel', fw: '500', lh: '1.6', fs: '16' }, '');
+    assert.ok(weightedCss.includes('font-weight: 500 !important'), 'Custom fw must apply body font-weight override');
+    assert.ok(weightedCss.includes('font-weight: 700 !important'), 'Custom fw must preserve stronger bold headings/strong');
     const stylesSrc = fs.readFileSync(path.join(__dirname, '../bin/lib/patch/rtl/rtl_styles.js'), 'utf8');
     assert.ok(!stylesSrc.includes('FA_FONT_BOOST_RE') && !stylesSrc.includes('CODE_FONT_BOOST_RE'), 'Must not hardcode font name regexes');
 
@@ -299,7 +311,7 @@ function runTests() {
     assert.ok(css.includes("local('Dana Bold')") && css.includes("local('Dana-Bold')"), 'User faFont must emit Bold FullName/PostScriptName');
     const danaNoEnCss = styles.buildDynamicCSS({ faFont: 'DanaNoEn Bold', lh: '1.6', fs: '16', forceRTL: false }, '');
     assert.ok(danaNoEnCss.includes("local('DanaNoEn Regular')") && danaNoEnCss.includes("local('DanaNoEn Bold')"), 'Must resolve both Regular & Bold for DanaNoEn');
-    assert.ok(/font-weight:\s*600 900/.test(danaNoEnCss), 'Bold @font-face must cover font-weight 600 (Tailwind font-semibold used by Markdown strong/b)');
+    assert.ok(/font-weight:\s*600 699/.test(danaNoEnCss) && /font-weight:\s*700 799/.test(danaNoEnCss), 'Bold/SemiBold @font-face must cover font-weight 600-799');
 
     // 4. Migration & Multi-Account UI coexistence in dist/utils.js
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag_rtl_test_'));

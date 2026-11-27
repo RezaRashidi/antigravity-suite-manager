@@ -27,6 +27,7 @@
             codeFont: rtlConfig.codeFont || '',
             lh: rtlConfig.lh || '1.6',
             fs: rtlConfig.fs || '16',
+            fw: rtlConfig.fw || '',
             panelSeen: Boolean(rtlConfig.panelSeen)
         };
 
@@ -136,6 +137,7 @@
 
             const inputStyle = 'width:136px;padding:4px 8px;font-size:11px;border-radius:5px;border:1px solid var(--vscode-input-border,#334155);background:var(--vscode-input-background,#0f172a);color:var(--vscode-input-foreground,#f3f4f6);outline:none;box-sizing:border-box;';
             const faInput = el('input', inputStyle, null, { id: 'rtl-panel-fa-font', type: 'text', placeholder: 'Default: Vazirmatn', value: state.faFont });
+            const fwSelect = el('select', inputStyle + 'cursor:pointer;padding:3px 6px;', null, { id: 'rtl-panel-fw' });
             const enInput = el('input', inputStyle, null, { id: 'rtl-panel-en-font', type: 'text', placeholder: 'Default: System', value: state.enFont });
             const codeInput = el('input', inputStyle, null, { id: 'rtl-panel-code-font', type: 'text', placeholder: 'Default: System', value: state.codeFont });
             const lhInput = el('input', 'width:85px;cursor:pointer;', null, { id: 'rtl-panel-lh', type: 'range', min: '1.2', max: '2.5', step: '0.1', value: state.lh });
@@ -143,7 +145,25 @@
             const fsInput = el('input', 'width:85px;cursor:pointer;', null, { id: 'rtl-panel-fs', type: 'range', min: '11', max: '22', step: '1', value: state.fs });
             const fsReset = el('button', 'background:none;border:none;color:inherit;opacity:0.65;cursor:pointer;padding:0;font-size:11px;', '↺', { id: 'rtl-panel-fs-reset', type: 'button' });
 
+            function rebuildWeightOptions() {
+                const opts = typeof styles.getAvailableWeights === 'function'
+                    ? styles.getAvailableWeights(getFonts(), state.faFont)
+                    : [{ value: '', label: 'Auto' }];
+                fwSelect.textContent = '';
+                let hasSaved = state.fw === '';
+                for (const o of opts) {
+                    if (o.value === state.fw) hasSaved = true;
+                    fwSelect.appendChild(el('option', null, o.label, { value: o.value }));
+                }
+                if (!hasSaved && state.fw) {
+                    fwSelect.appendChild(el('option', null, state.fw, { value: state.fw }));
+                }
+                fwSelect.value = state.fw || '';
+            }
+            rebuildWeightOptions();
+
             panelBody.appendChild(el('div', 'display:flex;align-items:center;justify-content:space-between;gap:8px;', [el('span', 'font-size:11px;', 'FA Font'), faInput]));
+            panelBody.appendChild(el('div', 'display:flex;align-items:center;justify-content:space-between;gap:8px;', [el('span', 'font-size:11px;', 'Weight'), fwSelect]));
             panelBody.appendChild(el('div', 'display:flex;align-items:center;justify-content:space-between;gap:8px;', [el('span', 'font-size:11px;', 'EN Font'), enInput]));
             panelBody.appendChild(el('div', 'display:flex;align-items:center;justify-content:space-between;gap:8px;', [el('span', 'font-size:11px;', 'Code Font'), codeInput]));
             panelBody.appendChild(el('div', 'display:flex;align-items:center;justify-content:space-between;', [
@@ -168,15 +188,26 @@
             });
 
             for (const [inp, key, kind] of [[faInput, 'faFont', 'fa'], [enInput, 'enFont', 'en'], [codeInput, 'codeFont', 'code']]) {
-                inp.addEventListener('input', () => { state[key] = inp.value.trim(); saveConfig(false); applyStyles(); });
+                inp.addEventListener('input', () => {
+                    state[key] = inp.value.trim();
+                    if (key === 'faFont') rebuildWeightOptions();
+                    saveConfig(false);
+                    applyStyles();
+                });
                 if (typeof styles.attachFontAutocomplete === 'function') {
                     fontMenus.push(styles.attachFontAutocomplete(document, inp, kind, getFonts, (chosen) => {
                         state[key] = chosen.trim();
+                        if (key === 'faFont') rebuildWeightOptions();
                         saveConfig(true);
                         applyStyles();
                     }, true));
                 }
             }
+            fwSelect.addEventListener('change', () => {
+                state.fw = fwSelect.value;
+                saveConfig(true);
+                applyStyles();
+            });
             lhInput.addEventListener('input', () => { state.lh = lhInput.value; saveConfig(false); applyStyles(); });
             lhReset.addEventListener('click', () => { state.lh = '1.6'; lhInput.value = '1.6'; saveConfig(true); applyStyles(); });
             fsInput.addEventListener('input', () => { state.fs = fsInput.value; saveConfig(false); applyStyles(); });

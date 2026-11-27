@@ -34,6 +34,14 @@
         const baseCap = cap(base);
         const rawCap = cap(faFont);
 
+        const thinSrc = uniqLocals([
+            `${baseCap} Thin`, `${baseCap}-Thin`, `${base} Thin`, `${base}-Thin`,
+            `${baseCap} Light`, `${baseCap}-Light`, `${baseCap} Regular`, `${baseCap}-Regular`, baseCap, base
+        ]);
+        const lightSrc = uniqLocals([
+            `${baseCap} Light`, `${baseCap}-Light`, `${baseCap} ExtraLight`, `${baseCap}-ExtraLight`,
+            `${base} Light`, `${base}-Light`, `${baseCap} Regular`, `${baseCap}-Regular`, baseCap, base
+        ]);
         const regSrc = uniqLocals([
             `${baseCap} Regular`, `${baseCap}-Regular`, `${baseCap}Regular`,
             `${base} Regular`, `${base}-Regular`, `${base}Regular`,
@@ -44,17 +52,38 @@
             `${baseCap} SemiBold`, `${baseCap}-SemiBold`,
             `${baseCap} Regular`, `${baseCap}-Regular`, baseCap, base
         ]);
+        const semiSrc = uniqLocals([
+            `${baseCap} SemiBold`, `${baseCap}-SemiBold`, `${base} SemiBold`, `${base}-SemiBold`,
+            `${baseCap} Bold`, `${baseCap}-Bold`, `${baseCap}Bold`,
+            `${base} Bold`, `${base}-Bold`, `${base}Bold`
+        ]);
         const boldSrc = uniqLocals([
             `${baseCap} Bold`, `${baseCap}-Bold`, `${baseCap}Bold`,
-            `${base} Bold`, `${base}-Bold`, `${base}Bold`,
-            `${baseCap} Black`, `${base} Black`, `${baseCap}-Black`
+            `${base} Bold`, `${base}-Bold`, `${base}Bold`
+        ]);
+        const blackSrc = uniqLocals([
+            `${baseCap} Black`, `${baseCap}-Black`, `${base} Black`, `${base}-Black`,
+            `${baseCap} ExtraBold`, `${baseCap}-ExtraBold`,
+            `${baseCap} Bold`, `${baseCap}-Bold`, `${base} Bold`, `${base}-Bold`
         ]);
 
         return `
             @font-face {
                 font-family: 'UserPersianFont';
+                src: ${thinSrc};
+                font-weight: 100 199;
+                unicode-range: ${UNICODE_RANGE_FA};
+            }
+            @font-face {
+                font-family: 'UserPersianFont';
+                src: ${lightSrc};
+                font-weight: 200 399;
+                unicode-range: ${UNICODE_RANGE_FA};
+            }
+            @font-face {
+                font-family: 'UserPersianFont';
                 src: ${regSrc};
-                font-weight: 100 499;
+                font-weight: 400 499;
                 unicode-range: ${UNICODE_RANGE_FA};
             }
             @font-face {
@@ -65,8 +94,20 @@
             }
             @font-face {
                 font-family: 'UserPersianFont';
+                src: ${semiSrc};
+                font-weight: 600 699;
+                unicode-range: ${UNICODE_RANGE_FA};
+            }
+            @font-face {
+                font-family: 'UserPersianFont';
                 src: ${boldSrc};
-                font-weight: 600 900;
+                font-weight: 700 799;
+                unicode-range: ${UNICODE_RANGE_FA};
+            }
+            @font-face {
+                font-family: 'UserPersianFont';
+                src: ${blackSrc};
+                font-weight: 800 900;
                 unicode-range: ${UNICODE_RANGE_FA};
             }
         `;
@@ -123,6 +164,10 @@
         const lh = sanitizeFontOrMetric(String(cfg.lh || '1.6'), '1.6') || '1.6';
         const fsNum = Number(cfg.fs);
         const fs = Number.isFinite(fsNum) && fsNum >= 11 && fsNum <= 24 ? String(fsNum) : '16';
+        const fwNum = Number(cfg.fw);
+        const hasCustomFw = Number.isInteger(fwNum) && fwNum >= 100 && fwNum <= 900;
+        const fwStr = hasCustomFw ? String(fwNum) : '';
+        const boldFwStr = hasCustomFw ? (fwNum >= 700 ? '900' : '700') : '';
         const forceRTL = Boolean(cfg.forceRTL);
 
         const faFontRule = buildUserFontRules(faFont);
@@ -162,6 +207,28 @@
             .markdown-body table,
             [data-testid="conversation-view"] table {
                 direction: rtl !important;
+            }
+        ` : '';
+
+        const weightRule = hasCustomFw ? `
+            .leading-relaxed,
+            .leading-relaxed p,
+            .leading-relaxed li,
+            .prose p, .prose li,
+            .markdown-body p, .markdown-body li,
+            [data-testid="user-input-step"] [data-quotable="true"],
+            [data-testid="user-input-step"] .whitespace-pre-wrap,
+            [contenteditable="true"],
+            [contenteditable="true"] p {
+                font-weight: ${fwStr} !important;
+            }
+            .leading-relaxed strong, .leading-relaxed b,
+            .leading-relaxed h1, .leading-relaxed h2, .leading-relaxed h3,
+            .leading-relaxed th,
+            .prose strong, .prose b, .prose h1, .prose h2, .prose th,
+            .markdown-body strong, .markdown-body b, .markdown-body h1, .markdown-body h2, .markdown-body th,
+            [data-testid="user-input-step"] strong, [data-testid="user-input-step"] b {
+                font-weight: ${boldFwStr} !important;
             }
         ` : '';
 
@@ -270,6 +337,7 @@
                 direction: ltr !important;
             }
 
+            ${weightRule}
             ${forceRule}
 
             /* Table Safety: host & scroll container ALWAYS stay LTR */
@@ -560,12 +628,41 @@
         return { close };
     }
 
+    const WEIGHT_LABELS = {
+        100: '100 - Thin',
+        200: '200 - ExtraLight',
+        300: '300 - Light',
+        400: '400 - Regular',
+        500: '500 - Medium',
+        600: '600 - SemiBold',
+        700: '700 - Bold',
+        800: '800 - ExtraBold',
+        900: '900 - Black'
+    };
+    const ALL_CSS_WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900];
+
+    function getAvailableWeights(fontCatalog, faFont) {
+        const raw = (faFont || '').trim();
+        let list = ALL_CSS_WEIGHTS;
+        if (raw && fontCatalog && fontCatalog.weights) {
+            const base = raw.replace(/[-\s]?(?:Variable|Regular|Bold|Medium|SemiBold|Light|Thin|Black)$/i, '').trim().toLowerCase();
+            const found = fontCatalog.weights[raw.toLowerCase()] || fontCatalog.weights[base];
+            if (Array.isArray(found) && found.length > 0) {
+                list = found;
+            }
+        }
+        return [{ value: '', label: 'Auto' }].concat(
+            list.map((w) => ({ value: String(w), label: WEIGHT_LABELS[w] || String(w) }))
+        );
+    }
+
     const api = {
         sanitizeFontOrMetric,
         buildBaseFontCSS,
         buildDynamicCSS,
         buildDisabledCSS,
         filterFonts,
+        getAvailableWeights,
         attachFontAutocomplete
     };
     if (typeof module !== 'undefined' && module.exports) {

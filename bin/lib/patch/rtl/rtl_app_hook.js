@@ -16,7 +16,7 @@ const CONFIG_FILE = path.join(os.homedir(), '.antigravity-rtl.json');
 function sanitizeConfigPatch(obj) {
     const clean = {};
     if (!obj || typeof obj !== 'object') return clean;
-    for (const k of ['faFont', 'enFont', 'codeFont', 'lh', 'fs']) {
+    for (const k of ['faFont', 'enFont', 'codeFont', 'lh', 'fs', 'fw']) {
         if (typeof obj[k] === 'string' && SAFE_STR_RE.test(obj[k])) {
             clean[k] = obj[k];
         }
@@ -36,6 +36,7 @@ function loadRtlConfig() {
         codeFont: '',
         lh: '1.6',
         fs: '16',
+        fw: '',
         isRTL: true,
         forceRTL: false,
         panelSeen: false
@@ -89,15 +90,27 @@ function getClientBundle() {
     return cachedClientBundle;
 }
 
+function fcWeightToCss(w) {
+    if (w <= 20) return 100;
+    if (w <= 45) return 200;
+    if (w <= 65) return 300;
+    if (w <= 90) return 400;
+    if (w <= 140) return 500;
+    if (w <= 190) return 600;
+    if (w <= 202) return 700;
+    if (w <= 207) return 800;
+    return 900;
+}
+
 let cachedSystemFonts = null;
 let fontsPromise = null;
 function getSystemFontsAsync() {
     if (cachedSystemFonts !== null) return Promise.resolve(cachedSystemFonts);
     if (fontsPromise) return fontsPromise;
     fontsPromise = new Promise((resolve) => {
-        execFile('fc-list', ['--format=%{family}\t%{lang}\t%{spacing}\n'], { timeout: 3000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
+        execFile('fc-list', ['--format=%{family}\t%{lang}\t%{spacing}\t%{weight}\n'], { timeout: 3000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
             if (err || !stdout) {
-                cachedSystemFonts = { all: [], fa: [], en: [], code: [] };
+                cachedSystemFonts = { all: [], fa: [], en: [], code: [], weights: {} };
                 resolve(cachedSystemFonts);
                 return;
             }
@@ -105,6 +118,7 @@ function getSystemFontsAsync() {
             const faSet = new Set();
             const enSet = new Set();
             const codeSet = new Set();
+            const weightsMap = new Map();
 
             for (const line of stdout.split('\n')) {
                 if (!line) continue;
@@ -112,6 +126,7 @@ function getSystemFontsAsync() {
                 const families = parts[0] || '';
                 const lang = parts[1] || '';
                 const spacing = Number(parts[2] || '0');
+                const rawWeight = (parts[3] || '').trim();
                 const isFa = /(?:^|\|)(?:fa|ar)(?:\||$)/.test(lang);
                 const isEn = /(?:^|\|)en(?:\||$)/.test(lang);
                 const isMono = spacing === 100 || spacing === 110;
@@ -124,14 +139,32 @@ function getSystemFontsAsync() {
                 if (isFa) faSet.add(canonical);
                 if (isEn) enSet.add(canonical);
                 if (isMono) codeSet.add(canonical);
+
+                if (!weightsMap.has(key)) weightsMap.set(key, new Set());
+                const wSet = weightsMap.get(key);
+                const rangeMatch = rawWeight.match(/^\[(\d+)\s+(\d+)\]$/);
+                if (rangeMatch) {
+                    const minC = fcWeightToCss(Number(rangeMatch[1]));
+                    const maxC = fcWeightToCss(Number(rangeMatch[2]));
+                    for (let cw = 100; cw <= 900; cw += 100) {
+                        if (cw >= minC && cw <= maxC) wSet.add(cw);
+                    }
+                } else if (/^\d+$/.test(rawWeight)) {
+                    wSet.add(fcWeightToCss(Number(rawWeight)));
+                }
             }
 
             const sortAlpha = (iter) => Array.from(iter).sort((a, b) => a.localeCompare(b));
+            const weights = {};
+            for (const [k, set] of weightsMap.entries()) {
+                if (set.size > 0) weights[k] = Array.from(set).sort((a, b) => a - b);
+            }
             cachedSystemFonts = {
                 all: sortAlpha(allMap.values()),
                 fa: sortAlpha(faSet),
                 en: sortAlpha(enSet),
-                code: sortAlpha(codeSet)
+                code: sortAlpha(codeSet),
+                weights
             };
             resolve(cachedSystemFonts);
         });

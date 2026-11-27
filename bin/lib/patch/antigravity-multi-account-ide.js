@@ -172,12 +172,12 @@ function getInjectionScripts() {
         try {
             const fontPath = path.join(__dirname, 'Vazirmatn-Variable.woff2');
             const fontBase64 = fs.existsSync(fontPath) ? fs.readFileSync(fontPath).toString('base64') : '';
-            let rtlCfg = { faFont: '', enFont: '', codeFont: '', lh: '1.6', fs: '16', isRTL: true, forceRTL: false };
+            let rtlCfg = { faFont: '', enFont: '', codeFont: '', lh: '1.6', fs: '16', fw: '', isRTL: true, forceRTL: false };
             try {
                 const cfgPath = path.join(os.homedir(), '.antigravity-rtl.json');
                 if (fs.existsSync(cfgPath)) {
                     const parsed = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
-                    for (const k of ['faFont', 'enFont', 'codeFont', 'lh', 'fs']) {
+                    for (const k of ['faFont', 'enFont', 'codeFont', 'lh', 'fs', 'fw']) {
                         if (typeof parsed[k] !== 'string' || !/^[\p{L}\p{N} ._-]{0,64}$/u.test(parsed[k])) delete parsed[k];
                     }
                     rtlCfg = { ...rtlCfg, ...parsed };
@@ -186,7 +186,7 @@ function getInjectionScripts() {
             const rtlCode = fs.readFileSync(rtlClientPath, 'utf8')
                 .replaceAll('__FONT_BASE64__', fontBase64)
                 .replaceAll('__RTL_CONFIG__', () => JSON.stringify(rtlCfg))
-                .replaceAll('__SYSTEM_FONTS__', '{"all":[],"fa":[],"en":[],"code":[]}');
+                .replaceAll('__SYSTEM_FONTS__', '{"all":[],"fa":[],"en":[],"code":[],"weights":{}}');
             scripts.push(rtlCode);
         } catch (_) {}
     }

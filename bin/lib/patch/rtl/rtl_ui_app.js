@@ -42,6 +42,7 @@
                 codeFont: rtlConfig.codeFont || '',
                 lh: rtlConfig.lh || '1.6',
                 fs: rtlConfig.fs || '16',
+                fw: rtlConfig.fw || '',
                 panelSeen: Boolean(rtlConfig.panelSeen)
             };
 
@@ -318,6 +319,7 @@
             ]);
 
             const faInput = el('input', { id: 'rtl-fafont-input', type: 'text', placeholder: 'Default: Vazirmatn', className: 'ag-rtl-input', value: state.faFont });
+            const fwSelect = el('select', { id: 'rtl-fw-select', className: 'ag-rtl-input', style: 'cursor:pointer;padding:2px 6px;' });
             const enInput = el('input', { id: 'rtl-enfont-input', type: 'text', placeholder: 'Default: System', className: 'ag-rtl-input', value: state.enFont });
             const codeInput = el('input', { id: 'rtl-codefont-input', type: 'text', placeholder: 'Default: System', className: 'ag-rtl-input', value: state.codeFont });
             const lhInput = el('input', { id: 'rtl-lh-input', type: 'range', min: '1.2', max: '2.5', step: '0.1', className: 'ag-rtl-range', value: state.lh });
@@ -325,12 +327,30 @@
             const fsInput = el('input', { id: 'rtl-fs-input', type: 'range', min: '11', max: '22', step: '1', className: 'ag-rtl-range', value: state.fs });
             const fsReset = el('button', { id: 'rtl-fs-reset', type: 'button', className: 'ag-rtl-reset', text: '↺', title: 'Reset Font Size to 16px' });
 
+            function rebuildWeightOptions() {
+                const opts = typeof styles.getAvailableWeights === 'function'
+                    ? styles.getAvailableWeights(getFonts(), state.faFont)
+                    : [{ value: '', label: 'Auto' }];
+                fwSelect.textContent = '';
+                let hasSaved = state.fw === '';
+                for (const o of opts) {
+                    if (o.value === state.fw) hasSaved = true;
+                    fwSelect.appendChild(el('option', { value: o.value, text: o.label }));
+                }
+                if (!hasSaved && state.fw) {
+                    fwSelect.appendChild(el('option', { value: state.fw, text: state.fw }));
+                }
+                fwSelect.value = state.fw || '';
+            }
+            rebuildWeightOptions();
+
             const settingsWrapper = el('div', {
                 id: 'rtl-settings-wrapper',
                 className: state.isRTL ? '' : 'ag-rtl-disabled',
                 style: 'display:flex;flex-direction:column;gap:6px;'
             }, [
                 el('div', { className: 'ag-rtl-row' }, [el('span', { className: 'ag-rtl-label', text: 'FA/AR Font' }), faInput]),
+                el('div', { className: 'ag-rtl-row' }, [el('span', { className: 'ag-rtl-label', text: 'Font Weight' }), fwSelect]),
                 el('div', { className: 'ag-rtl-row' }, [el('span', { className: 'ag-rtl-label', text: 'EN Font' }), enInput]),
                 el('div', { className: 'ag-rtl-row' }, [el('span', { className: 'ag-rtl-label', text: 'Code Font' }), codeInput]),
                 el('div', { className: 'ag-rtl-row' }, [
@@ -410,20 +430,24 @@
 
             const fontMenus = [];
             for (const [inp, key, kind] of [[faInput, 'faFont', 'fa'], [enInput, 'enFont', 'en'], [codeInput, 'codeFont', 'code']]) {
-                const applyFont = (val) => {
+                const applyFont = (val, immediate) => {
                     state[key] = val.trim();
-                    saveConfig(false);
+                    if (key === 'faFont') rebuildWeightOptions();
+                    saveConfig(immediate);
                     applyStyles();
                 };
-                inp.addEventListener('input', () => applyFont(inp.value));
+                inp.addEventListener('input', () => applyFont(inp.value, false));
                 if (typeof styles.attachFontAutocomplete === 'function') {
                     fontMenus.push(styles.attachFontAutocomplete(document, inp, kind, getFonts, (chosen) => {
-                        state[key] = chosen.trim();
-                        saveConfig(true);
-                        applyStyles();
+                        applyFont(chosen, true);
                     }, false));
                 }
             }
+            fwSelect.addEventListener('change', () => {
+                state.fw = fwSelect.value;
+                saveConfig(true);
+                applyStyles();
+            });
 
             lhInput.addEventListener('input', () => { state.lh = lhInput.value; saveConfig(false); applyStyles(); });
             lhReset.addEventListener('click', () => { state.lh = '1.6'; lhInput.value = '1.6'; saveConfig(true); applyStyles(); });
