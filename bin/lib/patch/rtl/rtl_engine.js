@@ -13,7 +13,7 @@
     const FLAG_RE = /(?:^|\s)--?[A-Za-z0-9][A-Za-z0-9_.-]*/g;
 
     const SKIP_PROSE_TAGS = new Set(['PRE', 'CODE', 'KBD', 'SAMP', 'SVG', 'PATH', 'SCRIPT', 'STYLE', 'TEXTAREA']);
-    const SKIP_PROSE_CLASS = /\b(?:katex|katex-display|monaco-editor|xterm|md-table-menu|user-input-buttons-container|context-scope-mention)\b/;
+    const SKIP_PROSE_CLASS = /\b(?:katex|katex-display|monaco-editor|xterm|md-table-menu|markdown-alert-title|user-input-buttons-container|context-scope-mention)\b/;
 
     const EXCLUDED_ANCESTOR_SEL = [
         'pre', 'code', 'kbd', 'samp',
@@ -172,9 +172,16 @@
             return prev.dir;
         }
         let dir;
-        if (!isRTL) dir = 'ltr';
-        else if (forceRTL) dir = 'rtl';
-        else dir = detectDirection(el) || defaultDir;
+        if (!isRTL) {
+            dir = 'ltr';
+        } else if (forceRTL) {
+            dir = 'rtl';
+        } else if (el.classList && el.classList.contains('markdown-alert-title')) {
+            const alertHost = el.closest && el.closest('.markdown-alert');
+            dir = (alertHost && detectDirection(alertHost)) || defaultDir;
+        } else {
+            dir = detectDirection(el) || defaultDir;
+        }
         setDir(el, dir);
         blockMemo.set(el, { sig, dir });
         return dir;

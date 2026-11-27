@@ -240,12 +240,12 @@
                 --vscode-chat-font-family: ${fontStack};
             }
 
-            /* Apply Persian-safe font stack across all weights (protect icon fonts & code) */
+            /* Apply Persian-safe font stack across all weights (protect icon fonts, math & code) */
             [dir="rtl"],
-            [dir="rtl"] *:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(pre):not(code):not(kbd):not(samp):not(.monaco-editor):not(.monaco-editor *):not(.xterm):not(.xterm *),
+            [dir="rtl"] *:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(.katex):not(.katex *):not(.katex-display):not(.katex-display *):not(pre):not(code):not(kbd):not(samp):not(.monaco-editor):not(.monaco-editor *):not(.xterm):not(.xterm *),
             [data-testid="conversation-view"] p,
             [data-testid="conversation-view"] li,
-            [data-testid="conversation-view"] span:not(.codicon):not([class*="codicon-"]),
+            [data-testid="conversation-view"] span:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(.katex):not(.katex *),
             [data-testid="conversation-view"] h1,
             [data-testid="conversation-view"] h2,
             [data-testid="conversation-view"] h3,
@@ -296,19 +296,19 @@
             .leading-relaxed b,
             .leading-relaxed em,
             .leading-relaxed a,
-            .leading-relaxed span:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(.text-xs):not(code *),
-            .prose, .prose p, .prose li, .prose blockquote, .prose th, .prose td, .prose strong, .prose b, .prose span:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(code *),
-            .markdown-body, .markdown-body p, .markdown-body li, .markdown-body blockquote, .markdown-body th, .markdown-body td, .markdown-body strong, .markdown-body b, .markdown-body span:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(code *),
+            .leading-relaxed span:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(.katex):not(.katex *):not(.text-xs):not(code *),
+            .prose, .prose p, .prose li, .prose blockquote, .prose th, .prose td, .prose strong, .prose b, .prose span:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(.katex):not(.katex *):not(code *),
+            .markdown-body, .markdown-body p, .markdown-body li, .markdown-body blockquote, .markdown-body th, .markdown-body td, .markdown-body strong, .markdown-body b, .markdown-body span:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(.katex):not(.katex *):not(code *),
             [data-testid="chat-message"],
             [data-testid="chat-message"] p,
             [data-testid="chat-message"] li,
-            [data-testid="chat-message"] span:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(.text-xs),
+            [data-testid="chat-message"] span:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(.katex):not(.katex *):not(.text-xs),
             [data-testid="user-input-step"] p,
             [data-testid="user-input-step"] [data-quotable="true"],
             [data-testid="user-input-step"] .whitespace-pre-wrap,
             [data-testid="user-message-bubble"] [data-quotable="true"],
             [data-testid="user-message-bubble"] .whitespace-pre-wrap,
-            [data-testid="user-message-bubble"] span:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(.text-xs),
+            [data-testid="user-message-bubble"] span:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(.katex):not(.katex *):not(.text-xs),
             [contenteditable="true"],
             [contenteditable="true"] p,
             [contenteditable="true"] span,
@@ -341,9 +341,9 @@
             .leading-relaxed b,
             .leading-relaxed em,
             .leading-relaxed a,
-            .leading-relaxed span:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(.text-xs):not(code *),
-            .prose p, .prose li, .prose blockquote, .prose th, .prose td, .prose strong, .prose b, .prose span:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(code *),
-            .markdown-body p, .markdown-body li, .markdown-body blockquote, .markdown-body th, .markdown-body td, .markdown-body strong, .markdown-body b, .markdown-body span:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(code *),
+            .leading-relaxed span:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(.katex):not(.katex *):not(.text-xs):not(code *),
+            .prose p, .prose li, .prose blockquote, .prose th, .prose td, .prose strong, .prose b, .prose span:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(.katex):not(.katex *):not(code *),
+            .markdown-body p, .markdown-body li, .markdown-body blockquote, .markdown-body th, .markdown-body td, .markdown-body strong, .markdown-body b, .markdown-body span:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(.katex):not(.katex *):not(code *),
             [data-testid="chat-message"] p,
             [data-testid="chat-message"] li,
             [data-testid="chat-message"] .leading-relaxed,
@@ -465,7 +465,12 @@
             }
             .markdown-alert[dir="rtl"] {
                 border-left: none !important;
-                border-right: 0.25em solid var(--borderColor-default, var(--color-border-border, var(--border))) !important;
+                direction: rtl !important;
+                text-align: right !important;
+            }
+            .markdown-alert[dir="rtl"] .markdown-alert-title {
+                direction: rtl !important;
+                text-align: right !important;
             }
 
             /* Prompt Lexical Input */
@@ -504,6 +509,20 @@
             }
             .google-symbols {
                 font-family: "Google Symbols" !important;
+            }
+
+            /* Protect KaTeX Math Rendering (LTR + preserve KaTeX fonts/sizing) */
+            .katex,
+            .katex-display,
+            .md-math-display {
+                direction: ltr !important;
+                unicode-bidi: isolate !important;
+                font-family: KaTeX_Main, "Times New Roman", serif !important;
+            }
+            .katex *,
+            .katex-display *,
+            .md-math-display * {
+                direction: ltr !important;
             }
 
             /* Inline Code & Code Blocks Stay Strictly LTR */

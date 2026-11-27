@@ -232,10 +232,26 @@ function runTests() {
     userBubbleCard.append(userBubble);
     userStep.append(userBubbleCard);
 
-    mdContainer.append(persianP, tableHost, enTableHost, preBlock, listEl);
+    const faAlertTitle = makeEl('p', { className: 'markdown-alert-title', children: ['Note'] });
+    const faAlert = makeEl('div', {
+        className: 'markdown-alert markdown-alert-note',
+        children: [faAlertTitle, makeEl('p', { children: ['این یک باکس یادداشت فارسی است'] })]
+    });
+    const enAlertTitle = makeEl('p', { className: 'markdown-alert-title', children: ['Warning'] });
+    const enAlert = makeEl('div', {
+        className: 'markdown-alert markdown-alert-warning',
+        children: [enAlertTitle, makeEl('p', { children: ['English warning body'] })]
+    });
+
+    mdContainer.append(persianP, tableHost, enTableHost, preBlock, listEl, faAlert, enAlert);
     doc.append(userStep, mdContainer);
 
     engine.updateScope(doc, doc.body, { isRTL: true, forceRTL: false });
+
+    assert.strictEqual(faAlert.getAttribute('dir'), 'rtl', 'Persian alert must get dir="rtl"');
+    assert.strictEqual(faAlertTitle.getAttribute('dir'), 'rtl', 'Persian alert title ("Note") must align RTL with alert');
+    assert.strictEqual(enAlert.getAttribute('dir'), 'ltr', 'English alert stays dir="ltr"');
+    assert.strictEqual(enAlertTitle.getAttribute('dir'), 'ltr', 'English alert title stays dir="ltr"');
 
     assert.strictEqual(userStep.getAttribute('dir'), 'rtl', 'Historical Persian user-input-step must get dir="rtl"');
     assert.strictEqual(userBubble.getAttribute('dir'), 'rtl', 'User message bubble must get dir="rtl"');
@@ -316,6 +332,7 @@ function runTests() {
     const danaNoEnCss = styles.buildDynamicCSS({ faFont: 'DanaNoEn Bold', lh: '1.6', fs: '16', forceRTL: false }, '');
     assert.ok(danaNoEnCss.includes("local('DanaNoEn Regular')") && danaNoEnCss.includes("local('DanaNoEn Bold')"), 'Must resolve both Regular & Bold for DanaNoEn');
     assert.ok(/font-weight:\s*600 699/.test(danaNoEnCss) && /font-weight:\s*700 799/.test(danaNoEnCss), 'Bold/SemiBold @font-face must cover font-weight 600-799');
+    assert.ok(danaNoEnCss.includes(':not(.katex):not(.katex *)') && danaNoEnCss.includes('font-family: KaTeX_Main'), 'KaTeX must stay excluded from Persian font/size/lh overrides and keep KaTeX_Main + LTR');
 
     // 4. Migration & Multi-Account UI coexistence in dist/utils.js
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag_rtl_test_'));
