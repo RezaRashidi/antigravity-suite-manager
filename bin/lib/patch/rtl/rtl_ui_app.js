@@ -149,9 +149,36 @@
                         transform: translateX(21px);
                     }
                     .ag-rtl-range {
-                        width: 82px;
+                        -webkit-appearance: none;
+                        appearance: none;
+                        width: 72px;
+                        height: 16px;
+                        background: transparent;
                         cursor: pointer;
-                        accent-color: var(--color-primary, var(--primary, #2563eb));
+                        outline: none;
+                        margin: 0;
+                    }
+                    .ag-rtl-range::-webkit-slider-runnable-track {
+                        height: 4px;
+                        border-radius: 9999px;
+                        background: var(--muted, rgba(255, 255, 255, 0.22));
+                    }
+                    .ag-rtl-range::-webkit-slider-thumb {
+                        -webkit-appearance: none;
+                        appearance: none;
+                        width: 12px;
+                        height: 12px;
+                        border-radius: 9999px;
+                        margin-top: -4px;
+                        background: var(--color-primary, var(--primary, #3b82f6));
+                        border: 1.5px solid #ffffff;
+                    }
+                    .ag-rtl-val {
+                        font-size: 11px;
+                        opacity: 0.72;
+                        min-width: 28px;
+                        text-align: right;
+                        font-variant-numeric: tabular-nums;
                     }
                     .ag-rtl-reset {
                         background: none;
@@ -322,9 +349,13 @@
             const fwSelect = el('select', { id: 'rtl-fw-select', className: 'ag-rtl-input', style: 'cursor:pointer;padding:2px 6px;' });
             const enInput = el('input', { id: 'rtl-enfont-input', type: 'text', placeholder: 'Default: System', className: 'ag-rtl-input', value: state.enFont });
             const codeInput = el('input', { id: 'rtl-codefont-input', type: 'text', placeholder: 'Default: System', className: 'ag-rtl-input', value: state.codeFont });
-            const lhInput = el('input', { id: 'rtl-lh-input', type: 'range', min: '1.2', max: '2.5', step: '0.1', className: 'ag-rtl-range', value: state.lh });
+            const lhInput = el('input', { id: 'rtl-lh-input', type: 'range', min: '1.2', max: '2.5', step: '0.1', className: 'ag-rtl-range' });
+            lhInput.value = state.lh;
+            const lhVal = el('span', { id: 'rtl-lh-val', className: 'ag-rtl-val', text: state.lh });
             const lhReset = el('button', { id: 'rtl-lh-reset', type: 'button', className: 'ag-rtl-reset', text: '↺', title: 'Reset Line Height to 1.6' });
-            const fsInput = el('input', { id: 'rtl-fs-input', type: 'range', min: '11', max: '22', step: '1', className: 'ag-rtl-range', value: state.fs });
+            const fsInput = el('input', { id: 'rtl-fs-input', type: 'range', min: '11', max: '24', step: '1', className: 'ag-rtl-range' });
+            fsInput.value = state.fs;
+            const fsVal = el('span', { id: 'rtl-fs-val', className: 'ag-rtl-val', text: `${state.fs}px` });
             const fsReset = el('button', { id: 'rtl-fs-reset', type: 'button', className: 'ag-rtl-reset', text: '↺', title: 'Reset Font Size to 16px' });
 
             function rebuildWeightOptions() {
@@ -355,11 +386,11 @@
                 el('div', { className: 'ag-rtl-row' }, [el('span', { className: 'ag-rtl-label', text: 'Code Font' }), codeInput]),
                 el('div', { className: 'ag-rtl-row' }, [
                     el('span', { className: 'ag-rtl-label', text: 'Line Height' }),
-                    el('div', { style: 'display:flex;align-items:center;gap:6px;' }, [lhInput, lhReset])
+                    el('div', { style: 'display:flex;align-items:center;gap:5px;' }, [lhVal, lhInput, lhReset])
                 ]),
                 el('div', { className: 'ag-rtl-row' }, [
                     el('span', { className: 'ag-rtl-label', text: 'Font Size' }),
-                    el('div', { style: 'display:flex;align-items:center;gap:6px;' }, [fsInput, fsReset])
+                    el('div', { style: 'display:flex;align-items:center;gap:5px;' }, [fsVal, fsInput, fsReset])
                 ])
             ]);
 
@@ -449,10 +480,14 @@
                 applyStyles();
             });
 
-            lhInput.addEventListener('input', () => { state.lh = lhInput.value; saveConfig(false); applyStyles(); });
-            lhReset.addEventListener('click', () => { state.lh = '1.6'; lhInput.value = '1.6'; saveConfig(true); applyStyles(); });
-            fsInput.addEventListener('input', () => { state.fs = fsInput.value; saveConfig(false); applyStyles(); });
-            fsReset.addEventListener('click', () => { state.fs = '16'; fsInput.value = '16'; saveConfig(true); applyStyles(); });
+            const updateLh = (immediate) => { state.lh = lhInput.value; lhVal.textContent = state.lh; saveConfig(immediate); applyStyles(); };
+            lhInput.addEventListener('input', () => updateLh(false));
+            lhInput.addEventListener('change', () => updateLh(true));
+            lhReset.addEventListener('click', () => { lhInput.value = '1.6'; updateLh(true); });
+            const updateFs = (immediate) => { state.fs = fsInput.value; fsVal.textContent = `${state.fs}px`; saveConfig(immediate); applyStyles(); };
+            fsInput.addEventListener('input', () => updateFs(false));
+            fsInput.addEventListener('change', () => updateFs(true));
+            fsReset.addEventListener('click', () => { fsInput.value = '16'; updateFs(true); });
 
             let isDropdownOpen = false;
 

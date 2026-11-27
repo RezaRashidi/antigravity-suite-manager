@@ -271,9 +271,11 @@ function runTests() {
     assert.deepStrictEqual(danaWeights.map((w) => w.value), ['', '400', '700'], 'Weight selector must show OS weights for selected font');
     const sahelWeights = styles.getAvailableWeights(osCatalog, 'Sahel');
     assert.deepStrictEqual(sahelWeights.map((w) => w.value), ['', '300', '400', '600', '700', '900']);
-    const weightedCss = styles.buildDynamicCSS({ faFont: 'Sahel', fw: '500', lh: '1.6', fs: '16' }, '');
+    const weightedCss = styles.buildDynamicCSS({ faFont: 'Sahel', fw: '500', lh: '2.1', fs: '20' }, '');
     assert.ok(weightedCss.includes('font-weight: 500 !important'), 'Custom fw must apply body font-weight override');
     assert.ok(weightedCss.includes('font-weight: 700 !important'), 'Custom fw must preserve stronger bold headings/strong');
+    assert.ok(weightedCss.includes('[data-testid="user-input-step"] .whitespace-pre-wrap') && weightedCss.includes('font-size: 20px !important'), 'Font size must override Tailwind .text-sm on prompt bubbles & chat blocks');
+    assert.ok(weightedCss.includes('line-height: 2.1 !important'), 'Line height must apply cleanly to chat blocks and spans');
     const stylesSrc = fs.readFileSync(path.join(__dirname, '../bin/lib/patch/rtl/rtl_styles.js'), 'utf8');
     assert.ok(!stylesSrc.includes('FA_FONT_BOOST_RE') && !stylesSrc.includes('CODE_FONT_BOOST_RE'), 'Must not hardcode font name regexes');
 

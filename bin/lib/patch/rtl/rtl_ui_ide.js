@@ -140,9 +140,13 @@
             const fwSelect = el('select', inputStyle + 'cursor:pointer;padding:3px 6px;', null, { id: 'rtl-panel-fw' });
             const enInput = el('input', inputStyle, null, { id: 'rtl-panel-en-font', type: 'text', placeholder: 'Default: System', value: state.enFont });
             const codeInput = el('input', inputStyle, null, { id: 'rtl-panel-code-font', type: 'text', placeholder: 'Default: System', value: state.codeFont });
-            const lhInput = el('input', 'width:85px;cursor:pointer;', null, { id: 'rtl-panel-lh', type: 'range', min: '1.2', max: '2.5', step: '0.1', value: state.lh });
+            const lhInput = el('input', 'width:74px;cursor:pointer;accent-color:var(--vscode-button-background,#3b82f6);', null, { id: 'rtl-panel-lh', type: 'range', min: '1.2', max: '2.5', step: '0.1' });
+            lhInput.value = state.lh;
+            const lhVal = el('span', 'font-size:10px;opacity:0.75;min-width:26px;text-align:right;', state.lh, { id: 'rtl-panel-lh-val' });
             const lhReset = el('button', 'background:none;border:none;color:inherit;opacity:0.65;cursor:pointer;padding:0;font-size:11px;', '↺', { id: 'rtl-panel-lh-reset', type: 'button' });
-            const fsInput = el('input', 'width:85px;cursor:pointer;', null, { id: 'rtl-panel-fs', type: 'range', min: '11', max: '22', step: '1', value: state.fs });
+            const fsInput = el('input', 'width:74px;cursor:pointer;accent-color:var(--vscode-button-background,#3b82f6);', null, { id: 'rtl-panel-fs', type: 'range', min: '11', max: '24', step: '1' });
+            fsInput.value = state.fs;
+            const fsVal = el('span', 'font-size:10px;opacity:0.75;min-width:26px;text-align:right;', `${state.fs}px`, { id: 'rtl-panel-fs-val' });
             const fsReset = el('button', 'background:none;border:none;color:inherit;opacity:0.65;cursor:pointer;padding:0;font-size:11px;', '↺', { id: 'rtl-panel-fs-reset', type: 'button' });
 
             function rebuildWeightOptions() {
@@ -168,11 +172,11 @@
             panelBody.appendChild(el('div', 'display:flex;align-items:center;justify-content:space-between;gap:8px;', [el('span', 'font-size:11px;', 'Code Font'), codeInput]));
             panelBody.appendChild(el('div', 'display:flex;align-items:center;justify-content:space-between;', [
                 el('span', 'font-size:11px;', 'Line Height'),
-                el('div', 'display:flex;align-items:center;gap:6px;', [lhInput, lhReset])
+                el('div', 'display:flex;align-items:center;gap:5px;', [lhVal, lhInput, lhReset])
             ]));
             panelBody.appendChild(el('div', 'display:flex;align-items:center;justify-content:space-between;', [
                 el('span', 'font-size:11px;', 'Font Size'),
-                el('div', 'display:flex;align-items:center;gap:6px;', [fsInput, fsReset])
+                el('div', 'display:flex;align-items:center;gap:5px;', [fsVal, fsInput, fsReset])
             ]));
 
             panel.appendChild(panelBody);
@@ -208,10 +212,14 @@
                 saveConfig(true);
                 applyStyles();
             });
-            lhInput.addEventListener('input', () => { state.lh = lhInput.value; saveConfig(false); applyStyles(); });
-            lhReset.addEventListener('click', () => { state.lh = '1.6'; lhInput.value = '1.6'; saveConfig(true); applyStyles(); });
-            fsInput.addEventListener('input', () => { state.fs = fsInput.value; saveConfig(false); applyStyles(); });
-            fsReset.addEventListener('click', () => { state.fs = '16'; fsInput.value = '16'; saveConfig(true); applyStyles(); });
+            const updateLh = (immediate) => { state.lh = lhInput.value; lhVal.textContent = state.lh; saveConfig(immediate); applyStyles(); };
+            lhInput.addEventListener('input', () => updateLh(false));
+            lhInput.addEventListener('change', () => updateLh(true));
+            lhReset.addEventListener('click', () => { lhInput.value = '1.6'; updateLh(true); });
+            const updateFs = (immediate) => { state.fs = fsInput.value; fsVal.textContent = `${state.fs}px`; saveConfig(immediate); applyStyles(); };
+            fsInput.addEventListener('input', () => updateFs(false));
+            fsInput.addEventListener('change', () => updateFs(true));
+            fsReset.addEventListener('click', () => { fsInput.value = '16'; updateFs(true); });
 
             return panel;
         }

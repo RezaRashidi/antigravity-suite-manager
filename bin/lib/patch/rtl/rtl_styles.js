@@ -275,28 +275,65 @@
                 font-family: ${fontStack} !important;
             }
 
-            .leading-relaxed,
-            .prose,
-            .markdown-body,
-            [data-testid="chat-message"],
-            [contenteditable="true"],
-            [contenteditable="true"] p {
-                font-size: ${fs}px !important;
-            }
-
+            [data-testid="conversation-view"],
+            [data-testid="conversation-view"] .leading-relaxed,
+            [data-testid="conversation-view"] p,
+            [data-testid="conversation-view"] li,
+            [data-testid="conversation-view"] blockquote,
+            [data-testid="conversation-view"] th,
+            [data-testid="conversation-view"] td,
             .leading-relaxed,
             .leading-relaxed p,
             .leading-relaxed li,
-            .prose p,
-            .prose li,
-            .markdown-body p,
-            .markdown-body li,
+            .leading-relaxed blockquote,
+            .leading-relaxed th,
+            .leading-relaxed td,
+            .leading-relaxed span:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(code *),
+            .prose, .prose p, .prose li, .prose blockquote, .prose th, .prose td,
+            .markdown-body, .markdown-body p, .markdown-body li, .markdown-body blockquote, .markdown-body th, .markdown-body td,
+            [data-testid="chat-message"],
+            [data-testid="chat-message"] p,
+            [data-testid="chat-message"] li,
             [data-testid="user-input-step"] p,
+            [data-testid="user-input-step"] [data-quotable="true"],
+            [data-testid="user-input-step"] .whitespace-pre-wrap,
+            [contenteditable="true"],
+            [contenteditable="true"] p,
+            [contenteditable="true"] span,
+            label[for^="ask-opt-"],
+            textarea[data-testid="ask-question-writein"] {
+                font-size: ${fs}px !important;
+            }
+            .leading-relaxed h1, .prose h1, .markdown-body h1 { font-size: calc(${fs}px * 1.4) !important; line-height: ${lh} !important; }
+            .leading-relaxed h2, .prose h2, .markdown-body h2 { font-size: calc(${fs}px * 1.25) !important; line-height: ${lh} !important; }
+            .leading-relaxed h3, .prose h3, .markdown-body h3 { font-size: calc(${fs}px * 1.12) !important; line-height: ${lh} !important; }
+            .leading-relaxed h4, .prose h4, .markdown-body h4 { font-size: calc(${fs}px * 1.05) !important; line-height: ${lh} !important; }
+
+            [data-testid="conversation-view"] p,
+            [data-testid="conversation-view"] li,
+            [data-testid="conversation-view"] blockquote,
+            [data-testid="conversation-view"] th,
+            [data-testid="conversation-view"] td,
+            .leading-relaxed,
+            .leading-relaxed p,
+            .leading-relaxed li,
+            .leading-relaxed blockquote,
+            .leading-relaxed th,
+            .leading-relaxed td,
+            .leading-relaxed span:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(code *),
+            .prose p, .prose li, .prose blockquote, .prose th, .prose td,
+            .markdown-body p, .markdown-body li, .markdown-body blockquote, .markdown-body th, .markdown-body td,
+            [data-testid="chat-message"] p,
+            [data-testid="chat-message"] .leading-relaxed,
+            [data-testid="user-input-step"] p,
+            [data-testid="user-input-step"] [data-quotable="true"],
             [data-testid="user-input-step"] .whitespace-pre-wrap,
             [data-lexical-text="true"],
             [contenteditable="true"],
             [contenteditable="true"] p,
-            label[for^="ask-opt-"] {
+            [contenteditable="true"] span,
+            label[for^="ask-opt-"],
+            textarea[data-testid="ask-question-writein"] {
                 line-height: ${lh} !important;
             }
 
