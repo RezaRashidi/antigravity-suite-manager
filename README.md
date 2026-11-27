@@ -51,7 +51,7 @@ A powerful, all-in-one productivity suite for **Google Antigravity** (Desktop Ap
 ### 9. ⇄ Internal Smart RTL & Typography Engine (`rtl`)
 - **Zero-Dependency Self-Contained Patch**: Replaces external `npx antigravity-rtl` downloads and `patch_rtl_v234_shim.js` with an in-house patcher (`bin/lib/patch/rtl/`) compatible with both App (`await`/`void win.loadURL`) and IDE while preserving Multi-Account hooks across patch/unpatch cycles.
 - **Code-Stripped & Streaming-Safe Direction**: Strips inline `<code>`, URLs, file paths, and `@mention` pills before classifying direction, keeps `WeakMap` memoization over historical turns, and updates streamed replies live even while typing in the prompt box.
-- **Table-Safe RTL & OS Font Autocomplete**: Reverses Persian table columns right-to-left via `table[dir="rtl"]` (correcting cell dividers) while locking `.md-table-host` and `.md-table-scroll` to LTR so width bleed and horizontal scrolling remain intact; aligns Persian prompt bubbles to the right and populates font autocomplete directly from OS `fc-list` metadata.
+- **Table-Safe RTL, OS Fonts & Typography Controls**: Reverses Persian table columns right-to-left via `table[dir="rtl"]` (correcting cell dividers) while locking `.md-table-host` and `.md-table-scroll` to LTR so width bleed and horizontal scrolling remain intact; aligns Persian prompt bubbles to the right, populates font & weight dropdowns directly from OS `fc-list` metadata (`100–900`), and provides uniform `<select>` controls for `Font Weight`, `Line Height` (`1.2–2.5`), and `Font Size` (`11px–24px`) across chat prose and prompt bubbles.
 
 ---
 
