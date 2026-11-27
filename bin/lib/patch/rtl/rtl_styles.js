@@ -60,13 +60,13 @@
             @font-face {
                 font-family: 'UserPersianFont';
                 src: ${medSrc};
-                font-weight: 500 649;
+                font-weight: 500 599;
                 unicode-range: ${UNICODE_RANGE_FA};
             }
             @font-face {
                 font-family: 'UserPersianFont';
                 src: ${boldSrc};
-                font-weight: 650 900;
+                font-weight: 600 900;
                 unicode-range: ${UNICODE_RANGE_FA};
             }
         `;

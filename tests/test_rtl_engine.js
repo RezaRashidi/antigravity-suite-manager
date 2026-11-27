@@ -297,6 +297,9 @@ function runTests() {
     assert.ok(css.includes('.md-table-host') && css.includes('table[dir="rtl"]'), 'RTL CSS must preserve .md-table-host LTR and fix table[dir="rtl"] borders');
     assert.ok(css.includes("local('Dana Regular')") && css.includes("local('Dana-Regular')"), 'User faFont must emit Regular FullName/PostScriptName for non-bold text');
     assert.ok(css.includes("local('Dana Bold')") && css.includes("local('Dana-Bold')"), 'User faFont must emit Bold FullName/PostScriptName');
+    const danaNoEnCss = styles.buildDynamicCSS({ faFont: 'DanaNoEn Bold', lh: '1.6', fs: '16', forceRTL: false }, '');
+    assert.ok(danaNoEnCss.includes("local('DanaNoEn Regular')") && danaNoEnCss.includes("local('DanaNoEn Bold')"), 'Must resolve both Regular & Bold for DanaNoEn');
+    assert.ok(/font-weight:\s*600 900/.test(danaNoEnCss), 'Bold @font-face must cover font-weight 600 (Tailwind font-semibold used by Markdown strong/b)');
 
     // 4. Migration & Multi-Account UI coexistence in dist/utils.js
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag_rtl_test_'));

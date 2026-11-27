@@ -76,16 +76,14 @@ function getSystemFontsAsync() {
                 const isEn = /(?:^|\|)en(?:\||$)/.test(lang);
                 const isMono = spacing === 100 || spacing === 110;
 
-                for (const raw of families.split(',')) {
-                    const name = raw.replace(/\\-/g, '-').trim();
-                    if (!name || !SAFE_STR_RE.test(name)) continue;
-                    const key = name.toLowerCase();
-                    if (!allMap.has(key)) allMap.set(key, name);
-                    const canonical = allMap.get(key);
-                    if (isFa) faSet.add(canonical);
-                    if (isEn) enSet.add(canonical);
-                    if (isMono) codeSet.add(canonical);
-                }
+                const primaryFamily = families.split(',')[0].replace(/\\-/g, '-').trim();
+                if (!primaryFamily || !SAFE_STR_RE.test(primaryFamily)) continue;
+                const key = primaryFamily.toLowerCase();
+                if (!allMap.has(key)) allMap.set(key, primaryFamily);
+                const canonical = allMap.get(key);
+                if (isFa) faSet.add(canonical);
+                if (isEn) enSet.add(canonical);
+                if (isMono) codeSet.add(canonical);
             }
 
             const sortAlpha = (iter) => Array.from(iter).sort((a, b) => a.localeCompare(b));
