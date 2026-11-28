@@ -6,7 +6,10 @@
 (function (root) {
     'use strict';
 
-    function mountIdeRtl(fontBase64, rtlConfig, systemFonts) {
+    function mountIdeRtl(fontBase64, rtlConfig, systemFonts, headless) {
+        if (systemFonts && Array.isArray(systemFonts.all) && systemFonts.all.length > 0) {
+            window.__AGY_RTL_FONTS__ = systemFonts;
+        }
         if (window.__antigravity_rtl_injected) return;
         window.__antigravity_rtl_injected = true;
 
@@ -15,8 +18,10 @@
         if (!engine || !styles) return;
 
         function getFonts() {
-            if (systemFonts && (Array.isArray(systemFonts) || Array.isArray(systemFonts.all))) return systemFonts;
-            return window.__AGY_RTL_FONTS__ || { all: [], fa: [], en: [], code: [] };
+            const cached = window.__AGY_RTL_FONTS__;
+            if (cached && Array.isArray(cached.all) && cached.all.length > 0) return cached;
+            if (systemFonts && (Array.isArray(systemFonts) || (Array.isArray(systemFonts.all) && systemFonts.all.length > 0))) return systemFonts;
+            return cached || systemFonts || { all: [], fa: [], en: [], code: [] };
         }
 
         const state = {
@@ -248,6 +253,7 @@
         }
 
         function tryInsertStatusBarItem() {
+            if (headless) return;
             if (document.getElementById('antigravity-rtl-statusbar-btn')) return;
             const bar =
                 document.querySelector('.part.statusbar .right-items') ||

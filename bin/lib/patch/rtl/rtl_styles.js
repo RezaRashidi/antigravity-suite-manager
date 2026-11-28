@@ -243,6 +243,25 @@
             /* Apply Persian-safe font stack across all weights (protect icon fonts, math & code) */
             [dir="rtl"],
             [dir="rtl"] *:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(.katex):not(.katex *):not(.katex-display):not(.katex-display *):not(pre):not(code):not(kbd):not(samp):not(.monaco-editor):not(.monaco-editor *):not(.xterm):not(.xterm *),
+            [role="navigation"][aria-label="Sidebar"],
+            [role="navigation"][aria-label="Sidebar"] *:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(svg):not(path):not(pre):not(code),
+            [data-testid^="conversation-row-"],
+            [data-testid^="conversation-row-"] *:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(svg):not(path),
+            [data-testid="section-header"],
+            [data-testid="section-header"] .truncate,
+            [data-testid="breadcrumb-segment"],
+            [data-testid="breadcrumb-segment"] *:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(svg):not(path),
+            [data-testid="history-search-input"],
+            input[placeholder="Search conversations..."],
+            [data-aux-pane-open] .truncate[title],
+            [data-testid="diff-view-mode-detail"],
+            [data-testid="diff-view-mode-option"],
+            [data-testid="artifact-view"],
+            [data-testid="artifact-view"] *:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(.katex):not(.katex *):not(pre):not(code):not(svg):not(path),
+            [data-testid="commentable-content"],
+            [data-testid="commentable-content"] *:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(.katex):not(.katex *):not(pre):not(code):not(svg):not(path),
+            .artifact-card span:not(.codicon):not([class*="codicon-"]):not(.google-symbols),
+            .artifact-card p,
             [data-testid="conversation-view"] p,
             [data-testid="conversation-view"] li,
             [data-testid="conversation-view"] span:not(.codicon):not([class*="codicon-"]):not(.google-symbols):not(.katex):not(.katex *),
@@ -489,17 +508,30 @@
                 unicode-bidi: isolate !important;
             }
 
-            /* Sidebar & Truncated Titles */
-            [role="navigation"][aria-label="Sidebar"] .truncate {
+            /* Sidebar, History, Home Chat Lists, For Turn Chip & Artifact Card Summary */
+            [role="navigation"][aria-label="Sidebar"] .truncate,
+            [data-testid^="conversation-row-"] .truncate {
                 unicode-bidi: plaintext !important;
                 text-align: start !important;
             }
-
-            /* Thinking / Edit Badges Keep LTR */
-            .cursor-edit.text-secondary-foreground,
-            .cursor-edit.text-secondary-foreground * {
-                direction: ltr !important;
-                text-align: left !important;
+            [role="navigation"][aria-label="Sidebar"] .truncate[dir="rtl"],
+            [data-testid^="conversation-row-"] .truncate[dir="rtl"],
+            [data-testid="section-header"] .truncate[dir="rtl"],
+            [data-testid="breadcrumb-segment"] .truncate[dir="rtl"],
+            [data-testid="artifact-view"] [dir="rtl"],
+            [data-testid="commentable-content"] [dir="rtl"],
+            [data-aux-pane-open] [dir="rtl"],
+            .truncate[dir="rtl"] {
+                direction: rtl !important;
+                text-align: right !important;
+                unicode-bidi: isolate !important;
+            }
+            .artifact-card [dir="rtl"],
+            .artifact-card > span.line-clamp-3[dir="rtl"] {
+                width: 100% !important;
+                align-self: stretch !important;
+                direction: rtl !important;
+                text-align: right !important;
                 unicode-bidi: isolate !important;
             }
 

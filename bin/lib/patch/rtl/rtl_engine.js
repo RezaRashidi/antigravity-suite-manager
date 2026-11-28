@@ -19,7 +19,7 @@
         'pre', 'code', 'kbd', 'samp',
         '.monaco-editor', '.monaco-diff-editor',
         '.part.terminal', '.terminal-wrapper', '.xterm',
-        '.katex', '.cursor-edit.text-secondary-foreground',
+        '.katex',
         '[data-testid="markdown-table-menu"]',
         '.user-input-buttons-container',
         '#rtl-topbar-wrapper', '#rtl-dropdown-panel',
@@ -33,6 +33,9 @@
         '.markdown-body',
         '.rendered-markdown',
         '[data-testid="conversation-view"]',
+        '[data-testid="artifact-view"]',
+        '[data-testid="commentable-content"]',
+        '[data-aux-pane-open]',
         '[data-testid="user-input-step"]',
         '[data-testid="user-message-bubble"]',
         '[data-testid="chat-message"]'
@@ -41,15 +44,37 @@
     const BLOCK_TAGS_SEL = [
         'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
         'li', 'blockquote', '.markdown-alert', 'summary', 'dt', 'dd',
+        '.artifact-card > span.line-clamp-3',
         'label[for^="ask-opt-"]', 'div[role="radiogroup"] > div'
+    ].join(', ');
+
+    const UI_TITLE_SEL = [
+        '[role="navigation"][aria-label="Sidebar"] .truncate',
+        '[data-testid^="conversation-row-"] .truncate',
+        '[data-testid="section-header"] .truncate',
+        '[data-testid="breadcrumb-segment"] .truncate',
+        '[data-testid="diff-view-mode-detail"]',
+        '[data-aux-pane-open] .truncate[title]'
+    ].join(', ');
+
+    const BROAD_CONTAINER_SEL = [
+        CHAT_CONTAINER_SEL,
+        '[role="navigation"][aria-label="Sidebar"]',
+        '[data-testid^="conversation-row-"]',
+        '[data-testid="breadcrumb-segment"]',
+        '.artifact-card',
+        'table'
     ].join(', ');
 
     const DIRTY_TARGET_SEL = [
         'p', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-        'blockquote', '.markdown-alert', 'table',
+        'blockquote', '.markdown-alert', '.artifact-card', 'table',
         '[data-testid="user-input-step"]', '[data-testid="user-message-bubble"]',
-        '.leading-relaxed', '.prose', '.markdown-body',
-        '[data-testid="chat-message"]', '[data-testid="conversation-view"]'
+        '.leading-relaxed', '.prose', '.markdown-body', '.rendered-markdown',
+        '[data-testid="chat-message"]', '[data-testid="conversation-view"]',
+        '[data-testid="artifact-view"]', '[data-testid="commentable-content"]',
+        '[data-aux-pane-open]', '[data-testid="breadcrumb-segment"]',
+        '[data-testid^="conversation-row-"]', '[role="navigation"][aria-label="Sidebar"]'
     ].join(', ');
 
     const LIST_SEL = 'ul, ol';
@@ -386,6 +411,64 @@
         }
     }
 
+    function updateUiTitles(doc, rootEl, forceRTL, isRTL) {
+        const seen = new Set();
+        const applyTitle = (el) => {
+            if (!el || seen.has(el) || isExcluded(el) || isOwnUiNode(el)) return;
+            seen.add(el);
+            detectWithMemo(el, isRTL, forceRTL, 'ltr');
+        };
+
+        const direct = queryWithinScope(doc, rootEl, UI_TITLE_SEL);
+        for (let i = 0; i < direct.length; i++) applyTitle(direct[i]);
+
+        // Artifact card prose summary (any span/p/leaf div outside .pointer-events-none filename row & buttons)
+        const cards = queryWithinScope(doc, rootEl, '.artifact-card');
+        for (let i = 0; i < cards.length; i++) {
+            const cardNodes = queryWithinScope(doc, cards[i], 'span, p, div');
+            for (let j = 0; j < cardNodes.length; j++) {
+                const cn = cardNodes[j];
+                if (cn === cards[i] || seen.has(cn) || isExcluded(cn) || isOwnUiNode(cn)) continue;
+                if (cn.closest && cn.closest('button, .pointer-events-none')) continue;
+                if (cn.classList && cn.classList.contains('pointer-events-none')) continue;
+                if (cn.querySelector && cn.querySelector('span, p, div, button')) continue;
+                seen.add(cn);
+                detectWithMemo(cn, isRTL, forceRTL, 'auto');
+            }
+        }
+
+        // Leaf prose divs inside Artifact Viewer (e.g. raw markdown / CodeFileViewer lines without <p>)
+        const artRoots = queryWithinScope(doc, rootEl, '[data-testid="artifact-view"], [data-testid="commentable-content"]');
+        for (let i = 0; i < artRoots.length; i++) {
+            const artDivs = queryWithinScope(doc, artRoots[i], 'div');
+            for (let j = 0; j < artDivs.length; j++) {
+                const dv = artDivs[j];
+                if (dv === artRoots[i] || seen.has(dv) || isExcluded(dv) || isOwnUiNode(dv)) continue;
+                if (dv.closest && dv.closest('button, .pointer-events-none, table')) continue;
+                if (dv.querySelector && dv.querySelector('p, h1, h2, h3, h4, h5, h6, ul, ol, table, blockquote, pre, div, button')) continue;
+                if (!(dv.textContent || '').trim()) continue;
+                seen.add(dv);
+                detectWithMemo(dv, isRTL, forceRTL, 'auto');
+            }
+        }
+
+        // "For Turn" Review filter chip: [div "For Turn", div.truncate[title], button[aria-label="Clear filter"]]
+        const clearBtns = queryWithinScope(doc, rootEl, 'button[aria-label="Clear filter"]');
+        for (let i = 0; i < clearBtns.length; i++) {
+            const prev = clearBtns[i].previousElementSibling;
+            if (prev && prev.tagName === 'DIV') applyTitle(prev);
+        }
+
+        // Home screen Recent Conversations list (UKa/DKa) shares container with "Search conversations..."
+        const searchInputs = queryWithinScope(doc, rootEl, 'input[placeholder="Search conversations..."]');
+        for (let i = 0; i < searchInputs.length; i++) {
+            const host = searchInputs[i].parentElement && searchInputs[i].parentElement.parentElement;
+            if (!host) continue;
+            const homeTitles = queryWithinScope(doc, host, '.truncate');
+            for (let j = 0; j < homeTitles.length; j++) applyTitle(homeTitles[j]);
+        }
+    }
+
     function updateScope(doc, scopeEl, opts) {
         const isRTL = opts && opts.isRTL !== false;
         const forceRTL = Boolean(opts && opts.forceRTL);
@@ -407,7 +490,7 @@
                 updateUserInputStep(rootEl, forceRTL, isRTL);
                 return;
             }
-            if (rootEl.matches('p, h1, h2, h3, h4, h5, h6, li, blockquote, .markdown-alert') && !isExcluded(rootEl)) {
+            if (rootEl.matches('p, h1, h2, h3, h4, h5, h6, li, blockquote, .markdown-alert, .artifact-card > span.line-clamp-3') && !isExcluded(rootEl)) {
                 if (!(rootEl.closest && rootEl.closest('table'))) {
                     detectWithMemo(rootEl, isRTL, forceRTL, 'auto');
                 }
@@ -469,6 +552,8 @@
                 updateTable(tbl, forceRTL, isRTL);
             }
         }
+
+        updateUiTitles(doc, rootEl, forceRTL, isRTL);
     }
 
     function clearAll(doc) {
@@ -571,11 +656,17 @@
                         continue;
                     }
 
-                    if (m.type === 'attributes' && m.attributeName === 'data-cascade-id') {
-                        const cid = tEl.getAttribute && tEl.getAttribute('data-cascade-id');
-                        if (cid && cid !== lastCascadeId) {
-                            lastCascadeId = cid;
-                            needFullChat = true;
+                    if (m.type === 'attributes') {
+                        if (m.attributeName === 'data-cascade-id') {
+                            const cid = tEl.getAttribute && tEl.getAttribute('data-cascade-id');
+                            if (cid && cid !== lastCascadeId) {
+                                lastCascadeId = cid;
+                                needFullChat = true;
+                            }
+                        } else if (m.attributeName === 'data-aux-pane-open' || m.attributeName === 'data-state' || m.attributeName === 'hidden' || m.attributeName === 'aria-hidden') {
+                            const r = resolveDirtyRoot(tEl);
+                            if (r) scheduleBlocks(r);
+                            else needFullChat = true;
                         }
                         continue;
                     }
@@ -585,7 +676,11 @@
                         const node = added[j];
                         if (node.nodeType === 1 && SKIP_PROSE_TAGS.has(node.tagName)) continue;
                         if (isOwnUiNode(node)) continue;
-                        if (node.nodeType === 1 && node.querySelector && node.querySelector('[data-testid="user-input-step"], [data-testid="user-message-bubble"], .leading-relaxed, table')) {
+                        if (node.nodeType === 1 && ((node.matches && node.matches(BROAD_CONTAINER_SEL)) || (node.querySelector && node.querySelector(BROAD_CONTAINER_SEL)))) {
+                            scheduleBlocks(node);
+                            continue;
+                        }
+                        if (node.nodeType === 1 && node.querySelector && node.querySelector('button[aria-label="Clear filter"], input[placeholder="Search conversations..."]')) {
                             scheduleBlocks(node);
                             continue;
                         }
@@ -600,8 +695,7 @@
 
                 if (needInput) scheduleInputs();
                 if (needFullChat) {
-                    const cv = doc.querySelector('[data-testid="conversation-view"]') || doc.body;
-                    scheduleBlocks(cv);
+                    scheduleBlocks(doc.body || doc.documentElement);
                 }
             });
 
@@ -610,7 +704,7 @@
                 subtree: true,
                 characterData: true,
                 attributes: true,
-                attributeFilter: ['data-cascade-id']
+                attributeFilter: ['data-cascade-id', 'data-aux-pane-open', 'data-state', 'hidden', 'aria-hidden']
             });
         }
 

@@ -188,21 +188,38 @@ module.exports = function attachAppRtlHook(win) {
         }
     });
 
-    win.webContents.on('dom-ready', async () => {
+    const injectIntoTarget = async (target, isSubframe) => {
         try {
-            const currentURL = typeof win.webContents.getURL === 'function' ? win.webContents.getURL() : '';
-            if (!currentURL || !/^https?:\/\/127\.0\.0\.1:\d+/i.test(currentURL)) {
+            if (!target || (typeof target.isDestroyed === 'function' && target.isDestroyed())) return;
+            const currentURL = typeof target.getURL === 'function' ? target.getURL() : (target.url || '');
+            if (!currentURL || !/^https?:\/\/(?:127\.0\.0\.1|localhost):\d+/i.test(currentURL)) {
                 return;
             }
             const fontBase64 = getFontBase64();
             const rtlConfig = loadRtlConfig();
             const systemFonts = await getSystemFontsAsync();
-            const bootCode = `${getClientBundle()}\n;\nwindow.__AGY_RTL_FONTS__ = ${JSON.stringify(systemFonts)};\nif (window.__antigravityMountAppRtl) { window.__antigravityMountAppRtl(${JSON.stringify(fontBase64)}, ${JSON.stringify(rtlConfig)}, ${JSON.stringify(systemFonts)}); }`;
-            void win.webContents.executeJavaScript(bootCode).catch((err) => {
-                console.error('[Antigravity RTL] Inject error:', err && err.message ? err.message : String(err));
-            });
+            const bootCode = `${getClientBundle()}\n;\nwindow.__AGY_RTL_FONTS__ = ${JSON.stringify(systemFonts)};\nif (window.__antigravityMountAppRtl) { window.__antigravityMountAppRtl(${JSON.stringify(fontBase64)}, ${JSON.stringify(rtlConfig)}, ${JSON.stringify(systemFonts)}, ${Boolean(isSubframe)}); }`;
+            if (typeof target.executeJavaScript === 'function') {
+                void target.executeJavaScript(bootCode).catch((err) => {
+                    console.error('[Antigravity RTL] Inject error:', err && err.message ? err.message : String(err));
+                });
+            }
         } catch (err) {
             console.error('[Antigravity RTL] Hook prepare error:', err && err.message ? err.message : String(err));
         }
+    };
+
+    win.webContents.on('dom-ready', () => injectIntoTarget(win.webContents, false));
+    win.webContents.on('did-frame-finish-load', () => {
+        try {
+            const root = win.webContents.mainFrame;
+            const frames = root && root.framesInSubtree ? root.framesInSubtree : [];
+            for (const f of frames) {
+                if (f !== root) void injectIntoTarget(f, true);
+            }
+        } catch (_) {}
+    });
+    win.webContents.on('did-create-window', (childWin) => {
+        try { attachAppRtlHook(childWin); } catch (_) {}
     });
 };

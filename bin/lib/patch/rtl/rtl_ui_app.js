@@ -5,7 +5,7 @@
 (function (root) {
     'use strict';
 
-    function mountAppRtl(fontBase64, rtlConfig, systemFonts) {
+    function mountAppRtl(fontBase64, rtlConfig, systemFonts, headless) {
         if (window.__ANTIGRAVITY_SUITE_RTL_LOADED__) return;
         window.__ANTIGRAVITY_SUITE_RTL_LOADED__ = true;
 
@@ -14,19 +14,23 @@
         if (!engine || !styles) return;
 
         function getFonts() {
-            if (systemFonts && (Array.isArray(systemFonts) || Array.isArray(systemFonts.all))) return systemFonts;
-            return window.__AGY_RTL_FONTS__ || { all: [], fa: [], en: [], code: [] };
+            if (systemFonts && (Array.isArray(systemFonts) || (Array.isArray(systemFonts.all) && systemFonts.all.length > 0))) {
+                return systemFonts;
+            }
+            return window.__AGY_RTL_FONTS__ || systemFonts || { all: [], fa: [], en: [], code: [] };
         }
 
         function isAntigravityReady() {
             try {
                 if (!document || !document.body) return false;
+                if (headless) return true;
                 const r = document.getElementById('root');
                 if (!r || !r.children || r.children.length === 0) return false;
                 return Boolean(
                     document.querySelector('[role="navigation"]') ||
                     document.querySelector('[role="main"]') ||
-                    document.querySelector('[contenteditable="true"]')
+                    document.querySelector('[contenteditable="true"]') ||
+                    document.querySelector('.leading-relaxed, [data-testid="artifact-view"], .markdown-body')
                 );
             } catch (_) {
                 return false;
@@ -367,6 +371,7 @@
             ]);
 
             function attachElements() {
+                if (headless) return;
                 if (!document.getElementById('rtl-topbar-wrapper')) {
                     const anchor =
                         document.querySelector('[data-testid="titlebar-more-actions"]') ||

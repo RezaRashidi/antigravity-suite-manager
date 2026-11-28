@@ -184,11 +184,13 @@ app.on('browser-window-created', (_event, win) => {
         }
     });
 
-    const injectIntoTarget = async (target) => {
+    const injectIntoTarget = async (target, isSubframe) => {
         try {
             if (!target || target.isDestroyed?.()) return;
             const url = (typeof target.getURL === 'function' ? target.getURL() : target.url) || '';
-            if (!url.includes('workbench') && !url.includes('jetski') && !url.endsWith('.html') && url !== '') {
+            const baseUrl = url.split(/[?#]/)[0];
+            const isWebview = url.startsWith('vscode-webview://');
+            if (!url.includes('workbench') && !url.includes('jetski') && !isWebview && !baseUrl.endsWith('.html') && url !== '') {
                 return;
             }
             const tpl = getClientTemplate();
@@ -197,7 +199,10 @@ app.on('browser-window-created', (_event, win) => {
             const fontBase64 = getFontBase64();
             const rtlConfig = loadRtlConfig();
             const systemFonts = await getSystemFontsAsync();
-            const clientCode = tpl
+            const tplWithMode = (isSubframe || isWebview)
+                ? tpl.replace('__SYSTEM_FONTS__);', '__SYSTEM_FONTS__, true);')
+                : tpl;
+            const clientCode = tplWithMode
                 .replaceAll('__FONT_BASE64__', fontBase64)
                 .replaceAll('__RTL_CONFIG__', () => JSON.stringify(rtlConfig))
                 .replaceAll('__SYSTEM_FONTS__', () => JSON.stringify(systemFonts));
@@ -210,13 +215,13 @@ app.on('browser-window-created', (_event, win) => {
 
     const injectWindowAndFrames = async (subframesOnly) => {
         if (!subframesOnly) {
-            await injectIntoTarget(win.webContents);
+            await injectIntoTarget(win.webContents, false);
         }
         try {
             const root = win.webContents.mainFrame;
             const frames = root && root.framesInSubtree ? root.framesInSubtree : [];
             for (const f of frames) {
-                if (f !== root) await injectIntoTarget(f);
+                if (f !== root) await injectIntoTarget(f, true);
             }
         } catch (_) {}
     };

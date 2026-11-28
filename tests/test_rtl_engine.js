@@ -34,6 +34,12 @@ function makeEl(tag, opts) {
         setAttribute: (k, v) => attrs.set(k, String(v)),
         removeAttribute: (k) => attrs.delete(k),
         hasAttribute: (k) => attrs.has(k),
+        get previousElementSibling() {
+            if (!el.parentElement) return null;
+            const siblings = el.parentElement.children;
+            const idx = siblings.indexOf(el);
+            return idx > 0 ? siblings[idx - 1] : null;
+        },
         append: (...nodes) => {
             for (const n of nodes) {
                 if (typeof n === 'string') {
@@ -87,17 +93,23 @@ function makeEl(tag, opts) {
 }
 
 function matchesSingle(el, sel) {
-    // Support descendant selectors like '[data-testid="user-input-step"] .whitespace-pre-wrap' or 'a > b'
+    // Support descendant selectors while preserving spaces inside attribute brackets [...]
     if (sel.includes(' > ')) {
         const idx = sel.lastIndexOf(' > ');
         const parentSel = sel.slice(0, idx).trim();
         const childSel = sel.slice(idx + 3).trim();
         return Boolean(el.parentElement && matchesSimple(el, childSel) && matchesSingle(el.parentElement, parentSel));
     }
-    if (sel.includes(' ')) {
-        const idx = sel.lastIndexOf(' ');
-        const ancSel = sel.slice(0, idx).trim();
-        const tailSel = sel.slice(idx + 1).trim();
+    let splitIdx = -1;
+    let inBrackets = false;
+    for (let i = sel.length - 1; i >= 0; i--) {
+        if (sel[i] === ']') inBrackets = true;
+        else if (sel[i] === '[') inBrackets = false;
+        else if (sel[i] === ' ' && !inBrackets) { splitIdx = i; break; }
+    }
+    if (splitIdx !== -1) {
+        const ancSel = sel.slice(0, splitIdx).trim();
+        const tailSel = sel.slice(splitIdx + 1).trim();
         if (!matchesSimple(el, tailSel)) return false;
         let cur = el.parentElement;
         while (cur) {
@@ -333,6 +345,75 @@ function runTests() {
     assert.ok(danaNoEnCss.includes("local('DanaNoEn Regular')") && danaNoEnCss.includes("local('DanaNoEn Bold')"), 'Must resolve both Regular & Bold for DanaNoEn');
     assert.ok(/font-weight:\s*600 699/.test(danaNoEnCss) && /font-weight:\s*700 799/.test(danaNoEnCss), 'Bold/SemiBold @font-face must cover font-weight 600-799');
     assert.ok(danaNoEnCss.includes(':not(.katex):not(.katex *)') && danaNoEnCss.includes('font-family: KaTeX_Main'), 'KaTeX must stay excluded from Persian font/size/lh overrides and keep KaTeX_Main + LTR');
+    assert.ok(danaNoEnCss.includes('[role="navigation"][aria-label="Sidebar"]') && danaNoEnCss.includes('[data-testid^="conversation-row-"]'), 'Sidebar & conversation-row chat lists must get Persian font-family');
+    assert.ok(danaNoEnCss.includes('[data-testid="breadcrumb-segment"]') && danaNoEnCss.includes('[data-testid="commentable-content"]'), 'Breadcrumb chat header & commentable-content must get Persian font-family');
+    assert.ok(danaNoEnCss.includes('.artifact-card [dir="rtl"]') && danaNoEnCss.includes('[data-testid="artifact-view"] [dir="rtl"]'), 'Artifact card summary and artifact-view must enforce RTL');
+
+    // 3b. Chat lists, Breadcrumb Chat Header, For Turn chip, Artifact Card summary, Thought block, and clicked Artifact Viewer
+    const uiDoc = makeEl('body');
+    uiDoc.body = uiDoc;
+    const sidebarNav = makeEl('div', { attrs: { role: 'navigation', 'aria-label': 'Sidebar' } });
+    const faSidebarTitle = makeEl('span', { className: 'truncate text-left w-full text-sm', children: ['بررسی باگ فونت فارسی'] });
+    const enSidebarTitle = makeEl('span', { className: 'truncate text-left w-full text-sm', children: ['Fix build pipeline'] });
+    sidebarNav.append(
+        makeEl('div', { attrs: { 'data-testid': 'conversation-row-sidebar' }, children: [faSidebarTitle] }),
+        makeEl('div', { attrs: { 'data-testid': 'conversation-row-sidebar' }, children: [enSidebarTitle] })
+    );
+    const historyRowTitle = makeEl('span', { className: 'truncate text-left w-full text-sm', children: ['گزارش ارتقای سیستم'] });
+    const historyRow = makeEl('div', { attrs: { 'data-testid': 'conversation-row-history' }, children: [historyRowTitle] });
+
+    const wsHeader = makeEl('span', { className: 'truncate inline-block', children: ['k6'] });
+    const chatHeader = makeEl('span', { className: 'truncate inline-block', children: ['K6 Load Testing - طراحی سناریو تست بارگذاری'] });
+    const breadcrumbBar = makeEl('div', {
+        children: [
+            makeEl('span', { attrs: { 'data-testid': 'breadcrumb-segment' }, children: [wsHeader] }),
+            makeEl('span', { attrs: { 'data-testid': 'breadcrumb-segment' }, children: [chatHeader] })
+        ]
+    });
+
+    const forTurnText = makeEl('div', { className: 'px-2 h-full flex items-center truncate text-secondary-foreground min-w-0', attrs: { title: 'بررسی تغییرات این مرحله' }, children: ['بررسی تغییرات این مرحله'] });
+    const forTurnChip = makeEl('div', {
+        className: 'flex h-6 items-center bg-border rounded-md text-xs',
+        children: [
+            makeEl('div', { children: ['For Turn'] }),
+            forTurnText,
+            makeEl('button', { attrs: { 'aria-label': 'Clear filter' } })
+        ]
+    });
+
+    const artifactCardHeader = makeEl('span', { children: ['Upgrade Audit Report'] });
+    const artifactCardSummary = makeEl('span', { className: 'text-sm text-secondary-foreground line-clamp-2', children: ['گزارش جامع ممیزی و نقشه راه ارتقای سیستم'] });
+    const artifactCard = makeEl('div', { className: 'border p-2 rounded-xl artifact-card', children: [makeEl('div', { className: 'pointer-events-none', children: [artifactCardHeader] }), artifactCardSummary] });
+
+    const thinkingBody = makeEl('div', { className: 'cursor-edit group relative text-secondary-foreground pl-2', children: [makeEl('p', { children: ['در حال تحلیل فایل‌های پروژه هستم'] })] });
+    const cvNode = makeEl('div', { attrs: { 'data-testid': 'conversation-view' }, children: [artifactCard, thinkingBody] });
+
+    const artifactViewPara = makeEl('p', { children: ['این گزارش به صورت کامل راست‌به‌چپ است'] });
+    const artifactRawDiv = makeEl('div', { children: ['خط دوم فایل مارک‌داون فارسی'] });
+    const artifactView = makeEl('div', {
+        attrs: { 'data-testid': 'artifact-view' },
+        children: [
+            makeEl('div', {
+                attrs: { 'data-testid': 'commentable-content' },
+                children: [makeEl('div', { className: 'leading-relaxed select-text text-sm', children: [artifactViewPara, artifactRawDiv] })]
+            })
+        ]
+    });
+
+    uiDoc.append(sidebarNav, historyRow, breadcrumbBar, forTurnChip, cvNode, artifactView);
+    engine.updateScope(uiDoc, uiDoc.body, { isRTL: true, forceRTL: false });
+
+    assert.strictEqual(faSidebarTitle.getAttribute('dir'), 'rtl', 'Persian sidebar chat title must get dir="rtl"');
+    assert.strictEqual(enSidebarTitle.getAttribute('dir'), 'ltr', 'English sidebar chat title must stay dir="ltr"');
+    assert.strictEqual(historyRowTitle.getAttribute('dir'), 'rtl', 'Persian history chat title must get dir="rtl"');
+    assert.strictEqual(wsHeader.getAttribute('dir'), 'ltr', 'English workspace breadcrumb must stay dir="ltr"');
+    assert.strictEqual(chatHeader.getAttribute('dir'), 'rtl', 'Persian chat header breadcrumb must get dir="rtl"');
+    assert.strictEqual(forTurnText.getAttribute('dir'), 'rtl', 'Persian For Turn chip prompt must get dir="rtl"');
+    assert.strictEqual(artifactCardHeader.getAttribute('dir'), null, 'Artifact card filename header inside .pointer-events-none stays untouched');
+    assert.strictEqual(artifactCardSummary.getAttribute('dir'), 'rtl', 'Persian artifact-card summary must get dir="rtl"');
+    assert.strictEqual(thinkingBody.querySelector('p').getAttribute('dir'), 'rtl', 'Persian thinking body inside .cursor-edit must get dir="rtl"');
+    assert.strictEqual(artifactViewPara.getAttribute('dir'), 'rtl', 'Clicked artifact markdown viewer paragraph must get dir="rtl"');
+    assert.strictEqual(artifactRawDiv.getAttribute('dir'), 'rtl', 'Leaf prose div inside commentable-content must get dir="rtl"');
 
     // 4. Migration & Multi-Account UI coexistence in dist/utils.js
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag_rtl_test_'));
