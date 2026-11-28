@@ -187,7 +187,7 @@
             e.stopPropagation();
             closeMenu();
 
-            menuNode = el('div', 'position:fixed;z-index:9999999;min-width:195px;padding:5px;border-radius:9px;background:var(--popover,#18181b);color:var(--popover-foreground,#f4f4f5);border:1px solid var(--border,rgba(255,255,255,0.16));box-shadow:0 12px 28px rgba(0,0,0,0.45);font-size:12px;direction:ltr;display:flex;flex-direction:column;gap:2px;', null, { 'data-suite-file-menu': '1' });
+            menuNode = el('div', 'position:fixed;z-index:9999999;min-width:195px;padding:5px;border-radius:9px;background:var(--vscode-menu-background,var(--vscode-editorWidget-background,var(--popover,var(--card,var(--agy-dropdown-bg,#ffffff)))));color:var(--vscode-menu-foreground,var(--popover-foreground,var(--foreground,var(--agy-dropdown-text,#1f2937))));border:1px solid var(--vscode-menu-border,var(--card-border,var(--border,var(--agy-dropdown-border,rgba(128,128,128,0.22)))));box-shadow:0 8px 24px rgba(0,0,0,0.2);font-size:12px;direction:ltr;display:flex;flex-direction:column;gap:2px;', null, { 'data-suite-file-menu': '1' });
 
             const items = [
                 { label: `Attach to Chat (@${info.cleanPath.split('/').pop()}${info.lineAnchor})`, fn: () => insertTextIntoComposer('@' + info.fullRef) },
@@ -199,7 +199,7 @@
 
             for (const it of items) {
                 const btn = el('button', 'text-align:left;padding:5px 8px;border:none;border-radius:6px;background:transparent;color:inherit;cursor:pointer;font-size:11.5px;white-space:nowrap;', it.label, { type: 'button' });
-                btn.addEventListener('mouseenter', () => { btn.style.background = 'var(--muted,rgba(255,255,255,0.09))'; });
+                btn.addEventListener('mouseenter', () => { btn.style.background = 'var(--vscode-menu-selectionBackground,var(--secondary,var(--muted,var(--agy-dropdown-hover,rgba(128,128,128,0.12)))))'; });
                 btn.addEventListener('mouseleave', () => { btn.style.background = 'transparent'; });
                 btn.addEventListener('click', () => { closeMenu(); try { it.fn(); } catch (_) {} });
                 menuNode.appendChild(btn);
@@ -476,7 +476,24 @@
         icon.appendChild(arc);
         icon.appendChild(needle);
 
-        const txt = el('span', 'font-variant-numeric:tabular-nums;font-size:11px;font-weight:500;display:none;', '');
+        if (!document.getElementById('suite-speed-telemetry-style')) {
+            const st = document.createElement('style');
+            st.id = 'suite-speed-telemetry-style';
+            st.textContent = `
+                #suite-speed-telemetry-pill .suite-telemetry-txt { display: none; }
+                #suite-speed-telemetry-pill[data-has-metrics="1"] .suite-telemetry-txt { display: inline; }
+                #suite-speed-telemetry-pill[data-compact-bar="1"] .suite-telemetry-txt { display: none !important; }
+                @container input-footer (max-width: 560px) {
+                    #suite-speed-telemetry-pill .suite-telemetry-txt { display: none !important; }
+                }
+                @media (max-width: 640px) {
+                    #suite-speed-telemetry-pill .suite-telemetry-txt { display: none !important; }
+                }
+            `;
+            (document.head || document.documentElement).appendChild(st);
+        }
+
+        const txt = el('span', 'font-variant-numeric:tabular-nums;font-size:11px;font-weight:500;white-space:nowrap;', '', { className: 'suite-telemetry-txt' });
         const pill = el('button', 'display:inline-flex;align-items:center;justify-content:center;gap:4px;height:28px;min-width:28px;padding:0 6px;border-radius:999px;border:none;background:transparent;color:inherit;cursor:pointer;font-size:11px;opacity:0.82;', [icon, txt], {
             id: 'suite-speed-telemetry-pill',
             type: 'button',
@@ -557,14 +574,25 @@
                 if (d.ttftMs > 0) parts.push(d.ttftMs >= 1000 ? `${(d.ttftMs / 1000).toFixed(1)}s` : `${d.ttftMs}ms`);
                 if (d.cacheHitPct > 0) parts.push(`${Math.round(d.cacheHitPct)}%`);
                 if (parts.length > 0) {
-                    txt.textContent = parts.join(' · ');
-                    txt.style.display = 'inline';
+                    const summary = parts.join(' · ');
+                    txt.textContent = summary;
+                    pill.dataset.hasMetrics = '1';
+                    pill.title = `${summary} — Generation Speed, TTFT & Per-Turn Telemetry`;
                 } else {
                     txt.textContent = '';
-                    txt.style.display = 'none';
+                    pill.dataset.hasMetrics = '0';
+                    pill.title = 'Generation Speed, TTFT & Per-Turn Telemetry';
                 }
                 if (popOpen) renderPop();
             } catch (_) {}
+        }
+
+        let observedFooter = null;
+        let footerRo = null;
+        function syncCompactBar() {
+            const box = pill.closest('.agy-composer-footer') || pill.parentElement?.parentElement || pill.parentElement;
+            const w = box ? box.clientWidth : window.innerWidth;
+            pill.dataset.compactBar = (w > 0 && w < 540) ? '1' : '0';
         }
 
         function resolveTelemetryAnchor() {
@@ -603,6 +631,14 @@
                 slot.parent.insertBefore(pill, (slot.beforeNode && slot.beforeNode !== pill) ? slot.beforeNode : null);
                 void refresh();
             }
+            const box = pill.closest('.agy-composer-footer') || slot.parent?.parentElement || slot.parent;
+            if (box && box !== observedFooter && typeof ResizeObserver === 'function') {
+                if (footerRo) footerRo.disconnect();
+                observedFooter = box;
+                footerRo = new ResizeObserver(syncCompactBar);
+                footerRo.observe(box);
+            }
+            syncCompactBar();
         }
         function updateTurnMeta(turnsList) {
             if (!isEnabledFn() || !Array.isArray(turnsList) || !turnsList.length) return;
