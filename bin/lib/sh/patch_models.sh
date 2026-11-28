@@ -25,8 +25,8 @@ patch_models_app() {
     local orig="${asar}.orig"
     restore_pristine_models_base "$asar" "$orig"
     local had_rtl="$ACTIVE_PATCH_RTL" had_sel="$ACTIVE_PATCH_SELECTOR"
-    local had_fork="$ACTIVE_PATCH_FORK" had_open_ide="$ACTIVE_PATCH_OPEN_IDE"
     local had_win_bounds="$ACTIVE_PATCH_WINDOW_BOUNDS"
+    local had_exp="$ACTIVE_PATCH_EXPERIMENTS"
     local script; script="$(get_models_deploy_script)"
     local sdir; sdir="$(dirname "$(dirname "$script")")"
     export NODE_PATH="${sdir}/node_modules:${REAL_HOME:-$HOME}/.local/node_modules:${NODE_PATH}"
@@ -41,7 +41,7 @@ patch_models_app() {
         [ -f "$orig" ] && cp -f "$orig" "$asar"
         return 1
     fi
-    reapply_post_model_patches "$had_rtl" "$had_sel" "$had_fork" "$had_open_ide" "$had_win_bounds"
+    reapply_post_model_patches "$had_rtl" "$had_sel" "$had_exp" false "$had_win_bounds" "$had_exp"
     if grep -qa "antigravity-model-patch" "$asar" 2>/dev/null; then
         log_success "Custom Models UI injected into Antigravity Settings successfully!"
     else

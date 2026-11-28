@@ -12,9 +12,9 @@
             const k = 'jetski.developer.customFlagOverrides';
             let f = {};
             try { f = JSON.parse(window.localStorage.getItem(k) || '{}'); } catch (_) {}
-            f['enable-conversation-forking'] = true;
-            f['enable-fork-in-new-worktree'] = true;
-            f['enable-fork-at-historical-step'] = true;
+            for (const fk of ['enable-conversation-forking', 'enable-fork-in-new-worktree', 'enable-fork-at-historical-step']) {
+                if (!(fk in f)) f[fk] = true;
+            }
             delete f['enable-aux-pane-redesign'];
             delete f['enable-thought-editing'];
             delete f['enable-thought-steering-from-selection'];

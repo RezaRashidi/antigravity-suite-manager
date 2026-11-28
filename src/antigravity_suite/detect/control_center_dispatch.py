@@ -13,6 +13,7 @@ from antigravity_suite.detect.control_center_actions import (
     handle_control_center_backups,
     handle_control_center_clean_data,
     handle_control_center_clone,
+    handle_control_center_experiments_patch,
     handle_control_center_export_import,
     handle_control_center_fork_patch,
     handle_control_center_icons,
@@ -32,6 +33,7 @@ from antigravity_suite.detect.control_center_actions import (
     handle_control_center_traffic,
     handle_control_center_uninstall,
     handle_control_center_update,
+    handle_control_center_usage,
     handle_control_center_window_bounds_patch,
 )
 
@@ -52,8 +54,7 @@ def dispatch_control_center_choice(choice: str, manage_sh: str, installer_sh: st
         subprocess.run(["bash", manage_sh, "update-repo"], check=False)
         input("\nPress Enter to return to Control Center...")
     elif up == "T": handle_control_center_selector_patch(manage_sh, unified)
-    elif up == "J": handle_control_center_fork_patch(manage_sh, unified)
-    elif up == "Y": handle_control_center_open_ide_patch(manage_sh, unified)
+    elif up in ["EX", "EXP", "EXPERIMENTS", "FLAGS", "J", "Y", "FORK", "OPEN-IDE"]: handle_control_center_experiments_patch(manage_sh, unified)
     elif up in ["WB", "WINDOW", "WINDOW-BOUNDS", "PATCH-WINDOW"]: handle_control_center_window_bounds_patch(manage_sh, unified)
     elif up == "R": handle_control_center_rtl_patch(manage_sh, unified)
     elif up in ["CM", "MODELS"]: handle_control_center_models_patch(manage_sh, unified)
@@ -65,6 +66,7 @@ def dispatch_control_center_choice(choice: str, manage_sh: str, installer_sh: st
     elif up == "Z": handle_control_center_uninstall(manage_sh)
     elif up == "A": handle_control_center_multi_account(manage_sh)
     elif up == "M": handle_control_center_traffic(manage_sh)
+    elif up in ["TU", "USAGE", "TOKENS"]: handle_control_center_usage(manage_sh)
     elif up in ["K", "D"]:
         cmd = "benchmark" if up == "K" else "restart-services"
         subprocess.run(["bash", manage_sh, cmd], check=False)

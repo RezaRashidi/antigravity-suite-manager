@@ -65,13 +65,12 @@ dispatch_command() {
         update-rtl) update_rtl ;;
         checksums|fix-checksums|patch-checksums) fix_ide_checksums "${IDE_INSTALL_DIR:-/opt/antigravity}" ;;
         benchmark|bench|speed-test) dispatch_benchmark "${CMD_ARGS[@]}" ;;
+        usage|tokens|usage-report|costs) dispatch_usage "${CMD_ARGS[@]}" ;;
         multi-account|multiaccount|accounts) dispatch_multi_account "${CMD_ARGS[@]}" ;;
         patch-selector|selector|patch-accounts) FORCE_INSTALL=true dispatch_selector ;;
         unpatch-selector|unpatch-accounts) dispatch_unpatch_selector ;;
-        fork|patch-fork) FORCE_INSTALL=true dispatch_fork "${CMD_ARGS[@]}" ;;
-        unpatch-fork) dispatch_unpatch_fork "${CMD_ARGS[@]}" ;;
-        open-ide|patch-open-ide) dispatch_open_ide "${CMD_ARGS[@]}" ;;
-        unpatch-open-ide) dispatch_unpatch_open_ide "${CMD_ARGS[@]}" ;;
+        experiments|patch-experiments|flags|fork|patch-fork|open-ide|patch-open-ide) FORCE_INSTALL=true dispatch_experiments "${CMD_ARGS[@]}" ;;
+        unpatch-experiments|unpatch-flags|unpatch-fork|unpatch-open-ide) dispatch_unpatch_experiments "${CMD_ARGS[@]}" ;;
         window-bounds|patch-window-bounds|patch-window|fix-window) dispatch_window_bounds "${CMD_ARGS[@]}" ;;
         unpatch-window-bounds|unpatch-window) dispatch_unpatch_window_bounds "${CMD_ARGS[@]}" ;;
         patch-models|models-patch) dispatch_patch_models "${CMD_ARGS[@]}" ;;

@@ -45,37 +45,32 @@ dispatch_unpatch_selector() {
     esac
 }
 
-dispatch_fork() {
+dispatch_experiments() {
     auto_detect_installations
     local target="${1:-${SUB_COMMAND:-all}}"
     [ $# -gt 0 ] && shift
     case "$target" in
-        app) patch_fork_app "$@" ;;
-        ide) patch_fork_ide "$@" ;;
-        all|*) patch_fork_all "$@" ;;
+        app) patch_experiments_app "$@" ;;
+        ide) patch_experiments_ide "$@" ;;
+        all|*) patch_experiments_all "$@" ;;
     esac
 }
 
-dispatch_unpatch_fork() {
+dispatch_unpatch_experiments() {
     auto_detect_installations
     local target="${1:-${SUB_COMMAND:-all}}"
     [ $# -gt 0 ] && shift
     case "$target" in
-        app) unpatch_fork_app "$@" ;;
-        ide) unpatch_fork_ide "$@" ;;
-        all|*) unpatch_fork_all "$@" ;;
+        app) unpatch_experiments_app "$@" ;;
+        ide) unpatch_experiments_ide "$@" ;;
+        all|*) unpatch_experiments_all "$@" ;;
     esac
 }
 
-dispatch_open_ide() {
-    auto_detect_installations
-    patch_open_ide_app "$@"
-}
-
-dispatch_unpatch_open_ide() {
-    auto_detect_installations
-    unpatch_open_ide_app "$@"
-}
+dispatch_fork() { dispatch_experiments "$@"; }
+dispatch_unpatch_fork() { dispatch_unpatch_experiments "$@"; }
+dispatch_open_ide() { auto_detect_installations; patch_experiments_app "$@"; }
+dispatch_unpatch_open_ide() { auto_detect_installations; unpatch_experiments_app "$@"; }
 
 dispatch_window_bounds() {
     auto_detect_installations

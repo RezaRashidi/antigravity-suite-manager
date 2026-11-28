@@ -35,10 +35,10 @@ execute_menu_choice() {
         31) dispatch_multi_account ;;
         32) FORCE_INSTALL=true patch_selector ;;
         33) unpatch_selector ;;
-        34) FORCE_INSTALL=true patch_fork_all ;;
-        35) unpatch_fork_all ;;
-        36) FORCE_INSTALL=true patch_open_ide_app ;;
-        37) unpatch_open_ide_app ;;
+        34) FORCE_INSTALL=true patch_experiments_all ;;
+        35) unpatch_experiments_all ;;
+        36) FORCE_INSTALL=true patch_experiments_app ;;
+        37) unpatch_experiments_app ;;
         38) dispatch_cloud_sync ;;
         39) dispatch_custom_models menu ;;
         40) FORCE_INSTALL=true patch_models_all ;;

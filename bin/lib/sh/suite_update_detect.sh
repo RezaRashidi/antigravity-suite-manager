@@ -17,10 +17,9 @@ detect_active_app_patches() {
     local asar="${APP_INSTALL_DIR}/resources/app.asar"
     HAD_APP_SELECTOR=false
     HAD_APP_RTL=false
-    HAD_APP_FORK=false
-    HAD_APP_OPEN_IDE=false
     HAD_APP_WINDOW_BOUNDS=false
     HAD_APP_MODELS=false
+    HAD_APP_EXPERIMENTS=false
 
     [ ! -f "$asar" ] && return 0
 
@@ -30,11 +29,8 @@ detect_active_app_patches() {
     if grep -qa "ANTIGRAVITY_SUITE_RTL" "$asar" 2>/dev/null || grep -qa "ANTIGRAVITY RTL PATCH" "$asar" 2>/dev/null; then
         HAD_APP_RTL=true
     fi
-    if grep -qa "ANTIGRAVITY_SUITE_FORK_PATCH" "$asar" 2>/dev/null || grep -qa "FORK_EXP_PRELOAD_START" "$asar" 2>/dev/null; then
-        HAD_APP_FORK=true
-    fi
-    if grep -qa "ANTIGRAVITY_SUITE_OPEN_IDE_PATCH" "$asar" 2>/dev/null; then
-        HAD_APP_OPEN_IDE=true
+    if grep -qa "ANTIGRAVITY_SUITE_EXPERIMENTS_PATCH" "$asar" 2>/dev/null || grep -qa "ANTIGRAVITY_SUITE_FORK_PATCH" "$asar" 2>/dev/null || grep -qa "FORK_EXP_PRELOAD_START" "$asar" 2>/dev/null || grep -qa "ANTIGRAVITY_SUITE_OPEN_IDE_PATCH" "$asar" 2>/dev/null; then
+        HAD_APP_EXPERIMENTS=true
     fi
     if grep -qa "ANTIGRAVITY_SUITE_WINDOW_BOUNDS_PATCH" "$asar" 2>/dev/null; then
         HAD_APP_WINDOW_BOUNDS=true
@@ -49,9 +45,10 @@ detect_active_ide_patches() {
     local wb_js="${IDE_INSTALL_DIR}/resources/app/out/vs/workbench/workbench.desktop.main.js"
     local main_js="${IDE_INSTALL_DIR}/resources/app/out/main.js"
     local fork_marker="${IDE_INSTALL_DIR}/resources/app/out/antigravity_fork_patch.marker"
+    local exp_marker="${IDE_INSTALL_DIR}/resources/app/out/antigravity_ide_experiments_patch.marker"
     HAD_IDE_SELECTOR=false
     HAD_IDE_RTL=false
-    HAD_IDE_FORK=false
+    HAD_IDE_EXPERIMENTS=false
 
     [ ! -d "$IDE_INSTALL_DIR" ] && return 0
 
@@ -61,7 +58,7 @@ detect_active_ide_patches() {
     if [ -f "${IDE_INSTALL_DIR}/resources/app/out/antigravity_rtl_patch.marker" ] || ([ -f "$main_js" ] && (grep -qa "antigravity-rtl-main.js" "$main_js" 2>/dev/null || [ -f "${main_js}.rtl-bak" ])); then
         HAD_IDE_RTL=true
     fi
-    if ([ -f "$wb_js" ] && grep -qa "conversationForking:{enabled:!0" "$wb_js" 2>/dev/null) || [ -f "$fork_marker" ]; then
-        HAD_IDE_FORK=true
+    if [ -f "$exp_marker" ] || [ -f "$fork_marker" ] || ([ -f "$main_js" ] && grep -qa "antigravity-experiments-main.js" "$main_js" 2>/dev/null) || ([ -f "$wb_js" ] && grep -qa "conversationForking:{enabled:!0" "$wb_js" 2>/dev/null); then
+        HAD_IDE_EXPERIMENTS=true
     fi
 }

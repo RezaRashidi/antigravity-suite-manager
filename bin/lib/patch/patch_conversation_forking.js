@@ -63,6 +63,18 @@ function unpatchIdeConversationForking(ideDir) {
 const PRELOAD_FORK_SNIPPET = `/* FORK_EXP_PRELOAD_START */
 try {
     const { webFrame } = require('electron');
+    const __fs = require('fs');
+    const __os = require('os');
+    const __path = require('path');
+    let __expFlags = {};
+    try {
+        const expPath = __path.join(process.env.REAL_HOME || __os.homedir(), '.config', 'antigravity', 'experiments.json');
+        if (__fs.existsSync(expPath)) {
+            const raw = JSON.parse(__fs.readFileSync(expPath, 'utf8'));
+            if (raw && raw.flags && typeof raw.flags === 'object') __expFlags = raw.flags;
+        }
+    } catch (_) {}
+    const __expJson = JSON.stringify(__expFlags);
     if (webFrame && typeof webFrame.executeJavaScriptInIsolatedWorld === 'function') {
         webFrame.executeJavaScriptInIsolatedWorld(0, [{
             code: \`(function() {
@@ -82,17 +94,21 @@ try {
                             set(v) { _cfg = enableDevMode(v); }
                         });
                     }
+                    const savedFlags = \${__expJson};
                     const k = 'jetski.developer.customFlagOverrides';
                     let f = {};
                     try { f = JSON.parse(window.localStorage.getItem(k) || '{}'); } catch (_) {}
-                    f['enable-conversation-forking'] = true;
-                    f['enable-fork-in-new-worktree'] = true;
-                    f['enable-fork-at-historical-step'] = true;
-                    f['enable-developer-mode'] = false;
-                    f['enable-git-vcs-ui'] = false;
-                    f['enable-jj-vcs-ui'] = false;
-                    f['enable-abfs-workspace-ui'] = false;
-                    f['google-workspace-mentions'] = false;
+                    const forkDefaults = ['enable-conversation-forking', 'enable-fork-in-new-worktree', 'enable-fork-at-historical-step'];
+                    for (const fk of forkDefaults) {
+                        if (typeof savedFlags[fk] === 'boolean') f[fk] = savedFlags[fk];
+                        else if (!(fk in f)) f[fk] = true;
+                    }
+                    for (const [eid, evalBool] of Object.entries(savedFlags)) {
+                        if (typeof evalBool === 'boolean') f[eid] = evalBool;
+                    }
+                    for (const [lk, lv] of Object.entries({ 'enable-developer-mode': false, 'enable-git-vcs-ui': false, 'enable-jj-vcs-ui': false, 'enable-abfs-workspace-ui': false, 'google-workspace-mentions': false })) {
+                        if (!(lk in f)) f[lk] = lv;
+                    }
                     delete f['enable-battle-mode'];
                     delete f['enable-battle-contrib-variants'];
                     delete f['enable-battle-mode-custom-agents'];
@@ -102,6 +118,11 @@ try {
                     delete f['enable-thought-editing'];
                     delete f['enable-thought-steering-from-selection'];
                     window.localStorage.setItem(k, JSON.stringify(f));
+                    if (typeof savedFlags['enable-context-usage-indicator'] === 'boolean') {
+                        window.localStorage.setItem('contextUsageIndicatorEnabled', savedFlags['enable-context-usage-indicator'] ? 'true' : 'false');
+                    } else if (window.localStorage.getItem('contextUsageIndicatorEnabled') === null) {
+                        window.localStorage.setItem('contextUsageIndicatorEnabled', 'true');
+                    }
                     window.localStorage.removeItem('jetski.developer.featureEnvironmentOverride');
                 } catch (_) {}
             })();\`

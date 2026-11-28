@@ -76,5 +76,6 @@ This document records the end-to-end diagnostic methodology, reverse-engineering
 - [68. Issue 66: Cross-Chat Model Clobbering & Concurrent Execution Isolation](68_cross_chat_model_clobbering_and_concurrent_execution_isolation.md)
 - [69. Issue 67: Account Selector `:has()` Typing Lag, On-Hover Single-Account Refresh & Tier Accuracy](69_account_selector_css_has_lag_hover_refresh_and_tier_accuracy.md)
 - [70. Issue 68: Internal RTL Engine, Table Column Reversal, Bubble Alignment & OS Font Discovery](70_internal_rtl_engine_table_safety_and_os_font_discovery.md)
-- [71. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
+- [71. Issue 69: Unified Experiments, Forking, Open-IDE, Native Context/Cost Telemetry & Multi-Account Usage Analytics](71_unified_experiments_context_cost_telemetry_and_usage_analytics.md)
+- [72. Summary Checklist for Future Diagnostics](18_summary_checklist_for_future_diagnostics.md)
 

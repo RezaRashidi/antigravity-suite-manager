@@ -1,24 +1,42 @@
 // Antigravity Native "Open in IDE" Titlebar Button Patcher
-const fs = require('fs'), path = require('path');
+const fs = require('fs'), os = require('os'), path = require('path');
 const MARKER = 'antigravity_open_ide_patch.marker';
 const PRE_START = '/* OPEN_IDE_PRELOAD_START */', PRE_END = '/* OPEN_IDE_PRELOAD_END */';
 const CST_START = '/* OPEN_IDE_CONST_START */', CST_END = '/* OPEN_IDE_CONST_END */';
 
-const SNIPPET = `${PRE_START}
+function buildOpenIdeSnippet() {
+    return `${PRE_START}
 try {
     const { webFrame } = require('electron');
+    let __showOpenIde = true;
+    try {
+        const __fs = require('fs'), __os = require('os'), __path = require('path');
+        const expPath = __path.join(process.env.REAL_HOME || __os.homedir(), '.config', 'antigravity', 'experiments.json');
+        if (__fs.existsSync(expPath)) {
+            const raw = JSON.parse(__fs.readFileSync(expPath, 'utf8'));
+            if (raw && raw.flags && raw.flags['enable-open-in-ide-button'] === false) __showOpenIde = false;
+        }
+    } catch (_) {}
     if (webFrame && typeof webFrame.executeJavaScriptInIsolatedWorld === 'function') {
         webFrame.executeJavaScriptInIsolatedWorld(0, [{
             code: \`(function() {
                 try {
+                    const applyOpenIde = \${__showOpenIde ? 'true' : 'false'};
                     const os = Map.prototype.set, og = Map.prototype.get;
                     Map.prototype.set = function(k, v) {
-                        if (k === 'titlebarComponent' && v && typeof v === 'object') v.showOpenIde = true;
+                        if (k === 'titlebarComponent' && v && typeof v === 'object') {
+                            if (applyOpenIde) v.showOpenIde = true;
+                            else v.showOpenIde = false;
+                        }
                         return os.call(this, k, v);
                     };
                     Map.prototype.get = function(k) {
                         const v = og.call(this, k);
-                        if (k === 'titlebarComponent' && v && typeof v === 'object') { v.showOpenIde = true; return v; }
+                        if (k === 'titlebarComponent' && v && typeof v === 'object') {
+                            if (applyOpenIde) v.showOpenIde = true;
+                            else v.showOpenIde = false;
+                            return v;
+                        }
                         return v;
                     };
                 } catch (_) {}
@@ -27,6 +45,7 @@ try {
     }
 } catch (_) {}
 ${PRE_END}\n`;
+}
 
 function resolveDist(dir) {
     if (!dir) return null;
@@ -40,7 +59,7 @@ function patchAppOpenIde(targetDir) {
     if (fs.existsSync(pPath)) {
         let code = fs.readFileSync(pPath, 'utf8');
         if (code.includes(PRE_START)) code = code.replace(/\/\* OPEN_IDE_PRELOAD_START \*\/[\s\S]*?\/\* OPEN_IDE_PRELOAD_END \*\/\n?/, '');
-        fs.writeFileSync(pPath, SNIPPET + code, 'utf8');
+        fs.writeFileSync(pPath, buildOpenIdeSnippet() + code, 'utf8');
     }
     if (fs.existsSync(cPath)) {
         let code = fs.readFileSync(cPath, 'utf8');

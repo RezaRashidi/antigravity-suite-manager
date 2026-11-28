@@ -18,6 +18,23 @@ def handle_control_center_traffic(manage_sh: str) -> None:
     input("\nPress Enter to return to Control Center...")
 
 
+def handle_control_center_usage(manage_sh: str) -> None:
+    print(f"\n{CYAN}--- Token Usage & Cost Report ---{NC}")
+    print("  [1] Last 7 Days   [2] Last 30 Days   [3] All Time   [4] Refresh Prices (models.dev)")
+    c = input("Select window [1-4, Default: 2]: ").strip()
+    args = ["usage"]
+    if c == "1":
+        args.extend(["--days", "7"])
+    elif c == "3":
+        args.extend(["--days", "all"])
+    elif c == "4":
+        args.extend(["--days", "30", "--refresh-prices"])
+    else:
+        args.extend(["--days", "30"])
+    subprocess.run(["bash", manage_sh] + args, check=False)
+    input("\nPress Enter to return to Control Center...")
+
+
 def handle_control_center_merge_history(manage_sh: str) -> None:
     print(f"\n{CYAN}--- Legacy Chat Migration & Cloud Sync ---{NC}")
     print("  [1] Migrate Legacy Chats (v2.5.5 -> v2.6.0)\n  [2] Encrypted Cloud Sync (Rclone Push / Pull)\n  [0] Cancel / Back")

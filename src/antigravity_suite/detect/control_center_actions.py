@@ -25,11 +25,13 @@ from antigravity_suite.detect.control_center_ops import (
     handle_control_center_multi_account,
     handle_control_center_status,
     handle_control_center_traffic,
+    handle_control_center_usage,
 )
 from antigravity_suite.detect.control_center_subagents import (
     handle_control_center_subagents_patch,
 )
 from antigravity_suite.detect.control_center_patches import (
+    handle_control_center_experiments_patch,
     handle_control_center_fork_patch,
     handle_control_center_models_patch,
     handle_control_center_open_ide_patch,
@@ -44,6 +46,7 @@ __all__ = [
     "handle_control_center_clean_cache",
     "handle_control_center_clean_data",
     "handle_control_center_clone",
+    "handle_control_center_experiments_patch",
     "handle_control_center_export_import",
     "handle_control_center_fork_patch",
     "handle_control_center_icons",
@@ -63,5 +66,6 @@ __all__ = [
     "handle_control_center_traffic",
     "handle_control_center_uninstall",
     "handle_control_center_update",
+    "handle_control_center_usage",
     "handle_control_center_window_bounds_patch",
 ]

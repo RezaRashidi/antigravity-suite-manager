@@ -18,9 +18,12 @@ const { getProxyAgent, resetProxyAgent } = require('./proxy_agent.js');
 const { getAuthenticUserAgent } = require('./ua.js');
 const { getSubagentPolicy, isSubagent, trackInFlight, allocateAccountForSubagent, releaseSubagentLease } = require('./subagent_allocator.js');
 const { isEligibilityRpc, normalizeEligibilityResponse } = require('./eligibility_middleware.js');
+const { mergeRpcExperimentsResponse } = require('./experiments.js');
+const { recordStreamStart, recordStreamUsageChunk, recordStreamEnd } = require('./usage_live.js');
 
 const DEFAULT_PORT = 41999;
 const UPSTREAM_HOST = 'daily-cloudcode-pa.googleapis.com';
+const AICODE_UPSTREAM_HOST = 'aicode.googleapis.com';
 const MAX_FAILOVER_ATTEMPTS = 6;
 let _server = null, _lastCascadeId = null, _lastCascadeTs = 0;
 let _knownModelCatalog = {};
@@ -206,6 +209,10 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
 
             const isGen = req.url && (req.url.includes('streamGenerateContent') || req.url.includes('generateContent'));
             const isModelListRpc = req.url && req.url.includes('fetchAvailableModels');
+            const isFetchConfigRpc = req.url && (req.url.includes(':fetchConfig') || req.url.includes('/FetchConfig'));
+            const isAiCodeRpc = req.url && (isFetchConfigRpc || req.url.includes(':fetchLicenses') || req.url.startsWith('/v1alpha'));
+            const isExperimentsRpc = req.url && (req.url.includes(':listExperiments') || req.url.includes('listExperiments') || isFetchConfigRpc);
+            const targetHost = isAiCodeRpc ? AICODE_UPSTREAM_HOST : upstreamHost;
             const isAccountRpc = req.url && (
                 isGen ||
                 req.url.includes('retrieveUserQuota') ||
@@ -324,7 +331,7 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
                     logTraffic(`${isGen ? (isSub ? 'SubagentGen' : 'ChatGen') : 'AccountRpc'}: [${cascadeId || 'general'}] -> Account: [${currentEmail}] | ${tokenFp} | Path: ${req.url}`);
                 }
 
-                const headers = { ...req.headers, host: upstreamHost };
+                const headers = { ...req.headers, host: targetHost };
                 if (!headers['user-agent'] || headers['user-agent'].includes('Antigravity/2.')) {
                     headers['user-agent'] = getAuthenticUserAgent();
                 }
@@ -332,13 +339,13 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
                 if (body.length > 0) headers['content-length'] = Buffer.byteLength(body);
                 delete headers['transfer-encoding'];
                 delete headers['connection'];
-                if (isEligRpc || isModelListRpc) {
+                if (isEligRpc || isModelListRpc || isExperimentsRpc) {
                     delete headers['accept-encoding'];
                 }
 
                 const agent = useProxyAgent ? getProxyAgent() : undefined;
                 const upOpts = {
-                    hostname: upstreamHost,
+                    hostname: targetHost,
                     port: upstreamPort,
                     path: req.url,
                     method: req.method,
@@ -377,6 +384,7 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
 
                 const upReq = upstreamClient.request(upOpts, (upRes) => {
                     if (ttfbTimer) { clearTimeout(ttfbTimer); ttfbTimer = null; }
+                    if (isGen) { try { recordStreamStart(cascadeId, requestedModel); } catch (_) {} }
 
                     logTraffic(`${isAccountRpc ? (isGen ? (isSub ? 'SubagentGen' : 'ChatGen') : 'AccountRpc') : 'ControlPlane'}: [${cascadeId || 'general'}] <- Upstream Response: ${upRes.statusCode}`);
 
@@ -558,6 +566,40 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
                         return;
                     }
 
+                    if (isExperimentsRpc && upRes.statusCode === 200) {
+                        const resChunks = [];
+                        upRes.on('data', c => resChunks.push(c));
+                        upRes.on('error', (err) => {
+                            settled = true;
+                            finishInFlight();
+                            if (!res.headersSent) {
+                                res.writeHead(502, { 'Content-Type': 'application/json' });
+                                res.end(JSON.stringify({ error: err.message }));
+                            } else if (!res.destroyed) {
+                                res.destroy(err);
+                            }
+                        });
+                        upRes.on('end', () => {
+                            settled = true;
+                            finishInFlight();
+                            const rawBuf = decodeUpstreamBuffer(Buffer.concat(resChunks), upRes.headers['content-encoding']);
+                            const outStr = mergeRpcExperimentsResponse(rawBuf.toString('utf8'), req.url);
+                            const outBuf = Buffer.from(outStr, 'utf8');
+                            const resHeaders = { ...upRes.headers };
+                            resHeaders['content-length'] = outBuf.length;
+                            delete resHeaders['content-encoding'];
+                            delete resHeaders['transfer-encoding'];
+                            delete resHeaders['connection'];
+                            delete resHeaders['keep-alive'];
+                            if (!res.headersSent) {
+                                res.writeHead(upRes.statusCode, resHeaders);
+                                res.end(outBuf);
+                            }
+                        });
+                        upRes.on('close', () => { settled = true; finishInFlight(); });
+                        return;
+                    }
+
                     if (isGen) {
                         const resetStreamIdle = () => {
                             if (streamTimer) clearTimeout(streamTimer);
@@ -568,7 +610,10 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
                             }, 60000);
                         };
                         resetStreamIdle();
-                        upRes.on('data', resetStreamIdle);
+                        upRes.on('data', (chunk) => {
+                            resetStreamIdle();
+                            try { recordStreamUsageChunk(cascadeId, chunk.toString('utf8'), requestedModel); } catch (_) {}
+                        });
                     }
 
                     const resHeaders = { ...upRes.headers };
@@ -593,7 +638,7 @@ function startMultiAccountRouter(port = DEFAULT_PORT, options = {}) {
                         }
                     });
                     upRes.pipe(res);
-                    upRes.on('end', () => { settled = true; finishInFlight(); });
+                    upRes.on('end', () => { settled = true; if (isGen) { try { recordStreamEnd(cascadeId); } catch (_) {} } finishInFlight(); });
                     upRes.on('close', () => { settled = true; finishInFlight(); });
                 });
                 activeUpReq = upReq;

@@ -3,11 +3,99 @@ const { getBindings, setBinding, setActiveAccount, getActiveAccountEmail, logTra
 const { loadAllAccounts, isAccountHealthy, pickHealthyFallbackAccount } = require('./accounts.js');
 
 function handleApiRequest(req, res, bodyStr) {
-    if (!req.url.startsWith('/api/multi-account') && req.url !== '/ui_bundle.js') return false;
+    const url = req.url || '';
+    if (!url.startsWith('/api/multi-account') && !url.startsWith('/api/experiments') && !url.startsWith('/api/usage') && url !== '/ui_bundle.js') return false;
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', '*');
     if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return true; }
+
+    if (url.startsWith('/api/experiments')) {
+        try {
+            const exp = require('./experiments.js');
+            if (req.method === 'GET') {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(exp.getPublicExperimentsPayload()));
+                return true;
+            }
+            if (req.method === 'POST') {
+                const patch = bodyStr ? JSON.parse(bodyStr) : {};
+                const payload = exp.writeExperimentsPatch(patch);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ ok: true, ...payload }));
+                return true;
+            }
+        } catch (err) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: false, error: err && err.message ? err.message : 'experiments error' }));
+            return true;
+        }
+    }
+
+    if (url.startsWith('/api/usage/pricing')) {
+        try {
+            const pricing = require('./pricing.js');
+            let refresh = false;
+            try { refresh = new URL(url, 'http://127.0.0.1').searchParams.get('refresh') === '1'; } catch (_) {}
+            if (refresh) void pricing.triggerBackgroundRefresh(true);
+            else void pricing.triggerBackgroundRefresh(false);
+            const data = pricing.readCachedPrices();
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ source: data.source, fetchedAt: data.fetchedAt, table: pricing.buildCompactTable(data), models: data.models }));
+        } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err && err.message ? err.message : 'pricing error' }));
+        }
+        return true;
+    }
+
+    if (url.startsWith('/api/usage/active')) {
+        try {
+            const { getActiveCascadeUsage } = require('./usage_live.js');
+            const pricing = require('./pricing.js');
+            void pricing.triggerBackgroundRefresh(false);
+            let cascadeId = null;
+            try { cascadeId = new URL(url, 'http://127.0.0.1').searchParams.get('cascadeId'); } catch (_) {}
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(getActiveCascadeUsage(cascadeId)));
+        } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err && err.message ? err.message : 'usage error' }));
+        }
+        return true;
+    }
+
+    if (url.startsWith('/api/usage/dashboard')) {
+        try {
+            const { getMultiAccountDashboard } = require('./usage_live.js');
+            const pricing = require('./pricing.js');
+            void pricing.triggerBackgroundRefresh(false);
+            const u = new URL(url, 'http://127.0.0.1');
+            const range = u.searchParams.get('range') || '7d';
+            const account = u.searchParams.get('account') || 'all';
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(getMultiAccountDashboard({ range, account })));
+        } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err && err.message ? err.message : 'dashboard error' }));
+        }
+        return true;
+    }
+
+    if (url.startsWith('/api/usage/search')) {
+        try {
+            const { searchAllTranscripts } = require('./usage_live.js');
+            const u = new URL(url, 'http://127.0.0.1');
+            const q = u.searchParams.get('q') || '';
+            const limit = Math.min(50, Math.max(1, Number(u.searchParams.get('limit') || 25)));
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(searchAllTranscripts(q, limit)));
+        } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err && err.message ? err.message : 'search error' }));
+        }
+        return true;
+    }
     if (req.url === '/ui_bundle.js' || req.url === '/api/multi-account/bundle.js') {
         try {
             const fs = require('fs'), path = require('path'), b = path.join(__dirname, '..');

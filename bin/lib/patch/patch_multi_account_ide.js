@@ -97,6 +97,10 @@ if [[ $HAS_ENDPOINT -eq 0 && $PROXY_ALIVE -eq 1 ]]; then
     ARGS+=("--cloud_code_endpoint=\${PROXY_ENDPOINT}")
 fi
 
+if [[ $PROXY_ALIVE -eq 1 && -z "\${AICODE_ENDPOINT_URL:-}" ]]; then
+    export AICODE_ENDPOINT_URL="\${PROXY_ENDPOINT}"
+fi
+
 exec "$BIN" "\${ARGS[@]}"
 `;
 }

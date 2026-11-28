@@ -25,14 +25,13 @@ ensure_models_patch_runtime() {
 
 detect_active_patches() {
     local asar="$1"
-    ACTIVE_PATCH_RTL=false; ACTIVE_PATCH_SELECTOR=false; ACTIVE_PATCH_FORK=false
-    ACTIVE_PATCH_OPEN_IDE=false; ACTIVE_PATCH_WINDOW_BOUNDS=false
+    ACTIVE_PATCH_RTL=false; ACTIVE_PATCH_SELECTOR=false
+    ACTIVE_PATCH_WINDOW_BOUNDS=false; ACTIVE_PATCH_EXPERIMENTS=false
     [ ! -f "$asar" ] && return 0
 
     (grep -qa "ANTIGRAVITY_SUITE_RTL" "$asar" 2>/dev/null || grep -qa "ANTIGRAVITY RTL PATCH" "$asar" 2>/dev/null) && ACTIVE_PATCH_RTL=true
     (grep -qa "ANTIGRAVITY_SUITE_SELECTOR_PATCH" "$asar" 2>/dev/null || grep -qa "multi_account_ui" "$asar" 2>/dev/null) && ACTIVE_PATCH_SELECTOR=true
-    (grep -qa "ANTIGRAVITY_SUITE_FORK_PATCH" "$asar" 2>/dev/null || grep -qa "FORK_EXP_PRELOAD_START" "$asar" 2>/dev/null) && ACTIVE_PATCH_FORK=true
-    grep -qa "ANTIGRAVITY_SUITE_OPEN_IDE_PATCH" "$asar" 2>/dev/null && ACTIVE_PATCH_OPEN_IDE=true
+    (grep -qa "ANTIGRAVITY_SUITE_EXPERIMENTS_PATCH" "$asar" 2>/dev/null || grep -qa "ANTIGRAVITY_SUITE_FORK_PATCH" "$asar" 2>/dev/null || grep -qa "FORK_EXP_PRELOAD_START" "$asar" 2>/dev/null || grep -qa "ANTIGRAVITY_SUITE_OPEN_IDE_PATCH" "$asar" 2>/dev/null) && ACTIVE_PATCH_EXPERIMENTS=true
     grep -qa "ANTIGRAVITY_SUITE_WINDOW_BOUNDS_PATCH" "$asar" 2>/dev/null && ACTIVE_PATCH_WINDOW_BOUNDS=true
     return 0
 }
@@ -42,8 +41,7 @@ restore_pristine_models_base() {
     detect_active_patches "$asar"
     local has_active=false
     if [ "$ACTIVE_PATCH_RTL" = "true" ] || [ "$ACTIVE_PATCH_SELECTOR" = "true" ] || \
-       [ "$ACTIVE_PATCH_FORK" = "true" ] || [ "$ACTIVE_PATCH_OPEN_IDE" = "true" ] || \
-       [ "$ACTIVE_PATCH_WINDOW_BOUNDS" = "true" ]; then
+       [ "$ACTIVE_PATCH_WINDOW_BOUNDS" = "true" ] || [ "$ACTIVE_PATCH_EXPERIMENTS" = "true" ]; then
         has_active=true
     fi
     local has_model_patch=false
@@ -67,7 +65,10 @@ restore_pristine_models_base() {
 }
 
 reapply_post_model_patches() {
-    local rtl="$1" sel="$2" fork="$3" open_ide="$4" win_bounds="${5:-false}"
+    local rtl="$1" sel="$2" arg3="${3:-false}" arg4="${4:-false}" arg5="${5:-false}" arg6="${6:-false}"
+    local exp=false win_bounds=false
+    if [ "$arg3" = "true" ] || [ "$arg4" = "true" ] || [ "$arg6" = "true" ]; then exp=true; fi
+    if [ "$arg5" = "true" ]; then win_bounds=true; fi
     local asar="${APP_INSTALL_DIR}/resources/app.asar"
     if [ "$rtl" = "true" ]; then
         log_info "Re-applying RTL patch on top of custom models patch..."
@@ -78,13 +79,9 @@ reapply_post_model_patches() {
         log_info "Re-applying multi-account selector on top of custom models patch..."
         FORCE_INSTALL=true patch_selector_app >/dev/null 2>&1 || patch_selector_app
     fi
-    if [ "$fork" = "true" ]; then
-        log_info "Re-applying conversation forking on top of custom models patch..."
-        FORCE_INSTALL=true patch_fork_app >/dev/null 2>&1 || patch_fork_app
-    fi
-    if [ "$open_ide" = "true" ]; then
-        log_info "Re-applying Open in IDE button on top of custom models patch..."
-        FORCE_INSTALL=true patch_open_ide_app >/dev/null 2>&1 || patch_open_ide_app
+    if [ "$exp" = "true" ]; then
+        log_info "Re-applying Unified Experiments, Forking, Cost & Open-IDE on top of custom models patch..."
+        FORCE_INSTALL=true patch_experiments_app >/dev/null 2>&1 || patch_experiments_app
     fi
     if [ "$win_bounds" = "true" ]; then
         log_info "Re-applying X11 Window Bounds patch on top of custom models patch..."

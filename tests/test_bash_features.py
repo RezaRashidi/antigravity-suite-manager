@@ -38,14 +38,17 @@ class TestBashLibraryAndPatches(unittest.TestCase):
         self.assertIn("detect_active_app_patches()", d_code)
         self.assertIn("detect_active_ide_patches()", d_code)
         self.assertIn("HAD_APP_SELECTOR", d_code)
+        self.assertIn("HAD_APP_EXPERIMENTS", d_code)
+        self.assertIn("ANTIGRAVITY_SUITE_FORK_PATCH", d_code)
+        self.assertIn("ANTIGRAVITY_SUITE_OPEN_IDE_PATCH", d_code)
 
         sh_path = os.path.join(_BIN_DIR, "lib", "sh", "suite_update.sh")
         with open(sh_path, "r", encoding="utf-8") as f:
             code = f.read()
         self.assertIn('if [ "$HAD_APP_SELECTOR" = true ]; then', code)
         self.assertIn('if [ "$HAD_IDE_SELECTOR" = true ]; then', code)
-        self.assertIn('if [ "$HAD_APP_FORK" = true ]; then', code)
-        self.assertIn('if [ "$HAD_IDE_FORK" = true ]; then', code)
+        self.assertIn('if [ "$HAD_APP_EXPERIMENTS" = true ]; then', code)
+        self.assertIn('if [ "$HAD_IDE_EXPERIMENTS" = true ]; then', code)
 
     def test_ensure_install_dirs_exist(self):
         """Verifies ensure_app_install_dir and ensure_ide_install_dir exist in detect.sh."""

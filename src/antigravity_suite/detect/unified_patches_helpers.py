@@ -10,17 +10,21 @@ from typing import Any, Dict
 from antigravity_suite.detect.constants import CYAN, NC, YELLOW
 
 
-def handle_unified_patch_fork(c_type: str, flag: str, u_item: Dict[str, Any], eng_p: str, manage_sh: str) -> None:
+def handle_unified_patch_experiments(c_type: str, flag: str, u_item: Dict[str, Any], eng_p: str, manage_sh: str) -> None:
     inst_name = u_item.get("name", u_item.get("type", "Instance"))
-    print(f"\n{CYAN}--- Conversation Forking Patch ({inst_name}) ---{NC}")
-    print("  [1] Apply / Update Forking Patch\n  [2] Revert / Unpatch Forking Patch\n  [0] Cancel")
+    print(f"\n{CYAN}--- Unified Experiments, Forking, Cost & Open-IDE Patch ({inst_name}) ---{NC}")
+    print("  [1] Apply / Update Experiments, Forking & Open-IDE Patch\n  [2] Revert / Unpatch Unified Experiments Patch\n  [0] Cancel")
     c = input("Select action [1-2, Default: 1]: ").strip()
     if c in ["1", ""]:
-        print(f"\n{CYAN}Applying Conversation Forking patch to {u_item['type']} at {eng_p}...{NC}")
-        subprocess.run(["bash", manage_sh, "fork", c_type, flag, eng_p, "--force"], check=False)
+        print(f"\n{CYAN}Applying Unified Experiments patch to {u_item['type']} at {eng_p}...{NC}")
+        subprocess.run(["bash", manage_sh, "experiments", c_type, flag, eng_p, "--force"], check=False)
     elif c == "2":
-        print(f"\n{CYAN}Reverting Conversation Forking patch from {u_item['type']} at {eng_p}...{NC}")
-        subprocess.run(["bash", manage_sh, "unpatch-fork", c_type, flag, eng_p], check=False)
+        print(f"\n{CYAN}Reverting Unified Experiments patch from {u_item['type']} at {eng_p}...{NC}")
+        subprocess.run(["bash", manage_sh, "unpatch-experiments", c_type, flag, eng_p], check=False)
+
+
+def handle_unified_patch_fork(c_type: str, flag: str, u_item: Dict[str, Any], eng_p: str, manage_sh: str) -> None:
+    handle_unified_patch_experiments(c_type, flag, u_item, eng_p, manage_sh)
 
 
 def handle_unified_patch_selector(c_type: str, flag: str, u_item: Dict[str, Any], eng_p: str, manage_sh: str) -> None:
@@ -56,19 +60,7 @@ def handle_unified_patch_models(u_item: Dict[str, Any], eng_p: str, manage_sh: s
 
 
 def handle_unified_patch_open_ide(u_item: Dict[str, Any], eng_p: str, manage_sh: str) -> None:
-    if "IDE" in u_item.get("type", ""):
-        print(f"\n{YELLOW}[NOTICE] 'Open in IDE' titlebar button is for Antigravity Desktop App only.{NC}")
-        return
-    inst_name = u_item.get("name", u_item.get("type", "Instance"))
-    print(f"\n{CYAN}--- Native 'Open in IDE' Titlebar Button Patch ({inst_name}) ---{NC}")
-    print("  [1] Enable Native 'Open in IDE' Titlebar Button in App\n  [2] Revert / Unpatch 'Open in IDE' Button\n  [0] Cancel")
-    c = input("Select action [1-2, Default: 1]: ").strip()
-    if c in ["1", ""]:
-        print(f"\n{CYAN}Applying 'Open in IDE' patch to {eng_p}...{NC}")
-        subprocess.run(["bash", manage_sh, "open-ide", "--app-dir", eng_p, "--force"], check=False)
-    elif c == "2":
-        print(f"\n{CYAN}Reverting 'Open in IDE' patch from {eng_p}...{NC}")
-        subprocess.run(["bash", manage_sh, "unpatch-open-ide", "--app-dir", eng_p], check=False)
+    handle_unified_patch_experiments("app", "--app-dir", u_item, eng_p, manage_sh)
 
 
 def handle_unified_patch_window_bounds(u_item: Dict[str, Any], eng_p: str, manage_sh: str) -> None:

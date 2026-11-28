@@ -38,10 +38,10 @@ parse_cli_args() {
             unpatch-rtl) COMMAND="unpatch-rtl"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi; CMD_ARGS=("$@"); break ;;
             selector|patch-selector) COMMAND="patch-selector"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
             unpatch-selector) COMMAND="unpatch-selector"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
-            fork|patch-fork) COMMAND="fork"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
-            unpatch-fork) COMMAND="unpatch-fork"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
-            open-ide|patch-open-ide) COMMAND="open-ide"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
-            unpatch-open-ide) COMMAND="unpatch-open-ide"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
+            fork|patch-fork|experiments|patch-experiments|flags) COMMAND="experiments"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
+            open-ide|patch-open-ide) COMMAND="experiments"; SUB_COMMAND="app"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
+            unpatch-fork|unpatch-experiments|unpatch-flags) COMMAND="unpatch-experiments"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
+            unpatch-open-ide) COMMAND="unpatch-experiments"; SUB_COMMAND="app"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
             window-bounds|patch-window-bounds|patch-window|fix-window) COMMAND="window-bounds"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
             unpatch-window-bounds|unpatch-window) COMMAND="unpatch-window-bounds"; shift; if [ -n "${1:-}" ] && [[ "$1" != -* ]]; then SUB_COMMAND="$1"; shift; fi ;;
             patch-models|models-patch) COMMAND="patch-models"; shift; CMD_ARGS=("$@"); break ;;
@@ -89,6 +89,7 @@ parse_cli_args() {
                 ;;
             update-repo|self-update|update-self|24) COMMAND="update-repo"; shift ;;
             benchmark|bench|speed-test|26) COMMAND="benchmark"; shift; CMD_ARGS=("$@"); break ;;
+            usage|tokens|usage-report|costs) COMMAND="usage"; shift; CMD_ARGS=("$@"); break ;;
             multi-account|multiaccount|accounts|27) COMMAND="multi-account"; shift; CMD_ARGS=("$@"); break ;;
             unpatch|restore|revert-patch|unpatch-all) COMMAND="unpatch"; shift ;;
             trace|monitor|traffic) COMMAND="traffic"; shift; break ;;

@@ -9,6 +9,7 @@ from typing import Any, Dict
 
 from antigravity_suite.detect.constants import CYAN, NC
 from antigravity_suite.detect.unified_patches_helpers import (
+    handle_unified_patch_experiments,
     handle_unified_patch_fork,
     handle_unified_patch_models,
     handle_unified_patch_open_ide,
@@ -34,14 +35,12 @@ def handle_unified_patches_and_reinstall(choice: str, u_item: Dict[str, Any], en
     elif up in ["UNPATCH-RTL", "UR"]:
         print(f"\n{CYAN}Reverting RTL patch from {u_item['type']} at {eng_p}...{NC}")
         subprocess.run(["bash", manage_sh, "unpatch-rtl", c_type, flag, eng_p], check=False)
-    elif up == "J":
-        handle_unified_patch_fork(c_type, flag, u_item, eng_p, manage_sh)
+    elif up in ["EX", "EXP", "EXPERIMENTS", "FLAGS", "J", "Y", "FORK", "OPEN-IDE"]:
+        handle_unified_patch_experiments(c_type, flag, u_item, eng_p, manage_sh)
     elif up == "T":
         handle_unified_patch_selector(c_type, flag, u_item, eng_p, manage_sh)
     elif up in ["CM", "MODELS"]:
         handle_unified_patch_models(u_item, eng_p, manage_sh)
-    elif up == "Y":
-        handle_unified_patch_open_ide(u_item, eng_p, manage_sh)
     elif up in ["WB", "WINDOW", "WINDOW-BOUNDS", "PATCH-WINDOW"]:
         handle_unified_patch_window_bounds(u_item, eng_p, manage_sh)
     elif up in ["SA", "SUBAGENTS", "SUBAGENT", "SWARM"]:

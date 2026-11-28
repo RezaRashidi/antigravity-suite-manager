@@ -15,13 +15,9 @@ reapply_detected_patches() {
         log_info "Re-applying Multi-Account Selector to App..."
         FORCE_INSTALL=true patch_selector_app
     fi
-    if [ "$HAD_APP_FORK" = true ]; then
-        log_info "Re-applying Conversation Forking patch to App..."
-        FORCE_INSTALL=true patch_fork_app
-    fi
-    if [ "$HAD_APP_OPEN_IDE" = true ]; then
-        log_info "Re-applying Open in IDE button to App..."
-        FORCE_INSTALL=true patch_open_ide_app
+    if [ "$HAD_APP_EXPERIMENTS" = true ]; then
+        log_info "Re-applying Unified Experiments, Forking, Cost & Open-IDE to App..."
+        FORCE_INSTALL=true patch_experiments_app
     fi
     if [ "$HAD_APP_WINDOW_BOUNDS" = true ]; then
         log_info "Re-applying X11 Window Bounds patch to App..."
@@ -35,11 +31,11 @@ reapply_detected_patches() {
         log_info "Re-applying Multi-Account Selector to IDE..."
         FORCE_INSTALL=true patch_selector_ide
     fi
-    if [ "$HAD_IDE_FORK" = true ]; then
-        log_info "Re-applying Conversation Forking patch to IDE..."
-        FORCE_INSTALL=true patch_fork_ide
+    if [ "$HAD_IDE_EXPERIMENTS" = true ]; then
+        log_info "Re-applying Unified Experiments, Forking & Cost patch to IDE..."
+        FORCE_INSTALL=true patch_experiments_ide
     fi
-    if [ "$HAD_IDE_SELECTOR" = true ] || [ "$HAD_IDE_RTL" = true ] || [ "$HAD_IDE_FORK" = true ]; then
+    if [ "$HAD_IDE_SELECTOR" = true ] || [ "$HAD_IDE_RTL" = true ] || [ "$HAD_IDE_EXPERIMENTS" = true ]; then
         fix_ide_checksums "${IDE_INSTALL_DIR}"
     fi
 }
@@ -53,8 +49,8 @@ update_all() {
     detect_active_app_patches
     detect_active_ide_patches
     log_info "Pre-update active patch detection:"
-    log_info "  • App: Selector=${HAD_APP_SELECTOR}, RTL=${HAD_APP_RTL}, Fork=${HAD_APP_FORK}, OpenIDE=${HAD_APP_OPEN_IDE}, WinBounds=${HAD_APP_WINDOW_BOUNDS}, Models=${HAD_APP_MODELS}"
-    log_info "  • IDE: Selector=${HAD_IDE_SELECTOR}, RTL=${HAD_IDE_RTL}, Fork=${HAD_IDE_FORK}"
+    log_info "  • App: Selector=${HAD_APP_SELECTOR}, RTL=${HAD_APP_RTL}, Experiments/Fork/OpenIDE=${HAD_APP_EXPERIMENTS}, WinBounds=${HAD_APP_WINDOW_BOUNDS}, Models=${HAD_APP_MODELS}"
+    log_info "  • IDE: Selector=${HAD_IDE_SELECTOR}, RTL=${HAD_IDE_RTL}, Experiments/Fork=${HAD_IDE_EXPERIMENTS}"
 
     log_info "Starting full suite update..."
     log_info "User configs, databases, keys, and history will be preserved."

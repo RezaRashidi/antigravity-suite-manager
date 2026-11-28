@@ -38,10 +38,8 @@ Commands:
   remove-instance Delete an App or IDE instance and archive its profile (alias: remove)
   selector      Apply prompt-bar account selector & multi-account patch (alias: patch-selector)
   unpatch-selector Revert prompt-bar account selector patch
-  fork          Apply experimental conversation forking patch to App and IDE (alias: patch-fork)
-  unpatch-fork  Revert conversation forking patch
-  open-ide      Enable native 'Open in IDE' titlebar button in App (alias: patch-open-ide)
-  unpatch-open-ide Revert native 'Open in IDE' button patch
+  experiments   Apply Unified Experiments, Conversation Forking, Cost & Open-IDE patch (aliases: flags, fork, open-ide)
+  unpatch-experiments Revert Unified Experiments, Forking, Cost & Open-IDE patch (aliases: unpatch-flags, unpatch-fork, unpatch-open-ide)
   patch-window  Fix X11 BaseWindow maximize/resize bottom cutoff in App (alias: window-bounds, fix-window)
   unpatch-window Revert X11 Window Bounds patch (alias: unpatch-window-bounds)
   models        Custom models & multi-provider discovery/selection (alias: custom-models)
@@ -60,6 +58,7 @@ Commands:
   update-repo   Update Antigravity Suite Manager repository, recompile, and redeploy
   restart-services Restart systemd history sync and X11 icon injector daemons
   benchmark     Benchmark AI response speed, IPv6/proxy latency, and context bloat (alias: bench)
+  usage         Show read-only token usage, Cache Hit Rate & USD cost report (alias: tokens)
   multi-account Manage connected Google accounts, quotas & chat bindings (aliases: accounts, multiaccount)
   trace         Live stream multi-account request routing and token swaps (alias: traffic)
   export-history Export conversation history & brains to portable tarball [out]

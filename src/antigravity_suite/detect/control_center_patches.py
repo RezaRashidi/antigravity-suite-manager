@@ -18,20 +18,20 @@ def handle_control_center_selector_patch(manage_sh: str, unified: Optional[List[
         run_target_patch(manage_sh, "unpatch-selector" if c == "2" else "selector", unified, "Selector Patch", force=True)
 
 
-def handle_control_center_fork_patch(manage_sh: str, unified: Optional[List[Dict[str, Any]]] = None) -> None:
-    print(f"\n{CYAN}--- Experimental Conversation Forking Patch ---{NC}")
-    print("  [1] Apply / Update Conversation Forking Patch (App & IDE)\n  [2] Revert / Unpatch Conversation Forking Patch\n  [0] Return")
+def handle_control_center_experiments_patch(manage_sh: str, unified: Optional[List[Dict[str, Any]]] = None) -> None:
+    print(f"\n{CYAN}--- Unified Experiments, Forking, Cost & Open-IDE Patch (App & IDE) ---{NC}")
+    print("  [1] Apply / Update Flags, Forking, Cost & Open-IDE Patch\n  [2] Revert / Unpatch Unified Experiments Patch\n  [0] Return")
     c = input("Select action [1-2, Default: 1]: ").strip()
     if c not in ["0"]:
-        run_target_patch(manage_sh, "unpatch-fork" if c == "2" else "fork", unified, "Fork Patch", force=True)
+        run_target_patch(manage_sh, "unpatch-experiments" if c == "2" else "experiments", unified, "Unified Experiments Patch", force=True)
+
+
+def handle_control_center_fork_patch(manage_sh: str, unified: Optional[List[Dict[str, Any]]] = None) -> None:
+    handle_control_center_experiments_patch(manage_sh, unified)
 
 
 def handle_control_center_open_ide_patch(manage_sh: str, unified: Optional[List[Dict[str, Any]]] = None) -> None:
-    print(f"\n{CYAN}--- Native 'Open in IDE' Titlebar Button Patch ---{NC}")
-    print("  [1] Enable Native 'Open in IDE' Titlebar Button in App\n  [2] Revert / Unpatch 'Open in IDE' Button\n  [0] Return")
-    c = input("Select action [1-2, Default: 1]: ").strip()
-    if c not in ["0"]:
-        run_target_patch(manage_sh, "unpatch-open-ide" if c == "2" else "open-ide", unified, "Open IDE Patch", force=True)
+    handle_control_center_experiments_patch(manage_sh, unified)
 
 
 def handle_control_center_window_bounds_patch(manage_sh: str, unified: Optional[List[Dict[str, Any]]] = None) -> None:
@@ -70,7 +70,7 @@ def handle_control_center_models_patch(manage_sh: str, unified: Optional[List[Di
 
 
 def handle_control_center_patch_all(manage_sh: str, unified: Optional[List[Dict[str, Any]]] = None) -> None:
-    print(f"\n{CYAN}--- Apply All Antigravity Patches (Models, RTL, Selector, Fork, Open IDE) ---{NC}")
+    print(f"\n{CYAN}--- Apply All Antigravity Patches (Models, RTL, Selector, Experiments/Fork/IDE, WB) ---{NC}")
     print("  [1] Apply All Patches (App & IDE in dependency order)")
     print("  [2] Revert / Restore All Patches (Clean pristine state)")
     print("  [0] Return")

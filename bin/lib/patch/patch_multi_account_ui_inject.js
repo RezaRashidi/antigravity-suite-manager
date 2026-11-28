@@ -22,7 +22,7 @@ function copySubsystemFiles(distDir) {
         } catch (_) { return false; }
     })();
 
-    for (const f of ['multi_account_router.js', 'multi_account_ui.js']) {
+    for (const f of ['multi_account_router.js', 'multi_account_ui.js', 'experiments_catalog.js']) {
         const src = path.join(patchDir, f);
         if (fs.existsSync(src)) {
             if (f === 'multi_account_router.js') {

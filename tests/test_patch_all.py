@@ -27,11 +27,11 @@ class TestPatchAll(unittest.TestCase):
             content = f.read()
         self.assertIn("ANTIGRAVITY_SUITE_SELECTOR_PATCH", content)
         self.assertIn("ACTIVE_PATCH_SELECTOR=true", content)
-        self.assertIn("ACTIVE_PATCH_FORK=true", content)
-        self.assertIn("ACTIVE_PATCH_OPEN_IDE=true", content)
+        self.assertIn("ACTIVE_PATCH_EXPERIMENTS=true", content)
+        self.assertIn("ANTIGRAVITY_SUITE_FORK_PATCH", content)
+        self.assertIn("ANTIGRAVITY_SUITE_OPEN_IDE_PATCH", content)
         self.assertIn("patch_selector_app", content)
-        self.assertIn("patch_fork_app", content)
-        self.assertIn("patch_open_ide_app", content)
+        self.assertIn("patch_experiments_app", content)
 
     def test_control_center_has_ap_option(self):
         with open(self.render_py, "r", encoding="utf-8") as f:
